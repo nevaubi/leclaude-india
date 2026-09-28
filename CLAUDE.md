@@ -2597,3 +2597,15 @@ Stack: Next.js 15 App Router, React 19, TypeScript strict, Tailwind v4, SQLite v
 - Do not run `npm install` (dependencies are present; external providers are called with `fetch`). Do not run `next build` while other work is in flight; validate with `npx tsc --noEmit`, `npx eslint <files>`, `npx vitest run <files>`; use a mirror dev server with a private `LECLAUDE_DATA_DIR` for browser checks and never touch `data/`.
 - Tests: vitest (`npm test`), `server-only` is shimmed; put tests in `tests/` or `*.test.ts`; evals in `evals/`.
 - Commits: descriptive messages; push only when the typecheck is clean (the branch deploys); never commit secrets.
+
+---
+
+# APPENDIX B. LECLAUDE INDIA
+
+This repository is LeClaude India. Read `docs/architecture/india.md` before substantive work. Additional rules:
+- Indian courts, languages and legal-material types live in `src/lib/india/` (`courts.ts`, `languages.ts`, `types.ts`); use them instead of new string constants.
+- Focus jurisdictions are Karnataka (Bengaluru), Telangana (Hyderabad) and Andhra Pradesh; the Supreme Court binds all courts.
+- Never scrape subscription services (SCC Online, Manupatra); use them only through a firm's licensed access. Never automate past a captcha.
+- The original-language judgment is the text of record; translations carry their origin and machine translations are labelled.
+- The IPC/CrPC/Evidence Act → BNS/BNSS/BSA correspondence is a coded table; the date of the offence decides which code applies.
+- UI text goes through the i18n catalogue (`t()`); no hard-coded user-facing English in new components.

@@ -6,7 +6,10 @@ import { runAgent, generateJSON, type AgentEvent } from "@/lib/ai/agent";
 import { AIConfigError } from "@/lib/ai/config";
 import type { ToolContext, ToolDef } from "@/lib/ai/tools";
 import { fetchUrlTool } from "@/lib/ai/toolkit/web";
-import { getOpinionTextTool, getCfrSectionTool, getFederalRegisterDocumentTool, verifyCitationsTool, COURT_GROUPS } from "@/lib/ai/toolkit/legal";
+import { getOpinionTextTool, getCfrSectionTool, getFederalRegisterDocumentTool } from "@/lib/ai/toolkit/legal";
+import { citingReferencesTool, mapCriminalSectionTool, readJudgment, readJudgmentTool, readSectionTool, readStatuteSection, resolveIndianCitation, searchJudgmentsTool, searchStatutesIndiaTool, visibleMatters } from "@/lib/ai/toolkit/india";
+import { formatStatuteCitation } from "./india-citations";
+import { JURISDICTIONS } from "./jurisdictions";
 import { getLibraryItemTool, getEdiscoveryDocumentTool } from "@/lib/ai/toolkit/internal";
 import { LEGAL_STYLE_RULES, todayLine } from "@/lib/ai/prompts";
 import { firmLabel } from "./firm";
@@ -136,15 +139,6 @@ export function providerMessage(e: unknown): string {
   return msg.length > 160 ? msg.slice(0, 157) + "…" : msg;
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("timeout")), ms);
-    const onAbort = () => { clearTimeout(t); reject(new DOMException("Aborted", "AbortError")); };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    p.then((v) => { clearTimeout(t); signal?.removeEventListener("abort", onAbort); resolve(v); }, (e) => { clearTimeout(t); signal?.removeEventListener("abort", onAbort); reject(e); });
-  });
-}
-
 export type SynthesisStatus = SearchRun["aiStatus"];
 
 // ---------------------------------------------------------------------------
@@ -239,6 +233,17 @@ async function readSourceUncached(ref: ReadRef, opts: { title?: string; signal?:
       const r = (await fetchUrlTool.execute({ url: ref.url, max_chars: READ_MAX }, ctx)) as UrlText;
       return { kind: ref.kind, title: opts.title ?? r.title ?? ref.url, url: r.url, text: r.text, length: r.text.length, meta: { contentType: r.contentType } };
     }
+    case "judgment": {
+      // Corpus judgments are public authority; a judgment linked to specific matters is readable only inside them.
+      const { view, text } = readJudgment(ref.id, visibleMatters({ state: {} }));
+      return { kind: "judgment", title: opts.title ?? view.title, cite: view.neutralCitation ?? view.reporterCitations[0], url: view.url, text, length: text.length, meta: { judgmentId: view.id, courtId: view.courtId, unresolvedCourt: view.unresolvedCourt, benchStrength: view.benchStrength, judges: view.judges, language: view.language, translations: view.translations, decided: view.decisionDate, source: view.source } };
+    }
+    case "section": {
+      const r = readStatuteSection(ref.id);
+      if (!r) throw new Error(`No India Code section ${ref.id} in the store`);
+      const cite = formatStatuteCitation({ enactment: r.enactment, sections: r.section ? [r.section] : [] });
+      return { kind: "section", title: opts.title ?? `${cite}${r.heading ? ` — ${r.heading}` : ""}`, cite, url: r.url, text: r.text, length: r.text.length, meta: { enactmentId: r.enactmentId, section: r.section, replacedBy: r.replacedBy, correspondsTo: r.correspondsTo, source: r.source } };
+    }
     case "library": {
       const item = (await getLibraryItemTool.execute({ id: ref.id, max_chars: READ_MAX }, ctx)) as LibraryItem & { content: string };
       return { kind: "library", title: item.name, text: item.content || item.description || "(This library item has no text content. Open it in the Office editor.)", url: item.officeDocId ? `/office/word/${item.officeDocId}` : item.url, length: (item.content ?? "").length, meta: { type: item.type, tags: item.tags, practiceArea: item.practiceArea, officeDocId: item.officeDocId, updatedAt: item.updatedAt } };
@@ -264,6 +269,8 @@ export function parseReadRef(body: unknown): ReadRef | null {
     case "statute": return url && /^https?:\/\//i.test(url) ? { kind: "statute", url, id: typeof id === "string" ? id : undefined } : null;
     case "library": return typeof id === "string" && id ? { kind: "library", id } : null;
     case "edoc": return typeof id === "string" && id ? { kind: "edoc", id } : null;
+    case "judgment": return typeof id === "string" && id ? { kind: "judgment", id } : null;
+    case "section": return typeof id === "string" && id ? { kind: "section", id } : null;
     default: return null;
   }
 }
@@ -308,7 +315,7 @@ export async function askAboutSource(body: AskSourceBody, send: (e: AgentEvent) 
   const input: ResponseInput = [];
   if (!body.previousResponseId) for (const h of (body.history ?? []).slice(-10)) input.push({ role: h.role, content: h.content.slice(0, 8000) } as ResponseInputItem);
   input.push({ role: "user", content: body.message } as ResponseInputItem);
-  const tools = [verifyCitationsTool, getOpinionTextTool, getCfrSectionTool, fetchUrlTool] as unknown as ToolDef<never, unknown>[];
+  const tools = [searchJudgmentsTool, readJudgmentTool, citingReferencesTool, searchStatutesIndiaTool, readSectionTool, mapCriminalSectionTool, fetchUrlTool] as unknown as ToolDef<never, unknown>[];
   try {
     await runAgent({ instructions, input, tools, previousResponseId: body.previousResponseId ?? null, maxSteps: 6, verbosity: "low", signal, metadata: { app: "leclaude", surface: "search-ask" }, onEvent: send });
   } catch (e) {
@@ -339,17 +346,24 @@ export interface CiteCheckResult {
   summary: { total: number; resolved: number; unresolved: number; unchecked: number };
 }
 
+/**
+ * Citation check (LeClaude India): extract Indian neutral and reporter citations and resolve each against the judgment
+ * corpus without substitution (one match resolves; several are ambiguous; none stays unresolved). No network call.
+ */
 export async function checkCitations(text: string, signal?: AbortSignal): Promise<CiteCheckResult> {
+  void signal;
   const extracted = extractCitations(text);
   let checks: CitationCheck[] = [];
   let providerError: string | undefined;
-  if (extracted.some((c) => c.kind === "case")) {
-    try {
-      const r = (await withTimeout(Promise.resolve(verifyCitationsTool.execute({ text }, toolCtx(signal))), 25_000, signal)) as { citations: { citation: string; resolved: boolean; status: number; error?: string; matches?: { case_name?: string; date_filed?: string; url?: string }[] }[] };
-      checks = r.citations.map((c) => ({ citation: c.citation, resolved: c.resolved, status: c.status, error: c.error, matches: c.matches }));
-    } catch (e) {
-      providerError = providerMessage(e);
-    }
+  try {
+    checks = extracted.filter((c) => c.kind === "case").map((c) => {
+      const r = resolveIndianCitation(c.citation);
+      if (r.state === "resolved") return { citation: c.citation, resolved: true, status: 200, matches: [{ case_name: r.title }] };
+      if (r.state === "ambiguous") return { citation: c.citation, resolved: false, status: 300, error: r.reason, matches: r.candidates.map((x) => ({ case_name: x.title })) };
+      return { citation: c.citation, resolved: false, status: 404, error: r.reason };
+    });
+  } catch (e) {
+    providerError = providerMessage(e);
   }
   const resolved = checks.filter((c) => c.resolved).length;
   const unresolved = checks.filter((c) => !c.resolved).length;
@@ -393,7 +407,7 @@ export function saveHitToLibrary(hit: SearchHit, opts: { matterId?: string | nul
   return item;
 }
 
-/** Court-group keys exposed for the sync test and the UI. */
+/** Forum keys exposed for the sync test and the UI. */
 export function courtGroupKeys() {
-  return Object.keys(COURT_GROUPS);
+  return JURISDICTIONS.map((j) => j.key);
 }

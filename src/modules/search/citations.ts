@@ -1,7 +1,9 @@
 /**
- * Offline citation extraction (regex) used by the citation checker so the UI
- * can show what it found even when CourtListener is unreachable. Client-safe.
+ * Offline citation extraction used by the citation checker and the research engine's citation cross-check.
+ * LeClaude India: Indian neutral and reporter citations come from the shared deterministic parser
+ * (src/modules/search/india-citations.ts → @/lib/india/citations); the US regexes remain for US material. Client-safe.
  */
+import { extractAnswerCitations } from "./india-citations";
 
 export type ExtractedCitationKind = "case" | "statute" | "regulation" | "register" | "unknown";
 
@@ -34,6 +36,9 @@ export function extractCitations(text: string): ExtractedCitation[] {
   const out: ExtractedCitation[] = [];
   const seen = new Set<string>();
   const push = (c: ExtractedCitation) => { const k = c.citation.replace(/\s+/g, " "); if (seen.has(k)) return; seen.add(k); out.push({ ...c, citation: k }); };
+  for (const c of extractAnswerCitations(text)) {
+    push({ citation: c.citation, kind: "case", index: c.index, context: ctx(text, Math.max(0, c.index), Math.max(0, c.index) + c.citation.length), lookupUrl: `https://indiankanoon.org/search/?formInput=${encodeURIComponent(`"${c.citation}"`)}` });
+  }
   let m: RegExpExecArray | null;
   CASE_RE.lastIndex = 0;
   while ((m = CASE_RE.exec(text))) {

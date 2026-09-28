@@ -3,6 +3,7 @@ import * as React from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./dialog";
 import { Kbd } from "./misc";
 import { GLOBAL_SHORTCUTS, detectPlatform, formatKeys, isTypingTarget, mergeShortcutGroups, type ShortcutGroup } from "./shortcut-help-helpers";
+import { useT } from "@/lib/i18n/client";
 
 export type { ShortcutGroup, ShortcutItem } from "./shortcut-help-helpers";
 
@@ -63,22 +64,23 @@ export function useShortcutHelp(groups: ShortcutGroup[] | undefined, id?: string
 
 export function ShortcutHelpDialog({ open, onOpenChange, groups }: { open: boolean; onOpenChange: (v: boolean) => void; groups: ShortcutGroup[] }) {
   const platform = React.useMemo(() => detectPlatform(typeof navigator !== "undefined" ? navigator.userAgent : undefined), []);
+  const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg" className="gap-3 p-4">
         <DialogHeader>
-          <DialogTitle className="text-[14px]">Keyboard shortcuts</DialogTitle>
-          <DialogDescription className="text-[11.5px]">Shortcuts work when no text field is focused. Press <Kbd>?</Kbd> to close.</DialogDescription>
+          <DialogTitle className="text-[14px]">{t("shortcuts.title")}</DialogTitle>
+          <DialogDescription className="text-[11.5px]">{t("shortcuts.description")}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
           {groups.map((g) => (
             <section key={g.id} className="min-w-0">
-              <h3 className="mb-1 text-[12px] font-medium text-muted-foreground">{g.title}</h3>
+              <h3 className="mb-1 text-[12px] font-medium text-muted-foreground">{g.titleKey ? t(g.titleKey) : g.title}</h3>
               <dl className="divide-y divide-line-quiet">
                 {g.items.map((it, i) => (
                   <div key={i} className="flex h-7 items-center gap-3">
-                    <dt className="min-w-0 flex-1 truncate text-[12px]">{it.label}</dt>
-                    <dd className="flex shrink-0 items-center gap-1">{formatKeys(it.keys, platform).map((k, j) => <Kbd key={j} className="whitespace-nowrap">{k}</Kbd>)}</dd>
+                    <dt className="min-w-0 flex-1 truncate text-[12px]">{it.labelKey ? t(it.labelKey) : it.label}</dt>
+                    <dd className="flex shrink-0 items-center gap-1" dir="ltr">{formatKeys(it.keys, platform).map((k, j) => <Kbd key={j} className="whitespace-nowrap">{k}</Kbd>)}</dd>
                   </div>
                 ))}
               </dl>

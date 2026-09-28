@@ -73,5 +73,13 @@ export function providerStatuses(cfg: IntelEnvConfig = intelConfig()): IntelProv
     { id: "firecrawl", name: "Firecrawl (scrape, search, crawl)", configured: Boolean(cfg.firecrawlKey), keyed: Boolean(cfg.firecrawlKey), envVar: "FIRECRAWL_API_KEY", note: cfg.firecrawlKey ? undefined : "Plain fetch is used for web pages; news search needs Firecrawl or Tavily." },
     { id: "tavily", name: "Tavily (news search, extract)", configured: Boolean(cfg.tavilyKey), keyed: Boolean(cfg.tavilyKey), envVar: "TAVILY_API_KEY" },
     { id: "web", name: "Plain web fetch", configured: !cfg.offline, keyed: false, note: cfg.offline ? "INTEL_OFFLINE is set." : undefined },
+    // LeClaude India sources (src/modules/india/sources). Public datasets need no key; subscription sources need the
+    // firm's licence plus an export folder or a licensed API credential, and are never scraped.
+    { id: "sci-open-data", name: "Supreme Court of India judgments (AWS Open Data)", configured: !cfg.offline, keyed: false, note: cfg.offline ? "INTEL_OFFLINE is set." : "Public dataset; no key." },
+    { id: "hc-open-data", name: "High Court judgments (AWS Open Data)", configured: !cfg.offline, keyed: false, note: cfg.offline ? "INTEL_OFFLINE is set." : "Public dataset; no key." },
+    { id: "indian-kanoon", name: "Indian Kanoon API (search, full text, citations)", configured: Boolean(env("INDIAN_KANOON_API_TOKEN")) && !cfg.offline, keyed: Boolean(env("INDIAN_KANOON_API_TOKEN")), envVar: "INDIAN_KANOON_API_TOKEN", note: env("INDIAN_KANOON_API_TOKEN") ? undefined : "Paid API: set the firm's token; nothing is called without it." },
+    { id: "india-code", name: "India Code (central and state Acts)", configured: !cfg.offline, keyed: false, note: cfg.offline ? "INTEL_OFFLINE is set." : "Public data (DSpace REST API)." },
+    { id: "scc-online", name: "SCC Online (licensed; firm exports or licensed API only)", configured: Boolean(env("SCC_ONLINE_EXPORT_DIR") || env("SCC_ONLINE_API_TOKEN")), keyed: Boolean(env("SCC_ONLINE_API_TOKEN")), envVar: "SCC_ONLINE_EXPORT_DIR", note: "Subscription service, never scraped. Needs the firm's licence and an export folder or a licensed API." },
+    { id: "manupatra", name: "Manupatra (licensed; firm exports or licensed API only)", configured: Boolean(env("MANUPATRA_EXPORT_DIR") || env("MANUPATRA_API_TOKEN")), keyed: Boolean(env("MANUPATRA_API_TOKEN")), envVar: "MANUPATRA_EXPORT_DIR", note: "Subscription service, never scraped. Needs the firm's licence and an export folder or a licensed API." },
   ];
 }

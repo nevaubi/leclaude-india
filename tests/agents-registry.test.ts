@@ -90,7 +90,7 @@ describe("handoff tool and toolsets", () => {
   it("resolves persona tool names into function tools and built-ins, skipping unknown names", () => {
     const r = toolsFor(AGENT_PERSONAS.research.tools, { from: "research" });
     const names = r.tools.map((t) => t.name);
-    expect(names).toEqual(expect.arrayContaining(["search_case_law", "verify_citations", "search_cfr", "search_intel", "search_library", "get_matter_context", "fetch_url", "handoff"]));
+    expect(names).toEqual(expect.arrayContaining(["search_judgments", "read_judgment", "map_criminal_section", "search_statutes", "search_intel", "search_library", "get_matter_context", "fetch_url", "handoff"]));
     expect(r.builtinTools.length).toBe(1); // web_search
     expect(r.unknown).toEqual([]);
     const s = toolsFor(["search_intel", "search_intel", "made_up", "handoff"], { from: "reviewer" });

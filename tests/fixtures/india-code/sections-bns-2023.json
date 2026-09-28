@@ -1,0 +1,542 @@
+{
+ "query": "\"AC_CEN_5_23_00048_2023-45_1719292564123\"",
+ "appliedFilters": [
+  {
+   "filter": "identifier_collection",
+   "operator": "equals",
+   "value": "SECTION",
+   "label": "SECTION"
+  }
+ ],
+ "type": "discover",
+ "_embedded": {
+  "searchResult": {
+   "_embedded": {
+    "objects": [
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_embedded": {
+       "indexableObject": {
+        "id": "0af80725-7251-4a4e-8ca5-76486228fa01",
+        "uuid": "0af80725-7251-4a4e-8ca5-76486228fa01",
+        "name": "Act causing slight harm.",
+        "handle": "123456789/545526",
+        "metadata": {
+         "dc.date.act_year": [
+          {
+           "value": "2023",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_id": [
+          {
+           "value": "AC_CEN_5_23_00048_2023-45_1719292564123",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_name": [
+          {
+           "value": "The Bharatiya Nyaya Sanhita, 2023",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_number": [
+          {
+           "value": "45",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.collection": [
+          {
+           "value": "SECTION",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.id": [
+          {
+           "value": "90398",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.order_number": [
+          {
+           "value": "33",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_number": [
+          {
+           "value": "8",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_id": [
+          {
+           "value": "90398",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_number": [
+          {
+           "value": "33",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_page_note": [
+          {
+           "value": "<span style=\"margin-left: 15px;\"></span>Nothing is an offence by reason that it causes, or that it is intended to cause, or that it is known to be likely to cause, any harm, if that harm is so slight that no person of ordinary sense and temper would complain of such harm.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_id": [
+          {
+           "value": "1",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_name": [
+          {
+           "value": "CENTRAL",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "http://test1.indiacode.nic.in/handle/123456789/545526",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "Act causing slight harm.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-07-10T23:17:27.711829Z",
+        "type": "item"
+       }
+      }
+     },
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_embedded": {
+       "indexableObject": {
+        "id": "12127185-2d82-4a6e-bf7e-7f7dcf55e6f6",
+        "uuid": "12127185-2d82-4a6e-bf7e-7f7dcf55e6f6",
+        "name": "Things done in private defence.",
+        "handle": "123456789/545527",
+        "metadata": {
+         "dc.date.act_year": [
+          {
+           "value": "2023",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_id": [
+          {
+           "value": "AC_CEN_5_23_00048_2023-45_1719292564123",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_name": [
+          {
+           "value": "The Bharatiya Nyaya Sanhita, 2023",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_number": [
+          {
+           "value": "45",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.collection": [
+          {
+           "value": "SECTION",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.id": [
+          {
+           "value": "90399",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.order_number": [
+          {
+           "value": "34",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_number": [
+          {
+           "value": "9",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_id": [
+          {
+           "value": "90399",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_number": [
+          {
+           "value": "34",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_page_note": [
+          {
+           "value": "<span style=\"margin-left: 15px;\"></span>Nothing is an offence which is done in the exercise of the right of private defence.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_id": [
+          {
+           "value": "1",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_name": [
+          {
+           "value": "CENTRAL",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "http://test1.indiacode.nic.in/handle/123456789/545527",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "Things done in private defence.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-07-10T23:17:27.711829Z",
+        "type": "item"
+       }
+      }
+     },
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_embedded": {
+       "indexableObject": {
+        "id": "3c959434-b559-48bf-ac6e-cbb6b1e227c0",
+        "uuid": "3c959434-b559-48bf-ac6e-cbb6b1e227c0",
+        "name": "Unlawful compulsory labour.",
+        "handle": "123456789/545647",
+        "metadata": {
+         "dc.date.act_year": [
+          {
+           "value": "2023",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_id": [
+          {
+           "value": "AC_CEN_5_23_00048_2023-45_1719292564123",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_name": [
+          {
+           "value": "The Bharatiya Nyaya Sanhita, 2023",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_number": [
+          {
+           "value": "45",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.collection": [
+          {
+           "value": "SECTION",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.id": [
+          {
+           "value": "90511",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.order_number": [
+          {
+           "value": "146",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_number": [
+          {
+           "value": "71",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_id": [
+          {
+           "value": "90511",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_number": [
+          {
+           "value": "146",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_page_note": [
+          {
+           "value": "<span style=\"margin-left: 15px;\"></span>Whoever unlawfully compels any person to labour against the will of that person, shall be punished with imprisonment of either description for a term which may extend to one year, or with fine, or with both.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_id": [
+          {
+           "value": "1",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_name": [
+          {
+           "value": "CENTRAL",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "http://test1.indiacode.nic.in/handle/123456789/545647",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "Unlawful compulsory labour.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-07-10T23:17:27.711829Z",
+        "type": "item"
+       }
+      }
+     }
+    ]
+   },
+   "page": {
+    "number": 0,
+    "size": 3,
+    "totalPages": 1,
+    "totalElements": 3
+   }
+  }
+ }
+}

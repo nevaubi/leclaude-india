@@ -11,7 +11,19 @@ import { defaultConfigFor, type AnyNodeType } from "./registry";
 
 const T0 = "2026-06-01T09:00:00.000Z";
 
-/** Stable ids of the seeded intelligence sources (mirrors src/modules/intel/seed.ts SEED_SOURCE_IDS). */
+/**
+ * Stable ids of the India intelligence sources (mirrors src/modules/intel/seed.ts INDIA_SOURCE_IDS): Supreme Court and
+ * focus High Court judgments (AWS Open Data), Indian Kanoon searches and India Code. A fetch of a source that is not
+ * set up in the workspace returns an explicit `not_configured` state (see executors-intel), never a crash.
+ */
+export const INDIA_INTEL_SOURCE_IDS = {
+  sciOpenData: "isrc_sys_in_sci",
+  hcOpenData: "isrc_sys_in_hc",
+  indianKanoon: "isrc_sys_in_kanoon",
+  indiaCode: "isrc_sys_in_india_code",
+} as const;
+
+/** Stable ids of the seeded intelligence sources (mirrors src/modules/intel/seed.ts SEED_SOURCE_IDS; the US sample sources). */
 export const INTEL_SOURCE_IDS = {
   clOpinions: "isrc_sys_cl_opinions",
   clDockets: "isrc_sys_cl_dockets",
@@ -283,22 +295,102 @@ const SYSTEM: SystemDef[] = [
   },
 ];
 
-/** The system workflows with positions computed by the layered layout. Active, not templates, `system: true`. */
+const IN = INDIA_INTEL_SOURCE_IDS;
+
+/**
+ * LeClaude India versions of the source-bound system workflows (same stable ids): judgment watch for the Supreme Court
+ * and the focus High Courts, statute watch on India Code, and judge / counsel profiles built from ingested judgments.
+ * The US-bound workflows (RECAP docket watch, JPML MDL tracker, US news and regulatory sources) are not in the India
+ * default set; they stay buildable through `buildUsSystemTemplates()` for the bundled US sample dataset.
+ */
+const INDIA_OVERRIDES: SystemDef[] = [
+  {
+    id: SYSTEM_WORKFLOW_IDS.authorityRefresh,
+    name: "Judgment watch — Supreme Court and focus High Courts",
+    description: "Every morning: pull new judgments of the Supreme Court and of the High Courts of Karnataka, Telangana and Andhra Pradesh (open data), run the firm's saved Indian Kanoon searches, extract and index them, link judges, advocates and courts, and, when there are judgments in the last 90 days, refresh the authority trend and publish it to Home once verified. Sources that are not set up report 'not configured'.",
+    category: "automation",
+    tags: ["system", "judgments", "Supreme Court", "High Courts", "India", "daily"],
+    inputs: [],
+    nodes: [
+      N("schedule", "trigger.schedule", "Daily 05:00", { schedule: { frequency: "daily", time: "05:00" }, enabled: true, presetInputs: {} }),
+      fetch("sci", "Fetch Supreme Court judgments", IN.sciOpenData, { maxDocs: 150 }),
+      fetch("hc", "Fetch High Court judgments (KA, TS, AP)", IN.hcOpenData, { maxDocs: 300 }),
+      fetch("kanoon", "Run saved Indian Kanoon searches", IN.indianKanoon, { maxDocs: 100 }),
+      steward("steward", "sci, hc, kanoon"),
+      N("new", "data.query", "Judgments added since yesterday", { source: "intel_documents", q: "", filters: { kinds: "opinion" }, matterId: "", since: "-1d", limit: 200, sort: "date", direction: "desc" }),
+      N("extract", "intel.extract", "Extract and summarize", { docIds: "{{steps.new.output.ids}}", blobIds: "", summarize: true, entities: true, maxDocs: 60, modelTier: "fast", onError: "continue" }),
+      N("index", "intel.index", "Index for search", { docIds: "{{steps.extract.output.docIds}}", embed: true, chunkSize: 1200, onError: "continue" }),
+      N("entities", "intel.entities", "Link judges, advocates and courts", { docIds: "{{steps.extract.output.docIds}}", relations: true, onError: "continue" }),
+      N("recent", "data.query", "Judgments in the last 90 days", { source: "intel_documents", q: "", filters: { kinds: "opinion" }, matterId: "", since: "-90d", limit: 1, sort: "date", direction: "desc" }),
+      anyNew("any", "recent", "Any judgments?"),
+      N("trends", "intel.analyze", "Authority trend (90 days)", { analysis: "trends", scope: { matterId: "", kinds: ["opinion"], entityIds: "", court: "", jurisdiction: "", dateFrom: "-90d", dateTo: "", q: "" }, title: "Judgments — Supreme Court and focus High Courts, last 90 days", maxDocs: 800, onError: "continue" }),
+      N("verify", "intel.verify", "Verify the insight", { target: "insights", insightIds: "{{steps.trends.output.insightIds}}", steps: "", limit: 5, onError: "continue" }),
+      N("publish", "intel.publish", "Publish to Home", { to: "home", insightIds: "{{steps.trends.output.insightIds}}", items: "", title: "", summary: "", matterId: "", userId: "", recipientIds: [], libraryFolderId: "", requireVerified: false, onError: "continue" }),
+    ],
+    edges: [E("schedule", "sci"), E("schedule", "hc"), E("schedule", "kanoon"), E("sci", "steward"), E("hc", "steward"), E("kanoon", "steward"), E("steward", "new"), E("new", "extract"), E("extract", "index"), E("extract", "entities"), E("index", "recent"), E("entities", "recent"), E("recent", "any"), E("any", "trends", "yes"), E("trends", "verify"), E("verify", "publish")],
+  },
+  {
+    id: SYSTEM_WORKFLOW_IDS.regulatoryWatch,
+    name: "Statute watch — India Code",
+    description: "Weekly: refresh the central codes (BNS, BNSS, BSA, CPC, Limitation Act, Contract Act…) and the Acts of Karnataka, Telangana and Andhra Pradesh from India Code; extract and index what changed; when anything changed, refresh the 30-day statute trend, verify it and publish it to Home.",
+    category: "automation",
+    tags: ["system", "statutes", "India Code", "India", "weekly"],
+    inputs: [],
+    nodes: [
+      N("schedule", "trigger.schedule", "Weekly, Sunday 04:00", { schedule: { frequency: "weekly", time: "04:00", weekday: 0 }, enabled: true, presetInputs: {} }),
+      fetch("code", "Fetch Acts and sections (India Code)", IN.indiaCode, { maxDocs: 200 }),
+      steward("steward", "code"),
+      N("extract", "intel.extract", "Extract and summarize", { docIds: "{{steps.code.output.docIds}}", blobIds: "", summarize: true, entities: true, maxDocs: 60, modelTier: "fast", onError: "continue" }),
+      N("index", "intel.index", "Index", { docIds: "{{steps.extract.output.docIds}}", embed: true, chunkSize: 1200, onError: "continue" }),
+      N("fresh", "data.query", "Statutes changed this week", { source: "intel_documents", q: "", filters: { kinds: "statute" }, matterId: "", since: "-7d", limit: 100, sort: "date", direction: "desc" }),
+      anyNew("any", "fresh"),
+      N("trends", "intel.analyze", "Statute trend (30 days)", { analysis: "trends", scope: { matterId: "", kinds: ["statute"], entityIds: "", court: "", jurisdiction: "", dateFrom: "-30d", dateTo: "", q: "" }, title: "Statutes — last 30 days", maxDocs: 400, onError: "continue" }),
+      N("verify", "intel.verify", "Verify the insight", { target: "insights", insightIds: "{{steps.trends.output.insightIds}}", steps: "", limit: 5, onError: "continue" }),
+      N("publish", "intel.publish", "Publish to Home", { to: "home", insightIds: "{{steps.trends.output.insightIds}}", items: "", title: "", summary: "", matterId: "", userId: "", recipientIds: [], libraryFolderId: "", requireVerified: false, onError: "continue" }),
+    ],
+    edges: [E("schedule", "code"), E("code", "steward"), E("steward", "extract"), E("extract", "index"), E("index", "fresh"), E("fresh", "any"), E("any", "trends", "yes"), E("trends", "verify"), E("verify", "publish")],
+  },
+  {
+    id: SYSTEM_WORKFLOW_IDS.profiles,
+    name: "Judge and advocate profiles",
+    description: "Weekly: re-link judges, advocates and firms across the judgments ingested in the last 90 days, rebuild their profiles (courts, benches, activity, related people), verify them and publish them to Home.",
+    category: "automation",
+    tags: ["system", "judges", "advocates", "profiles", "weekly"],
+    inputs: [],
+    nodes: [
+      N("schedule", "trigger.schedule", "Weekly, Sunday 03:00", { schedule: { frequency: "weekly", time: "03:00", weekday: 0 }, enabled: true, presetInputs: {} }),
+      N("recent", "data.query", "Judgments (90 days)", { source: "intel_documents", q: "", filters: { kinds: "opinion" }, matterId: "", since: "-90d", limit: 300, sort: "date", direction: "desc" }),
+      N("entities", "intel.entities", "Link judges, advocates and firms", { docIds: "{{steps.recent.output.ids}}", relations: true, onError: "continue" }),
+      N("profiles", "intel.analyze", "Profiles", { analysis: "profiles", scope: { matterId: "", kinds: ["opinion", "judge", "attorney", "firm"], entityIds: "", court: "", jurisdiction: "", dateFrom: "-365d", dateTo: "", q: "" }, title: "", maxDocs: 1000, onError: "continue" }),
+      N("verify", "intel.verify", "Verify profiles", { target: "insights", insightIds: "{{steps.profiles.output.insightIds}}", steps: "", limit: 10, onError: "continue" }),
+      N("publish", "intel.publish", "Publish to Home", { to: "home", insightIds: "{{steps.profiles.output.insightIds}}", items: "", title: "", summary: "", matterId: "", userId: "", recipientIds: [], libraryFolderId: "", requireVerified: false, onError: "continue" }),
+    ],
+    edges: [E("schedule", "recent"), E("recent", "entities"), E("entities", "profiles"), E("profiles", "verify"), E("verify", "publish")],
+  },
+];
+
+/** US-bound system workflows left out of the India default set (their sources are not in the India catalog). */
+export const US_ONLY_SYSTEM_WORKFLOW_IDS: readonly string[] = [SYSTEM_WORKFLOW_IDS.docketWatch, SYSTEM_WORKFLOW_IDS.mdlTracker, SYSTEM_WORKFLOW_IDS.newsWatch];
+
+function materialize(t: SystemDef): Workflow {
+  return { ...t, nodes: autoLayout(t.nodes, t.edges), status: "active", isTemplate: false, system: true, ownerId: undefined, createdAt: T0, updatedAt: T0, runsCount: 0 };
+}
+
+/**
+ * The default (India) system workflows with positions computed by the layered layout. Active, not templates,
+ * `system: true`. Source-bound workflows point at the India sources; jurisdiction-neutral ones are unchanged.
+ */
 export function buildSystemTemplates(): Workflow[] {
-  return SYSTEM.map((t) => ({
-    ...t,
-    nodes: autoLayout(t.nodes, t.edges),
-    status: "active",
-    isTemplate: false,
-    system: true,
-    ownerId: undefined,
-    createdAt: T0,
-    updatedAt: T0,
-    runsCount: 0,
-  }));
+  const override = new Map(INDIA_OVERRIDES.map((w) => [w.id, w]));
+  const usOnly = new Set(US_ONLY_SYSTEM_WORKFLOW_IDS);
+  return SYSTEM.filter((t) => !usOnly.has(t.id)).map((t) => materialize(override.get(t.id) ?? t));
+}
+
+/** The upstream US system workflows (CourtListener, JPML, Federal Register, eCFR, openFDA, news), for the US sample dataset. */
+export function buildUsSystemTemplates(): Workflow[] {
+  return SYSTEM.map(materialize);
 }
 
 export function systemWorkflowById(id: string): Workflow | undefined {
   return buildSystemTemplates().find((w) => w.id === id);
 }
-

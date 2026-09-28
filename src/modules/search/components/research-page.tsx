@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, Loader2, PanelLeftOpen, PanelRightOpen, Scale, Search as SearchIcon, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -39,24 +40,20 @@ export interface ResearchPageProps {
   userName: string;
 }
 
-const EXAMPLES = [
-  "Is the government contractor defense available to a military-specification product manufacturer in the Fourth Circuit?",
-  "Is a consequential damages waiver enforceable against a claim for gross negligence under Illinois law?",
-  "What is the clear-evidence standard for impossibility preemption after Albrecht?",
-  "Can a court strike a PAGA claim as unmanageable after Estrada v. Royalty Carpet Mills?",
-  "When does TSCA § 8(e) require a manufacturer to report substantial-risk information?",
-];
+/** Example questions, in the UI language (catalogue keys research.example.1–5). */
+const EXAMPLE_KEYS = ["research.example.1", "research.example.2", "research.example.3", "research.example.4", "research.example.5"] as const;
 
 type Tool = "research" | "citecheck";
 
 const SEARCH_SHORTCUTS: ShortcutGroup[] = [
-  { id: "search", title: "Research", items: [
-    { keys: ["/"], label: "Focus the question" }, { keys: ["enter"], label: "Ask" }, { keys: ["shift+enter"], label: "New line" }, { keys: ["["], label: "Toggle threads" }, { keys: ["]"], label: "Toggle the research panel" }, { keys: ["esc"], label: "Stop the run" },
+  { id: "search", title: "Research", titleKey: "research.shortcuts.group", items: [
+    { keys: ["/"], label: "Focus the question", labelKey: "research.shortcuts.focus" }, { keys: ["enter"], label: "Ask", labelKey: "research.shortcuts.ask" }, { keys: ["shift+enter"], label: "New line", labelKey: "research.shortcuts.newLine" }, { keys: ["["], label: "Toggle threads", labelKey: "research.shortcuts.threads" }, { keys: ["]"], label: "Toggle the research panel", labelKey: "research.shortcuts.panel" }, { keys: ["esc"], label: "Stop the run", labelKey: "research.shortcuts.stop" },
   ] },
 ];
 
 export function ResearchPage(props: ResearchPageProps) {
   const router = useRouter();
+  const t = useT();
   const params = useSearchParams();
   const urlQ = params.get("q") ?? "";
   const urlThread = params.get("thread") ?? props.initialThreadId ?? "";
@@ -143,22 +140,22 @@ export function ResearchPage(props: ResearchPageProps) {
       const res = await fetch(`/api/search/threads/${id}`);
       if (res.status === 403 || res.status === 401) {
         // Permission denied is a state of the page, not a toast: the server refused this thread.
-        let msg = "You do not have access to this thread.";
+        let msg = t("research.threadDenied");
         try { const j = (await res.json()) as { error?: string }; if (j.error) msg = j.error; } catch { /* keep default */ }
         research.deny(msg, res.status);
         setTool("research");
         setUrl({ thread: id });
         return;
       }
-      if (!res.ok) throw new Error(res.status === 404 ? "This thread no longer exists." : res.statusText);
+      if (!res.ok) throw new Error(res.status === 404 ? t("research.threadGone") : res.statusText);
       const { thread } = (await res.json()) as { thread: ResearchThread };
       replaceSettings(thread.settings);
       replacePins(thread.pins ?? []);
       research.loadThread(thread);
       setTool("research");
       setUrl({ thread: thread.id });
-    } catch (e) { toast.error("Could not open the thread", { description: e instanceof Error ? e.message : String(e) }); }
-  }, [replaceSettings, replacePins, research, setUrl]);
+    } catch (e) { toast.error(t("research.toast.openThreadFailed"), { description: e instanceof Error ? e.message : String(e) }); }
+  }, [replaceSettings, replacePins, research, setUrl, t]);
   const openThreadRef = React.useRef(openThread);
   openThreadRef.current = openThread;
 
@@ -176,42 +173,42 @@ export function ResearchPage(props: ResearchPageProps) {
 
   const copyCite = React.useCallback((hit: SearchHit) => {
     const cite = formatBluebook(hit);
-    navigator.clipboard.writeText(cite).then(() => toast.success("Citation copied", { description: cite })).catch(() => toast.error("Clipboard unavailable"));
-  }, []);
+    navigator.clipboard.writeText(cite).then(() => toast.success(t("research.toast.citationCopied"), { description: cite })).catch(() => toast.error(t("research.toast.clipboard")));
+  }, [t]);
   const saveToLibrary = React.useCallback(async (hit: SearchHit) => {
     try {
       const res = await fetch("/api/search/library", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hit, matterId: useSearchStore.getState().settings.matterId }) });
       const j = (await res.json()) as { item?: { id: string }; error?: string };
       if (!res.ok || !j.item) throw new Error(j.error ?? res.statusText);
-      toast.success("Saved to firm library", { description: "Library → Saved research", action: { label: "Open", onClick: () => router.push(`/library?item=${j.item!.id}`) } });
-    } catch (e) { toast.error("Could not save to library", { description: e instanceof Error ? e.message : String(e) }); }
-  }, [router]);
+      toast.success(t("research.toast.savedLibrary"), { description: t("research.toast.savedLibraryDesc"), action: { label: t("common.open"), onClick: () => router.push(`/library?item=${j.item!.id}`) } });
+    } catch (e) { toast.error(t("research.toast.saveLibraryFailed"), { description: e instanceof Error ? e.message : String(e) }); }
+  }, [router, t]);
   const [readerFocus, setReaderFocus] = React.useState<ReaderFocus | null>(null);
   const openSource = React.useCallback((s: ResearchSource | SearchHit, focus?: ReaderFocus) => { const hit = "hit" in s ? s.hit : s; setReaderHit(hit); setReaderFocus(focus ?? null); setReaderOpen(true); }, []);
   const pinSourceAction = React.useCallback((s: ResearchSource) => {
     const r = pinSource(s.hit, s.id);
-    if (r === "exists") { toast.info("Already pinned"); return; }
-    toast.success("Pinned", { action: { label: "Open pins", onClick: () => { setPanelOpen(true); setPanelTab("pins"); } } });
-  }, [pinSource, setPanelOpen, setPanelTab]);
+    if (r === "exists") { toast.info(t("research.toast.alreadyPinned")); return; }
+    toast.success(t("research.toast.pinned"), { action: { label: t("research.toast.openPins"), onClick: () => { setPanelOpen(true); setPanelTab("pins"); } } });
+  }, [pinSource, setPanelOpen, setPanelTab, t]);
   const pinPassageAction = React.useCallback((text: string, sourceId?: string) => {
     const src = sourceId ? state.sources[sourceId] : undefined;
     pinPassage(text, { sourceId, hit: src?.hit });
-    toast.success("Passage pinned", { action: { label: "Open pins", onClick: () => { setPanelOpen(true); setPanelTab("pins"); } } });
-  }, [pinPassage, state.sources, setPanelOpen, setPanelTab]);
+    toast.success(t("research.toast.passagePinned"), { action: { label: t("research.toast.openPins"), onClick: () => { setPanelOpen(true); setPanelTab("pins"); } } });
+  }, [pinPassage, state.sources, setPanelOpen, setPanelTab, t]);
 
   const runSaved = React.useCallback((s: SavedSearch) => { replaceSettings(s.settings); ask(s.query, s.settings, { savedSearchId: s.id, newThread: true }); }, [replaceSettings, ask]);
   const openRun = React.useCallback((r: SearchRun) => { if (r.threadId) { void openThread(r.threadId); return; } replaceSettings(r.settings); research.loadRun(r); setTool("research"); setUrl({}); }, [openThread, replaceSettings, research, setUrl]);
   const togglePin = async (s: SavedSearch) => { await fetch(`/api/search/saved/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pinned: !s.pinned }) }); void refresh(); };
-  const deleteSaved = async (s: SavedSearch) => { await fetch(`/api/search/saved/${s.id}`, { method: "DELETE" }); toast.success("Saved search deleted"); void refresh(); };
+  const deleteSaved = async (s: SavedSearch) => { await fetch(`/api/search/saved/${s.id}`, { method: "DELETE" }); toast.success(t("research.toast.savedDeleted")); void refresh(); };
   const deleteThread = async (id: string) => { await fetch(`/api/search/threads/${id}`, { method: "DELETE" }); if (id === state.threadId) newThread(); void refresh(); };
   const saveSearch = async (name: string) => {
     const lastQ = [...state.messages].reverse().find((m) => m.role === "user")?.content ?? query;
     try {
       const res = await fetch("/api/search/saved", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, query: lastQ, settings }) });
       if (!res.ok) throw new Error((await res.json().catch(() => ({ error: res.statusText }))).error);
-      toast.success("Search saved");
+      toast.success(t("research.toast.searchSaved"));
       void refresh();
-    } catch (e) { toast.error("Could not save search", { description: e instanceof Error ? e.message : String(e) }); }
+    } catch (e) { toast.error(t("research.toast.saveSearchFailed"), { description: e instanceof Error ? e.message : String(e) }); }
   };
   const switchTool = (t: Tool) => { setTool(t); setUrl({ tool: t, thread: state.threadId }); };
 
@@ -259,27 +256,27 @@ export function ResearchPage(props: ResearchPageProps) {
   const topbar = (
     <TopbarSlot>
       <SearchIcon className="size-4 text-muted-foreground" />
-      <button onClick={newThread} className="shrink-0 text-[13px] font-semibold hover:text-primary cursor-pointer">Research</button>
+      <button onClick={newThread} className="shrink-0 text-[13px] font-semibold hover:text-primary cursor-pointer">{t("research.title")}</button>
       {tool === "citecheck" ? (
-        <><ChevronRight className="size-3.5 text-muted-foreground" /><span className="text-[12.5px] text-muted-foreground">Citation checker</span></>
+        <><ChevronRight className="size-3.5 text-muted-foreground rtl:rotate-180" /><span className="text-[12.5px] text-muted-foreground">{t("research.citationChecker")}</span></>
       ) : state.threadTitle ? (
-        <><ChevronRight className="size-3.5 text-muted-foreground" /><span className="max-w-[28vw] truncate text-[12.5px] text-muted-foreground" title={state.threadTitle}>{state.threadTitle}</span>{streaming && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}</>
+        <><ChevronRight className="size-3.5 text-muted-foreground rtl:rotate-180" /><span className="max-w-[28vw] truncate text-[12.5px] text-muted-foreground" title={state.threadTitle}>{state.threadTitle}</span>{streaming && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}</>
       ) : null}
-      <SegmentedControl size="xs" className="ml-2 hidden md:inline-flex" ariaLabel="Tool" value={tool} onChange={(t) => switchTool(t)} options={[{ value: "research", label: "Research", icon: Scale }, { value: "citecheck", label: "Citation checker", icon: ShieldCheck }]} />
+      <SegmentedControl size="xs" className="ms-2 hidden md:inline-flex" ariaLabel={t("research.toolAria")} value={tool} onChange={(v) => switchTool(v)} options={[{ value: "research", label: t("research.title"), icon: Scale }, { value: "citecheck", label: t("research.citationChecker"), icon: ShieldCheck }]} />
       <div className="flex-1" />
       {currentMatter && <Tip label={currentMatter.caption ?? currentMatter.name}><Badge variant="outline" size="sm" className="hidden shrink-0 xl:inline-flex">{currentMatter.shortName}</Badge></Tip>}
-      {!railOpen && <Tip label="Show threads" shortcut="["><Button variant="ghost" size="icon-xs" onClick={() => setRailOpen(true)} aria-label="Show threads"><PanelLeftOpen className="size-4" /></Button></Tip>}
-      {!panelOpen && tool === "research" && <Tip label="Show research panel" shortcut="]"><Button variant="ghost" size="icon-xs" onClick={() => setPanelOpen(true)} aria-label="Show research panel"><PanelRightOpen className="size-4" /></Button></Tip>}
+      {!railOpen && <Tip label={t("research.showThreads")} shortcut="["><Button variant="ghost" size="icon-xs" onClick={() => setRailOpen(true)} aria-label={t("research.showThreads")}><PanelLeftOpen className="size-4" /></Button></Tip>}
+      {!panelOpen && tool === "research" && <Tip label={t("research.showPanel")} shortcut="]"><Button variant="ghost" size="icon-xs" onClick={() => setPanelOpen(true)} aria-label={t("research.showPanel")}><PanelRightOpen className="size-4" /></Button></Tip>}
     </TopbarSlot>
   );
 
   const emptyState = (
     <div className="mx-auto flex h-full w-full max-w-[760px] flex-col justify-center px-6 py-10">
-      <div className="mb-1 text-[11.5px] font-medium text-muted-foreground">Research</div>
-      <h1 className="text-[20px] font-semibold tracking-tight">What do you need to know?</h1>
-      <p className="mt-1 max-w-xl text-[12.5px] text-muted-foreground">Parallel research lanes search and read case law, statutes, regulations, dockets, the matter record and the firm library, then the answer is written from what was read, verified claim by claim, and cited by number.</p>
+      <div className="mb-1 text-[11.5px] font-medium text-muted-foreground">{t("research.eyebrow")}</div>
+      <h1 className="text-[20px] font-semibold tracking-tight">{t("research.heading")}</h1>
+      <p className="mt-1 max-w-xl text-[12.5px] text-muted-foreground">{t("research.intro")}</p>
       <div className="mt-6 flex flex-wrap gap-1.5">
-        {(recentQueries.length ? recentQueries.slice(0, 2) : []).concat(EXAMPLES).slice(0, 6).map((ex) => (
+        {(recentQueries.length ? recentQueries.slice(0, 2) : []).concat(EXAMPLE_KEYS.map((k) => t(k))).slice(0, 6).map((ex) => (
           <button key={ex} onClick={() => ask(ex, undefined, { newThread: true })} className="max-w-full truncate rounded-md border bg-card px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-foreground cursor-pointer" title={ex}>{ex}</button>
         ))}
       </div>
@@ -317,11 +314,11 @@ export function ResearchPage(props: ResearchPageProps) {
                   lanesOpen={panelOpen}
                   autoFocus={!hasConversation}
                   inputRef={inputRef}
-                  placeholder={hasConversation ? "Ask a follow-up in this thread…" : undefined}
+                  placeholder={hasConversation ? t("research.followUp") : undefined}
                 />
                 <div className="mt-1.5 flex items-center justify-between px-1 text-[10.5px] text-muted-foreground">
-                  <span>Enter to ask · Shift+Enter for a new line · / focuses · [ threads · ] panel · Esc stops</span>
-                  <span className="hidden sm:inline">{settings.fast ? "Fast mode: one pass, up to two sources read — an orientation, not a reviewed answer." : "Answers cite only sources the lanes read; unresolved citations stay marked VERIFY."}</span>
+                  <span className="truncate">{t("research.hint")}</span>
+                  <span className="hidden truncate sm:inline">{settings.fast ? t("research.fastNote") : t("research.fullNote")}</span>
                 </div>
               </div>
             </div>

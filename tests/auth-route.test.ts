@@ -141,7 +141,7 @@ describe("withAuth in header mode", () => {
 });
 
 describe("scope helpers", () => {
-  const partner: Principal = { id: "p", name: "p", tenantId: "seeger-weiss", roles: ["partner"], matterIds: "*", source: "header" };
+  const partner: Principal = { id: "p", name: "p", tenantId: "default", roles: ["partner"], matterIds: "*", source: "header" };
   const member: Principal = { ...partner, roles: ["associate"], matterIds: [MATTERS.afff, "m_unknown"] };
   const guest: Principal = { ...partner, roles: ["client_guest"] };
   it("enumerates tenant matters for wildcard access and never widens an explicit list", () => {

@@ -1,0 +1,30 @@
+{
+  "id": "india-ipc-bns-date-boundary",
+  "category": "statutes",
+  "title": "IPC/BNS applicability turns on the offence date; splits are never collapsed",
+  "constitution": "Appendix B (the date of the offence decides which code applies; correspondence is a coded table); CLAUDE.md §24 high-risk fields",
+  "input": {
+    "offences": [
+      { "date": "2024-06-30", "expected": "IPC" },
+      { "date": "2024-07-01", "expected": "BNS" },
+      { "date": { "from": "2024-06-20", "to": "2024-07-05" }, "expected": "requires_review" },
+      { "date": "2024-02-30", "expected": "requires_review" },
+      { "date": null, "expected": "requires_review" }
+    ],
+    "mappings": [
+      { "code": "IPC", "section": "420", "expected": ["318(4)"], "status": "mapped" },
+      { "code": "IPC", "section": "302", "expected": ["103(1)"], "status": "mapped" },
+      { "code": "IPC", "section": "498A", "expected": ["85", "86"], "status": "split" },
+      { "code": "IPC", "section": "506", "expected": ["351(2)", "351(3)"], "status": "split" },
+      { "code": "CrPC", "section": "438", "expected": ["482"], "status": "mapped" },
+      { "code": "IPC", "section": "9999", "expected": [], "status": "unmapped" }
+    ]
+  },
+  "expected": "Offence on 30 June 2024 → IPC; on 1 July 2024 → BNS; a spanning period or bad date → requires_review. Split sections return every candidate; unknown sections are unmapped, never approximated.",
+  "passCriteria": [
+    "applicableCode returns the expected substantive code for each offence",
+    "mapSection returns exactly the expected candidates and status for each mapping"
+  ],
+  "grading": "code",
+  "requiresModel": false
+}

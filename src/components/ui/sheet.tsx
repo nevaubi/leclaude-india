@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { T } from "@/lib/i18n/client";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -43,9 +44,9 @@ const SheetContent = React.forwardRef<
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-accent cursor-pointer">
+        <DialogPrimitive.Close className="absolute end-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-accent cursor-pointer">
           <X className="size-4" />
-          <span className="sr-only">Close</span>
+          <span className="sr-only"><T k="ui.close" /></span>
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>

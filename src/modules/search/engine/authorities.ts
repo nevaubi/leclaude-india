@@ -2,6 +2,9 @@
  * Authority comparison (compare_authorities tool) and the table of authorities for exports.
  * Deterministic over the sources a run actually read. Pure and client-safe.
  */
+import { buildTableOfAuthorities, tableOfAuthoritiesMarkdown as indiaToaMarkdown } from "@/lib/india/citation-style";
+import { parseStatuteRef } from "@/lib/india/statutes";
+import { formatStatuteHit, hitAuthority } from "../india-citations";
 import { courtAbbreviation } from "../jurisdictions";
 import { formatBluebook, yearOf } from "../normalize";
 import { parseCiteMarkers } from "./markers";
@@ -9,7 +12,7 @@ import { splitParagraphs } from "./paragraphs";
 import { TREATMENT_LABEL } from "./treatment";
 import type { ResearchSource } from "./types";
 
-const HOLDING_RE = /\b(we hold|we conclude|we therefore hold|we affirm|we reverse|we agree|held that|the court held|holding that|accordingly,? we|it is ordered|we decline)\b/i;
+const HOLDING_RE = /\b(we hold|we conclude|we therefore hold|we affirm|we reverse|we agree|held that|the court held|holding that|accordingly,? we|it is ordered|we decline|it is held|we are of the (?:considered )?(?:view|opinion)|in view of the (?:above|foregoing)|the (?:appeal|petition|writ petition|revision) (?:is|stands) (?:allowed|dismissed)|the law (?:is|stands) (?:settled|declared))\b/i;
 
 /** Up to `max` holding-like sentences with their paragraph numbers (reader numbering). */
 export function holdingSentences(text: string, max = 2): { paragraph: number; sentence: string }[] {
@@ -108,6 +111,31 @@ export function tableOfAuthoritiesMarkdown(entries: ToaEntry[], title = "Table o
     for (const e of list) {
       const pins = e.refs.map((r) => `[${r.n}]${r.paragraphs.length ? ` ¶${r.paragraphs.sort((a, b) => a - b).join(", ¶")}` : ""}`).join("; ");
       lines.push(`- ${e.citation} — ${pins}${e.read ? "" : " — search excerpt only (not read)"}${e.treatment ? ` — ${e.treatment}` : ""}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+/**
+ * LeClaude India table of authorities for one answer: the citation engine's grouping (Supreme Court, High Courts by
+ * court, court not identified, Constitution and statutes) over the judgments and India Code sections the answer cites,
+ * followed by the pinpoints the answer used and any record / other sources. Authorities the engine cannot format are
+ * listed separately as unverified (never silently dropped).
+ */
+export function indiaTableOfAuthoritiesMarkdown(answer: string, sources: ResearchSource[], title = "Table of Authorities"): string {
+  const entries = tableOfAuthorities(answer, sources);
+  const citedIds = new Set(entries.map((e) => e.citation));
+  const cited = sources.filter((s) => s.n != null && citedIds.has(formatBluebook(s.hit)));
+  const cases = cited.filter((s) => s.kind === "caselaw" && (s.hit.india || s.hit.readRef?.kind === "judgment")).map((s) => hitAuthority(s.hit));
+  const statutes = cited.filter((s) => s.kind === "statutes").map((s) => parseStatuteRef(formatStatuteHit(s.hit))).filter((r): r is NonNullable<typeof r> => Boolean(r));
+  const toa = buildTableOfAuthorities(cases, statutes);
+  const lines = [entries.length ? indiaToaMarkdown(toa, title).trimEnd() : `## ${title}\n\n_The answer cites no numbered source._`, ""];
+  if (entries.length) {
+    lines.push("### Pinpoints used in this answer", "");
+    for (const e of entries) {
+      const pins = e.refs.map((r) => `[${r.n}]${r.paragraphs.length ? ` ¶${r.paragraphs.sort((a, b) => a - b).join(", ¶")}` : ""}`).join("; ");
+      lines.push(`- ${e.citation} — ${pins}${e.read ? "" : " — search excerpt only (not read)"}${e.treatment ? ` — ${e.treatment}` : ""}${e.group === "Record" || e.group === "Other authorities" ? ` — ${e.group.toLowerCase()}` : ""}`);
     }
     lines.push("");
   }

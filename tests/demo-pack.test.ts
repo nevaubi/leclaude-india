@@ -26,6 +26,8 @@ import { ensureLibraryStructure, searchLibrary } from "@/modules/library/service
 import { DEMO_MANIFEST_KEY, loadDemoPack, type DemoManifest } from "@/modules/demo";
 import { DEMO_MATTERS, DEMO_TEAM } from "@/modules/demo/ids";
 import { DEMO_FOLDERS } from "@/modules/demo/workspace";
+import { criminalCodesFor, validateCnr } from "@/modules/matters/india";
+import type { MatterRecord } from "@/modules/matters/types";
 import { runWithPrincipal } from "@/lib/auth/context";
 import { devPrincipal } from "@/lib/auth/principal";
 import * as demo from "@/app/api/demo/route";
@@ -40,7 +42,7 @@ const asHeader = (p: Body) => {
   return { [AUTH_HEADER_USER]: JSON.stringify(p) };
 };
 
-const C = DEMO_MATTERS.consumer;
+const C = DEMO_MATTERS.commercial;
 let ownerId = "";
 let ownMatterId = "";
 let ownMemberId = "";
@@ -98,55 +100,77 @@ describe("demo pack on an empty workspace", () => {
     expect(r.status).toBe(200);
     expect(r.body.loaded).toBe(true);
     firstCounts = r.body.counts;
-    expect(firstCounts.matters).toBe(2);
+    expect(firstCounts.matters).toBe(3);
     expect(firstCounts.teamMembers).toBe(2);
-    expect(firstCounts.officeDocs).toBeGreaterThanOrEqual(5);
-    expect(firstCounts.tasks).toBeGreaterThanOrEqual(20);
-    expect(firstCounts.events).toBeGreaterThanOrEqual(12);
-    expect(firstCounts.libraryItems).toBeGreaterThanOrEqual(20);
-    expect(firstCounts.edocs).toBeGreaterThan(0);
-    expect(firstCounts.depositions).toBeGreaterThan(0);
+    expect(firstCounts.officeDocs).toBeGreaterThanOrEqual(3);
+    expect(firstCounts.tasks).toBeGreaterThanOrEqual(10);
+    expect(firstCounts.events).toBeGreaterThanOrEqual(6);
+    expect(firstCounts.libraryItems).toBeGreaterThanOrEqual(14);
+    expect(firstCounts.edocs).toBeGreaterThanOrEqual(100);
+    expect(firstCounts.depositions).toBe(2);
+    expect(r.body.matterIds).toEqual(Object.values(DEMO_MATTERS));
     expect(r.body.durationMs).toBeLessThan(30_000);
     console.log(`[demo-pack] load ${r.body.durationMs} ms`, JSON.stringify(firstCounts));
   });
 
-  it("wrote the matters, team, folders, office documents, tasks and events", () => {
+  it("wrote the matters (with Indian case particulars), team, folders, office drafts, tasks and hearings", () => {
     const d = db();
-    const consumer = d.matters.get(C)!;
-    expect(consumer.leadAttorneyId).toBe(ownerId);
-    expect(new Set(consumer.teamIds)).toEqual(new Set([ownerId, DEMO_TEAM.associate, DEMO_TEAM.paralegal]));
-    expect(consumer.caption).toMatch(/DEMO/);
-    expect(d.matters.get(DEMO_MATTERS.doj)).not.toBeNull();
+    const suit = d.collection<MatterRecord>("matters").get(C)!;
+    expect(suit.leadAttorneyId).toBe(ownerId);
+    expect(new Set(suit.teamIds)).toEqual(new Set([ownerId, DEMO_TEAM.junior, DEMO_TEAM.clerk]));
+    expect(suit.caption).toMatch(/demonstration data/);
+    expect(suit.india).toMatchObject({ courtId: "ka-blr-commercial", caseType: "Com.O.S.", caseNumber: "1187", caseYear: 2023 });
+    const writ = d.collection<MatterRecord>("matters").get(DEMO_MATTERS.writ)!;
+    expect(writ.india).toMatchObject({ courtId: "hc-telangana", caseType: "W.P.", caseNumber: "18234" });
+    expect(validateCnr(writ.india!.cnr!, "hc-telangana")).toMatchObject({ ok: true });
+    const bail = d.collection<MatterRecord>("matters").get(DEMO_MATTERS.bail)!;
+    expect(bail.india?.offenceDate).toBe("2026-08-12");
+    expect(criminalCodesFor(bail.india?.offenceDate)?.substantive).toBe("BNS");
     const team = listTeam();
-    expect(team.filter((m) => m.id === DEMO_TEAM.associate || m.id === DEMO_TEAM.paralegal).map((m) => [m.firmRole, m.active])).toEqual(expect.arrayContaining([["Associate", true], ["Paralegal", true]]));
+    expect(team.filter((m) => m.id === DEMO_TEAM.junior || m.id === DEMO_TEAM.clerk).map((m) => [m.firmRole, m.active])).toEqual(expect.arrayContaining([["Associate", true], ["Paralegal", true]]));
     for (const id of Object.values(DEMO_FOLDERS)) expect(d.library.get(id)?.type).toBe("folder");
-    const kinds = d.officeDocs.find((x) => x.matterId === C).map((x) => x.kind);
-    expect(new Set(kinds)).toEqual(new Set(["word", "sheet", "slides", "pdf"]));
-    for (const doc of d.officeDocs.find((x) => x.matterId === C)) expect(d.library.findOne((l) => l.officeDocId === doc.id)).not.toBeNull();
-    const pdf = d.officeDocs.find((x) => x.matterId === C && x.kind === "pdf")[0];
-    expect((pdf.content as { pageCount: number }).pageCount).toBeGreaterThan(0);
-    const tasks = d.tasks.find((t) => t.matterId === C || t.matterId === DEMO_MATTERS.doj);
+    const drafts = d.officeDocs.find((x) => Object.values(DEMO_MATTERS).includes(x.matterId as never));
+    expect(drafts.map((x) => x.kind)).toEqual(["word", "word", "word"]);
+    for (const doc of drafts) expect(d.library.findOne((l) => l.officeDocId === doc.id)).not.toBeNull();
+    const bailDraft = drafts.find((x) => x.matterId === DEMO_MATTERS.bail)!;
+    expect(JSON.stringify(bailDraft.content)).toContain("SECTION 483 OF THE BHARATIYA NAGARIK SURAKSHA SANHITA");
+    expect(JSON.stringify(bailDraft.content)).toContain("HIGH COURT FOR THE STATE OF TELANGANA");
+    const tasks = d.tasks.find((t) => Object.values(DEMO_MATTERS).includes(t.matterId as never));
     const today = new Date().toISOString().slice(0, 10);
     expect(tasks.some((t) => t.status !== "done" && t.dueAt! < today)).toBe(true);
     expect(tasks.some((t) => t.dueAt! > today)).toBe(true);
-    expect(new Set(tasks.map((t) => t.assigneeId))).toEqual(new Set([ownerId, DEMO_TEAM.associate, DEMO_TEAM.paralegal]));
-    // Calendar depositions of transcribed witnesses match the transcripts' dates.
-    for (const dep of d.depositions.find((x) => x.matterId === C)) {
-      expect(d.events.find((e) => e.kind === "deposition" && e.startsAt.slice(0, 10) === dep.date.slice(0, 10)).length).toBeGreaterThan(0);
-    }
+    expect(new Set(tasks.map((t) => t.assigneeId))).toEqual(new Set([ownerId, DEMO_TEAM.junior, DEMO_TEAM.clerk]));
+    // Each matter has its next hearing on the calendar, on the date stored with the case particulars.
+    for (const m of [suit, writ, bail]) expect(d.events.find((e) => e.matterId === m.id && e.kind === "hearing" && e.startsAt.slice(0, 10) === m.india!.nextHearing).length, m.id).toBe(1);
+  });
+
+  it("resolves exhibit marks exactly and reports an unmarked exhibit instead of substituting", async () => {
+    const hit = await runWithPrincipal(devPrincipal(), () => searchDocuments({ matterId: C, q: "Ex.P14" }));
+    expect(hit.hits.map((h) => (h as { india?: { exhibit?: string } }).india?.exhibit)).toEqual(["Ex.P14"]);
+    const range = await runWithPrincipal(devPrincipal(), () => searchDocuments({ matterId: C, q: 'exhibit:"Ex.P1 to P25"', limit: 200 }));
+    expect(range.total).toBe(25);
+    const none = await runWithPrincipal(devPrincipal(), () => searchDocuments({ matterId: C, q: "Ex.P40" }));
+    expect(none.total).toBe(0);
+    expect(none.parsed.warnings).toContain("Ex.P40 is not marked in this matter");
+    // The writ matter has no Ex.P14: the mark does not reach across matters.
+    const other = await runWithPrincipal(devPrincipal(), () => searchDocuments({ matterId: DEMO_MATTERS.writ, q: "Ex.P14" }));
+    expect(other.total).toBe(0);
   });
 
   it("indexes the e-discovery documents within the matter only", async () => {
-    const res = await runWithPrincipal(devPrincipal(), () => searchDocuments({ matterId: C, q: "commission", semantic: true }));
+    const res = await runWithPrincipal(devPrincipal(), () => searchDocuments({ matterId: C, q: "acknowledge invoices", semantic: true }));
     expect(res.total).toBeGreaterThan(0);
-    const hits = await hybridSearch(VECTOR_COLLECTIONS.edocs, "commission", { k: 5, scope: matterRetrievalScope(C) });
+    const hits = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Sankalp acknowledge", { k: 5, scope: matterRetrievalScope(C) });
     expect(hits.length).toBeGreaterThan(0);
-    const elsewhere = await hybridSearch(VECTOR_COLLECTIONS.edocs, "commission", { k: 5, scope: matterRetrievalScope(ownMatterId) });
+    const elsewhere = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Sankalp acknowledge", { k: 5, scope: matterRetrievalScope(ownMatterId) });
     expect(elsewhere).toEqual([]);
+    // The commercial suit's documents do not surface in the Hyderabad writ's scope.
+    const writScope = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Sankalp", { k: 5, scope: matterRetrievalScope(DEMO_MATTERS.writ) });
+    expect(writScope.every((h) => !h.docId.includes("_ed_p"))).toBe(true);
     // Library notes and office documents are searchable in the library as soon as the load returns.
-    const lib = await runWithPrincipal(devPrincipal(), () => searchLibrary("anti-steering"));
-    expect(lib.hits.some((h) => h.item.id.startsWith("demo_apl_lib_"))).toBe(true);
-    const office = await runWithPrincipal(devPrincipal(), () => searchLibrary("overcharge"));
+    const lib = await runWithPrincipal(devPrincipal(), () => searchLibrary("master data"));
+    expect(lib.hits.some((h) => h.item.id.startsWith("demo_in_lib_"))).toBe(true);
+    const office = await runWithPrincipal(devPrincipal(), () => searchLibrary("Nagarik Suraksha"));
     expect(office.hits.some((h) => h.source === "office")).toBe(true);
   });
 
@@ -175,7 +199,7 @@ describe("demo pack on an empty workspace", () => {
     expect(db().people.get(ownerId)).not.toBeNull();
     expect(db().people.get(ownMemberId)).not.toBeNull();
     expect(db().matters.get(ownMatterId)).not.toBeNull();
-    const hits = await hybridSearch(VECTOR_COLLECTIONS.edocs, "commission", { k: 5, scope: matterRetrievalScope(C) });
+    const hits = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Sankalp acknowledge", { k: 5, scope: matterRetrievalScope(C) });
     expect(hits).toEqual([]);
     // Every collection is back to its pre-load size (audit events are append-only and excluded).
     const after = collectionSizes();

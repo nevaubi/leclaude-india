@@ -2,6 +2,7 @@ import type { EDocument, Person, PrivilegeLogEntry } from "@/lib/types/domain";
 import type { PrivilegeLogRow, ProductionSummary } from "./types";
 import { parseBates } from "./query";
 import { matterPeople } from "./analysis/service";
+import { INDIA_COUNSEL_TITLE_RE, INDIA_PRIVILEGE_LABELS, INDIA_PRIVILEGE_LEGEND, type IndiaEDocument } from "./india";
 
 /**
  * Server-side helpers shared by the seed, the service and tests: privilege-log templating, CSV/markdown export,
@@ -19,7 +20,7 @@ const COUNSEL_TITLE_RE = /\b(counsel|attorney|lawyer|solicitor|barrister|esq)\b/
 export function counselRosterFromPeople(people: Person[]): CounselRoster {
   const out = new Map<string, string>();
   for (const p of people) {
-    if (p.title && COUNSEL_TITLE_RE.test(p.title)) out.set(p.name, p.title);
+    if (p.title && (COUNSEL_TITLE_RE.test(p.title) || INDIA_COUNSEL_TITLE_RE.test(p.title))) out.set(p.name, p.title);
     else if (p.role === "attorney") out.set(p.name, p.organization ? `counsel, ${p.organization}` : "counsel");
   }
   return out;
@@ -110,10 +111,10 @@ export function privilegeLogCsv(rows: PrivilegeLogRow[]): string {
 }
 
 export function privilegeLogMarkdown(rows: PrivilegeLogRow[], matterName: string, caption?: string, roster?: CounselRoster): string {
-  const head = `# Privilege Log\n\n**${matterName}**${caption ? ` · ${caption}` : ""}\n\nProduced pursuant to Fed. R. Civ. P. 26(b)(5)(A). ${rows.length} entr${rows.length === 1 ? "y" : "ies"}. Generated ${new Date().toISOString().slice(0, 10)}.\n\n`;
+  const head = `# Privilege Log\n\n**${matterName}**${caption ? ` · ${caption}` : ""}\n\nDocuments withheld from disclosure / inspection on the ground of privilege (Bharatiya Sakshya Adhiniyam, 2023, ss.132–134; Indian Evidence Act, 1872, ss.126–129). ${rows.length} entr${rows.length === 1 ? "y" : "ies"}. Generated ${new Date().toISOString().slice(0, 10)}.\n\n`;
   const table = ["| No. | Bates | Date | Type | Author | Recipients | Basis | Description |", "| --- | --- | --- | --- | --- | --- | --- | --- |"];
   rows.forEach((r, i) => table.push(`| ${i + 1} | ${r.bates} | ${r.date} | ${r.docType} | ${r.author} | ${r.recipients.join("; ") || "—"} | ${r.basis} | ${r.description.replace(/\|/g, "/")} |`));
-  const legend = `\n\n## Legend\n\n- **Attorney-client**: confidential communication between client and counsel for the purpose of obtaining or providing legal advice.\n- **Work product**: material prepared by or at the direction of counsel in anticipation of litigation (Fed. R. Civ. P. 26(b)(3)).${counselLegend(rows, roster)}`;
+  const legend = `\n\n## Legend\n\n${INDIA_PRIVILEGE_LEGEND.map((l) => `- ${l}`).join("\n")}${counselLegend(rows, roster)}`;
   return head + table.join("\n") + legend;
 }
 
@@ -186,7 +187,15 @@ export function productionSummary(matterId: string, docs: EDocument[]): Producti
 
 /** Text that goes into the keyword/vector index for a document. */
 export function indexTextFor(d: EDocument) {
-  return `${d.bates}\n${d.subject}\n${d.custodianName}\n${d.from ?? ""}\n${(d.to ?? []).join("; ")}\n\n${d.text}`;
+  // Exhibit mark and document number (Indian record metadata) are indexed with the production number so "Ex.P7" finds the document.
+  const india = (d as IndiaEDocument).india;
+  const refs = [d.bates, india?.exhibit, india?.docNumber].filter(Boolean).join(" · ");
+  return `${refs}\n${d.subject}\n${d.custodianName}\n${d.from ?? ""}\n${(d.to ?? []).join("; ")}\n\n${d.text}`;
+}
+
+/** Privilege basis label with Indian statutory wording (stored ids are unchanged). */
+export function privilegeBasisLabel(basis: keyof typeof INDIA_PRIVILEGE_LABELS | undefined | null): string {
+  return INDIA_PRIVILEGE_LABELS[basis ?? "attorney-client"] ?? String(basis);
 }
 
 export function toPrivilegeLogRow(e: PrivilegeLogEntry, doc: EDocument | null): PrivilegeLogRow {

@@ -6,6 +6,9 @@
 import type { Workflow, WorkflowEdge, WorkflowFrontend, WorkflowNode, WorkflowNodeType } from "@/lib/types/domain";
 import { autoLayout } from "./graph";
 import { defaultConfigFor, type AnyNodeType } from "./registry";
+import { INDIA_TEMPLATES, INDIA_TEMPLATE_FRONTENDS, INDIA_WORKFLOW_TEMPLATE_IDS } from "./templates-india";
+
+export { INDIA_WORKFLOW_TEMPLATE_IDS } from "./templates-india";
 
 /**
  * Deliverable step configuration: format, label and folder come from the front
@@ -121,7 +124,7 @@ const TEMPLATES: TemplateDef[] = [
     name: "Deposition digest",
     description: "Turn a rough transcript into a page:line digest of key admissions, contradictions and exhibits, save the memo to the matter and tell the team.",
     category: "discovery",
-    tags: ["deposition", "transcript", "digest", "MDL"],
+    tags: ["deposition", "transcript", "digest", "PW / DW"],
     inputs: [
       { key: "transcript_text", label: "Transcript (upload or paste)", type: "file", required: true },
       { key: "witness", label: "Witness", type: "text", required: true, placeholder: "Witness name, title" },
@@ -134,12 +137,12 @@ const TEMPLATES: TemplateDef[] = [
       N("extract", "ai.extract", "Pull admissions & exhibits", {
         source: "Witness: {{inputs.witness}}\n\nDigest:\n{{steps.digest.output.text}}\n\nTranscript:\n{{inputs.transcript_text | truncate:90000}}",
         modelTier: "primary",
-        instructions: "Every item must carry a page:line cite in the form 142:8–143:2. Contradictions should name the document (Bates) or prior testimony they conflict with.",
+        instructions: "Every item must carry a page:line cite in the form 14:8–15:2 (for a chief-examination affidavit, the paragraph number as well). Keep examination-in-chief, cross-examination and re-examination apart. Contradictions should name the document (exhibit mark such as Ex.P7, or document reference) or prior testimony they conflict with. If the witness qualifies an earlier answer later, report both.",
         fields: [
           { name: "key_admissions", type: "string[]", description: "Admissions helpful to our client, each with page:line" },
           { name: "harmful_testimony", type: "string[]", description: "Testimony that hurts our client, each with page:line" },
           { name: "contradictions", type: "string[]", description: "Statements that conflict with documents or earlier testimony, with cites on both sides" },
-          { name: "exhibits", type: "string[]", description: "Exhibits marked, with Bates numbers where stated" },
+          { name: "exhibits", type: "string[]", description: "Exhibits marked or confronted (Ex.P / Ex.D / Ex.C marks), with document references where stated" },
           { name: "objections_instructions", type: "string[]", description: "Objections and instructions not to answer with page:line and basis" },
           { name: "follow_up", type: "string[]", description: "Follow-up questions or documents to chase before the next session" },
           { name: "credibility_notes", type: "string[]", description: "Demeanor / credibility observations supported by the record" },
@@ -237,7 +240,7 @@ const TEMPLATES: TemplateDef[] = [
     name: "Privilege log builder",
     description: "Collect the documents coded privileged for a custodian, draft a privilege-safe description and basis for each, and save the log as a workbook ready for paralegal QC.",
     category: "discovery",
-    tags: ["privilege", "log", "e-discovery", "CMO"],
+    tags: ["privilege", "log", "case records", "BSA s.132"],
     inputs: [
       { key: "matter", label: "Matter", type: "matter", required: true },
       { key: "custodian", label: "Custodian (optional)", type: "text", placeholder: "Custodian surname" },
@@ -248,10 +251,10 @@ const TEMPLATES: TemplateDef[] = [
       N("search", "data.search_ediscovery", "Privileged documents", { query: "*", matterId: "{{inputs.matter}}", custodian: "{{inputs.custodian}}", privilegedOnly: true, limit: 25 }),
       N("entries", "logic.loop", "For each document", { over: "{{steps.search.output.results}}", maxIterations: 50, itemLabel: "document", stopOnError: false }),
       N("describe", "ai.prompt", "Draft log entry", {
-        instructions: "You draft privilege log entries that comply with FRCP 26(b)(5)(A) and the MDL case management order: describe the nature of the document without revealing privileged content, identify the attorney involved and state the basis. Never quote legal advice. Use the pattern 'Email chain reflecting/requesting legal advice of counsel ([attorney name, title]) regarding [subject matter category]'. Return JSON only.",
+        instructions: "You draft privilege log entries for documents withheld on the ground of privilege under Indian law: advocate–client communications (Bharatiya Sakshya Adhiniyam, 2023, s.132; Indian Evidence Act, 1872, s.126) and confidential communications with a legal adviser (BSA s.134; IEA s.129). Describe the nature of the document without revealing privileged content, identify the advocate involved and state the basis. Never quote legal advice. An advocate merely copied on a business communication does not make it privileged: say so in the description instead of claiming privilege. Use the pattern 'E-mail from/to [advocate name, designation] seeking/giving legal advice regarding [subject matter]'.",
         prompt: "Document:\nBates {{loop.item.bates}} · {{loop.item.date}} · {{loop.item.type}}\nFrom: {{loop.item.from}}\nTo: {{loop.item.to | join:\"; \"}}\nSubject: {{loop.item.subject}}\nCustodian: {{loop.item.custodian}}\nCurrent coding: {{loop.item.coding | json:compact}}\n\nPassage:\n{{loop.item.passage}}",
         output: "json", modelTier: "fast", research: NO_RESEARCH,
-        jsonSchema: JSON.stringify({ type: "object", properties: { bates: { type: "string" }, date: { type: "string" }, doc_type: { type: "string" }, author: { type: "string" }, recipients: { type: "string" }, attorney: { type: "string" }, privilege_type: { type: "string", enum: ["Attorney-Client", "Work Product", "Attorney-Client; Work Product", "Common Interest"] }, description: { type: "string" }, basis: { type: "string" }, withheld: { type: "string", enum: ["Withheld in full", "Redacted"] } }, required: ["bates", "date", "doc_type", "author", "recipients", "attorney", "privilege_type", "description", "basis", "withheld"] }),
+        jsonSchema: JSON.stringify({ type: "object", properties: { bates: { type: "string" }, date: { type: "string" }, doc_type: { type: "string" }, author: { type: "string" }, recipients: { type: "string" }, attorney: { type: "string" }, privilege_type: { type: "string", enum: ["Advocate-client (BSA s.132)", "Legal adviser (BSA s.134)", "Advocate-client; Legal adviser", "Common interest", "Not privileged (advocate only copied)"] }, description: { type: "string" }, basis: { type: "string" }, withheld: { type: "string", enum: ["Withheld in full", "Redacted"] } }, required: ["bates", "date", "doc_type", "author", "recipients", "attorney", "privilege_type", "description", "basis", "withheld"] }),
       }),
       N("check", "ai.verify", "Verify entry against document", { output: "{{steps.describe.output}}", sources: "Bates {{loop.item.bates}} · {{loop.item.date}} · {{loop.item.type}}\nFrom: {{loop.item.from}}\nTo: {{loop.item.to | join:\"; \"}}\nSubject: {{loop.item.subject}}\nCustodian: {{loop.item.custodian}}\n\n{{loop.item.passage}}", stepId: "describe", mode: "structured", modelTier: "fast" }),
       N("dedupe", "data.dedupe", "Drop repeated entries", { items: "{{steps.entries.output.results | pluck:steps.describe}}", collection: "self", keyFields: "bates", matterId: "{{inputs.matter}}" }),
@@ -266,7 +269,7 @@ const TEMPLATES: TemplateDef[] = [
   {
     id: WORKFLOW_TEMPLATE_IDS.chronology,
     name: "Chronology from documents",
-    description: "Search the review set on a topic, extract dated events with Bates cites, and draft a chronology memo with gaps and open questions.",
+    description: "Search the review set on a topic, extract dated events with exhibit marks or document references, and draft a chronology memo with gaps and open questions.",
     category: "discovery",
     tags: ["chronology", "timeline", "e-discovery"],
     inputs: [
@@ -279,7 +282,7 @@ const TEMPLATES: TemplateDef[] = [
       N("start", "trigger.manual", "Run on topic"),
       N("search", "data.search_ediscovery", "Find documents", { query: "{{inputs.topic}}", matterId: "{{inputs.matter}}", dateAfter: "{{inputs.date_after}}", dateBefore: "{{inputs.date_before}}", limit: 25 }),
       N("events", "ai.prompt", "Extract dated events", {
-        instructions: "You build litigation chronologies. From the document excerpts, list every dated event (meetings, decisions, reports, communications). One event per row; date in YYYY-MM-DD (use YYYY-MM or YYYY when that is all the source gives); cite the Bates number; significance 1–5 (5 = case-dispositive). Never infer a date that is not in the text. Return JSON only.",
+        instructions: "You build litigation chronologies. From the document excerpts, list every dated event (meetings, decisions, reports, communications). One event per row; date in YYYY-MM-DD (use YYYY-MM or YYYY when that is all the source gives); cite the exhibit mark (Ex.P7) or the document reference; significance 1–5 (5 = case-dispositive). Never infer a date that is not in the text. Return JSON only.",
         prompt: "Topic: {{inputs.topic}}\nMatter: {{matter.name}}\n\nDocuments:\n{{steps.search.output.text}}",
         output: "json", modelTier: "primary", research: NO_RESEARCH,
         jsonSchema: JSON.stringify({ type: "object", properties: { events: { type: "array", items: { type: "object", properties: { date: { type: "string" }, event: { type: "string" }, actors: { type: "string" }, source: { type: "string" }, significance: { type: "integer" }, category: { type: "string", enum: ["corporate", "scientific", "regulatory", "communication", "litigation", "product", "other"] } }, required: ["date", "event", "actors", "source", "significance", "category"] } }, gaps: { type: "array", items: { type: "string" } } }, required: ["events", "gaps"] }),
@@ -305,8 +308,8 @@ const TEMPLATES: TemplateDef[] = [
     category: "research",
     tags: ["research", "memo", "approval", "case law"],
     inputs: [
-      { key: "question", label: "Research question", type: "textarea", required: true, placeholder: "Under Illinois law, does a consequential-damages waiver bar lost-profit claims where the breach was willful?" },
-      { key: "jurisdiction", label: "Jurisdiction", type: "select", options: ["Any", "7th-circuit", "4th-circuit", "9th-circuit", "11th-circuit", "california-state", "new-york-state", "delaware", "illinois-state", "federal-appellate", "scotus"] },
+      { key: "question", label: "Research question", type: "textarea", required: true, placeholder: "Does a written acknowledgement by a company's CFO by e-mail extend limitation under s.18 of the Limitation Act, 1963?" },
+      { key: "jurisdiction", label: "Jurisdiction", type: "select", options: ["Any", "matter-forum", "all-india", "sci", "hc-karnataka", "hc-telangana", "hc-andhra"] },
       { key: "matter", label: "Matter", type: "matter", required: true },
     ],
     nodes: [
@@ -372,7 +375,7 @@ const TEMPLATES: TemplateDef[] = [
         modelTier: "primary",
         labels: [
           { label: "clear", description: "No firm record involves the client or adverse parties in a related capacity" },
-          { label: "potential", description: "A record mentions one of the parties (e.g., as a counterparty, witness or former client) and needs partner review under Rule 1.7/1.9" },
+          { label: "potential", description: "A record mentions one of the parties (e.g., as a counterparty, witness or former client) and needs partner review under the Bar Council of India Rules (conflict of interest; Part VI, Chapter II) [VERIFY]" },
           { label: "conflict", description: "The firm currently represents an adverse party or holds confidential information from a former client on a substantially related matter" },
         ],
         instructions: "Apply ABA Model Rules 1.7, 1.9 and 1.10. Treat any hit that is not clearly the same entity as 'potential', not 'clear'.",
@@ -403,7 +406,7 @@ const TEMPLATES: TemplateDef[] = [
       N("start", "trigger.manual", "Run with brief"),
       N("verify", "data.legal_search", "Verify citations", { source: "verify_citations", text: "{{inputs.brief_text}}" }),
       N("report", "ai.prompt", "Write cite-check report", {
-        instructions: "You are a cite-checker. Using the verification results, produce a Markdown report: (1) Summary counts; (2) Table: Citation | Status | Resolved case name | Issue | Suggested fix; (3) Citations that resolved but whose case name does not match how the brief describes the case (possible wrong cite or wrong proposition); (4) Bluebook form issues you can see in the brief (missing pin cites, wrong reporter abbreviations, missing court/year parentheticals). Do not invent corrections; propose where to look.",
+        instructions: "You are a cite-checker. Using the verification results, produce a Markdown report: (1) Summary counts; (2) Table: Citation | Status | Resolved case name | Issue | Suggested fix; (3) Citations that resolved but whose case name does not match how the brief describes the case (possible wrong cite or wrong proposition); (4) Citation form issues you can see in the brief under Indian practice (neutral citation missing where the court issues one, wrong reporter abbreviation such as SCC / AIR / SCR / KarLJ / ALT, missing paragraph pinpoints, missing court for an unreported decision). Do not invent corrections; propose where to look.",
         prompt: "Brief: {{inputs.brief_name}} ({{matter.name}})\n\nVerification results:\n{{steps.verify.output.text}}\n\nRaw results:\n{{steps.verify.output.results | json}}\n\nBrief text:\n{{inputs.brief_text | truncate:80000}}",
         output: "text", modelTier: "primary", research: NO_RESEARCH,
       }),
@@ -682,7 +685,7 @@ export const TEMPLATE_FRONTENDS: Record<string, WorkflowFrontend> = {
   },
   [WORKFLOW_TEMPLATE_IDS.chronology]: {
     title: "Build a chronology",
-    intro: "Searches the review set on a topic, extracts dated events with Bates cites, drops what is already on the matter timeline and drafts the chronology memo.",
+    intro: "Searches the review set on a topic, extracts dated events with exhibit marks or document references, drops what is already on the matter timeline and drafts the chronology memo.",
     fields: [
       F.matter(),
       { key: "topic", label: "Topic", type: "text", required: true, placeholder: "Event, decision or issue" },
@@ -696,8 +699,8 @@ export const TEMPLATE_FRONTENDS: Record<string, WorkflowFrontend> = {
     title: "Research a question",
     intro: "Agentic research with verified citations, saved as a memo and held for partner approval before it circulates.",
     fields: [
-      { key: "question", label: "Research question", type: "textarea", required: true, placeholder: "Under Illinois law, does a consequential-damages waiver bar lost-profit claims where the breach was willful?" },
-      { key: "jurisdiction", label: "Jurisdiction", type: "select", options: ["Any", "7th-circuit", "4th-circuit", "9th-circuit", "11th-circuit", "california-state", "new-york-state", "delaware", "illinois-state", "federal-appellate", "scotus"], default: "Any" },
+      { key: "question", label: "Research question", type: "textarea", required: true, placeholder: "Does a written acknowledgement by a company's CFO by e-mail extend limitation under s.18 of the Limitation Act, 1963?" },
+      { key: "jurisdiction", label: "Jurisdiction", type: "select", options: ["Any", "matter-forum", "all-india", "sci", "hc-karnataka", "hc-telangana", "hc-andhra"], default: "Any" },
       F.matter(),
     ],
     submitLabel: "Start the research",
@@ -810,13 +813,28 @@ export const TEMPLATE_FRONTENDS: Record<string, WorkflowFrontend> = {
     submitLabel: "Build the profile",
     output: { formats: ["docx", "pdf", "md"], defaultFormat: "docx", defaultLabel: "Judge profile — {{inputs.judge}} — {{now | date:short}}" },
   },
+  // LeClaude India practice templates (default gallery).
+  ...INDIA_TEMPLATE_FRONTENDS,
 };
 
-/** Templates with positions computed by the layered layout and their front ends attached. */
-export function buildTemplates(): Workflow[] {
-  return TEMPLATES.map((t) => ({
+/**
+ * US-practice templates (PACER docket monitor, meet-and-confer, PAGA, Federal Register watch, FRCP designations, US
+ * judge profiles). They still compile and can be built with `buildUsTemplates()`, but LeClaude India does not seed
+ * them into the default gallery.
+ */
+export const US_ONLY_TEMPLATE_IDS: readonly string[] = [
+  WORKFLOW_TEMPLATE_IDS.docketMonitor,
+  WORKFLOW_TEMPLATE_IDS.meetConfer,
+  WORKFLOW_TEMPLATE_IDS.pagaChecklist,
+  WORKFLOW_TEMPLATE_IDS.regulatoryWatch,
+  WORKFLOW_TEMPLATE_IDS.depoDesignations,
+  WORKFLOW_TEMPLATE_IDS.judgeProfile,
+];
+
+function materialize(t: TemplateDef, frontend: WorkflowFrontend | undefined): Workflow {
+  return {
     ...t,
-    frontend: TEMPLATE_FRONTENDS[t.id],
+    frontend,
     nodes: autoLayout(t.nodes, t.edges),
     status: "active",
     isTemplate: true,
@@ -824,9 +842,27 @@ export function buildTemplates(): Workflow[] {
     createdAt: T0,
     updatedAt: T0,
     runsCount: 0,
-  }));
+  };
+}
+
+/** Default gallery: the Indian practice templates, then the jurisdiction-neutral ones (NDA intake, digests, logs…). */
+export function buildTemplates(): Workflow[] {
+  const us = new Set(US_ONLY_TEMPLATE_IDS);
+  return [
+    ...INDIA_TEMPLATES.map((t) => materialize(t, INDIA_TEMPLATE_FRONTENDS[t.id])),
+    ...TEMPLATES.filter((t) => !us.has(t.id)).map((t) => materialize(t, TEMPLATE_FRONTENDS[t.id])),
+  ];
+}
+
+/** US-practice templates (kept compiling; not in the default gallery). */
+export function buildUsTemplates(): Workflow[] {
+  const us = new Set(US_ONLY_TEMPLATE_IDS);
+  return TEMPLATES.filter((t) => us.has(t.id)).map((t) => materialize(t, TEMPLATE_FRONTENDS[t.id]));
 }
 
 export function templateById(id: string): Workflow | undefined {
-  return buildTemplates().find((t) => t.id === id);
+  return buildTemplates().find((t) => t.id === id) ?? buildUsTemplates().find((t) => t.id === id);
 }
+
+/** Every Indian template id is in the default gallery. */
+export const DEFAULT_GALLERY_INDIA_IDS: readonly string[] = Object.values(INDIA_WORKFLOW_TEMPLATE_IDS);

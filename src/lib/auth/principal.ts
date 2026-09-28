@@ -20,7 +20,7 @@ import { AUTH_HEADER_USER, AUTH_MODES, type AuthMode, type Principal, type Role 
  * In every mode a request carrying `Authorization: Bearer <CRON_SECRET>` (when CRON_SECRET is set) resolves to the
  * cron service principal so scheduled drivers keep working behind real authentication.
  */
-export const DEFAULT_TENANT_ID = "seeger-weiss";
+export const DEFAULT_TENANT_ID = "default";
 export const DEFAULT_DEV_ROLES: Role[] = ["associate"];
 const JWT_LEEWAY_SECONDS = 60;
 

@@ -17,6 +17,7 @@
  */
 import type { DepositionQA } from "@/lib/types/domain";
 import { OBJECTION_BASES, type ParseIssue, type ParsedTranscript, type TranscriptFormat } from "./types";
+import { isIndianDeposition, parseIndianDeposition } from "./india-deposition";
 
 export interface ParseOptions {
   /** Page number for the first estimated page in loose format (default 1). */
@@ -165,6 +166,8 @@ interface Block { kind: "question" | "answer" | "objection" | "colloquy"; page?:
  * server wraps it for txt/ptx/docx uploads and the client uses it for previews.
  */
 export function parseTranscript(text: string, opts: ParseOptions = {}): ParsedTranscript {
+  // Indian deposition sheets (chief by affidavit + cross/re-examination segments) have their own parser.
+  if (isIndianDeposition(text)) return parseIndianDeposition(text, { maxIssues: opts.maxIssues });
   const linesPerPage = opts.linesPerPage ?? 25;
   const maxIssues = opts.maxIssues ?? 60;
   const issues: ParseIssue[] = [];

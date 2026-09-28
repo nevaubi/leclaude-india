@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { Matter, PracticeArea } from "@/lib/types/domain";
 import type { TeamMember } from "@/modules/workspace/roles";
 import { CLIENT_SIDES, MATTER_STATUSES, PRACTICE_AREAS, sideLabel, statusLabel, type MatterInput, type MatterRecord } from "../types";
+import { emptyIndiaDraft, IndiaCaseFields, indiaDraftFrom, indiaDraftToInput, validateIndiaDraft, type IndiaDraft } from "./india-case-fields";
 
 const NONE = "__none__";
 
@@ -30,10 +31,12 @@ export interface MatterDraft {
   description: string;
   leadAttorneyId: string;
   teamIds: string[];
+  /** Indian case particulars (court, case number, CNR, hearings). */
+  india: IndiaDraft;
 }
 
 export function emptyDraft(): MatterDraft {
-  return { name: "", shortName: "", number: "", caption: "", client: "", clientSide: "plaintiff", practiceArea: "", court: "", jurisdiction: "", judge: "", status: "active", stage: "", openedAt: new Date().toISOString().slice(0, 10), description: "", leadAttorneyId: "", teamIds: [] };
+  return { name: "", shortName: "", number: "", caption: "", client: "", clientSide: "plaintiff", practiceArea: "", court: "", jurisdiction: "", judge: "", status: "active", stage: "", openedAt: new Date().toISOString().slice(0, 10), description: "", leadAttorneyId: "", teamIds: [], india: emptyIndiaDraft() };
 }
 
 export function draftFrom(m: MatterRecord): MatterDraft {
@@ -54,6 +57,7 @@ export function draftFrom(m: MatterRecord): MatterDraft {
     description: m.description ?? "",
     leadAttorneyId: m.leadAttorneyId ?? "",
     teamIds: m.teamIds ?? [],
+    india: indiaDraftFrom(m.india),
   };
 }
 
@@ -76,15 +80,17 @@ export function draftToInput(d: MatterDraft): MatterInput {
     description: d.description.trim(),
     leadAttorneyId: d.leadAttorneyId || null,
     teamIds: d.teamIds,
+    india: indiaDraftToInput(d.india),
   };
 }
 
-export type DraftErrors = Partial<Record<keyof MatterDraft | "form", string>>;
+export type DraftErrors = Partial<Record<keyof MatterDraft | "form" | `india.${string}`, string>>;
 
 export function validateDraft(d: MatterDraft): DraftErrors {
   const e: DraftErrors = {};
   if (!d.name.trim()) e.name = "Enter the matter name.";
   if (!d.practiceArea) e.practiceArea = "Choose a practice area.";
+  Object.assign(e, validateIndiaDraft(d.india));
   return e;
 }
 
@@ -137,6 +143,7 @@ export function MatterFields({ draft, onChange, errors, team, idPrefix, compact,
           <Input id={id("jur")} size="sm" value={draft.jurisdiction} onChange={(e) => set("jurisdiction", e.target.value)} placeholder="e.g. Federal, 3d Cir." />
         </Field>
       </div>
+      <IndiaCaseFields draft={draft.india} onChange={(india) => set("india", india)} errors={errors} idPrefix={idPrefix} grid={grid} />
       <Field label="Lead attorney" htmlFor={id("lead")} error={errors.leadAttorneyId} help={team && !attorneys.length ? "Add partners or associates in Settings → Team to assign a lead." : undefined}>
         <Select value={draft.leadAttorneyId || NONE} onValueChange={(v) => set("leadAttorneyId", v === NONE ? "" : v)} disabled={!team}>
           <SelectTrigger id={id("lead")} size="sm"><SelectValue placeholder={team ? "None" : "Loading team…"} /></SelectTrigger>

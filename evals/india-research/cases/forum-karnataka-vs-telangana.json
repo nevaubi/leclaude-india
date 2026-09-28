@@ -1,0 +1,15 @@
+{
+  "id": "india-forum-karnataka-vs-telangana",
+  "category": "research",
+  "title": "The same judgments bind or persuade according to the forum (Karnataka vs Telangana; pre-2019 Hyderabad High Court)",
+  "constitution": "§23 exact source identity; Appendix B (a High Court binds courts in its State; other High Courts persuade); docs/architecture/india.md (erstwhile common High Court at Hyderabad)",
+  "input": { "forums": ["hc-karnataka", "hc-telangana", "ka-subordinate"], "corpus": ["j_kar_ravi_kumar", "j_ts_syed_imran", "j_hyd_venkata_rao", "j_bom_anil_patil"] },
+  "expected": "Ravi Kumar (Karnataka HC) binds the Karnataka forum and Karnataka subordinate courts but only persuades in Telangana; Syed Imran (Telangana HC, 2022) binds in Telangana and persuades in Karnataka; K. Venkata Rao (common High Court at Hyderabad, 2016) is persuasive in both States; the binding lane searches only the Supreme Court and the forum High Court.",
+  "passCriteria": [
+    "binding/persuasive labels per forum exactly as expected, computed by classifyAuthority (never by the model)",
+    "binding lane court filter == ['sci', forum HC] for each High Court forum",
+    "evidence titles carry the same labels the registry computes"
+  ],
+  "grading": "code",
+  "requiresModel": false
+}

@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useI18n } from "@/lib/i18n/client";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, ArrowDown, ArrowUp, Columns3, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -114,6 +115,10 @@ const EMPTY: string[] = [];
  */
 export function DataTable<T>(props: DataTableProps<T>) {
   const { rows, columns, rowId, selectionMode = "none", noun = "row", virtualize = true, fill = true } = props;
+  const i18n = useI18n();
+  const { t } = i18n;
+  // Counted nouns come from the catalogue when it knows the noun ("noun.matter"), else the English plural.
+  const countText = (n: number) => i18n.tx(`noun.${noun}`, `${n.toLocaleString("en-IN")} ${pluralNoun(noun, n)}`, { count: n });
   const [sort, setSort] = useControlled<SortState | null>(props.sort, props.defaultSort ?? null, props.onSortChange);
   const [selected, setSelected] = useControlled<string[]>(props.selected, props.defaultSelected ?? EMPTY, props.onSelectedChange);
   const [activeId, setActiveId] = useControlled<string | null>(props.activeId, null, props.onActiveChange);
@@ -233,7 +238,7 @@ export function DataTable<T>(props: DataTableProps<T>) {
       >
         {hasSelectColumn && (
           <div role="gridcell" className="flex shrink-0 items-center justify-center" style={{ width: SELECT_COLUMN_WIDTH }}>
-            <Checkbox size="sm" checked={isSelected} onClick={(e) => onCheck(e, id)} onCheckedChange={() => {}} aria-label="Select row" tabIndex={-1} />
+            <Checkbox size="sm" checked={isSelected} onClick={(e) => onCheck(e, id)} onCheckedChange={() => {}} aria-label={t("ui.selectRow")} tabIndex={-1} />
           </div>
         )}
         {cols.map((c) => {
@@ -254,22 +259,22 @@ export function DataTable<T>(props: DataTableProps<T>) {
     <div className={cn("flex min-w-0 flex-col", fill && "h-full min-h-0", props.className)} data-density={density}>
       {showStrip && (
         <div className="flex h-8 shrink-0 items-center gap-2 border-b px-2 text-[11.5px] text-muted-foreground">
-          <span className="tabular">{selectionMode !== "none" ? selectionSummary(selected.length, total, noun) : `${total.toLocaleString()} ${pluralNoun(noun, total)}`}</span>
-          {selectionMode === "multi" && selected.length > 0 && <Button variant="ghost" size="xs" className="h-6 px-1.5 text-[11px]" onClick={() => { setSelected([]); setAnchorId(null); }}>Clear</Button>}
-          {props.loading && sorted.length > 0 && <Loader2 className="size-3 animate-spin" aria-label="Loading" />}
+          <span className="tabular">{selectionMode !== "none" ? (i18n.locale === "en" ? selectionSummary(selected.length, total, noun) : selected.length > 0 ? t("table.selected", { selected: selected.length, total: countText(total) }) : countText(total)) : countText(total)}</span>
+          {selectionMode === "multi" && selected.length > 0 && <Button variant="ghost" size="xs" className="h-6 px-1.5 text-[11px]" onClick={() => { setSelected([]); setAnchorId(null); }}>{t("common.clear")}</Button>}
+          {props.loading && sorted.length > 0 && <Loader2 className="size-3 animate-spin" aria-label={t("common.loading")} />}
           <div className="flex-1" />
           {props.stripActions}
           {chooser && (
             <DropdownMenu>
-              <Tip label="Columns and density"><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" aria-label="Columns and density"><Columns3 className="size-3.5" /></Button></DropdownMenuTrigger></Tip>
+              <Tip label={t("ui.columnsDensity")}><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" aria-label={t("ui.columnsDensity")}><Columns3 className="size-3.5" /></Button></DropdownMenuTrigger></Tip>
               <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel>Density</DropdownMenuLabel>
+                <DropdownMenuLabel>{t("ui.density")}</DropdownMenuLabel>
                 <DropdownMenuRadioGroup value={density} onValueChange={(v) => setDensity(v as Density)}>
-                  <DropdownMenuRadioItem value="compact">Compact</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="comfortable">Comfortable</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="compact">{t("ui.compact")}</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="comfortable">{t("ui.comfortable")}</DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuLabel>Columns</DropdownMenuLabel>
+                <DropdownMenuLabel>{t("ui.columns")}</DropdownMenuLabel>
                 {columns.map((c) => (
                   <DropdownMenuCheckboxItem key={c.id} checked={c.locked || !hidden.includes(c.id)} disabled={c.locked} onCheckedChange={() => setHidden(toggleColumn(columns, hidden, c.id))} onSelect={(e) => e.preventDefault()}>{c.label ?? (typeof c.header === "string" ? c.header : c.id)}</DropdownMenuCheckboxItem>
                 ))}
@@ -292,7 +297,7 @@ export function DataTable<T>(props: DataTableProps<T>) {
         <div role="row" className="sticky top-0 z-10 flex border-b bg-background grid-head" style={{ height: HEADER_HEIGHT, minWidth: gridWidth }}>
           {hasSelectColumn && (
             <div role="columnheader" className="flex shrink-0 items-center justify-center" style={{ width: SELECT_COLUMN_WIDTH }}>
-              <Checkbox size="sm" checked={allSelected ? true : someSelected ? "indeterminate" : false} onCheckedChange={(v) => { setSelected(v ? [...ids] : []); setAnchorId(null); }} aria-label="Select all" disabled={!sorted.length} />
+              <Checkbox size="sm" checked={allSelected ? true : someSelected ? "indeterminate" : false} onCheckedChange={(v) => { setSelected(v ? [...ids] : []); setAnchorId(null); }} aria-label={t("ui.selectAll")} disabled={!sorted.length} />
             </div>
           )}
           {cols.map((c) => {
@@ -320,13 +325,13 @@ export function DataTable<T>(props: DataTableProps<T>) {
 
         {/* Body */}
         {props.error ? (
-          <StateRow icon={<AlertCircle className="size-4 text-destructive" />} title="Could not load" detail={props.error} />
+          <StateRow icon={<AlertCircle className="size-4 text-destructive" />} title={t("state.couldNotLoad")} detail={props.error} />
         ) : props.loading && sorted.length === 0 ? (
           <div className="p-2" aria-busy>
             {Array.from({ length: 8 }).map((_, i) => <div key={i} className="mb-1 rounded bg-muted/60" style={{ height: rowH - 8, width: `${92 - (i % 4) * 8}%` }} />)}
           </div>
         ) : sorted.length === 0 ? (
-          props.empty ?? <StateRow title={`No ${pluralNoun(noun, 0)}`} />
+          props.empty ?? <StateRow title={i18n.locale === "en" ? `No ${pluralNoun(noun, 0)}` : t("state.empty")} />
         ) : virtualize ? (
           <div className="relative w-full" style={{ height: virtualizer.getTotalSize(), minWidth: gridWidth }}>
             {items.map((v) => renderRow(sorted[v.index], v.index, { transform: `translateY(${v.start}px)` }))}

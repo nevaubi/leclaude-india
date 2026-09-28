@@ -5,6 +5,7 @@
  */
 import type { CodingDecision } from "@/lib/types/domain";
 import { classifyAuthority, courtAbbreviation } from "./jurisdictions";
+import { formatJudgmentCitation, formatStatuteHit, indianDate, shortJudgmentCite } from "./india-citations";
 import type { SearchHit, SearchSource } from "./types";
 
 // ---- raw shapes as returned by the toolkit execute() functions ---------------
@@ -200,6 +201,54 @@ export function normalizeEdoc(raw: RawEdoc): SearchHit {
   };
 }
 
+// ---- India: judgments (SC/HC corpus, Indian Kanoon) and India Code sections ------------------
+
+/** Row shape returned by search_judgments (src/lib/ai/toolkit/india.ts judgmentRow). */
+export interface RawJudgment { source: string; title: string; content?: string[]; id: string; court?: string; court_id?: string | null; unresolved_court?: string; bench_id?: string; bench_strength?: number; decided?: string; neutral_citation?: string; reporter_citations?: string[]; judges?: string[]; case_number?: string; case_type?: string; language?: string; translations?: { language: string; origin: string }[]; statutes?: string[]; treatment?: unknown; case_name?: string; url?: string; provider?: string; score?: number }
+
+/** Row shape returned by search_statutes (India Code). */
+export interface RawIndiaSection { source: string; title: string; content?: string[]; id: string; enactment?: string; section?: string; heading?: string; replaced_by?: string; in_force_from?: string; url?: string; year?: number }
+
+export function normalizeJudgment(raw: RawJudgment, ctx: NormalizeContext): SearchHit {
+  const courtId = raw.court_id ?? null;
+  const treatment = Array.isArray(raw.treatment) ? (raw.treatment as { status: string; by?: string; note?: string }[]) : undefined;
+  return {
+    id: `judgment:${raw.id}`,
+    source: "caselaw",
+    title: clean(raw.case_name ?? raw.title) || "Untitled judgment",
+    subtitle: [raw.court, raw.case_number, raw.bench_strength ? `${raw.bench_strength}-judge bench` : ""].filter(Boolean).join(" · "),
+    cite: raw.neutral_citation ?? raw.reporter_citations?.[0],
+    citations: [raw.neutral_citation, ...(raw.reporter_citations ?? [])].filter((x): x is string => Boolean(x)),
+    court: raw.court,
+    courtId: courtId ?? undefined,
+    date: raw.decided,
+    snippet: clean((raw.content ?? []).join(" ")).slice(0, 600),
+    url: raw.url,
+    score: raw.score,
+    judge: raw.judges?.join(", "),
+    docketNumber: raw.case_number,
+    authority: classifyAuthority(courtId, ctx.jurisdiction, ctx.courts, raw.decided),
+    readRef: { kind: "judgment", id: raw.id },
+    india: { judgmentId: raw.id, courtId, unresolvedCourt: raw.unresolved_court, benchId: raw.bench_id, benchStrength: raw.bench_strength, judges: raw.judges, neutralCitation: raw.neutral_citation, reporterCitations: raw.reporter_citations, caseNumber: raw.case_number, caseType: raw.case_type, language: raw.language, translations: raw.translations, statutes: raw.statutes, corpusTreatment: treatment?.length ? treatment : undefined, provider: raw.provider },
+  };
+}
+
+export function normalizeIndiaSection(raw: RawIndiaSection): SearchHit {
+  return {
+    id: `section:${raw.id}`,
+    source: "statutes",
+    title: raw.title,
+    subtitle: [raw.enactment, raw.replaced_by ? `replaced by ${raw.replaced_by}` : ""].filter(Boolean).join(" · "),
+    cite: raw.enactment && raw.section ? `${raw.enactment}, s. ${raw.section}` : raw.title,
+    date: raw.in_force_from,
+    snippet: clean((raw.content ?? []).join(" ")).slice(0, 600),
+    url: raw.url,
+    authority: "n/a",
+    readRef: { kind: "section", id: raw.id },
+    india: { enactment: raw.enactment, section: raw.section, replacedBy: raw.replaced_by, provider: "india-code" },
+  };
+}
+
 /** Web hits arrive as agent citation events, not structured retrieval. */
 export function normalizeWebCitation(c: { title: string; url?: string; snippet?: string }, index: number): SearchHit {
   let host = "";
@@ -213,11 +262,11 @@ export function normalizeToolResult(source: SearchSource, payload: unknown, ctx:
   const rows = Array.isArray(p.results) ? p.results : [];
   let hits: SearchHit[] = [];
   switch (source) {
-    case "caselaw": hits = rows.map((r, i) => normalizeCaseLaw(r as RawCaseLaw, ctx, i)); break;
+    case "caselaw": hits = rows.map((r, i) => (isJudgmentRow(r) ? normalizeJudgment(r, ctx) : normalizeCaseLaw(r as RawCaseLaw, ctx, i))); break;
     case "dockets": hits = rows.map((r, i) => normalizeDocket(r as RawDocket, ctx, i)); break;
     case "regulations": hits = rows.map((r, i) => normalizeCfr(r as RawCfr, i)); break;
     case "federal_register": hits = rows.map((r, i) => normalizeFederalRegister(r as RawFr, i)); break;
-    case "statutes": hits = rows.map((r, i) => normalizeStatute(r as RawStatute, i)); break;
+    case "statutes": hits = rows.map((r, i) => (isIndiaSectionRow(r) ? normalizeIndiaSection(r) : normalizeStatute(r as RawStatute, i))); break;
     case "library": hits = rows.map((r) => normalizeLibrary(r as RawLibrary)); break;
     case "ediscovery": hits = rows.map((r) => normalizeEdoc(r as RawEdoc)); break;
     case "web": hits = []; break;
@@ -226,15 +275,29 @@ export function normalizeToolResult(source: SearchSource, payload: unknown, ctx:
   return { hits: dedupe(hits), total };
 }
 
+function isJudgmentRow(r: unknown): r is RawJudgment {
+  return Boolean(r && typeof r === "object" && typeof (r as RawJudgment).source === "string" && (r as RawJudgment).source.startsWith("judgment://"));
+}
+
+function isIndiaSectionRow(r: unknown): r is RawIndiaSection {
+  return Boolean(r && typeof r === "object" && typeof (r as RawIndiaSection).source === "string" && (r as RawIndiaSection).source.startsWith("statute://"));
+}
+
 export function dedupe(hits: SearchHit[]): SearchHit[] {
   const seen = new Set<string>();
   return hits.filter((h) => { if (seen.has(h.id)) return false; seen.add(h.id); return true; });
 }
 
-// ---- Bluebook -----------------------------------------------------------------
+// ---- Citation formatting ----------------------------------------------------------
 
-/** Full citation sentence for copying into a memo or brief. */
+/**
+ * Full citation for copying into a memo or pleading. LeClaude India: judgments and India Code sections use the Indian
+ * style (src/modules/search/india-citations.ts); the US Bluebook branches remain for records without Indian metadata.
+ * The name is kept for existing callers; `formatCitation` is the preferred alias.
+ */
 export function formatBluebook(hit: SearchHit): string {
+  if (hit.source === "caselaw" && (hit.india || hit.readRef?.kind === "judgment")) return formatJudgmentCitation(hit);
+  if (hit.source === "statutes" && (hit.india || hit.readRef?.kind === "section")) return formatStatuteHit(hit);
   switch (hit.source) {
     case "caselaw": {
       const year = yearOf(hit.date);
@@ -261,16 +324,20 @@ export function formatBluebook(hit: SearchHit): string {
     case "statutes":
       return hit.cite ? `${hit.cite}${hit.date ? ` (${yearOf(hit.date)})` : ""}` : hit.title;
     case "library":
-      return `${hit.title} (firm ${hit.library?.type ?? "library"}${hit.date ? `, ${bluebookDate(hit.date)}` : ""})`;
+      return `${hit.title} (firm ${hit.library?.type ?? "library"}${hit.date ? `, ${indianDate(hit.date)}` : ""})`;
     case "ediscovery":
-      return `${hit.edoc?.bates ?? hit.cite ?? ""}, ${hit.title}${hit.date ? ` (${bluebookDate(hit.date)})` : ""}`;
+      return `${hit.edoc?.bates ?? hit.cite ?? ""}, ${hit.title}${hit.date ? ` (${indianDate(hit.date)})` : ""}`;
     case "web":
-      return `${hit.title}, ${hit.subtitle ?? ""}${hit.url ? `, ${hit.url}` : ""} (last visited ${bluebookDate(new Date().toISOString())})`;
+      return `${hit.title}, ${hit.subtitle ?? ""}${hit.url ? `, ${hit.url}` : ""} (accessed ${indianDate(new Date().toISOString())})`;
   }
 }
 
+/** Preferred name for the citation formatter. */
+export const formatCitation = formatBluebook;
+
 /** Short cite for inline use ("Twombly, 550 U.S. at 555"). */
 export function shortCite(hit: SearchHit): string {
+  if (hit.source === "caselaw" && hit.india) return shortJudgmentCite(hit);
   if (hit.source === "caselaw") {
     const short = hit.title.split(/\s+v\.\s+/)[0]?.split(",")[0]?.trim() || hit.title;
     return hit.cite ? `${short}, ${hit.cite}` : short;

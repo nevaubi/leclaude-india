@@ -69,7 +69,7 @@ export async function verifyClaims(input: { answer: string; sources: VerifySourc
   const res = await generateJSON<{ verdicts: ClaimVerdict[] }>({
     fast: input.fast ?? true,
     reasoningEffort: "low",
-    instructions: `You are a meticulous verification clerk at a law firm. Extract every factual or legal claim in the ANSWER (dates, holdings, quotes, numbers, who-said-what, citations) — at most ${input.maxClaims ?? 25} — and decide for each whether the SOURCES support it verbatim or in substance, contradict it, or say nothing about it. Only the sources count; general knowledge is "unsupported". Quote the exact supporting or contradicting passage. Be strict about pin cites, dates and numbers.`,
+    instructions: `You are a meticulous verification clerk at a law firm. Extract every factual or legal claim in the ANSWER (dates, holdings, quotes, numbers, who-said-what, citations) — at most ${input.maxClaims ?? 25} — and decide for each whether the SOURCES support it verbatim or in substance, contradict it, or say nothing about it. Only the sources count; general knowledge is "unsupported". Quote the exact supporting or contradicting passage. Be strict about pin cites, dates and numbers. Sources and answers may be in Indian languages (Hindi, Kannada, Telugu, Urdu and others): judge meaning across languages, but a QUOTE must appear verbatim in the source's own language — a translated passage presented in quotation marks as the source's words is \"unsupported\". A rendering labelled \"(translation)\" is judged as a paraphrase.`,
     input: `ANSWER:\n${input.answer.slice(0, 20_000)}\n\nSOURCES:\n${sourceBlock}`,
     schema: VERDICT_SCHEMA,
     name: "claim_verification",

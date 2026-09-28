@@ -19,7 +19,9 @@ const EXAMPLES: { q: string; hint: string }[] = [
   { q: '"board meeting" custodian:smith type:email', hint: "Phrase + field prefixes" },
   { q: "defect w/5 report", hint: "Within 5 words, either order" },
   { q: '"test results" pre/3 draft', hint: "Ordered proximity" },
-  { q: "ABC-0000100–ABC-0000250", hint: "Bates range" },
+  { q: "Ex.P7", hint: "Exhibit mark (exact: Ex.P1 is not Ex.P12)" },
+  { q: 'exhibit:"Ex.D1 to D18"', hint: "Range of exhibits" },
+  { q: "ABC-0100–ABC-0250", hint: "Document reference range" },
   { q: "from:smith date:2024-03-01..2024-03-31", hint: "Sender + date range" },
   { q: "priv:yes -priv:wp cc:counsel", hint: "Privilege basis, exclude" },
   { q: "type:email hasattachment:yes responsive:none", hint: "Uncoded email families" },
@@ -59,7 +61,7 @@ export function SearchBox({ response, loading, onSaveSearch, onTermReport }: { r
             value={local}
             onChange={(e) => setLocal(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") commit(local); if (e.key === "Escape") { setLocal(""); commit(""); (e.target as HTMLInputElement).blur(); } }}
-            placeholder={semantic ? "Describe what you are looking for — e.g. internal concerns about product safety raised before launch" : 'Search — boolean, "phrases", w/5, custodian:, from:, date:, priv:, Bates ranges'}
+            placeholder={semantic ? "Describe what you are looking for — e.g. admissions that the invoices were due" : 'Search — boolean, "phrases", w/5, Ex.P7, exhibit:, from:, date:, priv:, document references'}
             className="h-7 w-full rounded-md border border-input bg-background pl-7 pr-7 font-mono text-[12px] placeholder:font-sans placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             aria-label="Search documents"
             autoComplete="off"
@@ -94,7 +96,7 @@ export function SearchBox({ response, loading, onSaveSearch, onTermReport }: { r
       </div>
       {(warnings.length > 0 || (parsed && (parsed.bates.length > 0 || parsed.fields.length > 0))) && (
         <div className="flex flex-wrap items-center gap-1.5 px-3 pb-1.5 text-[11px]">
-          {parsed?.bates.map((b, i) => <span key={i} className="font-mono text-muted-foreground">Bates {b.start}{b.end !== b.start ? ` – ${b.end}` : ""}</span>)}
+          {parsed?.bates.map((b, i) => <span key={i} className="font-mono text-muted-foreground">Doc. ref. {b.start}{b.end !== b.start ? ` – ${b.end}` : ""}</span>)}
           {parsed?.fields.map((f, i) => <span key={i} className="font-mono text-muted-foreground">{f.field}:{f.value}</span>)}
           {warnings.map((w, i) => <span key={i} className="inline-flex items-center gap-1 text-warning-foreground dark:text-warning"><AlertTriangle className="size-3" />{w}</span>)}
         </div>

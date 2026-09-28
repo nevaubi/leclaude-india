@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import Link from "next/link";
 import { ArrowDownWideNarrow, BookmarkPlus, Building2, Clock, ExternalLink, Gavel, Info, Landmark, MessageSquareText, Newspaper, RefreshCw, Scale, Search, Briefcase, Factory, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -92,11 +93,12 @@ function CategoryChips({ counts }: { counts: Record<string, number> }) {
 export function NewsOverview() {
   const { list, counts } = useVisibleNews();
   const setFocus = useHomeUI((s) => s.setFocus);
+  const t = useT();
   const shown = list.slice(0, 8);
   return (
-    <Section id="news" title="News" count={list.length} actions={<NewsToolbar />} onExpand={() => setFocus("news")}>
+    <Section id="news" title={t("home.section.news")} count={list.length} actions={<NewsToolbar />} onExpand={() => setFocus("news")}>
       <CategoryChips counts={counts} />
-      {shown.length === 0 ? <EmptyRow icon={Newspaper} title="No news matches" hint="Try another category, or refresh to pull the latest Federal Register documents." /> : (
+      {shown.length === 0 ? <EmptyRow icon={Newspaper} title={t("home.section.noNews")} hint={t("home.news.emptyHint")} /> : (
         <ul className="divide-y border-t">{shown.map((n, i) => <NewsCard key={n.id} item={n} index={i} />)}</ul>
       )}
       {list.length > shown.length && <button onClick={() => setFocus("news")} className="flex w-full items-center justify-center gap-1 border-t py-2 text-[11.5px] text-muted-foreground hover:text-foreground cursor-pointer">Show all {list.length}</button>}
@@ -107,10 +109,11 @@ export function NewsOverview() {
 export function NewsFocus() {
   const { list, counts } = useVisibleNews();
   const setFocus = useHomeUI((s) => s.setFocus);
+  const t = useT();
   return (
-    <Section id="news" title="News" icon={Newspaper} count={list.length} expanded onExpand={() => setFocus(null)} actions={<NewsToolbar full />} bodyClassName="overflow-auto scrollbar-thin">
+    <Section id="news" title={t("home.section.news")} icon={Newspaper} count={list.length} expanded onExpand={() => setFocus(null)} actions={<NewsToolbar full />} bodyClassName="overflow-auto scrollbar-thin">
       <CategoryChips counts={counts} />
-      {list.length === 0 ? <EmptyRow icon={Newspaper} title="No news matches" hint="Clear the search or filters." /> : (
+      {list.length === 0 ? <EmptyRow icon={Newspaper} title={t("home.section.noNews")} hint={t("home.news.emptyFocusHint")} /> : (
         <ul className="mx-auto max-w-4xl divide-y border-t">{list.map((n, i) => <NewsCard key={n.id} item={n} index={i} full />)}</ul>
       )}
     </Section>

@@ -8,11 +8,19 @@
  *   liver w/5 study            (proximity: within 5 words, either order)
  *   "rat study" pre/3 results  (ordered proximity: left before right within 3 words)
  *   hot:yes priv:wp responsive:no hasattachment:yes dupes:near family:MFC-0041877 thread:t_whitfield
+ *   Ex.P7   exhibit:D3   ex:"Ex.P1 to P25"   M.O.2   (Indian exhibit marks: exact mark, never a prefix)
  *
  * Adjacent terms are implicitly AND-ed. `-term` is NOT. Precedence: NOT > w/N, pre/N > AND > OR.
  * Field prefixes (Everlaw-style fielded lists): bates, family, thread, custodian, from, to, cc,
  * subject, date, type, issue, tag, hot, priv, responsive, hasattachment, dupes, pages, reviewer, hash, id.
  */
+
+import { formatExhibitMark, parseExhibitMark, parseExhibitRange } from "./india";
+
+/** Display form of an `exhibit:` value ("ex.p1..ex.p25" → "Ex.P1 to Ex.P25"). */
+export function exhibitValueLabel(value: string): string {
+  return value.split("..").map((v) => parseExhibitMark(v)?.canonical ?? v).join(" to ");
+}
 
 export type QueryNode =
   | { kind: "term"; value: string; phrase: boolean }
@@ -25,11 +33,14 @@ export type QueryNode =
   | { kind: "prox"; left: QueryNode; right: QueryNode; distance: number; ordered: boolean }
   | { kind: "empty" };
 
-export type QueryField = "custodian" | "type" | "from" | "to" | "cc" | "subject" | "date" | "bates" | "issue" | "tag" | "hash" | "id" | "family" | "thread" | "hot" | "priv" | "responsive" | "hasattachment" | "dupes" | "pages" | "reviewer";
-const FIELDS: QueryField[] = ["custodian", "type", "from", "to", "cc", "subject", "date", "bates", "issue", "tag", "hash", "id", "family", "thread", "hot", "priv", "responsive", "hasattachment", "dupes", "pages", "reviewer"];
+export type QueryField = "custodian" | "type" | "from" | "to" | "cc" | "subject" | "date" | "bates" | "issue" | "tag" | "hash" | "id" | "family" | "thread" | "hot" | "priv" | "responsive" | "hasattachment" | "dupes" | "pages" | "reviewer" | "exhibit";
+const FIELDS: QueryField[] = ["custodian", "type", "from", "to", "cc", "subject", "date", "bates", "issue", "tag", "hash", "id", "family", "thread", "hot", "priv", "responsive", "hasattachment", "dupes", "pages", "reviewer", "exhibit"];
+/** Field aliases: `ex:` and `exh:` are `exhibit:`. */
+const FIELD_ALIASES: Record<string, QueryField> = { ex: "exhibit", exh: "exhibit" };
 /** Field names shown in syntax help, with the values they accept. */
 export const QUERY_FIELDS: { field: QueryField; hint: string }[] = [
-  { field: "bates", hint: "MFC-0041877 or a range MFC-0041877–MFC-0041999" },
+  { field: "exhibit", hint: "exhibit mark Ex.P7, Ex.D3, Ex.P5(a), M.O.2 or a range Ex.P1 to P25 (exact mark)" },
+  { field: "bates", hint: "document / production number MFC-0041877 or a range MFC-0041877–MFC-0041999" },
   { field: "family", hint: "Bates or id of any family member (parent + attachments)" },
   { field: "thread", hint: "thread id, or a Bates/id of a message in the thread" },
   { field: "custodian", hint: "name or id (substring)" },
@@ -131,6 +142,33 @@ type Token =
 
 const PROX_RE = /^(w|pre|near)\/(\d{1,3})$/i;
 
+/** An exhibit mark, optionally followed by a same-side range end: "Ex.P1", "Ex. P-1", "Ex.P5(a)", "Ex.P1 to P25", "M.O.2". */
+const EXHIBIT_TOKEN_RE = /^(?:Exh?(?:ibit)?\.?\s?(?:No\.?\s?)?[PDCABRX]\s?[-.]?\s?\d{1,4}(?:\([a-z]{1,2}\))?(?:\s*(?:–|—|to|-)\s*(?:Exh?\.?\s?)?[PDCABRX]\s?[-.]?\s?\d{1,4})?|(?:M\.\s?O\.\s?|MO-)\d{1,4})(?=$|[\s()])/i;
+
+/**
+ * Normalised value of an `exhibit:` token: a canonical mark ("ex.p7", "ex.p5(a)", "m.o.2") or a range
+ * ("ex.p1..ex.p25"). Null when the text is not an exhibit mark.
+ */
+export function exhibitFieldValue(raw: string): string | null {
+  const single = parseExhibitMark(raw);
+  if (single) return single.canonical.toLowerCase();
+  const r = parseExhibitRange(raw);
+  if (!r) return null;
+  const fmt = (n: number) => formatExhibitMark(r.side, n).toLowerCase();
+  return r.from === r.to ? fmt(r.from) : `${fmt(r.from)}..${fmt(r.to)}`;
+}
+
+/** Match a document's canonical (lowercased) exhibit mark against an `exhibit:` value: exact mark or same-side range. */
+export function exhibitMatches(docMark: string | undefined, value: string): boolean {
+  if (!docMark) return false;
+  const range = value.split("..");
+  if (range.length === 1) return docMark === value;
+  const lo = parseExhibitMark(range[0]);
+  const hi = parseExhibitMark(range[1]);
+  const d = parseExhibitMark(docMark);
+  return !!lo && !!hi && !!d && !d.sub && d.side === lo.side && d.side === hi.side && d.number >= lo.number && d.number <= hi.number;
+}
+
 const RANGE_RE = /^([A-Za-z]{2,8}[-_]?\d{4,10})\s*(?:–|—|-|to)\s*((?:[A-Za-z]{2,8}[-_]?)?\d{4,10})/i;
 
 function tokenize(input: string, warnings: string[]): Token[] {
@@ -153,8 +191,14 @@ function tokenize(input: string, warnings: string[]): Token[] {
       i = j + 1;
       continue;
     }
-    // Bates range starting here? (bare, or after a `bates:` prefix — the range may contain spaces: "bates:MFC-0041877 to 0041880")
     const rest = s.slice(i);
+    // Exhibit mark or range starting here ("Ex.P7", "Ex. P-7", "Ex.P1 to P25", "M.O.2"): an exact-mark field token.
+    const em = rest.match(EXHIBIT_TOKEN_RE);
+    if (em) {
+      const v = exhibitFieldValue(em[0]);
+      if (v) { tokens.push({ t: "field", f: "exhibit", v }); i += em[0].length; continue; }
+    }
+    // Bates range starting here? (bare, or after a `bates:` prefix — the range may contain spaces: "bates:MFC-0041877 to 0041880")
     const prefixed = rest.match(/^bates:\s*/i);
     const rm = rest.slice(prefixed?.[0].length ?? 0).match(RANGE_RE);
     // "MFC-0041877 -2001" is a Bates number followed by a negated term, not a range: a bare hyphen that
@@ -189,9 +233,16 @@ function tokenize(input: string, warnings: string[]): Token[] {
     if (pm) { tokens.push({ t: "prox", n: Math.max(1, Number(pm[2])), ordered: pm[1].toLowerCase() === "pre" }); continue; }
     const colon = word.indexOf(":");
     if (colon > 0) {
-      const f = word.slice(0, colon).toLowerCase() as QueryField;
+      const fRaw = word.slice(0, colon).toLowerCase();
+      const f = (FIELD_ALIASES[fRaw] ?? fRaw) as QueryField;
       let v = word.slice(colon + 1).replace(/^["“]|["”]$/g, "").trim();
       if (FIELDS.includes(f)) {
+        if (v && f === "exhibit") {
+          const ev = exhibitFieldValue(v) ?? exhibitFieldValue(`Ex.${v}`);
+          if (ev) tokens.push({ t: "field", f, v: ev });
+          else warnings.push(`Unrecognised exhibit mark "${v}"`);
+          continue;
+        }
         if (v) {
           if (f === "bates") {
             const range = parseBatesRange(v);
@@ -401,6 +452,8 @@ export interface Searchable {
   nearDuplicates?: number;
   pages?: number;
   reviewer?: string;
+  /** Canonical exhibit mark, lowercased ("ex.p7"); absent when the document is not marked. */
+  exhibit?: string;
   /** Lazily tokenised haystack for proximity searches. */
   words?: string[];
 }
@@ -501,6 +554,7 @@ export function matchesQuery(doc: Searchable, node: QueryNode): boolean {
         }
         case "pages": return numberMatch(doc.pages, v);
         case "reviewer": return (doc.reviewer ?? "").includes(v);
+        case "exhibit": return exhibitMatches(doc.exhibit, v);
         default: return true;
       }
     }

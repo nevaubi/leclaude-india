@@ -2,9 +2,11 @@
  * Deterministic post-checks on claim verification (constitution §23, §44):
  * - read before characterize: a claim can only be "supported" by a source whose full text was read;
  * - quotes are checked in code: a supporting/contradicting quote must literally appear in the source text;
- * - quotations in the answer attributed to [n] must literally appear in source n.
+ * - quotations in the answer attributed to [n] must literally appear in source n (in the source's own language: a
+ *   translation presented as a quotation is flagged).
  * The model's verdicts are demoted, never upgraded. Pure and client-safe.
  */
+import { detectScript } from "@/lib/india/languages";
 import { parseCiteMarkers } from "./markers";
 import { paragraphOfQuote, quoteExists } from "./paragraphs";
 import type { ClaimVerdictView, ResearchSource, VerificationSummary } from "./types";
@@ -43,19 +45,28 @@ export function checkClaimEvidence(answer: string, verdicts: ClaimVerdictView[],
     const text = textOf(src) ?? "";
     if (src.read && quoteExists(text, q.quote)) continue;
     misquotes++;
+    const otherScript = src.read && text && scriptOf(q.quote) !== scriptOf(text);
     out.push({
       claim: `Quotation attributed to [${q.n}]: “${q.quote.length > 160 ? q.quote.slice(0, 157) + "…" : q.quote}”`,
       status: "unsupported",
       sourceN: q.n,
       quote: q.quote,
       quoteVerified: false,
-      note: src.read ? `The quoted words do not appear in the text of source [${q.n}].` : `Source [${q.n}] was not read in full, so the quotation cannot be confirmed.`,
+      note: !src.read ? `Source [${q.n}] was not read in full, so the quotation cannot be confirmed.` : otherScript ? `The quotation is not in the language of source [${q.n}]: quote the original words and give the rendering without quotation marks, labelled "(translation)".` : `The quoted words do not appear in the text of source [${q.n}].`,
     });
   }
   return { verdicts: out, demoted, misquotes };
 }
 
-/** Quotations of 4+ words in the answer that carry a citation marker within the same sentence. */
+function scriptOf(text: string): string | null {
+  return detectScript(text.slice(0, 4000));
+}
+
+/**
+ * Quotations of 4+ words in the answer that carry a citation marker within the same sentence. A rendering labelled
+ * "(translation)" that carries no marker of its own is not a quotation of the source and is not checked; a translated
+ * text placed in quotation marks WITH a marker is checked against the original and flagged.
+ */
 export function answerQuotations(answer: string): { quote: string; n: number }[] {
   const out: { quote: string; n: number }[] = [];
   const re = /[“"]([^“”"\n]{12,600})[”"]/g;

@@ -1,0 +1,27 @@
+{
+  "id": "india-wrong-neutral-citation",
+  "category": "citations",
+  "title": "Malformed or impossible neutral citations are never bound to a court",
+  "constitution": "CLAUDE.md §23 (never substitute evidence), Appendix B; docs/architecture/india.md (unparseable citation stays unknown)",
+  "input": {
+    "now": "2026-09-28",
+    "citations": [
+      { "raw": "2024:KHC-X:7336", "note": "unknown Karnataka bench suffix (only KHC, KHC-D, KHC-K exist)" },
+      { "raw": "2024:KXC:7336", "note": "unknown High Court prefix; nearest is KHC" },
+      { "raw": "2024:INSC:735", "note": "Supreme Court form written High Court style" },
+      { "raw": "2027 INSC 12", "note": "year in the future" },
+      { "raw": "2024 INSC", "note": "number missing" },
+      { "raw": "2024 INSC 0", "note": "number zero" },
+      { "raw": "2016 SCC OnLine AP 12", "note": "pre-2019 AP report: predecessor court at Hyderabad, not the present AP High Court" }
+    ]
+  },
+  "expected": "Each citation is either kind 'unknown' or marked invalid with no courtId; unresolved tokens are kept in unresolvedCourt; nothing is mapped to the nearest court.",
+  "passCriteria": [
+    "no citation in the list has a courtId",
+    "each citation is kind 'unknown' or valid === false",
+    "2024:KXC:7336 keeps unresolvedCourt 'KXC'",
+    "2024 INSC is kind 'unknown'"
+  ],
+  "grading": "code",
+  "requiresModel": false
+}

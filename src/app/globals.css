@@ -162,8 +162,10 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Source Serif 4 Variable", Georgia, "Times New Roman", serif;
+  /* Latin UI face first; each Indian script falls through to its Noto face (next/font variables set on <html>,
+     then the same families by local name when installed, e.g. from fonts-noto on Linux). */
+  --font-sans: "Inter Variable", var(--font-noto-deva, "Noto Sans Devanagari"), var(--font-noto-knda, "Noto Sans Kannada"), var(--font-noto-telu, "Noto Sans Telugu"), var(--font-noto-taml, "Noto Sans Tamil"), var(--font-noto-beng, "Noto Sans Bengali"), var(--font-noto-urdu, "Noto Nastaliq Urdu"), "Noto Sans Devanagari", "Noto Sans Kannada", "Noto Sans Telugu", "Noto Sans Tamil", "Noto Sans Bengali", "Noto Nastaliq Urdu", "Noto Naskh Arabic", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Source Serif 4 Variable", var(--font-noto-deva, "Noto Sans Devanagari"), var(--font-noto-knda, "Noto Sans Kannada"), var(--font-noto-telu, "Noto Sans Telugu"), var(--font-noto-taml, "Noto Sans Tamil"), var(--font-noto-beng, "Noto Sans Bengali"), var(--font-noto-urdu, "Noto Nastaliq Urdu"), Georgia, "Times New Roman", serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
   --shadow-paper: var(--paper-shadow);
   --shadow-overlay: var(--overlay-shadow);
@@ -293,3 +295,19 @@
 /* Dark-mode contrast: warning text on tinted backgrounds and hairlines read better a notch lighter. */
 .dark .text-warning-foreground { color: var(--warning); }
 .dark ::selection { background: color-mix(in oklch, var(--primary) 35%, transparent); }
+
+/* ------------------------------------------------------------------
+   Scripts. Indic scripts carry tall matras and conjuncts, and Nastaliq a
+   steep diagonal baseline: give text a little more line height in those
+   locales so it is not clipped by fixed-height rows. Urdu is RTL; the shell
+   mirrors through logical properties and `dir` on <html>.
+   ------------------------------------------------------------------ */
+@layer base {
+  html:is(:lang(hi), :lang(mr), :lang(kn), :lang(te), :lang(ta), :lang(bn)) body { line-height: 1.6; }
+  html:lang(ur) body { line-height: 1.9; }
+  /* Nastaliq is not a UI face at 12px: keep Urdu legible without breaking the 8px rhythm. */
+  html:lang(ur) { --text-ui: 13px; }
+  :where(:lang(ur)) :is(input, textarea) { line-height: 1.9; }
+  /* Latin-only runs (case numbers, citations, code) keep Inter metrics inside RTL text. */
+  [dir="rtl"] :where(code, kbd, .font-mono, .tabular) { direction: ltr; unicode-bidi: isolate; }
+}

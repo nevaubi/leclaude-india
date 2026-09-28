@@ -3,13 +3,14 @@ import { defineTool, type ToolDef } from "@/lib/ai/tools";
 import type { AgentEvent } from "@/lib/ai/agent";
 import { AIConfigError } from "@/lib/ai/config";
 import { classifyFailure, isAbortError, type FailureKind } from "@/lib/ai/events";
-import { isLegalFetchHost } from "@/lib/ai/toolkit/legal";
+import { isIndianLegalFetchHost, mapCriminalSectionTool } from "@/lib/ai/toolkit/india";
 import { matterContextTool } from "@/lib/ai/toolkit/internal";
+import { formatCaseCitation } from "@/lib/india/citation-style";
 import type { Matter } from "@/lib/types/domain";
 import { LEGAL_STYLE_RULES, todayLine } from "@/lib/ai/prompts";
-import { buildCitation, type CitationFields } from "../bluebook";
 import { firmLabel } from "../firm";
-import { jurisdictionByKey } from "../jurisdictions";
+import { formatStatuteCitation } from "../india-citations";
+import { bindingCourtIds, jurisdictionByKey } from "../jurisdictions";
 import { formatBluebook, normalizeWebCitation } from "../normalize";
 import { providerMessage } from "../service";
 import { SOURCE_LABEL, type ReadRef, type SearchHit, type SearchSettings, type SearchSource } from "../types";
@@ -74,18 +75,17 @@ export interface LaneResult {
 }
 
 const SEARCH_TOOL_FOR: Partial<Record<string, SearchSource>> = {
-  search_case_law: "caselaw", search_dockets: "dockets", search_cfr: "regulations", search_federal_register: "federal_register", search_statutes: "statutes", search_library: "library", search_ediscovery: "ediscovery",
+  search_judgments: "caselaw", search_statutes: "statutes", search_library: "library", search_ediscovery: "ediscovery",
 };
 
 const SEARCH_TOOL_DESC: Record<string, string> = {
-  search_case_law: "Search U.S. court opinions (CourtListener). Boolean operators, quoted phrases and proximity are supported; results respect the run's court and date filters. Returns source ids usable with read_source and get_opinion.",
-  search_dockets: "Search federal dockets (PACER/RECAP): parties, nature of suit, judge, filing dates.",
-  search_cfr: "Search the Code of Federal Regulations (eCFR).",
-  search_federal_register: "Search Federal Register rules, proposed rules and notices.",
-  search_statutes: "Search the U.S. Code and public laws (GovInfo).",
-  search_library: "Search the firm's knowledge library: memos, briefs, clause bank, templates.",
-  search_ediscovery: "Search this matter's document collection and deposition transcripts (Bates-numbered).",
+  search_judgments: "Search the Supreme Court and High Court judgment corpus (plus Indian Kanoon when the firm has configured it). Keyword queries with Indian terms of art and section numbers work best; results respect this lane's courts and the run's date filters and carry court, bench strength, date, citations and binding/persuasive for the forum. Returns source ids usable with read_source and read_judgment.",
+  search_statutes: "Search India Code enactments and sections (central and state Acts, including BNS/BNSS/BSA and the old IPC/CrPC/Evidence Act). Returns source ids usable with read_section.",
+  search_library: "Search the firm's knowledge library: memos, opinions, pleadings, clause bank, templates.",
+  search_ediscovery: "Search this matter's documents and deposition transcripts. Limited to the selected matter.",
 };
+
+const CASE_TITLE_RE = /\s(?:v|vs|versus)\.?\s/i;
 
 /** Deterministic snippet triage for reading without an agent: binding first, then term overlap, then provider rank. */
 export function rankForReading(sources: ResearchSource[], terms: string[]): ResearchSource[] {
@@ -93,9 +93,15 @@ export function rankForReading(sources: ResearchSource[], terms: string[]): Rese
   const score = (s: ResearchSource) => {
     const hay = `${s.title} ${s.snippet ?? ""}`.toLowerCase();
     const overlap = lower.reduce((a, t) => a + (hay.includes(t) ? 1 : 0), 0);
-    return (s.authority === "binding" ? 3 : s.authority === "persuasive" ? 1 : 0) + overlap;
+    // Binding first; within binding/persuasive a larger bench ranks higher (deterministic, from the corpus record).
+    return (s.authority === "binding" ? 3 : s.authority === "persuasive" ? 1 : 0) + Math.min(2, ((s.hit.india?.benchStrength ?? 1) - 1) * 0.5) + overlap;
   };
   return sources.map((s, i) => ({ s, i, v: score(s) })).sort((a, b) => b.v - a.v || a.i - b.i).map((x) => x.s);
+}
+
+/** Settings for one lane's retrieval: judgment lanes are narrowed to their deterministic court filter (never by the model). */
+export function laneSettings(lane: Pick<ResearchLane, "courtFilter">, settings: SearchSettings, source: SearchSource): SearchSettings {
+  return source === "caselaw" && lane.courtFilter?.length ? { ...settings, courts: lane.courtFilter.join(" ") } : settings;
 }
 
 /** Run one lane: deterministic provider retrieval (parallel, retried on transient failures), a second targeted wave, then reading. */
@@ -133,7 +139,7 @@ export async function runLane(lane: ResearchLane, ctx: LaneContext, slot: { queu
     const started = Date.now();
     emit({ type: "tool.started", laneId: lane.id, toolId, name, label });
     try {
-      const { hits } = await withRetry(() => deps.retrieve(source, q, ctx.settings, signal), {
+      const { hits } = await withRetry(() => deps.retrieve(source, q, laneSettings(lane, ctx.settings, source), signal), {
         ...retry,
         onRetry: ({ error, failure, delayMs }) => emit({ type: "tool.failed", laneId: lane.id, toolId, name, label, error: `${providerMessage(error)} Retrying in ${(delayMs / 1000).toFixed(1)}s.`, failure, durationMs: Date.now() - started, retrying: true }),
       });
@@ -211,12 +217,13 @@ export async function runLane(lane: ResearchLane, ctx: LaneContext, slot: { queu
       const tools = buildLaneTools(lane, ctx, { found, record, readOne });
       const j = jurisdictionByKey(ctx.settings.jurisdiction);
       const matterLine = ctx.matter ? `Matter: ${ctx.matter.name} (${ctx.matter.caption ?? ctx.matter.shortName}); client ${ctx.matter.client} (${ctx.matter.clientSide}); ${ctx.matter.court ?? ""}; stage ${ctx.matter.stage ?? "n/a"}; matter id ${ctx.matter.id}.` : "No matter selected.";
+      const forumLine = `Forum: ${j.label}. Binding courts: ${bindingCourtIds(j.key).join(", ")}.${lane.courtFilter?.length ? ` This lane searches: ${lane.courtFilter.join(", ")}.` : ""}`;
       // Byte-stable per lane kind (cacheable prefix); everything volatile is in the user turn below.
       const instructions = laneInstructions(lane.kind, lane.name, lane.brief, firmLabel(), lane.maxReads, LEGAL_STYLE_RULES);
       const list = Array.from(found.values()).slice(0, 25).map((s) => `${s.id} · ${formatBluebook(s.hit)}${s.authority && s.authority !== "n/a" ? ` (${s.authority})` : ""}${s.snippet ? ` — ${s.snippet.slice(0, 200)}` : ""}`).join("\n");
-      const leading = [...ctx.priors.flatMap((p) => p.sources), ...afterSources].filter((s) => s.kind === "caselaw" && s.title.includes(" v. ")).sort((a, b) => Number(b.read) - Number(a.read) || Number(b.authority === "binding") - Number(a.authority === "binding"));
-      const priorNote = lane.kind === "contrary" && leading.length ? `\n\nLeading authority the controlling lane found (look for decisions that reject, distinguish or limit these):\n${Array.from(new Map(leading.map((s) => [s.id, s])).values()).slice(0, 4).map((s) => `- ${s.id} · ${formatBluebook(s.hit)}`).join("\n")}` : "";
-      const input = `${todayLine()}\n${matterLine}\nJurisdiction: ${j.label}.\n\nStructured results already found (${found.size}):\n${list || "(none — search first)"}${priorNote}\n\nResearch question: ${ctx.question}`;
+      const leading = [...ctx.priors.flatMap((p) => p.sources), ...afterSources].filter((s) => s.kind === "caselaw" && CASE_TITLE_RE.test(s.title)).sort((a, b) => Number(b.read) - Number(a.read) || Number(b.authority === "binding") - Number(a.authority === "binding"));
+      const priorNote = lane.kind === "contrary" && leading.length ? `\n\nLeading authority the binding lane found (look for judgments that distinguish, doubt, overrule or limit these):\n${Array.from(new Map(leading.map((s) => [s.id, s])).values()).slice(0, 4).map((s) => `- ${s.id} · ${formatBluebook(s.hit)}`).join("\n")}` : "";
+      const input = `${todayLine()}\n${matterLine}\n${forumLine}\n\nStructured results already found (${found.size}):\n${list || "(none — search first)"}${priorNote}\n\nResearch question: ${ctx.question}`;
       let webSearchId: string | null = null;
       const onEvent = (e: AgentEvent) => {
         if (e.type === "tool.call") emit({ type: "tool.started", laneId: lane.id, toolId: e.id, name: e.name, label: e.label });
@@ -287,7 +294,7 @@ type AnyTool = ToolDef<never, unknown>;
 export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: LaneToolHooks): AnyTool[] {
   const tools: AnyTool[] = [];
   const has = (name: string) => lane.tools.includes(name);
-  const compact = (s: ResearchSource) => ({ id: s.id, cite: formatBluebook(s.hit), court: s.court, date: s.date, authority: s.authority, snippet: s.snippet?.slice(0, 240), read: s.read });
+  const compact = (s: ResearchSource) => ({ id: s.id, cite: formatBluebook(s.hit), court: s.hit.court ?? s.court, bench_strength: s.hit.india?.benchStrength, date: s.date, authority: s.authority, language: s.hit.india?.language, snippet: s.snippet?.slice(0, 240), read: s.read });
   const retryOpts = { retries: ctx.policy.retrievalRetries, baseMs: ctx.policy.retryBaseMs, maxMs: ctx.policy.retryMaxMs, signal: ctx.signal };
   const lookup = (id: string) => hooks.found.get(id) ?? ctx.known.find((k) => k.id === id);
   const textFor = async (s: ResearchSource): Promise<string> => {
@@ -303,11 +310,11 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
       name,
       description: SEARCH_TOOL_DESC[name],
       parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", description: "Default 8, max 12" } }, required: ["query"] },
-      examples: [{ query: name === "search_case_law" ? "\"government contractor defense\" AND \"reasonably precise\"" : "PFOA maximum contaminant level", limit: 8 }],
+      examples: [{ query: name === "search_judgments" ? "anticipatory bail section 438 CrPC economic offence parity" : name === "search_statutes" ? "Bharatiya Nagarik Suraksha Sanhita anticipatory bail" : "limitation condonation of delay section 5", limit: 8 }],
       timeoutMs: 30_000,
       label: (a) => `Searching ${SOURCE_LABEL[source].toLowerCase()}: ${a.query}`,
       async execute(args) {
-        const { hits, total } = await withRetry(() => ctx.deps.retrieve(source, args.query, { ...ctx.settings, limit: Math.min(args.limit ?? 8, 12) }, ctx.signal), retryOpts);
+        const { hits, total } = await withRetry(() => ctx.deps.retrieve(source, args.query, { ...laneSettings(lane, ctx.settings, source), limit: Math.min(args.limit ?? 8, 12) }, ctx.signal), retryOpts);
         const incoming = hits.slice(0, 10).map((h) => sourceFromHit(h, lane.id));
         hooks.record(incoming);
         return { total, results: incoming.map((s) => compact(hooks.found.get(s.id) ?? s)) };
@@ -319,7 +326,7 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
     name: "read_source",
     description: `Read the full text of a source by its id (from search results). Required before quoting or characterizing a holding. At most ${lane.maxReads} reads in this lane.`,
     parameters: { type: "object", properties: { source_id: { type: "string" }, max_chars: { type: "integer", description: "Default 30000" } }, required: ["source_id"] },
-    examples: [{ source_id: "caselaw:112120" }],
+    examples: [{ source_id: "judgment:ijdg_8f2a61c0d9e4b7a35c10" }],
     timeoutMs: 45_000,
     maxResultChars: 32_000,
     label: (a) => { const s = hooks.found.get(a.source_id); return `Reading ${s?.cite ?? s?.title ?? a.source_id}`; },
@@ -332,12 +339,13 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
     },
   }) as AnyTool);
 
-  if (has("get_opinion")) {
+  for (const readerName of ["get_opinion", "read_judgment"] as const) {
+    if (!has(readerName)) continue;
     tools.push(defineTool<{ source_id: string; start_paragraph?: number; count?: number }>({
-      name: "get_opinion",
-      description: "Read a source (usually an opinion) in numbered paragraph windows: ¶1, ¶2 … — the same numbering pinpoint cites [n ¶k] use and the reader shows. Counts toward the lane's read cap on first use.",
+      name: readerName,
+      description: "Read a source (usually a judgment) in numbered paragraph windows: ¶1, ¶2 … — the same numbering pinpoint cites [n ¶k] use and the reader shows. The original-language text is the text of record. Counts toward the lane's read cap on first use.",
       parameters: { type: "object", properties: { source_id: { type: "string" }, start_paragraph: { type: "integer", description: "1-based, default 1" }, count: { type: "integer", description: "Default 40, max 100" } }, required: ["source_id"] },
-      examples: [{ source_id: "caselaw:112120", start_paragraph: 1, count: 40 }],
+      examples: [{ source_id: "judgment:ijdg_8f2a61c0d9e4b7a35c10", start_paragraph: 1, count: 40 }],
       timeoutMs: 45_000,
       maxResultChars: 36_000,
       label: (a) => { const s = hooks.found.get(a.source_id); return `Reading ${s?.cite ?? s?.title ?? a.source_id}${a.start_paragraph ? ` from ¶${a.start_paragraph}` : ""}`; },
@@ -347,7 +355,47 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
         const paras = splitParagraphs(await textFor(s));
         const start = Math.max(1, Math.floor(args.start_paragraph ?? 1));
         const n = Math.min(Math.max(1, Math.floor(args.count ?? 40)), 100);
-        return { id: s.id, cite: formatBluebook(s.hit), total_paragraphs: paras.length, paragraphs: paras.slice(start - 1, start - 1 + n).map((text, i) => ({ n: start + i, text: text.length > 3000 ? text.slice(0, 3000) + " …" : text })), next_start: start - 1 + n < paras.length ? start + n : null };
+        return { id: s.id, cite: formatBluebook(s.hit), language: s.hit.india?.language, total_paragraphs: paras.length, paragraphs: paras.slice(start - 1, start - 1 + n).map((text, i) => ({ n: start + i, text: text.length > 3000 ? text.slice(0, 3000) + " …" : text })), next_start: start - 1 + n < paras.length ? start + n : null };
+      },
+    }) as AnyTool);
+  }
+
+  if (has("read_section")) {
+    tools.push(defineTool<{ source_id: string }>({
+      name: "read_section",
+      description: "Read an India Code section found by search_statutes, in full. Counts toward the lane's read cap on first use.",
+      parameters: { type: "object", properties: { source_id: { type: "string" } }, required: ["source_id"] },
+      examples: [{ source_id: "section:ienact_5d0c2e7a9b41f3c8a6e1:482" }],
+      timeoutMs: 20_000,
+      maxResultChars: 24_000,
+      label: (a) => { const s = hooks.found.get(a.source_id); return `Reading ${s?.cite ?? s?.title ?? a.source_id}`; },
+      async execute(args) {
+        const s = lookup(args.source_id);
+        if (!s || s.kind !== "statutes") throw new Error(`Unknown statute source id ${args.source_id}; use an id returned by search_statutes.`);
+        const text = await textFor(s);
+        return { id: s.id, cite: formatBluebook(s.hit), replaced_by: s.hit.india?.replacedBy, currentness: s.currentness?.label, text: text.length > 20_000 ? text.slice(0, 20_000) + "\n…[truncated]" : text };
+      },
+    }) as AnyTool);
+  }
+
+  if (has("map_criminal_section")) tools.push(mapCriminalSectionTool as unknown as AnyTool);
+
+  if (has("citing_references") && ctx.deps.citing) {
+    const citing = ctx.deps.citing.bind(ctx.deps);
+    tools.push(defineTool<{ source_id: string }>({
+      name: "citing_references",
+      description: "For a judgment among the sources, find later judgments in the corpus that cite it and whether any use negative-treatment language (overruled, per incuriam, doubted, referred to a larger bench, not good law). Returns a treatment signal to REVIEW; it is not a citator and never establishes good law.",
+      parameters: { type: "object", properties: { source_id: { type: "string" } }, required: ["source_id"] },
+      examples: [{ source_id: "judgment:ijdg_8f2a61c0d9e4b7a35c10" }],
+      timeoutMs: 20_000,
+      label: (a) => { const s = hooks.found.get(a.source_id); return `Checking citing judgments for ${s?.cite ?? s?.title ?? a.source_id}`; },
+      async execute(args) {
+        const s = lookup(args.source_id);
+        const judgmentId = s?.hit.readRef?.kind === "judgment" ? s.hit.readRef.id : s?.hit.india?.judgmentId;
+        if (!s || s.kind !== "caselaw" || !judgmentId) throw new Error("citing_references needs a judgment source id from the corpus (search_judgments).");
+        const treatment = await citing({ judgmentId, signal: ctx.signal });
+        hooks.record([{ ...s, laneIds: [lane.id], treatment }]);
+        return { id: s.id, cite: formatBluebook(s.hit), ...treatment };
       },
     }) as AnyTool);
   }
@@ -376,9 +424,9 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
     const resolve = ctx.deps.resolveCitation.bind(ctx.deps);
     tools.push(defineTool<{ citation: string }>({
       name: "resolve_citation",
-      description: "Resolve one reporter citation (e.g. '487 U.S. 500') to a reported decision. Returns resolved, ambiguous (several candidates, none chosen) or unresolved. Never substitute a similar case for an unresolved citation.",
+      description: "Resolve one neutral or reporter citation (e.g. '2024 INSC 735', '(2017) 10 SCC 1', '2024:KHC-D:7336') to a judgment in the corpus. Returns resolved, ambiguous (several candidates, none chosen) or unresolved. Never substitute a similar judgment for an unresolved citation.",
       parameters: { type: "object", properties: { citation: { type: "string" } }, required: ["citation"] },
-      examples: [{ citation: "487 U.S. 500" }],
+      examples: [{ citation: "(2014) 8 SCC 273" }, { citation: "2024 INSC 735" }],
       timeoutMs: 20_000,
       label: (a) => `Resolving ${a.citation}`,
       async execute(args) { return resolve(args.citation, ctx.signal); },
@@ -386,16 +434,16 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
   }
 
   if (has("build_citation")) {
-    tools.push(defineTool<{ fields: CitationFields }>({
+    tools.push(defineTool<{ fields: Record<string, unknown> }>({
       name: "build_citation",
-      description: "Format a Bluebook citation deterministically from structured fields (case, statute, regulation, federal_register, docket). Missing required fields are returned as errors; nothing is invented.",
+      description: "Format an Indian citation deterministically from structured fields. case: {type:'case', caseName, neutral?, reporters?[], courtId?, caseNumber?, decisionDate? (YYYY-MM-DD), pinpoint? (para number)}; statute: {type:'statute', enactment, year?, sections[]}. Unparseable citations and missing fields are returned as errors; nothing is invented.",
       parameters: {
         type: "object",
         properties: {
           fields: {
             type: "object",
-            description: "type plus the fields for that type: case {caseName, volume, reporter, page, pinpoint?, court (id or abbreviation), year | date, docketNumber?, wl?}; statute {title, sections[], year?, code?}; regulation {title, sections[], year}; federal_register {volume, page, pinpoint?, date, name?}; docket {caseName, docketNumber, court, filed?, ecf?}",
-            properties: { type: { type: "string", enum: ["case", "statute", "regulation", "federal_register", "docket"] } },
+            description: "type plus the fields for that type (see the tool description).",
+            properties: { type: { type: "string", enum: ["case", "statute"] } },
             required: ["type"],
             additionalProperties: true,
           },
@@ -403,10 +451,22 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
         required: ["fields"],
       },
       strict: false,
-      examples: [{ fields: { type: "case", caseName: "Boyle v. United Technologies Corp.", volume: 487, reporter: "U.S.", page: 500, pinpoint: "512", year: 1988 } }, { fields: { type: "regulation", title: 40, sections: ["141.61"], year: 2024 } }],
+      examples: [{ fields: { type: "case", caseName: "Arnesh Kumar v. State of Bihar", reporters: ["(2014) 8 SCC 273"], pinpoint: 11 } }, { fields: { type: "statute", enactment: "Bharatiya Nagarik Suraksha Sanhita", year: 2023, sections: ["482"] } }],
       timeoutMs: 2_000,
       label: () => "Formatting a citation",
-      execute(args) { return buildCitation(args.fields); },
+      execute(args) {
+        const f = args.fields ?? {};
+        const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+        if (f.type === "statute") {
+          const enactment = str(f.enactment);
+          const sections = Array.isArray(f.sections) ? f.sections.map(String).filter(Boolean) : [];
+          if (!enactment) return { citation: null, errors: ["enactment is required"] };
+          return { citation: formatStatuteCitation({ enactment, year: typeof f.year === "number" || typeof f.year === "string" ? f.year : undefined, sections }), errors: [] };
+        }
+        const pin = typeof f.pinpoint === "number" ? f.pinpoint : typeof f.pinpoint === "string" && /^\d+$/.test(f.pinpoint) ? Number(f.pinpoint) : undefined;
+        const r = formatCaseCitation({ caseName: str(f.caseName) ?? "", neutral: str(f.neutral), reporters: Array.isArray(f.reporters) ? f.reporters.map(String) : undefined, courtId: str(f.courtId), caseNumber: str(f.caseNumber), decisionDate: str(f.decisionDate) }, { pinpoint: pin });
+        return { citation: r.citation, short: r.short, errors: r.errors, courtId: r.courtId };
+      },
     }) as AnyTool);
   }
 
@@ -430,9 +490,9 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
     const matterId = ctx.matter.id;
     tools.push(defineTool<{ query: string; limit?: number }>({
       name: "search_matter_documents",
-      description: "Search the selected matter's documents and deposition transcripts (Bates-numbered). Limited to this matter.",
+      description: "Search the selected matter's documents and deposition transcripts. Limited to this matter.",
       parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", description: "Default 8, max 12" } }, required: ["query"] },
-      examples: [{ query: "90-day rat study hepatic effects", limit: 8 }],
+      examples: [{ query: "legal notice under section 138 Negotiable Instruments Act", limit: 8 }],
       timeoutMs: 30_000,
       label: (a) => `Searching matter documents: ${a.query}`,
       async execute(args) {
@@ -464,15 +524,15 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
     const openWeb = ctx.settings.sources.includes("web");
     tools.push(defineTool<{ url: string; max_chars?: number }>({
       name: "fetch_url",
-      description: openWeb ? "Read a public web page (agency site, court site, statute page) by URL. Counts toward the lane's read cap." : "Read an official legal web page by URL (courts, eCFR, Federal Register, GovInfo, Congress, Cornell LII, federal and state agencies). Other hosts are refused unless web sources are in scope. Counts toward the lane's read cap.",
+      description: openWeb ? "Read a public web page (court site, India Code, gazette, regulator page) by URL. Counts toward the lane's read cap." : "Read an official Indian legal web page by URL (India Code, Supreme Court and High Court sites, eCourts, the e-Gazette, ministries and regulators). Other hosts are refused unless web sources are in scope. Subscription services are never read. Counts toward the lane's read cap.",
       parameters: { type: "object", properties: { url: { type: "string" }, max_chars: { type: "integer" } }, required: ["url"] },
-      examples: [{ url: "https://www.ecfr.gov/current/title-40/section-141.61" }],
+      examples: [{ url: "https://www.indiacode.nic.in/handle/123456789/20099" }],
       timeoutMs: 30_000,
       maxResultChars: 32_000,
       label: (a) => `Reading ${safeHost(a.url)}`,
       async execute(args) {
         if (!/^https?:\/\//i.test(args.url)) throw new Error("Only http(s) URLs are supported");
-        if (!openWeb && !isLegalFetchHost(args.url)) throw new Error(`${safeHost(args.url)} is not an allowlisted legal source; add Web to the sources to read the open web.`);
+        if (!openWeb && !isIndianLegalFetchHost(args.url)) throw new Error(`${safeHost(args.url)} is not an allowlisted official legal source; add Web to the sources to read the open web.`);
         const hit: SearchHit = normalizeWebCitation({ title: args.url, url: args.url }, hooks.found.size);
         const existing = hooks.found.get(sourceKey(hit));
         const s = existing ?? sourceFromHit(hit, lane.id);
@@ -489,9 +549,9 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
   if (has("verify_citations")) {
     tools.push(defineTool<{ text: string }>({
       name: "verify_citations",
-      description: "Check whether case citations in a passage resolve to real reported decisions (CourtListener). Use before relying on a citation you did not read.",
+      description: "Check whether the neutral and reporter citations in a passage resolve to judgments in the corpus. Use before relying on a citation you did not read; a citation that resolves still has to be read before it is characterized.",
       parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
-      examples: [{ text: "Boyle v. United Techs. Corp., 487 U.S. 500 (1988)" }],
+      examples: [{ text: "Arnesh Kumar v. State of Bihar, (2014) 8 SCC 273" }],
       timeoutMs: 20_000,
       label: () => "Verifying citations",
       async execute(args) {

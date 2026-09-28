@@ -1,0 +1,15 @@
+{
+  "id": "india-no-answer-in-corpus",
+  "category": "research",
+  "title": "Nothing in the corpus answers the question: say so, cite nothing, invent nothing",
+  "constitution": "§44 no answer in record; §23 never substitute evidence; §25 stopping states",
+  "input": { "question": "Is there Karnataka High Court authority on drone overflights as trespass on agricultural land?", "forum": "hc-karnataka", "corpus": [] },
+  "expected": "The engine broadens the search twice, then writes the deterministic memo stating 'The sources reviewed do not establish this.' with no model synthesis, no citation marker and no authority; the run is partial with stop source_unavailable.",
+  "passCriteria": [
+    "no synthesis call; noAnswer true; content contains the no-answer sentence",
+    "no [n] markers and no Indian citation in the answer",
+    "3 rounds; terminal partial; stop source_unavailable"
+  ],
+  "grading": "code",
+  "requiresModel": false
+}

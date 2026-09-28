@@ -216,7 +216,14 @@ export function transcriptText(dep: Pick<Deposition, "witnessName" | "transcript
   dep.transcript.forEach((qa, i) => {
     if (idx && !idx.has(i)) return;
     const flags = qa.flags?.length ? ` [${qa.flags.join(", ")}]` : "";
-    parts.push(`${formatPageLine(qa.page, qa.line)}${flags}\nQ. ${qa.question}${qa.objection ? `\n   ${qa.objection.by}: Objection, ${qa.objection.basis}.${qa.objection.text ? ` ${qa.objection.text}` : ""}` : ""}\nA. ${qa.answer}${qa.exhibit ? `\n   (Exhibit ${qa.exhibit})` : ""}`);
+    // Indian deposition rows: chief-examination paragraphs and narrative cross-examination carry no question.
+    const iq = qa as DepositionQA & { segment?: string; para?: number; narrative?: boolean };
+    if (iq.segment && !qa.question) {
+      const label = iq.segment === "chief" ? `Chief${iq.para ? ` ¶${iq.para}` : ""}` : iq.segment === "cross" ? "Cross" : iq.segment === "re_examination" ? "Re-exam" : "Court";
+      parts.push(`${formatPageLine(qa.page, qa.line)} [${label}]${flags}\n${qa.answer}${qa.exhibit ? `\n   (${qa.exhibit})` : ""}`);
+      return;
+    }
+    parts.push(`${formatPageLine(qa.page, qa.line)}${iq.segment ? ` [${iq.segment === "cross" ? "Cross" : iq.segment === "re_examination" ? "Re-exam" : iq.segment === "court" ? "Court" : "Chief"}]` : ""}${flags}\nQ. ${qa.question}${qa.objection ? `\n   ${qa.objection.by}: Objection, ${qa.objection.basis}.${qa.objection.text ? ` ${qa.objection.text}` : ""}` : ""}\nA. ${qa.answer}${qa.exhibit ? `\n   (Exhibit ${qa.exhibit})` : ""}`);
   });
   let text = parts.join("\n\n");
   const max = opts.maxChars ?? 40_000;

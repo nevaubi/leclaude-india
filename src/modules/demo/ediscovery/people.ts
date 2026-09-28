@@ -1,13 +1,15 @@
 import type { Person } from "@/lib/types/domain";
-import { DEMO_CUSTODIANS, DEMO_EXPERTS, DEMO_MATTERS, DEMO_PACK, DEMO_TEAM } from "../ids";
+import { DEMO_MATTERS, DEMO_PACK, DEMO_SOURCES, DEMO_TEAM } from "../ids";
 
 /**
- * People of the Apple antitrust demonstration matter. Every name here is FICTIONAL: the defendant-side custodians,
- * their colleagues, counterparties, experts and defense counsel are invented for the demo and never stand for real
- * executives, employees, attorneys or judges.
+ * People of the India demonstration matters. Every name here is FICTIONAL: company officers, witnesses, advocates on
+ * the other side, the store manager, the municipal officials (named only by office) and the accused are invented for
+ * the demo and never stand for real people. No judge is named anywhere in the pack.
  */
 
-export const M = DEMO_MATTERS.consumer;
+export const MC = DEMO_MATTERS.commercial;
+export const MW = DEMO_MATTERS.writ;
+export const MB = DEMO_MATTERS.bail;
 
 /** Tag stored on every demo record. */
 export const DEMO_META = { demo: DEMO_PACK, synthetic: true } as const;
@@ -19,58 +21,41 @@ export function tagged<T extends object>(x: T, extra: Record<string, unknown> = 
   return { ...x, meta: { ...prev, ...extra, ...DEMO_META } };
 }
 
-/**
- * Bates prefix used for the defendant's production in the demo corpus. The contract value `DEMO_BATES_PREFIX`
- * ("APL-DEMO") contains a hyphen, which the review services reject (`normalizeBatesPrefix` and `parseBates` accept
- * 2–8 letters) and which the testimony cross-reference scanner cannot match (2–6 letters). "APLD" satisfies every
- * Bates parser in the app, so range search, settings, cross references and citation resolution all work.
- */
-export const APPLE_DEMO_BATES_PREFIX = "APLD";
-export const APPLE_DEMO_BATES_WIDTH = 7;
+export const PLAINTIFF = "Nimbus Cloudworks Private Limited";
+export const DEFENDANT = "Tungabhadra Retail Solutions Private Limited";
+export const PETITIONER = "Smt. Kondapalli Sarojini Devi";
+export const MUNICIPALITY = "Chandrayanagiri Municipality (fictional)";
 
-const DOMAIN = "apple.example";
+export interface DemoPerson { key: string; id: string; name: string; title: string; org: string; email?: string; role: Person["role"]; matter: string; tags?: string[] }
 
-export interface DemoPerson { key: string; id: string; name: string; title: string; org: string; email?: string; role: Person["role"]; tags?: string[] }
+const NCW = "Nimbus Cloudworks Pvt. Ltd. (fictional)";
+const TRS = "Tungabhadra Retail Solutions Pvt. Ltd. (fictional)";
 
-const CO = "Apple Inc. (demo)";
-
-/** The eight defendant-side custodians (ids fixed by the demo contract). */
-export const CUST = {
-  marsh: { key: "marsh", id: DEMO_CUSTODIANS.appStorePolicy, name: "Lena Marsh", title: "Director, App Store Policy", org: CO, email: `lmarsh@${DOMAIN}`, role: "custodian" },
-  ames: { key: "ames", id: DEMO_CUSTODIANS.developerRelations, name: "Victor Ames", title: "Senior Manager, Developer Relations", org: CO, email: `vames@${DOMAIN}`, role: "custodian" },
-  okoro: { key: "okoro", id: DEMO_CUSTODIANS.paymentsFinance, name: "Rachel Okoro", title: "Finance Lead, App Store Payments", org: CO, email: `rokoro@${DOMAIN}`, role: "custodian" },
-  frey: { key: "frey", id: DEMO_CUSTODIANS.wearables, name: "Daniel Frey", title: "Product Manager, Wearables Interoperability", org: CO, email: `dfrey@${DOMAIN}`, role: "custodian" },
-  nand: { key: "nand", id: DEMO_CUSTODIANS.messaging, name: "Priya Nand", title: "Engineering Manager, Messaging", org: CO, email: `pnand@${DOMAIN}`, role: "custodian" },
-  reyes: { key: "reyes", id: DEMO_CUSTODIANS.walletNfc, name: "Tomas Reyes", title: "Product Lead, Wallet & NFC", org: CO, email: `treyes@${DOMAIN}`, role: "custodian" },
-  cole: { key: "cole", id: DEMO_CUSTODIANS.legal, name: "Hannah Cole", title: "Senior Counsel, Competition", org: CO, email: `hcole@${DOMAIN}`, role: "custodian" },
-  lee: { key: "lee", id: DEMO_CUSTODIANS.gaming, name: "Marcus Lee", title: "Business Development, Games & Streaming", org: CO, email: `mlee@${DOMAIN}`, role: "custodian" },
+/** People by key (ids are stable; emails use reserved example domains). */
+export const PEOPLE = {
+  // Commercial suit — plaintiff side
+  bhat: { key: "bhat", id: "demo_in_p_raghavendra_bhat", name: "Raghavendra S. Bhat", title: "Vice President (Delivery)", org: NCW, email: "raghavendra.bhat@nimbuscloud.example", role: "witness", matter: MC, tags: ["PW-1"] },
+  menon: { key: "menon", id: "demo_in_p_nisha_menon", name: "Nisha Menon", title: "Chief Financial Officer", org: NCW, email: "nisha.menon@nimbuscloud.example", role: "client", matter: MC },
+  shetty: { key: "shetty", id: "demo_in_p_arjun_shetty", name: "Arjun Shetty", title: "Project Manager, Project Sankalp", org: NCW, email: "arjun.shetty@nimbuscloud.example", role: "custodian", matter: MC },
+  deepa: { key: "deepa", id: "demo_in_p_deepa_nagaraj", name: "Deepa Nagaraj", title: "Field Support Engineer", org: NCW, email: "deepa.nagaraj@nimbuscloud.example", role: "custodian", matter: MC },
+  // Commercial suit — defendant side
+  patil: { key: "patil", id: "demo_in_p_harish_patil", name: "Harish Kumar Patil", title: "Head of IT", org: TRS, email: "harish.patil@tungabhadraretail.example", role: "witness", matter: MC, tags: ["DW-1"] },
+  shenoy: { key: "shenoy", id: "demo_in_p_pradeep_shenoy", name: "Pradeep Shenoy", title: "Chief Financial Officer", org: TRS, email: "pradeep.shenoy@tungabhadraretail.example", role: "witness", matter: MC },
+  gowda: { key: "gowda", id: "demo_in_p_lalitha_gowda", name: "Lalitha Gowda", title: "Chief Operating Officer", org: TRS, email: "lalitha.gowda@tungabhadraretail.example", role: "witness", matter: MC },
+  kulkarni: { key: "kulkarni", id: "demo_in_p_mahesh_kulkarni", name: "Mahesh Kulkarni", title: "Store Manager, Hubballi", org: TRS, role: "witness", matter: MC },
+  joshi: { key: "joshi", id: "demo_in_p_rohit_joshi", name: "Rohit Joshi", title: "Lead Auditor, Kaveri QA Labs LLP (fictional)", org: "Kaveri QA Labs LLP (fictional)", role: "expert", matter: MC },
+  murthy: { key: "murthy", id: "demo_in_p_venkatesh_murthy", name: "S. Venkatesh Murthy", title: "Advocate for the defendant", org: "Murthy & Associates, Advocates (fictional)", email: "svm@murthyassociates.example", role: "opposing", matter: MC, tags: ["advocate"] },
+  // Writ and bail — Hyderabad
+  sarojini: { key: "sarojini", id: "demo_in_p_sarojini_devi", name: "Kondapalli Sarojini Devi", title: "Petitioner (owner, Plot No. 27)", org: "—", role: "client", matter: MW },
+  raviteja: { key: "raviteja", id: "demo_in_p_ravi_teja", name: "Kondapalli Ravi Teja", title: "Petitioner / Accused No. 1 (son of the writ petitioner)", org: "—", role: "client", matter: MB },
+  commissioner: { key: "commissioner", id: "demo_in_p_commissioner", name: "Commissioner, Chandrayanagiri Municipality", title: "Respondent No. 2 (office, fictional body)", org: MUNICIPALITY, role: "opposing", matter: MW },
+  supervisor: { key: "supervisor", id: "demo_in_p_survey_supervisor", name: "B. Narsimha", title: "Town Planning Supervisor (de facto complainant)", org: MUNICIPALITY, role: "witness", matter: MB },
+  gp: { key: "gp", id: "demo_in_p_gp_municipal", name: "Standing Counsel for the Municipality", title: "Standing counsel (office)", org: MUNICIPALITY, role: "opposing", matter: MW },
+  pp: { key: "pp", id: "demo_in_p_public_prosecutor", name: "Public Prosecutor, High Court for the State of Telangana", title: "Public Prosecutor (office)", org: "State of Telangana", role: "opposing", matter: MB },
 } as const satisfies Record<string, DemoPerson>;
-export type CustKey = keyof typeof CUST;
-export const CUSTODIAN_ORDER: CustKey[] = ["marsh", "ames", "okoro", "lee", "nand", "frey", "reyes", "cole"];
+export type PersonKey = keyof typeof PEOPLE;
 
-/** Fictional non-custodian colleagues, counterparties, experts and counsel. */
-export const EXTRA = {
-  whitaker: { key: "whitaker", id: "demo_apl_p_whitaker", name: "Graham Whitaker", title: "Vice President, App Store Business", org: CO, email: `gwhitaker@${DOMAIN}`, role: "witness", tags: ["non-custodian"] },
-  lindqvist: { key: "lindqvist", id: "demo_apl_p_lindqvist", name: "Sofia Lindqvist", title: "Senior Manager, Services Finance", org: CO, email: `slindqvist@${DOMAIN}`, role: "witness", tags: ["non-custodian"] },
-  park: { key: "park", id: "demo_apl_p_park", name: "Jae Park", title: "Manager, App Review", org: CO, email: `jpark@${DOMAIN}`, role: "witness", tags: ["non-custodian"] },
-  calloway: { key: "calloway", id: "demo_apl_p_calloway", name: "Ben Calloway", title: "Senior Software Engineer, Messaging", org: CO, email: `bcalloway@${DOMAIN}`, role: "witness", tags: ["non-custodian"] },
-  hartley: { key: "hartley", id: "demo_apl_p_hartley", name: "Owen Hartley", title: "Director, Messaging Product", org: CO, email: `ohartley@${DOMAIN}`, role: "witness", tags: ["non-custodian"] },
-  kowal: { key: "kowal", id: "demo_apl_p_kowal", name: "Beatrice Kowal", title: "Senior Director, Wearables Product", org: CO, email: `bkowal@${DOMAIN}`, role: "witness", tags: ["non-custodian"] },
-  morita: { key: "morita", id: "demo_apl_p_morita", name: "Kenji Morita", title: "Engineering Lead, Watch Connectivity", org: CO, email: `kmorita@${DOMAIN}`, role: "witness", tags: ["non-custodian"] },
-  ferreira: { key: "ferreira", id: "demo_apl_p_ferreira", name: "Alicia Ferreira", title: "Partnerships Manager, Wallet", org: CO, email: `aferreira@${DOMAIN}`, role: "witness", tags: ["non-custodian"] },
-  adeyemi: { key: "adeyemi", id: "demo_apl_p_adeyemi", name: "Ruth Adeyemi", title: "Associate General Counsel, Litigation", org: CO, email: `radeyemi@${DOMAIN}`, role: "opposing", tags: ["in-house counsel"] },
-  solberg: { key: "solberg", id: "demo_apl_p_solberg", name: "Mira Solberg", title: "Chief Executive Officer", org: "Kitebird Labs (fictional)", email: "mira@kitebird.example", role: "other", tags: ["developer"] },
-  petrakis: { key: "petrakis", id: "demo_apl_p_petrakis", name: "Jonah Petrakis", title: "Head of Partnerships", org: "Streamforge Inc. (fictional)", email: "jonah.petrakis@streamforge.example", role: "other", tags: ["developer"] },
-  moreau: { key: "moreau", id: "demo_apl_p_moreau", name: "Ines Moreau", title: "VP Product", org: "Pulsewear Ltd. (fictional)", email: "ines.moreau@pulsewear.example", role: "other", tags: ["accessory maker"] },
-  mehta: { key: "mehta", id: "demo_apl_p_mehta", name: "Arjun Mehta", title: "Head of Mobile", org: "Tandem Pay (fictional)", email: "arjun@tandempay.example", role: "other", tags: ["payments app"] },
-  mercer: { key: "mercer", id: "demo_apl_p_mercer", name: "Colin Mercer", title: "Partner (defense counsel)", org: "Hartwell & Pryor LLP (fictional)", email: "cmercer@hartwellpryor.example", role: "opposing", tags: ["defense counsel"] },
-  holt: { key: "holt", id: "demo_apl_p_holt", name: "Serena Holt", title: "Counsel (defense counsel)", org: "Hartwell & Pryor LLP (fictional)", email: "sholt@hartwellpryor.example", role: "opposing", tags: ["defense counsel"] },
-  varga: { key: "varga", id: DEMO_EXPERTS.economist, name: "Dr. Elise Varga", title: "Plaintiffs' economic expert", org: "Calder Economics Group (fictional)", role: "expert", tags: ["plaintiffs-expert"] },
-  hendry: { key: "hendry", id: DEMO_EXPERTS.defenseEconomist, name: "Dr. Paul Hendry", title: "Defense economic expert", org: "Brightline Analytics (fictional)", role: "expert", tags: ["defense-expert"] },
-} as const satisfies Record<string, DemoPerson>;
-export type ExtraKey = keyof typeof EXTRA;
-
-export const ALL_PEOPLE: DemoPerson[] = [...Object.values(CUST), ...Object.values(EXTRA)];
+export const ALL_PEOPLE: DemoPerson[] = Object.values(PEOPLE);
 
 /** Display name → person (exact names used in headers and testimony). */
 export const BY_NAME = new Map<string, DemoPerson>(ALL_PEOPLE.map((p) => [p.name, p]));
@@ -81,16 +66,26 @@ export function addr(name: string): string {
   return p?.email ? `${name} <${p.email}>` : name;
 }
 
-/** Examining and defending counsel for the demo depositions (the firm's associate and fictional defense counsel). */
-export const TAKEN_BY = "Nina Castell (Class Counsel)";
-export const DEFENDED_BY = "Colin Mercer (Hartwell & Pryor LLP)";
-export const EXAMINER = "Ms. Castell";
-export const DEFENDER = "Mr. Mercer";
+/** Sources (the party whose record a document comes from), stored as custodians of the case record. */
+export const SOURCES = {
+  plaintiff: { id: DEMO_SOURCES.plaintiff, name: "Nimbus Cloudworks (plaintiff's documents)", matter: MC },
+  defendant: { id: DEMO_SOURCES.defendant, name: "Tungabhadra Retail (defendant's documents)", matter: MC },
+  courtCom: { id: DEMO_SOURCES.courtCom, name: "Court record — Com.O.S. 1187/2023", matter: MC },
+  petitioner: { id: DEMO_SOURCES.petitioner, name: "Petitioner's documents", matter: MW },
+  municipality: { id: DEMO_SOURCES.municipality, name: "Municipality's documents (served on the petitioner)", matter: MW },
+  courtHyd: { id: DEMO_SOURCES.courtHyd, name: "Court record — High Court for the State of Telangana", matter: MW },
+  prosecution: { id: DEMO_SOURCES.prosecution, name: "Prosecution papers (FIR, remand, orders)", matter: MB },
+} as const;
+export type SourceKey = keyof typeof SOURCES;
 
-/** Reviewers of the demo matter (the two demo team members). */
-export const REVIEWER = { associate: DEMO_TEAM.associate, paralegal: DEMO_TEAM.paralegal } as const;
+/** Our advocates in the demo (the firm's two demo members; the owner leads). */
+export const OUR_JUNIOR = "Kavya Hegde";
+export const OUR_CLERK = "Sai Kiran Reddy";
+export const REVIEWER = { junior: DEMO_TEAM.junior, clerk: DEMO_TEAM.clerk } as const;
 
-/** Person records for the matter: custodians plus the fictional colleagues, counterparties, experts and counsel. */
+/** Person records for the matters: witnesses, officers, advocates, offices and the case-record sources. */
 export function buildPeople(): Person[] {
-  return ALL_PEOPLE.map((p) => tagged<Person>({ id: p.id, name: p.name, email: p.email, title: p.title, organization: p.org, role: p.role, tags: [...(p.tags ?? []), "demo"] }));
+  const people = ALL_PEOPLE.map((p) => tagged<Person>({ id: p.id, name: p.name, email: p.email, title: p.title, organization: p.org, role: p.role, tags: [...(p.tags ?? []), "demo"] }));
+  const sources = Object.values(SOURCES).map((s) => tagged<Person>({ id: s.id, name: s.name, title: "Case-record source", organization: "Case record", role: "custodian", tags: ["demo", "record source"] }));
+  return [...people, ...sources];
 }

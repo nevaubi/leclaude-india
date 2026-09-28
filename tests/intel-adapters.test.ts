@@ -32,9 +32,9 @@ function providers(): IntelProviders {
 }
 
 describe("adapter registry", () => {
-  it("registers twelve adapters with defaults that validate and reports configuration", () => {
+  it("registers eighteen adapters (twelve upstream, six India) with defaults that validate and reports configuration", () => {
     const all = listAdapters();
-    expect(all).toHaveLength(12);
+    expect(all).toHaveLength(18);
     for (const a of all) { expect(a.configSchema.safeParse(a.defaults).success).toBe(true); expect(a.kinds.length).toBeGreaterThan(0); }
     const infos = adapterInfos(providerStatuses());
     expect(infos.find((i) => i.id === "ecfr")?.configured).toBe(true);

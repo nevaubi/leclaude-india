@@ -7,7 +7,7 @@ import { KeyValueList } from "@/components/ui/form";
 import { aiRuntimeStatus } from "@/lib/ai/config";
 import { db } from "@/lib/db";
 import { currentUser, DEFAULT_USER } from "@/lib/current-user";
-import { workspaceView } from "@/modules/workspace/service";
+import { canManageWorkspace, workspaceView } from "@/modules/workspace/service";
 import { TeamSettings } from "@/modules/workspace/components/team-settings";
 import { IntegrityPanel } from "@/modules/settings/integrity-panel";
 import { ReviewQueueSummary } from "@/modules/settings/review-queue-summary";
@@ -20,9 +20,16 @@ import { WorkspaceSettings } from "@/modules/settings/workspace-settings";
 import { providersPayload } from "@/modules/settings/providers";
 import { DemoDataSection } from "@/modules/settings/demo-data";
 import { demoStatus } from "@/modules/demo";
+import { getI18n } from "@/lib/i18n/server";
+import { effectiveLanguagePreferences } from "@/lib/i18n/preferences";
+import { currentPrincipal } from "@/lib/auth/context";
+import { LanguageSettings } from "@/modules/settings/language-settings";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Settings" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getI18n();
+  return { title: t("settings.title") };
+}
 
 /**
  * Settings: one page, left navigation. The workspace (firm profile, team) is
@@ -31,61 +38,68 @@ export const metadata: Metadata = { title: "Settings" };
  */
 export default async function SettingsPage() {
   await pageDb();
+  const { t, number } = await getI18n();
   const ai = aiRuntimeStatus();
   const d = db();
   const me = currentUser((id) => d.people.get(id)?.name);
-  const signedIn = me.id === DEFAULT_USER.id && me.name === DEFAULT_USER.name ? "Not set up" : me.name;
+  const signedIn = me.id === DEFAULT_USER.id && me.name === DEFAULT_USER.name ? t("common.notSetUp") : me.name;
+  const lang = effectiveLanguagePreferences();
+  const principal = currentPrincipal();
   const workspace = workspaceView();
   const providers = providersPayload();
   const demo = demoStatus();
   const matters = d.matters.all().map((m) => ({ id: m.id, shortName: m.shortName }));
   const counts: { label: string; value: number }[] = [
-    { label: "Matters", value: d.matters.count() }, { label: "People", value: d.people.count() }, { label: "E-discovery docs", value: d.edocs.count() },
-    { label: "Depositions", value: d.depositions.count() }, { label: "Workflows", value: d.workflows.count() }, { label: "Office documents", value: d.officeDocs.count() },
-    { label: "Library items", value: d.library.count() }, { label: "Tasks", value: d.tasks.count() }, { label: "Events", value: d.events.count() },
+    { label: t("settings.count.matters"), value: d.matters.count() }, { label: t("settings.count.people"), value: d.people.count() }, { label: t("settings.count.edocs"), value: d.edocs.count() },
+    { label: t("settings.count.depositions"), value: d.depositions.count() }, { label: t("settings.count.workflows"), value: d.workflows.count() }, { label: t("settings.count.officeDocs"), value: d.officeDocs.count() },
+    { label: t("settings.count.library"), value: d.library.count() }, { label: t("settings.count.tasks"), value: d.tasks.count() }, { label: t("settings.count.events"), value: d.events.count() },
   ];
   const primary = ai.roles.primary;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageTopbar icon={<SettingsIcon />} title="Settings" context={primary ? `${primary.provider} · ${primary.model}` : "No model provider configured"} />
+      <PageTopbar icon={<SettingsIcon />} title={t("settings.title")} context={primary ? `${primary.provider} · ${primary.model}` : t("settings.noProvider")} />
       <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
         <div className="mx-auto grid max-w-6xl gap-x-10 gap-y-4 px-4 py-6 md:grid-cols-[168px_minmax(0,1fr)] md:px-6">
           <div className="md:sticky md:top-0 md:self-start">
             <SettingsNav />
           </div>
           <div className="min-w-0 space-y-10">
-            <SettingsSection id="workspace" title="Workspace" description="The firm and the owner recorded at setup.">
+            <SettingsSection id="workspace" title={t("settings.group.workspace")} description={t("settings.desc.workspace")}>
               <WorkspaceSettings initial={workspace} />
             </SettingsSection>
 
-            <SettingsSection id="demo" title="Demo data" description="Adds a sample Apple antitrust matter with synthetic documents, depositions and work product for demonstrations; remove it at any time.">
+            <SettingsSection id="language" title={t("settings.group.language")} description={t("settings.desc.language")}>
+              <LanguageSettings initial={{ userAnswerLanguage: lang.userAnswerLanguage, answerLanguage: lang.answerLanguage, workspace: { defaultLocale: lang.workspace.defaultLocale, answerLanguage: lang.workspace.answerLanguage, timeZone: lang.workspace.timeZone }, canManageWorkspace: canManageWorkspace(principal) }} />
+            </SettingsSection>
+
+            <SettingsSection id="demo" title={t("settings.group.demo")} description={t("settings.desc.demo")}>
               <DemoDataSection initial={demo} />
             </SettingsSection>
 
-            <SettingsSection id="team" title="Team" bare>
+            <SettingsSection id="team" title={t("settings.group.team")} bare>
               {/* Remounts (and refetches) when demo data is loaded or removed, so the demo team appears without a reload. */}
               <TeamSettings key={demo.loadedAt ?? "no-demo"} />
             </SettingsSection>
 
-            <SettingsSection id="ai" title="AI" description="Model providers are read from the environment; edit .env.local and restart to change them. Outputs carry provenance and are verified before they are trusted.">
+            <SettingsSection id="ai" title={t("settings.group.ai")} description={t("settings.desc.ai")}>
               <AiSettings status={ai} />
             </SettingsSection>
 
-            <SettingsSection id="research" title="Research providers" description="Public endpoints work without keys; tokens raise rate limits and unlock crawling and web search.">
+            <SettingsSection id="research" title={t("settings.group.research")} description={t("settings.desc.research")}>
               <ProviderTable initial={providers} />
             </SettingsSection>
 
-            <SettingsSection id="data" title="Data & automation" description="Sources that feed the intelligence layer, their schedules, the job log and local folders.">
+            <SettingsSection id="data" title={t("settings.group.data")} description={t("settings.desc.data")}>
               <DataAutomationSection background={providers.background} dataDir={providers.dataDir} corpusFolders={providers.providers.find((p) => p.id === "local-corpus")?.facts?.folders as number ?? 0} />
             </SettingsSection>
 
-            <SettingsSection id="integrity" title="Integrity" description={`Records, the AI review queue, scans and the hash-chained audit log. Database in ${providers.dataDir}.`}>
+            <SettingsSection id="integrity" title={t("settings.group.integrity")} description={t("settings.desc.integrity", { dir: providers.dataDir })}>
               <div className="space-y-3">
-                <SettingsBlock title="Records">
+                <SettingsBlock title={t("settings.records")}>
                   <div className="grid grid-cols-2 gap-x-6 sm:grid-cols-3">
                     {counts.map((c) => (
-                      <div key={c.label} className="flex h-7 items-center justify-between border-b border-line-quiet text-[12px]"><span className="text-muted-foreground">{c.label}</span><span className="tabular">{c.value.toLocaleString()}</span></div>
+                      <div key={c.label} className="flex h-7 items-center justify-between border-b border-line-quiet text-[12px]"><span className="text-muted-foreground">{c.label}</span><span className="tabular">{number(c.value)}</span></div>
                     ))}
                   </div>
                 </SettingsBlock>
@@ -94,14 +108,15 @@ export default async function SettingsPage() {
               </div>
             </SettingsSection>
 
-            <SettingsSection id="about" title="About">
+            <SettingsSection id="about" title={t("settings.group.about")}>
               <KeyValueList dense columns={2} labelWidth={120} items={[
-                { label: "Application", value: process.env.NEXT_PUBLIC_APP_NAME ?? "LeClaude" },
-                { label: "Firm", value: workspace.configured ? workspace.firmName : "Not set up", muted: !workspace.configured },
-                { label: "Signed in as", value: signedIn },
-                { label: "Runtime", value: `Next.js 15 · React 19 · Node ${process.versions.node}`, mono: true },
-                { label: "Environment", value: process.env.NODE_ENV, mono: true },
-                { label: "Keyboard", value: "⌘K palette · ? shortcuts · G H/S/I/E/W/O/L/, navigation · [ rail" },
+                { label: t("settings.about.application"), value: process.env.NEXT_PUBLIC_APP_NAME ?? t("brand.name") },
+                { label: t("settings.about.firm"), value: workspace.configured ? workspace.firmName : t("common.notSetUp"), muted: !workspace.configured },
+                { label: t("settings.about.signedInAs"), value: signedIn },
+                { label: t("settings.about.region"), value: t("settings.lang.timeZoneValue") },
+                { label: t("settings.about.runtime"), value: `Next.js 15 · React 19 · Node ${process.versions.node}`, mono: true },
+                { label: t("settings.about.environment"), value: process.env.NODE_ENV, mono: true },
+                { label: t("settings.about.keyboard"), value: t("settings.about.keyboardValue") },
               ]} />
             </SettingsSection>
           </div>

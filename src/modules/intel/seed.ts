@@ -21,7 +21,7 @@ import { INTEL_COLLECTIONS, INTEL_VECTOR_NAMESPACE, type IntelChunk, type IntelD
  *   cleaned once (purgeSampleIntel).
  * Idempotent: stable ids, putMany; user edits to system sources are kept.
  */
-export const INTEL_SEED_VERSION = 1;
+export const INTEL_SEED_VERSION = 2;
 
 export const SEED_SOURCE_IDS: Record<SeedSourceKey, string> = {
   clOpinions: "isrc_sys_cl_opinions",
@@ -39,6 +39,60 @@ export const SEED_SOURCE_IDS: Record<SeedSourceKey, string> = {
 };
 
 const hasEnv = (k: string) => Boolean(process.env[k]?.trim());
+
+/**
+ * LeClaude India default sources (stable ids). They replace the US sources (CourtListener, eCFR, Federal Register,
+ * GovInfo, openFDA, JPML, US court rules) in this fork's production catalog; the US adapters stay registered and
+ * compiling, and the demo catalog keeps its US sample sources because the bundled sample corpus is bound to them.
+ */
+export type IndiaSourceKey = "sciOpenData" | "hcOpenData" | "indianKanoon" | "indiaCode" | "sccOnline" | "manupatra";
+
+export const INDIA_SOURCE_IDS: Record<IndiaSourceKey, string> = {
+  sciOpenData: "isrc_sys_in_sci",
+  hcOpenData: "isrc_sys_in_hc",
+  indianKanoon: "isrc_sys_in_kanoon",
+  indiaCode: "isrc_sys_in_india_code",
+  sccOnline: "isrc_sys_in_scc_online",
+  manupatra: "isrc_sys_in_manupatra",
+};
+
+/**
+ * The India source catalog. Public open-data sources ship configured for the focus courts (Supreme Court; Karnataka,
+ * Telangana and Andhra Pradesh High Courts; last two years) and the focus states' Acts, but stay disabled until the
+ * firm enables them (or LECLAUDE_INDIA_OPEN_DATA=1 turns the public ones on). Indian Kanoon needs the firm's token;
+ * SCC Online and Manupatra stay disabled and fail closed until a licence and an export folder or licensed API are set.
+ */
+export function indiaSources(now = new Date(), order0 = 0): IntelSource[] {
+  const ts = now.toISOString();
+  const openData = hasEnv("LECLAUDE_INDIA_OPEN_DATA") && ["1", "true", "yes"].includes(process.env.LECLAUDE_INDIA_OPEN_DATA!.trim().toLowerCase());
+  const base = (key: IndiaSourceKey, s: Pick<IntelSource, "adapter" | "name" | "description" | "config" | "schedule"> & { enabled?: boolean }, order: number): IntelSource => {
+    const enabled = Boolean(s.enabled);
+    return {
+      id: INDIA_SOURCE_IDS[key],
+      adapter: s.adapter,
+      name: s.name,
+      description: s.description,
+      config: s.config,
+      schedule: s.schedule,
+      enabled,
+      status: enabled ? "idle" : "disabled",
+      health: { ok: true, consecutiveFailures: 0 },
+      nextRunAt: enabled ? new Date(now.getTime() + (order0 + order + 1) * 90_000).toISOString() : computeNextRunAt(s.schedule, now)?.toISOString(),
+      stats: { documents: 0, chunks: 0, entities: 0, lastAdded: 0 },
+      system: true,
+      createdAt: ts,
+      updatedAt: ts,
+    };
+  };
+  return [
+    base("sciOpenData", { adapter: "sci-open-data", name: "Supreme Court of India judgments", description: "Supreme Court judgments from the AWS Open Data set (English text of record, neutral and SCR citations, coram, court-published translations). Last two years, incremental.", config: { lastYears: 2, fetchPdf: true, translationLanguages: [] }, schedule: { every: "daily", at: "03:10" }, enabled: openData }, 0),
+    base("hcOpenData", { adapter: "hc-open-data", name: "High Court judgments: Karnataka, Telangana, Andhra Pradesh", description: "High Court judgments from the AWS Open Data set for the focus courts and all their benches (Bengaluru, Dharwad, Kalaburagi; Hyderabad; Amaravati). Last two years, incremental.", config: { courts: ["29_3", "36_29", "28_2"], lastYears: 2, fetchPdf: true }, schedule: { every: "daily", at: "03:40" }, enabled: openData }, 1),
+    base("indiaCode", { adapter: "india-code", name: "Acts and sections (India Code)", description: "Core central codes (BNS, BNSS, BSA, IPC, CrPC, Evidence Act, CPC, Limitation, Contract…) and the Acts of Karnataka, Telangana and Andhra Pradesh, with section text.", config: { states: ["KA", "TS", "AP"] }, schedule: { every: "weekly", at: "02:40", weekday: 0 }, enabled: openData }, 2),
+    base("indianKanoon", { adapter: "indian-kanoon", name: "Indian Kanoon searches", description: "Saved Indian Kanoon searches over the Supreme Court and the focus High Courts (needs INDIAN_KANOON_API_TOKEN). Add queries, then enable.", config: { queries: [] }, schedule: { every: "daily", at: "06:10" } }, 3),
+    base("sccOnline", { adapter: "scc-online", name: "SCC Online (firm licence only)", description: "Judgments from files the firm exports from its own SCC Online subscription, or a licensed API. Disabled until the licence is confirmed; never scraped.", config: { licenseAcknowledged: false, mode: "export" }, schedule: { every: "manual" } }, 4),
+    base("manupatra", { adapter: "manupatra", name: "Manupatra (firm licence only)", description: "Judgments from files the firm exports from its own Manupatra subscription, or a licensed API. Disabled until the licence is confirmed; never scraped.", config: { licenseAcknowledged: false, mode: "export" }, schedule: { every: "manual" } }, 5),
+  ];
+}
 
 /** The twelve sample-configured system sources (demo mode). Enabled only where no key is needed. */
 export function systemSources(now = new Date()): IntelSource[] {
@@ -75,15 +129,17 @@ export function systemSources(now = new Date()): IntelSource[] {
     base("news", { adapter: "news", name: "News: matters, products and regulators", description: "Recent news for the matters and their products (needs TAVILY_API_KEY or FIRECRAWL_API_KEY).", config: { queries: ["AFFF PFAS litigation", "Depo-Provera meningioma lawsuit", "EPA PFAS drinking water", "FDA medroxyprogesterone label"], includeMatters: true, sinceDays: 7, maxResults: 8, provider: "auto", includeDomains: [], maxTextChars: 20_000 }, schedule: { every: "daily", at: "07:00" }, enabled: hasEnv("TAVILY_API_KEY") || hasEnv("FIRECRAWL_API_KEY"), scope: { matterIds: [MATTERS.afff, MATTERS.depo] } }, 9),
     base("localCorpus", { adapter: "local-corpus", name: "Local document folders", description: "The firm's document folders (LECLAUDE_CORPUS_DIRS or the folders below), indexed incrementally and mapped to matters by folder name.", config: { dirs: corpusDirs, recursive: true, maxFileMb: 25, maxFiles: 500, skipHidden: true, matterMap: { "AFFF-PFAS": MATTERS.afff, "Depo-Provera": MATTERS.depo, "Northgate": MATTERS.northgate, "Project-Harbor": MATTERS.harbor, "Sterling": MATTERS.sterling }, maxTextChars: 400_000 }, schedule: { every: "daily", at: "02:00" }, enabled: corpusDirs.length > 0 }, 10),
     base("webList", { adapter: "web-list", name: "Watched web pages: EPA PFAS and FDA drug safety", description: "Agency hub pages kept current as web_page documents.", config: { urls: [{ url: "https://www.epa.gov/pfas", title: "EPA — Per- and Polyfluoroalkyl Substances (PFAS)", matterId: MATTERS.afff, tags: ["pfas"] }, { url: "https://www.fda.gov/drugs/drug-safety-and-availability", title: "FDA — Drug Safety and Availability", matterId: MATTERS.depo, tags: ["fda"] }], kind: "web_page", maxTextChars: 120_000, prefer: "auto" }, schedule: { every: "weekly", at: "01:30", weekday: 3 }, enabled: true }, 11),
+    ...indiaSources(now, 12),
   ];
 }
 
 /**
- * Production source catalog: one disabled, unconfigured source per adapter (same stable ids as the
- * demo catalog so the system workflows resolve them). Nothing runs until the firm enables a source;
- * the local folders are enabled only when LECLAUDE_CORPUS_DIRS names folders.
+ * Production source catalog (LeClaude India): the India sources, the local folders and watched web pages,
+ * disabled until the firm enables them (the public India sources also when LECLAUDE_INDIA_OPEN_DATA=1); the
+ * local folders are enabled only when LECLAUDE_CORPUS_DIRS names folders. The upstream US sources are left out
+ * unless `includeUs` is set (used to reset sample-configured rows in older workspaces).
  */
-export function referenceSources(now = new Date()): IntelSource[] {
+export function referenceSources(now = new Date(), o: { includeUs?: boolean } = {}): IntelSource[] {
   const ts = now.toISOString();
   const corpusDirs = (process.env.LECLAUDE_CORPUS_DIRS ?? "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
   const base = (key: SeedSourceKey, s: Pick<IntelSource, "adapter" | "name" | "description" | "config" | "schedule"> & { enabled?: boolean }, order: number): IntelSource => {
@@ -106,7 +162,8 @@ export function referenceSources(now = new Date()): IntelSource[] {
     };
   };
   const configure = "Add queries to this source, then enable it.";
-  return [
+  // LeClaude India: the US sources below are not part of this fork's default catalog (US_REFERENCE_KEYS).
+  const us: IntelSource[] = [
     base("clOpinions", { adapter: "courtlistener-opinions", name: "Case law (CourtListener opinions)", description: `Opinions matching saved queries. ${configure}`, config: { queries: [] }, schedule: { every: "daily", at: "05:00" } }, 0),
     base("clDockets", { adapter: "courtlistener-dockets", name: "Docket watch (CourtListener RECAP)", description: "Follows the dockets of your matters and watched docket numbers; new entries become records.", config: { docketNumbers: [], includeMatters: true, includeWatches: true }, schedule: { every: "1h" } }, 1),
     base("clJudges", { adapter: "courtlistener-judges", name: "Judge profiles (CourtListener)", description: "Profiles for judges named on your dockets and opinions.", config: { names: [], fromDocuments: true }, schedule: { every: "weekly", at: "03:00", weekday: 1 } }, 2),
@@ -120,9 +177,14 @@ export function referenceSources(now = new Date()): IntelSource[] {
     base("localCorpus", { adapter: "local-corpus", name: "Local document folders", description: "The firm's document folders from LECLAUDE_CORPUS_DIRS, indexed incrementally and mapped to matters by folder name.", config: { dirs: corpusDirs, recursive: true, matterMap: {} }, schedule: { every: "daily", at: "02:00" }, enabled: corpusDirs.length > 0 }, 10),
     base("webList", { adapter: "web-list", name: "Watched web pages", description: `Web pages kept current as records. ${configure}`, config: { urls: [] }, schedule: { every: "weekly", at: "01:30", weekday: 3 } }, 11),
   ];
+  return [...indiaSources(now), ...(o.includeUs ? us : us.filter((x) => !US_REFERENCE_IDS.has(x.id)))];
 }
 
-export const INTEL_REFERENCE_VERSION = 1;
+/** Upstream US sources left out of the India production catalog (their adapters stay registered). */
+export const US_REFERENCE_KEYS: SeedSourceKey[] = ["clOpinions", "clDockets", "clJudges", "ecfr", "federalRegister", "govinfo", "openfda", "jpml", "courtRules", "news"];
+const US_REFERENCE_IDS = new Set(US_REFERENCE_KEYS.map((k) => SEED_SOURCE_IDS[k]));
+
+export const INTEL_REFERENCE_VERSION = 2;
 const REFERENCE_KEY = "intel:reference:version";
 
 export interface SamplePurgeReport { documents: number; entities: number; relations: number; insights: number; sources: number }
@@ -142,7 +204,8 @@ export function purgeSampleIntel(database: Database = db(), now = new Date()): S
   const insights = database.collection<IntelInsight>(INTEL_COLLECTIONS.insights);
   const report: SamplePurgeReport = { documents: 0, entities: 0, relations: 0, insights: 0, sources: 0 };
 
-  const sample = new Map(systemSources(now).map((s) => [s.id, JSON.stringify(s.config)]));
+  const sampleIds = new Set(Object.values(SEED_SOURCE_IDS));
+  const sample = new Map(systemSources(now).filter((s) => sampleIds.has(s.id)).map((s) => [s.id, JSON.stringify(s.config)]));
   const sampleSourceIds = new Set(sources.all().filter((s) => sample.get(s.id) === JSON.stringify(s.config)).map((s) => s.id));
 
   for (const d of documents.all()) {
@@ -162,7 +225,8 @@ export function purgeSampleIntel(database: Database = db(), now = new Date()): S
     const scopeGone = i.evidence.length === 0 && (i.scope.entityIds ?? []).length > 0 && !(i.scope.entityIds ?? []).some((id) => entities.has(id));
     if (evidenceGone || scopeGone) { insights.delete(i.id); report.insights++; }
   }
-  const neutral = new Map(referenceSources(now).map((s) => [s.id, s]));
+  // Sample-configured US sources are reset to their neutral form too (they are no longer added to new workspaces).
+  const neutral = new Map(referenceSources(now, { includeUs: true }).map((s) => [s.id, s]));
   for (const id of sampleSourceIds) {
     const next = neutral.get(id);
     if (next) { sources.put(next); report.sources++; }

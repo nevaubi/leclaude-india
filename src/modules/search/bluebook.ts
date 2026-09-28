@@ -1,10 +1,18 @@
 /**
- * Deterministic Bluebook citation builder (build_citation tool, table of authorities).
+ * Deterministic US Bluebook citation builder (US fork; not used by LeClaude India research, which uses india-citations.ts).
  * Formats structured fields; never invents a missing volume, page, court or year — missing
  * required fields are returned as errors instead. Pure and client-safe.
  */
-import { COURT_ABBR } from "./jurisdictions";
 import { bluebookDate } from "./normalize";
+
+/**
+ * US Bluebook court abbreviations (kept so the US builder compiles; LeClaude India formats citations with
+ * src/modules/search/india-citations.ts and the research lanes use build_citation in the Indian style).
+ */
+const COURT_ABBR: Record<string, string> = {
+  scotus: "U.S.", ca1: "1st Cir.", ca2: "2d Cir.", ca3: "3d Cir.", ca4: "4th Cir.", ca5: "5th Cir.", ca6: "6th Cir.", ca7: "7th Cir.", ca8: "8th Cir.", ca9: "9th Cir.", ca10: "10th Cir.", ca11: "11th Cir.", cadc: "D.C. Cir.", cafc: "Fed. Cir.",
+  dsc: "D.S.C.", ilnd: "N.D. Ill.", cand: "N.D. Cal.", nysd: "S.D.N.Y.", ded: "D. Del.", cal: "Cal.", ny: "N.Y.", del: "Del.", tex: "Tex.", ill: "Ill.",
+};
 
 export type CitationFields =
   | { type: "case"; caseName: string; volume?: number | string; reporter?: string; page?: number | string; pinpoint?: string; court?: string; year?: number | string; date?: string; docketNumber?: string; wl?: string; parenthetical?: string }

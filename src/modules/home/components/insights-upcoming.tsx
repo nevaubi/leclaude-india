@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { T } from "@/lib/i18n/client";
 import Link from "next/link";
 import { useHome } from "./home-provider";
 import { Section } from "./shared";
@@ -26,7 +27,7 @@ export function UpcomingPrepSection() {
   const shown = (items ?? []).filter((u) => (u.insights.length || u.records.length) && (!matterFilter || u.event.matterId === matterFilter));
   if (!shown.length) return null;
   return (
-    <Section id="upcoming-prep" title="Prepare" count={shown.length} description="Material from your sources for the next two weeks" actions={<Link href="/?section=calendar" className="text-[11.5px] text-muted-foreground hover:text-foreground">Calendar</Link>}>
+    <Section id="upcoming-prep" title={<T k="home.section.prepare" />} count={shown.length} description={<T k="home.section.prepareDesc" />} actions={<Link href="/?section=calendar" className="text-[11.5px] text-muted-foreground hover:text-foreground"><T k="home.section.calendar" /></Link>}>
       <ul className="divide-y divide-line-quiet">
         {withLinks(shown.slice(0, 4)).map(({ u, link }) => {
           return (

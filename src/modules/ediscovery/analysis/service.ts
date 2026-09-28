@@ -1,4 +1,5 @@
 import "server-only";
+import { canonicalExhibit, resolveExhibit as resolveIndiaExhibit, type IndiaEDocument } from "../india";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { aiConfig } from "@/lib/ai/config";
@@ -131,10 +132,18 @@ export function setObjectionRuling(depositionId: string, index: number, ruling: 
 
 /** Resolve an exhibit reference ("Voss-3") or Bates number to an e-discovery document id. */
 export function resolveExhibit(dep: Deposition, ref: string): { docId?: string; bates?: string; description?: string } {
-  const ex = dep.exhibits?.find((e) => e.id.toLowerCase() === ref.toLowerCase());
+  const ex = dep.exhibits?.find((e) => e.id.toLowerCase() === ref.toLowerCase() || (canonicalExhibit(e.id) != null && canonicalExhibit(e.id) === canonicalExhibit(ref)));
+  // Indian exhibit marks (Ex.P7, M.O.2) resolve to the one document of THIS matter carrying exactly that mark (§23).
+  const mark = canonicalExhibit(ex?.id ?? ref);
+  if (mark) {
+    const r = resolveIndiaExhibit(mark, db().edocs.find((d) => d.matterId === dep.matterId) as IndiaEDocument[], dep.matterId);
+    if (r.status === "resolved") { const doc = db().edocs.get(r.docId); return { docId: r.docId, bates: doc?.bates, description: ex?.description ?? doc?.subject }; }
+    if (!ex?.bates) return { description: ex?.description };
+  }
   const bates = ex?.bates ?? (/^[A-Z]{2,5}-\d{5,}$/i.test(ref) ? ref.toUpperCase() : undefined);
   if (!bates) return { description: ex?.description };
-  const doc = db().edocs.findOne((d) => d.bates.toUpperCase() === bates);
+  // Matter-scoped: another matter's document with the same number is never bound (§22/§23).
+  const doc = db().edocs.findOne((d) => d.matterId === dep.matterId && d.bates.toUpperCase() === bates.toUpperCase());
   return { docId: doc?.id, bates, description: ex?.description ?? doc?.subject };
 }
 
@@ -497,5 +506,5 @@ export function conflictsMarkdown(matterId: string): string {
 /** Documents referenced by a deposition's exhibits, for the AI outline and cross-analysis prompts. */
 export function exhibitDocuments(dep: Deposition): EDocument[] {
   const d = db();
-  return (dep.exhibits ?? []).map((e) => (e.bates ? d.edocs.findOne((x) => x.bates === e.bates) : null)).filter((x): x is EDocument => !!x);
+  return (dep.exhibits ?? []).map((e) => { const id = resolveExhibit(dep, e.id).docId; return id ? d.edocs.get(id) : null; }).filter((x): x is EDocument => !!x);
 }

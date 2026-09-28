@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { T } from "@/lib/i18n/client";
 import Link from "next/link";
 import { CalendarDays, CalendarPlus, Calculator, ChevronLeft, ChevronRight, Clock, ExternalLink, FileSearch, ListChecks, MapPin, Pencil, Plus, ScrollText, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -246,7 +247,7 @@ export function CalendarFocus() {
   return (
     <Section
       id="calendar"
-      title="Calendar"
+      title={<T k="home.section.calendar" />}
       icon={CalendarDays}
       expanded
       onExpand={() => setFocus(null)}

@@ -12,10 +12,10 @@ import { db, resetSqlite } from "@/lib/db";
 import { validateWorkflow } from "@/modules/workflows/graph";
 import { KNOWN_NODE_TYPES } from "@/modules/workflows/registry";
 import { describeSchedule, nextRunAt, normalizeSchedule, schedulePeriodMs } from "@/modules/workflows/schedule";
-import { buildSystemTemplates, INTEL_SOURCE_IDS, SYSTEM_WORKFLOW_IDS, systemWorkflowById } from "@/modules/workflows/templates-system";
+import { buildSystemTemplates, buildUsSystemTemplates, INDIA_INTEL_SOURCE_IDS, INTEL_SOURCE_IDS, SYSTEM_WORKFLOW_IDS, US_ONLY_SYSTEM_WORKFLOW_IDS, systemWorkflowById } from "@/modules/workflows/templates-system";
 import { buildTemplates, WORKFLOW_TEMPLATE_IDS } from "@/modules/workflows/templates";
 import { getWorkflow, listWorkflows, scheduleOf, workflowMeta, workflowStats } from "@/modules/workflows/service";
-import { SEED_SOURCE_IDS } from "@/modules/intel/seed";
+import { INDIA_SOURCE_IDS, SEED_SOURCE_IDS } from "@/modules/intel/seed";
 import * as listRoute from "@/app/api/workflows/route";
 import * as byId from "@/app/api/workflows/[id]/route";
 import * as runRoute from "@/app/api/workflows/[id]/run/route";
@@ -30,12 +30,19 @@ const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const json = async (res: Response) => ({ status: res.status, body: (await res.json()) as Record<string, unknown> });
 
 describe("system workflows", () => {
+  // LeClaude India: the default set points at the India sources; the US set (all eleven) stays buildable for the US
+  // sample dataset, which the demo-mode seed used by this suite still loads.
   const system = buildSystemTemplates();
-  it("ships the eleven automation workflows as valid, warning-free graphs with stable ids", () => {
-    expect(system).toHaveLength(11);
-    expect(system.map((w) => w.id).sort()).toEqual(Object.values(SYSTEM_WORKFLOW_IDS).sort());
-    expect(system.map((w) => w.name)).toEqual(["Authority refresh", "Docket watch", "MDL tracker", "Regulatory watch", "News watch", "Local corpus backfill", "Judge and counsel profiles", "Matter chronologies", "Insight verification sweep", "Data integrity sweep", "Team digest"]);
-    for (const w of system) {
+  const us = buildUsSystemTemplates();
+  const all = [...system, ...us];
+  it("ships the India automation workflows (and keeps the eleven US ones) as valid, warning-free graphs with stable ids", () => {
+    expect(system).toHaveLength(8);
+    expect(system.map((w) => w.id).sort()).toEqual(Object.values(SYSTEM_WORKFLOW_IDS).filter((id) => !US_ONLY_SYSTEM_WORKFLOW_IDS.includes(id)).sort());
+    expect(system.map((w) => w.name)).toEqual(["Judgment watch — Supreme Court and focus High Courts", "Statute watch — India Code", "Local corpus backfill", "Judge and advocate profiles", "Matter chronologies", "Insight verification sweep", "Data integrity sweep", "Team digest"]);
+    expect(us).toHaveLength(11);
+    expect(us.map((w) => w.id).sort()).toEqual(Object.values(SYSTEM_WORKFLOW_IDS).sort());
+    expect(us.map((w) => w.name)).toEqual(["Authority refresh", "Docket watch", "MDL tracker", "Regulatory watch", "News watch", "Local corpus backfill", "Judge and counsel profiles", "Matter chronologies", "Insight verification sweep", "Data integrity sweep", "Team digest"]);
+    for (const w of all) {
       expect(w.system, w.id).toBe(true);
       expect(w.isTemplate).toBe(false);
       expect(w.status).toBe("active");
@@ -58,11 +65,17 @@ describe("system workflows", () => {
   });
   it("references the seeded intelligence sources and uses the phase-3 node types", () => {
     expect(INTEL_SOURCE_IDS).toEqual(SEED_SOURCE_IDS);
-    const fetches = system.flatMap((w) => w.nodes.filter((n) => n.type === "intel.fetch"));
+    // India defaults fetch only India sources (plus the jurisdiction-neutral local corpus).
+    for (const [k, v] of Object.entries(INDIA_INTEL_SOURCE_IDS)) expect(INDIA_SOURCE_IDS[k as keyof typeof INDIA_SOURCE_IDS], k).toBe(v);
+    const indiaFetches = system.flatMap((w) => w.nodes.filter((n) => n.type === "intel.fetch"));
+    expect(indiaFetches.length).toBeGreaterThanOrEqual(5);
+    const indiaKnown = new Set<string>([...Object.values(INDIA_SOURCE_IDS), SEED_SOURCE_IDS.localCorpus]);
+    for (const f of indiaFetches) expect(indiaKnown.has(String(f.config.sourceId)), `${f.id}: ${String(f.config.sourceId)}`).toBe(true);
+    const fetches = us.flatMap((w) => w.nodes.filter((n) => n.type === "intel.fetch"));
     expect(fetches.length).toBeGreaterThanOrEqual(8);
     const known = new Set<string>(Object.values(SEED_SOURCE_IDS));
     for (const f of fetches) expect(known.has(String(f.config.sourceId)), `${f.id}: ${String(f.config.sourceId)}`).toBe(true);
-    const types = new Set(system.flatMap((w) => w.nodes.map((n) => n.type)));
+    const types = new Set(all.flatMap((w) => w.nodes.map((n) => n.type)));
     for (const t of ["intel.fetch", "intel.extract", "intel.index", "intel.entities", "intel.analyze", "intel.verify", "intel.publish", "review.auto", "data.query", "logic.loop"]) expect(types.has(t as never), t).toBe(true);
     const digest = system.find((w) => w.id === SYSTEM_WORKFLOW_IDS.teamDigest)!;
     const publish = digest.nodes.find((n) => n.type === "intel.publish")!;
@@ -70,11 +83,11 @@ describe("system workflows", () => {
     expect(String(publish.config.userId)).toContain("loop.item.id");
   });
   it("computes the schedules the design asks for", () => {
-    const sched = (id: string) => normalizeSchedule(system.find((w) => w.id === id)!.nodes.find((n) => n.type === "trigger.schedule")!.config.schedule)!;
+    const sched = (id: string) => normalizeSchedule((system.find((w) => w.id === id) ?? us.find((w) => w.id === id))!.nodes.find((n) => n.type === "trigger.schedule")!.config.schedule)!;
     expect(describeSchedule(sched(SYSTEM_WORKFLOW_IDS.authorityRefresh))).toMatch(/^Daily at/);
     expect(describeSchedule(sched(SYSTEM_WORKFLOW_IDS.docketWatch))).toMatch(/^Hourly/);
     expect(describeSchedule(sched(SYSTEM_WORKFLOW_IDS.mdlTracker))).toMatch(/^Daily/);
-    expect(describeSchedule(sched(SYSTEM_WORKFLOW_IDS.regulatoryWatch))).toMatch(/^Daily/);
+    expect(describeSchedule(sched(SYSTEM_WORKFLOW_IDS.regulatoryWatch))).toMatch(/^Weekly/); // India Code statute watch
     expect(describeSchedule(sched(SYSTEM_WORKFLOW_IDS.newsWatch))).toMatch(/^Daily/);
     expect(describeSchedule(sched(SYSTEM_WORKFLOW_IDS.localCorpus))).toMatch(/^Daily/);
     expect(describeSchedule(sched(SYSTEM_WORKFLOW_IDS.profiles))).toMatch(/^Weekly/);

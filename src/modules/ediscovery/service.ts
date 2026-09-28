@@ -10,11 +10,12 @@ export function matterRetrievalScope(matterId: string): MatterRetrievalScope {
   return { tenantId: tenantId(), matterIds: [matterId] };
 }
 import type { EDocument, IssueCode, PrivilegeLogEntry } from "@/lib/types/domain";
-import { batesInRange, compareBates, isEmptyQuery, makeSnippet, matchesQuery, parseQuery, type ParsedQuery, type QueryNode, type Searchable } from "./query";
+import { batesInRange, compareBates, exhibitMatches, exhibitValueLabel, isEmptyQuery, makeSnippet, matchesQuery, parseQuery, type ParsedQuery, type QueryNode, type Searchable } from "./query";
 import { batches, redactions as redactionStore } from "./review-store";
 import { currentUser } from "@/lib/current-user";
 import { counselRoster, indexTextFor, isProducible, productionLoadFileCsv, productionSummary, templatePrivilegeDescription, toPrivilegeLogRow } from "./privilege";
 import { CODING_RULES_KEY, DEFAULT_CODING_RULES } from "./rules";
+import { compareExhibitMarks, exhibitSearchKey, type IndiaEDocument } from "./india";
 import { audit } from "@/lib/integrity/audit";
 import { contentHash } from "@/lib/integrity/hash";
 import { updateProvenance } from "@/lib/integrity/store";
@@ -75,7 +76,7 @@ export function toSearchable(d: EDocument): Searchable {
     to,
     cc,
     subject: lower(d.subject),
-    haystack: `${lower(d.bates)} ${lower(d.subject)} ${lower(d.from)} ${to} ${cc} ${lower(d.custodianName)} ${lower(d.text)} ${(d.tags ?? []).join(" ").toLowerCase()}`,
+    haystack: `${lower(d.bates)} ${lower((d as IndiaEDocument).india?.docNumber)} ${lower(d.subject)} ${lower(d.from)} ${to} ${cc} ${lower(d.custodianName)} ${lower(d.text)} ${(d.tags ?? []).join(" ").toLowerCase()}`,
     issues: (d.coding.issues ?? []).join(" ").toLowerCase(),
     tags: (d.tags ?? []).join(" ").toLowerCase(),
     hash: lower(d.hash),
@@ -91,6 +92,7 @@ export function toSearchable(d: EDocument): Searchable {
     nearDuplicates: d.nearDuplicateIds?.length ?? 0,
     pages: d.pages ?? 1,
     reviewer: lower(d.coding.reviewerId),
+    ...(exhibitSearchKey(d as IndiaEDocument) ? { exhibit: exhibitSearchKey(d as IndiaEDocument) } : {}),
   };
   searchableCache.set(d, s);
   return s;
@@ -286,6 +288,8 @@ export function sortDocs<T extends { doc: EDocument; score?: number }>(items: T[
   const cmp: Record<SortKey, (a: T, b: T) => number> = {
     date: (a, b) => a.doc.date.localeCompare(b.doc.date) || compareBates(a.doc.bates, b.doc.bates),
     bates: (a, b) => compareBates(a.doc.bates, b.doc.bates),
+    // Marked exhibits in mark order (Ex.P before Ex.D, numerically); unmarked documents after them by reference.
+    exhibit: (a, b) => { const x = (a.doc as IndiaEDocument).india?.exhibit, y = (b.doc as IndiaEDocument).india?.exhibit; return x && y ? compareExhibitMarks(x, y) : x ? -1 : y ? 1 : compareBates(a.doc.bates, b.doc.bates); },
     custodian: (a, b) => a.doc.custodianName.localeCompare(b.doc.custodianName) || a.doc.date.localeCompare(b.doc.date),
     type: (a, b) => a.doc.type.localeCompare(b.doc.type) || a.doc.date.localeCompare(b.doc.date),
     subject: (a, b) => a.doc.subject.localeCompare(b.doc.subject),
@@ -312,6 +316,11 @@ export async function searchDocuments(req: SearchRequest): Promise<SearchRespons
   const { byId, threadSizes } = indexes(all);
   const parsed: ParsedQuery = parseQuery(req.q ?? "");
   parsed.ast = resolveFieldRefs(parsed.ast, all);
+  // An exhibit mark that no document in this matter carries is reported, never mapped to the nearest mark (§23).
+  for (const f of parsed.fields) {
+    if (f.field !== "exhibit") continue;
+    if (!all.some((d) => exhibitMatches(toSearchable(d).exhibit, f.value))) parsed.warnings.push(`${exhibitValueLabel(f.value)} is not marked in this matter`);
+  }
   const useSemantic = !!req.semantic && !!req.q?.trim();
   refreshRedactionCounts(req.matterId);
 

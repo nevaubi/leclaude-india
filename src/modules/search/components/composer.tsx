@@ -34,10 +34,8 @@ interface SpeechRecognitionLike { start(): void; stop(): void; continuous: boole
 
 /** Law scope groups shown in the "All law" popover; each maps onto one or more providers. */
 const LAW_GROUPS: { id: string; label: string; sources: SearchSource[]; hint: string }[] = [
-  { id: "cases", label: "Case law", sources: ["caselaw"], hint: "CourtListener opinions" },
-  { id: "statutes", label: "Statutes", sources: ["statutes"], hint: "U.S. Code, public laws" },
-  { id: "regs", label: "Regulations", sources: ["regulations", "federal_register"], hint: "eCFR and Federal Register" },
-  { id: "dockets", label: "Dockets", sources: ["dockets"], hint: "PACER/RECAP" },
+  { id: "cases", label: "Judgments", sources: ["caselaw"], hint: "Supreme Court and High Court judgments" },
+  { id: "statutes", label: "Statutes", sources: ["statutes"], hint: "India Code: central and state Acts" },
   { id: "secondary", label: "Secondary", sources: ["library"], hint: "Firm library, memos, clause bank" },
 ];
 
@@ -71,7 +69,7 @@ export function ResearchComposer(p: ComposerProps) {
     if (on.length === 0) return "No law scope";
     return on.length > 2 ? `${on[0].label} +${on.length - 1}` : on.map((g) => g.label).join(", ");
   }, [s.sources]);
-  const jurisdictionLabel = s.jurisdiction === "all-federal" ? "All jurisdictions" : j.label.split(" (")[0];
+  const jurisdictionLabel = j.label.split(" (")[0];
   const preview = React.useMemo(() => planLanes({ question: p.value || "question", settings: s, mode: s.fast ? "fast" : "deep", hasMatter: Boolean(s.matterId) }), [p.value, s]);
 
   React.useEffect(() => {
@@ -171,14 +169,14 @@ export function ResearchComposer(p: ComposerProps) {
         </Popover>
 
         <Popover>
-          <PopoverTrigger asChild><Chip active={s.jurisdiction !== "all-federal"} aria-label="Jurisdiction">{jurisdictionLabel}<ChevronDown className="size-3 opacity-60" /></Chip></PopoverTrigger>
+          <PopoverTrigger asChild><Chip active={s.jurisdiction !== "all-india"} aria-label="Jurisdiction">{jurisdictionLabel}<ChevronDown className="size-3 opacity-60" /></Chip></PopoverTrigger>
           <PopoverContent align="start" className="max-h-80 w-72 overflow-y-auto p-1.5 scrollbar-thin">
-            {(["Federal", "Circuits", "State"] as const).map((group) => (
+            {(["India", "Focus courts", "Other High Courts"] as const).map((group) => (
               <div key={group}>
                 <div className="px-2 pb-0.5 pt-1.5 text-[11.5px] font-medium text-muted-foreground">{group}</div>
                 {JURISDICTIONS.filter((x) => x.group === group).map((x) => (
                   <button key={x.key} onClick={() => p.setSettings({ jurisdiction: x.key })} className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent cursor-pointer", s.jurisdiction === x.key && "bg-accent")}>
-                    <span className="min-w-0 flex-1 truncate">{x.key === "all-federal" ? "All jurisdictions" : x.label}</span>
+                    <span className="min-w-0 flex-1 truncate">{x.label}</span>
                     {s.jurisdiction === x.key && <Check className="size-3.5" />}
                   </button>
                 ))}

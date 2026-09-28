@@ -6,20 +6,22 @@ import { NAV, SECONDARY_NAV } from "./nav";
 import { useShellStore } from "./shell-store";
 import { useTheme } from "./theme-provider";
 import { useShortcutHelp } from "@/components/ui/shortcut-help";
-import { FilePlus2, FileSpreadsheet, Presentation, FileType, Briefcase, FileText, Users, Calendar, ListTodo, Workflow, Sun, Moon, Monitor, ShieldCheck, ShieldAlert, PanelLeft, Search, Radar, Keyboard, Settings, Database, type LucideIcon } from "lucide-react";
+import { FilePlus2, FileSpreadsheet, Presentation, FileType, Briefcase, FileText, Users, Calendar, ListTodo, Workflow, Sun, Moon, Monitor, ShieldCheck, ShieldAlert, PanelLeft, Search, Radar, Keyboard, Settings, Database, Languages, type LucideIcon } from "lucide-react";
+import { useT } from "@/lib/i18n/client";
 import { debounce } from "@/lib/utils";
 import { groupHits, paletteSections, type PaletteCommand, type PaletteIcon, type QuickSearchHit } from "./palette-groups";
 
 export { groupHits, paletteSections, type QuickSearchHit };
 
 const KIND_ICON = { matter: Briefcase, document: FileText, person: Users, task: ListTodo, event: Calendar, workflow: Workflow, library: FileText, office: FileText } as const;
-const ICONS: Record<PaletteIcon, LucideIcon> = { doc: FilePlus2, sheet: FileSpreadsheet, deck: Presentation, pdf: FileType, search: Search, radar: Radar, shield: ShieldCheck, "shield-alert": ShieldAlert, sun: Sun, moon: Moon, monitor: Monitor, panel: PanelLeft, keyboard: Keyboard, settings: Settings, database: Database };
+const ICONS: Record<PaletteIcon, LucideIcon> = { doc: FilePlus2, sheet: FileSpreadsheet, deck: Presentation, pdf: FileType, search: Search, radar: Radar, shield: ShieldCheck, "shield-alert": ShieldAlert, sun: Sun, moon: Moon, monitor: Monitor, panel: PanelLeft, keyboard: Keyboard, settings: Settings, database: Database, globe: Languages };
 
 export function CommandPalette() {
   const router = useRouter();
   const { paletteOpen, setPaletteOpen, toggleSidebar } = useShellStore();
   const { setTheme } = useTheme();
   const help = useShortcutHelp(undefined);
+  const t = useT();
   const [query, setQuery] = React.useState("");
   const [hits, setHits] = React.useState<QuickSearchHit[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -59,12 +61,12 @@ export function CommandPalette() {
   const navIcon = (href: string) => nav.find((n) => n.href === href)?.icon;
 
   return (
-    <CommandDialog open={paletteOpen} onOpenChange={setPaletteOpen}>
-      <CommandInput placeholder="Search matters, documents, people… or type a command" value={query} onValueChange={setQuery} />
+    <CommandDialog open={paletteOpen} onOpenChange={setPaletteOpen} title={t("ui.commandPalette")}>
+      <CommandInput placeholder={t("palette.placeholder")} value={query} onValueChange={setQuery} />
       <CommandList>
-        <CommandEmpty>{loading ? "Searching…" : "No results."}</CommandEmpty>
+        <CommandEmpty>{loading ? t("common.searching") : t("common.noResults")}</CommandEmpty>
         {groups.map((g) => (
-          <CommandGroup key={g.kind} heading={g.label}>
+          <CommandGroup key={g.kind} heading={t(`palette.kind.${g.kind}`, { count: g.hits.length })}>
             {g.hits.map((h) => { const Icon = KIND_ICON[h.kind] ?? FileText; return (
               <CommandItem key={`${h.kind}:${h.id}`} value={`${h.title} ${h.subtitle ?? ""} ${h.kind}`} onSelect={() => go(h.href)}>
                 <Icon className="text-muted-foreground" />
@@ -77,13 +79,15 @@ export function CommandPalette() {
         {sections.map((s, i) => (
           <React.Fragment key={s.id}>
             {(i > 0 || groups.length > 0) && <CommandSeparator />}
-            <CommandGroup heading={s.heading}>
+            <CommandGroup heading={t(s.headingKey)}>
               {s.commands.map((c) => {
                 const Icon = (s.id === "go" && c.href ? navIcon(c.href) : undefined) ?? ICONS[c.icon];
+                const label = c.labelKey ? t(c.labelKey, c.labelVars) : c.label;
                 return (
-                  <CommandItem key={c.id} value={`${c.label} ${c.keywords ?? ""} ${s.heading}`} onSelect={() => run(c)}>
+                  // The value keeps the English label and keywords so typing English still finds a translated command.
+                  <CommandItem key={c.id} value={`${label} ${c.label} ${c.keywords ?? ""} ${t(s.headingKey)}`} onSelect={() => run(c)}>
                     <Icon className="text-muted-foreground" />
-                    <span className="truncate">{c.label}</span>
+                    <span className="truncate">{label}</span>
                     {c.shortcut && <CommandShortcut>{c.shortcut}</CommandShortcut>}
                   </CommandItem>
                 );

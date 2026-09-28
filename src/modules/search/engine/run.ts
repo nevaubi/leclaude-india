@@ -10,7 +10,9 @@ import type { VerificationResult } from "@/lib/ai/verify";
 import { audit } from "@/lib/integrity/audit";
 import { attachProvenance } from "@/lib/integrity/record";
 import type { Matter } from "@/lib/types/domain";
-import { jurisdictionByKey, resolveCourts } from "../jurisdictions";
+import { applicableCode } from "@/lib/india/criminal-code-map";
+import { languageInfo } from "@/lib/india/languages";
+import { bindingCourtIds, effectiveJurisdiction, jurisdictionByKey, resolveCourts } from "../jurisdictions";
 import { formatBluebook } from "../normalize";
 import { datePresetRange } from "../query-builder";
 import { providerMessage, researchPrincipalId, savedSearches, searchRuns, updateSavedSearch } from "../service";
@@ -25,7 +27,9 @@ import { buildEvidenceBlocks, evidenceSourceId, evidenceText } from "./evidence"
 import { runLane, type LaneResult } from "./lanes";
 import { citedNumbers, hasCiteMarker } from "./markers";
 import { focusTerms } from "./paragraphs";
-import { planLanes, planSubQuestions, questionTopic } from "./planner";
+import { answerLanguageLine, offenceDateFromText, questionLanguage, resolveAnswerLanguage, setPreferredAnswerLanguageHook } from "./india-context";
+import { preferredAnswerLanguage } from "@/lib/i18n/preferences";
+import { ADVERSE_SUBQUESTION_MARK, forumPhrase, planLanes, planSubQuestions, questionTopic } from "./planner";
 import { CORRECTION_INSTRUCTIONS, LANE_NOTE_HEADER, NO_ANSWER_SENTENCE, synthesisInstructions } from "./prompts";
 import { assembleProvenance } from "./provenance";
 import { checkClaimEvidence, recountVerification } from "./quotes";
@@ -35,6 +39,12 @@ import { appendToThread, createThread, deleteThreadIfEmpty, getThread } from "./
 import { currentnessOf } from "./treatment";
 import { messageTrustState } from "./trust";
 import type { AnswerBanner, AuthorityTreatment, CoverageSummary, LaneKind, LaneSummary, ResearchEventInput, ResearchLane, ResearchMessage, ResearchMode, ResearchSource, ResearchStreamEvent, ResearchThread, RunStats, VerificationSummary } from "./types";
+
+// The signed-in user's answer-language preference (user → workspace; "auto" means the question's own language).
+setPreferredAnswerLanguageHook(() => {
+  const pref = preferredAnswerLanguage();
+  return pref === "auto" ? null : pref;
+});
 
 export { questionTopic };
 
@@ -130,11 +140,16 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
   const requestedAt = input.requestedAt ?? startedAt;
   const runId = input.runId ?? `run_${nanoid(10)}`;
   const question = input.question.trim();
-  const settings = input.settings;
+  const matter: Matter | null = input.settings.matterId ? db().matters.get(input.settings.matterId) : null;
+  // The forum is deterministic: an explicit forum as chosen, "Matter's court" from the matter's court (never the model).
+  const settings: SearchSettings = { ...input.settings, jurisdiction: effectiveJurisdiction(input.settings.jurisdiction, matter?.court) };
   const mode: ResearchMode = settings.fast ? "fast" : "deep";
   const policy = resolvePolicy(mode, input.policy);
   const maxRounds = mode === "fast" ? 1 : MAX_ROUNDS_DEEP;
-  const matter: Matter | null = settings.matterId ? db().matters.get(settings.matterId) : null;
+  const qLang = questionLanguage(question);
+  const answerLanguage = resolveAnswerLanguage({ requested: settings.answerLanguage, question });
+  const offenceDate = settings.offenceDate ?? offenceDateFromText(question);
+  const offenceRule = applicableCode(offenceDate ?? null);
   const existing = input.threadId ? getThread(input.threadId) : null;
   const threadReplaced = Boolean(input.threadId && !existing);
   const thread: ResearchThread = existing ?? createThread({ question, settings });
@@ -151,10 +166,11 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
     if (e.type === "source.read") {
       metrics.mark("firstRead");
       const src = e.source;
+      const judgmentId = src.hit.readRef?.kind === "judgment" ? src.hit.readRef.id : undefined;
       const opinionId = src.hit.readRef?.kind === "opinion" ? src.hit.readRef.id : src.hit.opinionId;
-      if (deps.citing && mode === "deep" && src.kind === "caselaw" && opinionId != null && !treatments.has(src.id) && treatments.size < MAX_TREATMENT_CHECKS) {
+      if (deps.citing && mode === "deep" && src.kind === "caselaw" && (judgmentId || opinionId != null) && !treatments.has(src.id) && treatments.size < MAX_TREATMENT_CHECKS) {
         const t0 = Date.now();
-        treatments.set(src.id, deps.citing({ opinionId, signal }).then((t) => { metrics.addToolTime(Date.now() - t0); return t; }, () => null));
+        treatments.set(src.id, deps.citing(judgmentId ? { judgmentId, signal } : { opinionId, signal }).then((t) => { metrics.addToolTime(Date.now() - t0); return t; }, () => null));
       }
     }
     if (e.type === "answer.delta") metrics.mark("firstModelToken");
@@ -198,7 +214,8 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
   let noAnswer = false;
   const tenantId = safeTenantId();
   const textOf = (s: ResearchSource) => texts.get(s.id) ?? s.excerpt;
-  let subQuestions = planSubQuestions({ question, settings, mode, hasMatter: Boolean(matter), matterName: matter?.shortName });
+  let searchQuery: string | null = null;
+  let subQuestions: string[] = [];
   let plan: Promise<ResearchPlan | null> | undefined;
 
   const matterLine = matter
@@ -243,10 +260,33 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
   };
 
   try {
+    // A question in an Indian language is searched with English terms (the corpus is predominantly English) AND its own
+    // words (regional-language judgments). Translation runs on the fast router role when policy allows, bounded in time.
+    if (qLang.needsTranslation) {
+      const toolId = `${runId}:translate`;
+      const t0 = Date.now();
+      const langName = languageInfo(qLang.language)?.name ?? qLang.language;
+      emit({ type: "tool.started", toolId, name: "translate_query", label: `Translating the ${langName} question into search terms` });
+      if (deps.hasKey && deps.translateQuery) {
+        const translate = deps.translateQuery.bind(deps);
+        try {
+          const r = await timedModelCall(metrics, () => settleWithin(translate({ question, language: langName, matterId: settings.matterId ?? null, signal }), policy.translateWaitMs, signal));
+          searchQuery = r?.query?.trim() || null;
+        } catch (e) {
+          if (isAbortError(e)) throw e;
+          searchQuery = null;
+        }
+      }
+      if (searchQuery) emit({ type: "tool.completed", toolId, name: "translate_query", label: `Search terms: ${searchQuery}`, durationMs: Date.now() - t0 });
+      else emit({ type: "tool.failed", toolId, name: "translate_query", label: "Translating the question", error: deps.hasKey ? "Translation unavailable; searching with the question's own words only" : "No model provider is configured; searching with the question's own words only", failure: deps.hasKey ? "unknown" : "not_configured", durationMs: Date.now() - t0, retrying: false });
+    }
+    subQuestions = planSubQuestions({ question, settings, mode, hasMatter: Boolean(matter), matterName: matter?.shortName, topic: searchQuery ? questionTopic(searchQuery) : undefined });
     for (let round = 1; round <= maxRounds && !aborted(); round++) {
       if (round > 1 && Date.now() - startedAt > policy.runTimeMs) { timeExceeded = true; break; }
       rounds = round;
-      const lanes: ResearchLane[] = planLanes({ question, settings, mode, hasMatter: Boolean(matter), round, refinements });
+      const planned: ResearchLane[] = planLanes({ question, settings, mode, hasMatter: Boolean(matter), round, refinements, searchQuery: searchQuery ?? undefined });
+      // Regional-language question: every lane also searches the question's own words (judgments in that language).
+      const lanes: ResearchLane[] = searchQuery && round === 1 ? planned.map((l) => ({ ...l, queries: Array.from(new Set([...l.queries, l.kind === "contrary" ? l.queries[0] : question.slice(0, 200)])).slice(0, 3) })) : planned;
       emit({ type: "plan.created", round, reason: round === 1 ? undefined : "coverage was thin; refined queries", lanes });
       // Fast-model planning runs concurrently with the first retrieval wave (lanes start on deterministic queries).
       if (round === 1 && mode === "deep" && deps.hasKey && deps.planQueries) {
@@ -254,7 +294,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
         const planToolId = `${runId}:plan`;
         const planStarted = Date.now();
         emit({ type: "tool.started", toolId: planToolId, name: "plan_research", label: "Planning sub-questions and queries" });
-        plan = timedModelCall(metrics, () => planner({ question, context: planContext(settings, matterLine, subQuestions), laneKinds: lanes.map((l) => l.kind), signal }))
+        plan = timedModelCall(metrics, () => planner({ question, context: planContext(settings, matterLine, subQuestions, searchQuery), laneKinds: lanes.map((l) => l.kind), signal }))
           .then((p) => {
             subQuestions = mergeSubQuestions(subQuestions, p.subQuestions);
             emit({ type: "tool.completed", toolId: planToolId, name: "plan_research", label: `Planned ${subQuestions.length} sub-questions`, durationMs: Date.now() - planStarted });
@@ -320,7 +360,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
           refinements = coverage.refinements;
           continue;
         }
-        answer = noAnswerMemo(question, settings, matter, subQuestions);
+        answer = noAnswerMemo(question, settings, matter, subQuestions, searchQuery);
         noAnswer = true;
         emit({ type: "answer.delta", delta: answer });
         publishVersion(answer, "draft");
@@ -335,6 +375,9 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
       const j = jurisdictionByKey(settings.jurisdiction);
       const courts = resolveCourts(settings.jurisdiction, settings.courts);
       const range = datePresetRange(settings.datePreset, { from: settings.dateFrom, to: settings.dateTo });
+      const offenceLine = offenceDate || /\b(IPC|BNS|CrPC|BNSS|offen[cs]e|FIR|bail|accused)\b/i.test(searchQuery ?? question)
+        ? `Date of offence: ${offenceDate ?? "not stated"}. Substantive code under the transition rule: ${offenceRule.substantive}${offenceRule.notes.length ? ` (${offenceRule.notes.join(" ")})` : ""}.`
+        : "";
       // Byte-stable per mode: the cacheable prefix. Date, matter, jurisdiction and the question travel in the user turn.
       synthesisInstructionsText = synthesisInstructions(mode, firmLabel(), LEGAL_STYLE_RULES);
       terms = focusTerms([question, ...lanes.flatMap((l) => l.queries), ...subQuestions]);
@@ -343,7 +386,10 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
       const context = [
         todayLine(),
         matterLine,
-        `Jurisdiction: ${j.label}${courts ? ` (courts: ${courts})` : ""}.${range.from ? ` Date range from ${range.from}.` : ""}${range.to ? ` Through ${range.to}.` : ""}`,
+        `Forum: ${j.label}. Binding: ${bindingCourtIds(j.key).join(", ")} (computed from the court registry)${courts ? `; retrieval limited to ${courts}` : ""}.${range.from ? ` Date range from ${range.from}.` : ""}${range.to ? ` Through ${range.to}.` : ""}`,
+        offenceLine,
+        searchQuery ? `The question was asked in ${languageInfo(qLang.language)?.name ?? qLang.language}; English search terms used: ${searchQuery}.` : "",
+        answerLanguageLine(answerLanguage),
         subQuestions.length ? `Sub-questions to cover:\n${subQuestions.map((q) => `- ${q}`).join("\n")}` : "",
       ].filter(Boolean).join("\n");
       // Documents first (the evidence blocks are prepended by the runtime), then notes and context, question last.
@@ -526,6 +572,11 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
     mode,
     subQuestions: subQuestions.length ? subQuestions : undefined,
     noAnswer: noAnswer || undefined,
+    forum: settings.jurisdiction,
+    queryLanguage: qLang.language,
+    answerLanguage,
+    searchQuery: qLang.needsTranslation ? searchQuery : undefined,
+    offence: offenceDate || offenceRule.substantive !== "requires_review" ? { date: offenceDate ?? null, substantive: offenceRule.substantive } : undefined,
   };
   message.trust = answer ? messageTrustState(message, finalNumbered) : "generated";
   const compact = pool.map(compactSource);
@@ -560,34 +611,34 @@ function safeTenantId(): string {
 }
 
 /** Volatile planning context (user turn; the planner instructions stay byte-stable). */
-function planContext(settings: SearchSettings, matterLine: string, subQuestions: string[]): string {
+function planContext(settings: SearchSettings, matterLine: string, subQuestions: string[], searchQuery: string | null): string {
   const j = jurisdictionByKey(settings.jurisdiction);
-  return [todayLine(), matterLine, `Jurisdiction: ${j.label}. Sources in scope: ${settings.sources.join(", ")}.`, `Draft sub-questions:\n${subQuestions.map((q) => `- ${q}`).join("\n")}`].join("\n");
+  return [todayLine(), matterLine, `Forum: ${j.label}. Binding: ${bindingCourtIds(j.key).join(", ")}. Sources in scope: ${settings.sources.join(", ")}.`, searchQuery ? `English search terms for the question: ${searchQuery}` : "", `Draft sub-questions:\n${subQuestions.map((q) => `- ${q}`).join("\n")}`].filter(Boolean).join("\n");
 }
 
 /** Model sub-questions replace the deterministic ones but the adverse-authority question is always kept. */
 export function mergeSubQuestions(base: string[], model: string[]): string[] {
   const clean = model.map((q) => q.trim()).filter((q) => q.length > 8);
   if (!clean.length) return base;
-  const adverse = base.find((q) => /rejects, distinguishes or limits/.test(q));
-  const hasAdverse = clean.some((q) => /contrar|advers|reject|distinguish|limit|split|declin/i.test(q));
+  const adverse = base.find((q) => q.includes(ADVERSE_SUBQUESTION_MARK));
+  const hasAdverse = clean.some((q) => /contrar|advers|reject|distinguish|limit|split|declin|overrul|doubt|incuriam|larger bench/i.test(q));
   return Array.from(new Set([...clean, ...(adverse && !hasAdverse ? [adverse] : [])])).slice(0, 6);
 }
 
 /** Deterministic memo when nothing was retrieved (§44 "no answer in record"): no model call, no invented authority. */
-export function noAnswerMemo(question: string, settings: SearchSettings, matter: Matter | null, subQuestions: string[]): string {
-  const j = jurisdictionByKey(settings.jurisdiction);
-  const searched = settings.sources.map((s) => ({ caselaw: "case law", statutes: "statutes", regulations: "regulations", federal_register: "the Federal Register", dockets: "dockets", web: "the web", library: "the firm library", ediscovery: matter ? `the ${matter.shortName} record` : "matter documents" })[s]).join(", ");
+export function noAnswerMemo(question: string, settings: SearchSettings, matter: Matter | null, subQuestions: string[], searchQuery?: string | null): string {
+  const labels: Partial<Record<SearchSource, string>> = { caselaw: "the Supreme Court and High Court judgment corpus", statutes: "India Code", web: "the web", library: "the firm library", ediscovery: matter ? `the ${matter.shortName} record` : "matter documents" };
+  const searched = settings.sources.map((s) => labels[s]).filter(Boolean).join(", ");
   return [
     "## Question Presented",
     question.trim(),
     "",
     "## Short Answer",
-    `${NO_ANSWER_SENTENCE} No source was retrieved from ${searched || "the selected sources"} for ${j.label.split(" (")[0]}, so nothing in this answer is source-backed and no authority is cited.`,
+    `${NO_ANSWER_SENTENCE} No source was retrieved from ${searched || "the selected sources"} for ${forumPhrase(settings)}${searchQuery ? ` (searched with the English terms "${searchQuery}" and the question's own words)` : ""}, so nothing in this answer is source-backed and no authority is cited.`,
     "",
     "## Open Issues",
     ...subQuestions.map((q) => `- Not established: ${q}`),
-    `- Broaden the query (fewer terms, synonyms), widen the date range, or add sources such as case law or statutes${matter ? "" : ", or select a matter to search its record"}.`,
+    `- Broaden the query (fewer terms, the section and Act by name), widen the date range or the courts, or add sources such as judgments or India Code${matter ? "" : ", or select a matter to search its record"}. The corpus holds only the judgments ingested so far; an authority missing here may still exist.`,
   ].join("\n");
 }
 
@@ -605,16 +656,14 @@ function toSummary(v: VerificationResult, sources: ResearchSource[], artifactHas
   };
 }
 
-/** Deterministic follow-ups when the model is unavailable: bound to jurisdiction and matter. */
+/** Deterministic follow-ups when the model is unavailable: bound to the forum and matter. */
 export function fallbackFollowUps(question: string, settings: SearchSettings, matter: Matter | null): string[] {
-  const j = jurisdictionByKey(settings.jurisdiction);
-  const label = j.label.split(" (")[0];
-  const where = j.key === "all-federal" ? "in the federal courts" : j.group === "State" ? `in ${label}` : `in the ${label}`;
+  const where = forumPhrase(settings);
   const topic = questionTopic(question);
   const out = [
-    `What is the strongest contrary authority ${where} on ${topic}?`,
-    matter ? `How does the record in ${matter.shortName} (documents and depositions) bear on ${topic}?` : `Which statutes or regulations bear on ${topic}?`,
-    `What standard governs ${topic} at the motion-to-dismiss stage versus summary judgment?`,
+    `Is there a larger-bench or later Supreme Court judgment that doubts or overrules the leading authority on ${topic} before ${where}?`,
+    matter ? `How does the record in ${matter.shortName} (pleadings, exhibits and depositions) bear on ${topic}?` : `Which provisions of India Code govern ${topic}, and did the BNS/BNSS/BSA transition change them?`,
+    `How have other High Courts decided ${topic}, and is there a conflict the Supreme Court has not yet resolved?`,
   ];
   return out.map((s) => (s.length > 220 ? s.slice(0, 219) + "…" : s));
 }

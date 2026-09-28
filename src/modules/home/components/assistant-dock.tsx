@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { T } from "@/lib/i18n/client";
 import Link from "next/link";
 import { KeyRound, MessageSquareText, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -81,7 +82,7 @@ function AssistantBody({ onCollapse, inSheet, width, onWidthChange }: { onCollap
   return (
     <Inspector
       icon={MessageSquareText}
-      title="Assistant"
+      title={<T k="home.section.assistant" />}
       subtitle={matter ? `Scoped to ${matter.shortName}` : "Calendar, tasks, matters, library, e-discovery and research"}
       onClose={inSheet ? undefined : onCollapse}
       closeShortcut="A"

@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import Link from "next/link";
 import { CornerDownRight, HelpCircle, Megaphone, MessageSquare, MoreHorizontal, Paperclip, Send, Trophy, Users, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -39,11 +40,12 @@ export function useVisibleUpdates() {
 export function UpdatesOverview() {
   const list = useVisibleUpdates();
   const setFocus = useHomeUI((s) => s.setFocus);
+  const t = useT();
   const shown = list.slice(0, 6);
   return (
-    <Section id="updates" title="Team updates" count={list.length} onExpand={() => setFocus("updates")}>
+    <Section id="updates" title={t("home.section.updates")} count={list.length} onExpand={() => setFocus("updates")}>
       <div className="border-b px-1 py-2"><UpdateComposer /></div>
-      {shown.length === 0 ? <EmptyRow icon={Users} title="No updates yet" hint="Share a win, an update or a question with the team." /> : (
+      {shown.length === 0 ? <EmptyRow icon={Users} title={t("home.section.noUpdates")} hint={t("home.updates.emptyHint")} /> : (
         <ul className="divide-y">{shown.map((u, i) => <UpdateCard key={u.id} update={u} index={i} />)}</ul>
       )}
       {list.length > shown.length && <button onClick={() => setFocus("updates")} className="flex w-full items-center justify-center border-t py-2 text-[11.5px] text-muted-foreground hover:text-foreground cursor-pointer">Show all {list.length}</button>}
@@ -54,11 +56,12 @@ export function UpdatesOverview() {
 export function UpdatesFocus() {
   const list = useVisibleUpdates();
   const setFocus = useHomeUI((s) => s.setFocus);
+  const t = useT();
   return (
-    <Section id="updates" title="Team updates" icon={Users} count={list.length} expanded onExpand={() => setFocus(null)} bodyClassName="overflow-auto scrollbar-thin">
+    <Section id="updates" title={t("home.section.updates")} icon={Users} count={list.length} expanded onExpand={() => setFocus(null)} bodyClassName="overflow-auto scrollbar-thin">
       <div className="mx-auto max-w-3xl">
         <div className="border-b p-3"><UpdateComposer /></div>
-        {list.length === 0 ? <EmptyRow icon={Users} title="No updates yet" /> : <ul className="divide-y">{list.map((u, i) => <UpdateCard key={u.id} update={u} index={i} full />)}</ul>}
+        {list.length === 0 ? <EmptyRow icon={Users} title={t("home.section.noUpdates")} /> : <ul className="divide-y">{list.map((u, i) => <UpdateCard key={u.id} update={u} index={i} full />)}</ul>}
       </div>
     </Section>
   );

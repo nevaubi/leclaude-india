@@ -1,108 +1,150 @@
 /**
- * Client-safe jurisdiction catalogue. Keys mirror COURT_GROUPS in
- * src/lib/ai/toolkit/legal.ts (a test keeps them in sync); the court id lists
- * are duplicated here because the toolkit is server-only.
+ * Client-safe forum catalogue for LeClaude India research.
+ *
+ * The "jurisdiction" of a research run is the FORUM: the court the matter is (or will be) before. Precedential effect is
+ * computed deterministically from the court registry (`bindingEffect`, src/lib/india/courts.ts): the Supreme Court binds
+ * every court (Art. 141); a High Court binds courts in its territory; other High Courts are persuasive. The model never
+ * decides binding vs persuasive.
+ *
+ * Special rule (docs/architecture/india.md): judgments of the erstwhile common High Court at Hyderabad (before
+ * 1 January 2019, now indexed under the Telangana or Andhra Pradesh High Court) are treated as persuasive in both states.
  */
+import { bindingEffect, courtById, FOCUS_COURT_IDS, HIGH_COURTS, SUPREME_COURT, type Court, type StateCode } from "@/lib/india/courts";
 import type { Authority } from "./types";
 
 export interface Jurisdiction {
   key: string;
   label: string;
-  group: "Federal" | "Circuits" | "State";
-  /** CourtListener court ids (space separated). Empty = all courts. */
+  group: "India" | "Focus courts" | "Other High Courts";
+  /** Registry court ids (space separated) that narrow retrieval. Empty = all courts in the corpus. */
   courts: string;
-  /** Courts whose decisions bind trial courts in this jurisdiction. */
+  /** Registry court ids whose decisions bind the forum (Supreme Court first). */
   binding: string[];
+  /** Registry id of the forum court, or null for "All India" (no forum: only the Supreme Court binds). */
+  forumCourtId: string | null;
   hint?: string;
 }
 
-export const JURISDICTIONS: Jurisdiction[] = [
-  { key: "all-federal", label: "All federal", group: "Federal", courts: "", binding: ["scotus"], hint: "All federal and state courts; SCOTUS treated as binding" },
-  { key: "scotus", label: "Supreme Court", group: "Federal", courts: "scotus", binding: ["scotus"] },
-  { key: "federal-appellate", label: "Federal appellate", group: "Federal", courts: "ca1 ca2 ca3 ca4 ca5 ca6 ca7 ca8 ca9 ca10 ca11 cadc cafc", binding: ["scotus"] },
-  { key: "4th-circuit", label: "4th Circuit (D.S.C., N.C., Md., Va., W. Va.)", group: "Circuits", courts: "ca4 dsc dnc dmd dvae dvaw dwvn dwvs", binding: ["scotus", "ca4"] },
-  { key: "7th-circuit", label: "7th Circuit (Ill., Ind., Wis.)", group: "Circuits", courts: "ca7 ilnd ilcd ilsd innd insd wied wiwd", binding: ["scotus", "ca7"] },
-  { key: "9th-circuit", label: "9th Circuit (Cal. districts)", group: "Circuits", courts: "ca9 cacd caed cand casd", binding: ["scotus", "ca9"] },
-  { key: "11th-circuit", label: "11th Circuit (Fla., Ga., Ala.)", group: "Circuits", courts: "ca11 flnd flmd flsd gand gamd gasd alnd almd alsd", binding: ["scotus", "ca11"] },
-  { key: "california-state", label: "California", group: "State", courts: "cal calctapp", binding: ["scotus", "cal", "calctapp"] },
-  { key: "new-york-state", label: "New York", group: "State", courts: "ny nyappdiv nysupct", binding: ["scotus", "ny", "nyappdiv"] },
-  { key: "delaware", label: "Delaware", group: "State", courts: "del delch delsuperct", binding: ["scotus", "del"] },
-  { key: "texas-state", label: "Texas", group: "State", courts: "tex texapp", binding: ["scotus", "tex", "texapp"] },
-  { key: "illinois-state", label: "Illinois", group: "State", courts: "ill illappct", binding: ["scotus", "ill", "illappct"] },
+/** The date the High Court of Andhra Pradesh moved to Amaravati and the Telangana High Court began (bifurcation). */
+export const HC_BIFURCATION_DATE = "2019-01-01";
+
+/** Subordinate-court forums in the focus states (district and sessions courts, tribunals within the state). */
+const SUBORDINATE: { key: string; label: string; state: StateCode; hc: string }[] = [
+  { key: "ka-subordinate", label: "Courts in Karnataka (district, sessions, civil courts)", state: "KA", hc: "hc-karnataka" },
+  { key: "ts-subordinate", label: "Courts in Telangana (district, sessions, civil courts)", state: "TS", hc: "hc-telangana" },
+  { key: "ap-subordinate", label: "Courts in Andhra Pradesh (district, sessions, civil courts)", state: "AP", hc: "hc-andhra" },
 ];
 
-export function jurisdictionByKey(key: string | undefined | null) {
-  return JURISDICTIONS.find((j) => j.key === key) ?? JURISDICTIONS[0];
+function hcJurisdiction(c: Court, group: Jurisdiction["group"]): Jurisdiction {
+  return { key: c.id, label: c.name, group, courts: "", binding: [SUPREME_COURT.id, c.id], forumCourtId: c.id };
 }
 
-/** Parent circuit for the district courts we know about. */
-export const CIRCUIT_OF: Record<string, string> = {
-  dsc: "ca4", dnc: "ca4", dmd: "ca4", dvae: "ca4", dvaw: "ca4", dwvn: "ca4", dwvs: "ca4", ncwd: "ca4", nced: "ca4", ncmd: "ca4",
-  ilnd: "ca7", ilcd: "ca7", ilsd: "ca7", innd: "ca7", insd: "ca7", wied: "ca7", wiwd: "ca7",
-  cacd: "ca9", caed: "ca9", cand: "ca9", casd: "ca9", wawd: "ca9", waed: "ca9", ord: "ca9", azd: "ca9", nvd: "ca9", hid: "ca9", idd: "ca9", mtd: "ca9", akd: "ca9",
-  flnd: "ca11", flmd: "ca11", flsd: "ca11", gand: "ca11", gamd: "ca11", gasd: "ca11", alnd: "ca11", almd: "ca11", alsd: "ca11",
-  nysd: "ca2", nyed: "ca2", nynd: "ca2", nywd: "ca2", ctd: "ca2", vtd: "ca2",
-  ded: "ca3", njd: "ca3", paed: "ca3", pamd: "ca3", pawd: "ca3",
-  txnd: "ca5", txsd: "ca5", txed: "ca5", txwd: "ca5", laed: "ca5", lamd: "ca5", lawd: "ca5", msnd: "ca5", mssd: "ca5",
-  ohnd: "ca6", ohsd: "ca6", mied: "ca6", miwd: "ca6", kyed: "ca6", kywd: "ca6", tned: "ca6", tnmd: "ca6", tnwd: "ca6",
-  mnd: "ca8", moed: "ca8", mowd: "ca8", ared: "ca8", arwd: "ca8", iand: "ca8", iasd: "ca8", ned: "ca8", nDd: "ca8", sdd: "ca8",
-  cod: "ca10", ksd: "ca10", nmd: "ca10", oked: "ca10", oknd: "ca10", okwd: "ca10", utd: "ca10", wyd: "ca10",
-  mad: "ca1", med: "ca1", nhd: "ca1", rid: "ca1", prd: "ca1",
-  dcd: "cadc",
-};
+/** Default forum key: the selected matter's court (resolved at run time), else All India. */
+export const MATTER_FORUM = "matter-forum";
 
-/** Human court abbreviations for Bluebook parentheticals. */
-export const COURT_ABBR: Record<string, string> = {
-  scotus: "U.S.", ca1: "1st Cir.", ca2: "2d Cir.", ca3: "3d Cir.", ca4: "4th Cir.", ca5: "5th Cir.", ca6: "6th Cir.", ca7: "7th Cir.", ca8: "8th Cir.", ca9: "9th Cir.", ca10: "10th Cir.", ca11: "11th Cir.", cadc: "D.C. Cir.", cafc: "Fed. Cir.",
-  dsc: "D.S.C.", dnc: "D.N.C.", dmd: "D. Md.", dvae: "E.D. Va.", dvaw: "W.D. Va.", dwvn: "N.D. W. Va.", dwvs: "S.D. W. Va.", nced: "E.D.N.C.", ncmd: "M.D.N.C.", ncwd: "W.D.N.C.",
-  ilnd: "N.D. Ill.", ilcd: "C.D. Ill.", ilsd: "S.D. Ill.", innd: "N.D. Ind.", insd: "S.D. Ind.", wied: "E.D. Wis.", wiwd: "W.D. Wis.",
-  cacd: "C.D. Cal.", caed: "E.D. Cal.", cand: "N.D. Cal.", casd: "S.D. Cal.", wawd: "W.D. Wash.", ord: "D. Or.", azd: "D. Ariz.", nvd: "D. Nev.",
-  flnd: "N.D. Fla.", flmd: "M.D. Fla.", flsd: "S.D. Fla.", gand: "N.D. Ga.", gamd: "M.D. Ga.", gasd: "S.D. Ga.", alnd: "N.D. Ala.", almd: "M.D. Ala.", alsd: "S.D. Ala.",
-  nysd: "S.D.N.Y.", nyed: "E.D.N.Y.", nynd: "N.D.N.Y.", nywd: "W.D.N.Y.", ctd: "D. Conn.", ded: "D. Del.", njd: "D.N.J.", paed: "E.D. Pa.", pamd: "M.D. Pa.", pawd: "W.D. Pa.",
-  txnd: "N.D. Tex.", txsd: "S.D. Tex.", txed: "E.D. Tex.", txwd: "W.D. Tex.", laed: "E.D. La.", ohnd: "N.D. Ohio", ohsd: "S.D. Ohio", mied: "E.D. Mich.", miwd: "W.D. Mich.",
-  mnd: "D. Minn.", moed: "E.D. Mo.", mowd: "W.D. Mo.", cod: "D. Colo.", ksd: "D. Kan.", mad: "D. Mass.", dcd: "D.D.C.",
-  cal: "Cal.", calctapp: "Cal. Ct. App.", ny: "N.Y.", nyappdiv: "N.Y. App. Div.", nysupct: "N.Y. Sup. Ct.", del: "Del.", delch: "Del. Ch.", delsuperct: "Del. Super. Ct.", tex: "Tex.", texapp: "Tex. App.", ill: "Ill.", illappct: "Ill. App. Ct.",
-};
+export const JURISDICTIONS: Jurisdiction[] = [
+  { key: MATTER_FORUM, label: "Matter's court", group: "India", courts: "", binding: [SUPREME_COURT.id], forumCourtId: null, hint: "The forum of the selected matter; without a matter, only the Supreme Court is treated as binding" },
+  { key: "all-india", label: "All India (no forum)", group: "India", courts: "", binding: [SUPREME_COURT.id], forumCourtId: null, hint: "Supreme Court decisions bind; every High Court is persuasive" },
+  { key: SUPREME_COURT.id, label: "Supreme Court of India", group: "India", courts: "", binding: [SUPREME_COURT.id], forumCourtId: SUPREME_COURT.id, hint: "Earlier Supreme Court decisions of larger or coordinate benches bind; High Courts persuade" },
+  ...HIGH_COURTS.filter((c) => c.focus).map((c) => hcJurisdiction(c, "Focus courts")),
+  ...SUBORDINATE.map((s): Jurisdiction => ({ key: s.key, label: s.label, group: "Focus courts", courts: "", binding: [SUPREME_COURT.id, s.hc], forumCourtId: null })),
+  ...HIGH_COURTS.filter((c) => !c.focus).map((c) => hcJurisdiction(c, "Other High Courts")),
+];
 
-/** Case-law court id derived from a free-text `courts` override (first token) or a jurisdiction. */
+export const DEFAULT_JURISDICTION = MATTER_FORUM;
+
+/** The forum a run uses: an explicit forum as chosen; "Matter's court" resolves from the matter's court text, else All India. */
+export function effectiveJurisdiction(key: string | undefined | null, matterCourt?: string | null): string {
+  const j = jurisdictionByKey(key);
+  if (j.key !== MATTER_FORUM) return j.key;
+  return forumFromMatterCourt(matterCourt) ?? "all-india";
+}
+
+export function jurisdictionByKey(key: string | undefined | null): Jurisdiction {
+  return JURISDICTIONS.find((j) => j.key === key) ?? JURISDICTIONS.find((j) => j.key === DEFAULT_JURISDICTION)!;
+}
+
+/** The forum as a Court (subordinate forums are synthetic district-level courts in the state). Null for "All India". */
+export function forumCourt(key: string | undefined | null): Court | null {
+  const j = jurisdictionByKey(key);
+  if (j.forumCourtId) return courtById(j.forumCourtId);
+  const sub = SUBORDINATE.find((s) => s.key === j.key);
+  if (sub) return { id: sub.key, name: sub.label, shortName: sub.label.split(" (")[0], level: "district", territory: [sub.state], seat: "", benches: [], languages: [] };
+  return null;
+}
+
+/** Registry court ids that bind the forum (deterministic), Supreme Court first. */
+export function bindingCourtIds(key: string | undefined | null): string[] {
+  return jurisdictionByKey(key).binding;
+}
+
+/** Registry court ids for the persuasive lane: every High Court whose decisions do not bind the forum. */
+export function persuasiveCourtIds(key: string | undefined | null): string[] {
+  const bind = new Set(bindingCourtIds(key));
+  return HIGH_COURTS.map((c) => c.id).filter((id) => !bind.has(id));
+}
+
+/** Court ids from a free-text override (space/comma separated registry ids), or the forum's retrieval narrowing. */
 export function resolveCourts(jurisdictionKey: string, courtsOverride?: string): string {
   const override = (courtsOverride ?? "").trim().toLowerCase().replace(/[,\s]+/g, " ");
-  if (override) return override;
+  if (override) return override.split(" ").filter((id) => courtById(id)).join(" ");
   return jurisdictionByKey(jurisdictionKey).courts;
 }
 
-/**
- * Binding vs persuasive relative to the selected jurisdiction (or free-text
- * courts). Rule of thumb for trial-court research: SCOTUS and the governing
- * circuit (or state high court / intermediate appellate court) bind; other
- * courts, including sister district courts, persuade.
- */
-export function classifyAuthority(courtId: string | undefined, jurisdictionKey: string, courtsOverride?: string): Authority {
-  if (!courtId) return "n/a";
-  const id = courtId.toLowerCase();
-  if (id === "scotus") return "binding";
-  const override = (courtsOverride ?? "").trim().toLowerCase().split(/[\s,]+/).filter(Boolean);
-  if (override.length) {
-    const bindingSet = new Set<string>();
-    for (const c of override) {
-      if (/^ca\d+$|^cadc$|^cafc$/.test(c)) bindingSet.add(c);
-      const circ = CIRCUIT_OF[c];
-      if (circ) bindingSet.add(circ);
-      if (["cal", "calctapp", "ny", "nyappdiv", "del", "tex", "texapp", "ill", "illappct"].includes(c)) bindingSet.add(c);
-      if (c === "calctapp" || c === "cal") { bindingSet.add("cal"); bindingSet.add("calctapp"); }
-      if (c.startsWith("ny")) { bindingSet.add("ny"); bindingSet.add("nyappdiv"); }
-      if (c.startsWith("del")) bindingSet.add("del");
-      if (c.startsWith("tex")) { bindingSet.add("tex"); bindingSet.add("texapp"); }
-      if (c.startsWith("ill")) { bindingSet.add("ill"); bindingSet.add("illappct"); }
-    }
-    return bindingSet.has(id) ? "binding" : "persuasive";
-  }
-  const j = jurisdictionByKey(jurisdictionKey);
-  if (j.key === "all-federal" || j.key === "federal-appellate") return "persuasive";
-  return j.binding.includes(id) ? "binding" : "persuasive";
+/** True for a Telangana/AP High Court judgment delivered before bifurcation (the erstwhile common High Court at Hyderabad). */
+export function isCombinedHyderabadHc(courtId: string | undefined | null, date: string | undefined | null): boolean {
+  return (courtId === "hc-telangana" || courtId === "hc-andhra") && Boolean(date && date.slice(0, 10) < HC_BIFURCATION_DATE);
 }
 
-export function courtAbbreviation(courtId?: string, courtName?: string) {
-  if (courtId && COURT_ABBR[courtId.toLowerCase()]) return COURT_ABBR[courtId.toLowerCase()];
+/**
+ * Binding vs persuasive for the forum (deterministic). Unknown or unresolved courts are "n/a" (never guessed).
+ * `courtsOverride` narrows retrieval only; it never changes precedential effect.
+ */
+export function classifyAuthority(courtId: string | undefined | null, jurisdictionKey: string, _courtsOverride?: string, date?: string | null): Authority {
+  void _courtsOverride;
+  const decidedBy = courtById(courtId ?? undefined);
+  if (!decidedBy) return "n/a";
+  if (isCombinedHyderabadHc(decidedBy.id, date)) return decidedBy.level === "supreme" ? "binding" : "persuasive";
+  const forum = forumCourt(jurisdictionKey);
+  if (!forum) return decidedBy.level === "supreme" ? "binding" : "persuasive";
+  return bindingEffect(decidedBy, forum);
+}
+
+/** One-line reason for the classification, shown next to each authority. */
+export function bindingReason(courtId: string | undefined | null, jurisdictionKey: string, date?: string | null): string {
+  const decidedBy = courtById(courtId ?? undefined);
+  const forum = forumCourt(jurisdictionKey);
+  const forumName = forum?.name ?? "any court (no forum selected)";
+  if (!decidedBy) return "court not resolved; precedential effect not assessed";
+  if (decidedBy.level === "supreme") return `binding on ${forumName} (Art. 141)`;
+  if (isCombinedHyderabadHc(decidedBy.id, date)) return `erstwhile common High Court at Hyderabad (before 1 Jan 2019); persuasive for ${forumName}`;
+  const effect = classifyAuthority(decidedBy.id, jurisdictionKey, undefined, date);
+  return effect === "binding" ? `binding on ${forumName} (${decidedBy.shortName} within its territory)` : `persuasive for ${forumName}`;
+}
+
+/** Short court label for citations and tables. */
+export function courtAbbreviation(courtId?: string | null, courtName?: string): string {
+  const c = courtById(courtId ?? undefined);
+  if (c) return c.shortName;
   return courtName ?? courtId ?? "";
 }
+
+/** Forum inferred from a matter's court text (registry names, seats and bench cities). Null when nothing matches — never the closest court. */
+export function forumFromMatterCourt(court: string | undefined | null): string | null {
+  const t = (court ?? "").toLowerCase();
+  if (!t.trim()) return null;
+  if (/supreme court/.test(t)) return SUPREME_COURT.id;
+  const isHc = /high court/.test(t);
+  const state = /karnataka|bengaluru|bangalore|dharwad|kalaburagi|gulbarga|mysuru|mysore|mangaluru|hubballi/.test(t) ? "KA"
+    : /telangana|hyderabad|secunderabad|warangal|ranga reddy|rangareddy/.test(t) ? "TS"
+    : /andhra|amaravati|visakhapatnam|vijayawada|guntur|tirupati|nellore|kurnool/.test(t) ? "AP" : null;
+  if (!state) {
+    const hc = HIGH_COURTS.find((c) => t.includes(c.name.toLowerCase()) || (c.seat && t.includes(c.seat.toLowerCase())));
+    return isHc && hc ? hc.id : null;
+  }
+  if (isHc) return state === "KA" ? "hc-karnataka" : state === "TS" ? "hc-telangana" : "hc-andhra";
+  return state === "KA" ? "ka-subordinate" : state === "TS" ? "ts-subordinate" : "ap-subordinate";
+}
+
+/** Focus forums shown first in pickers. */
+export const FOCUS_FORUMS = [SUPREME_COURT.id, ...FOCUS_COURT_IDS];

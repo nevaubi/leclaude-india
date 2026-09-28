@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { T } from "@/lib/i18n/client";
 import Link from "next/link";
 import { useHome } from "./home-provider";
 import { Section } from "./shared";
@@ -27,7 +28,7 @@ export function MatterWatchSection() {
   if (!shown.length) return null;
   const total = shown.reduce((n, a) => n + a.total, 0);
   return (
-    <Section id="matter-watch" title="Matter watch" count={total} description="Docket and regulatory activity on your matters in the last 30 days" actions={<Link href="/intel/chronologies" className="text-[11px] text-muted-foreground hover:text-primary">Chronologies</Link>}>
+    <Section id="matter-watch" title={<T k="home.section.matterWatch" />} count={total} description={<T k="home.section.matterWatchDesc" />} actions={<Link href="/intel/chronologies" className="text-[11px] text-muted-foreground hover:text-primary"><T k="home.section.chronologies" /></Link>}>
       <div className="grid gap-x-6 @3xl:grid-cols-2">
         {shown.slice(0, 4).map((a) => {
           const rows = [...a.docket.map((d) => ({ ...d, lane: "Docket" })), ...a.regulatory.map((d) => ({ ...d, lane: "Regulatory" })), ...a.other.map((d) => ({ ...d, lane: DOC_KIND_LABEL[d.kind] }))].sort((x, y) => (y.date ?? "").localeCompare(x.date ?? "")).slice(0, 5);

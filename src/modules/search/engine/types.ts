@@ -11,7 +11,12 @@ import type { Authority, SearchHit, SearchSettings, SearchSource } from "../type
 // Lanes
 // ---------------------------------------------------------------------------
 
-export type LaneKind = "controlling" | "contrary" | "regulatory" | "record" | "secondary" | "fast";
+/**
+ * LeClaude India lanes: "controlling" = binding authority (Supreme Court + the forum High Court, larger benches first),
+ * "persuasive" = other High Courts and the erstwhile common High Court at Hyderabad, "contrary" = adverse authority,
+ * "statute" = India Code (with the IPC/BNS, CrPC/BNSS, IEA/BSA transition). "regulatory" is kept for US compatibility.
+ */
+export type LaneKind = "controlling" | "persuasive" | "contrary" | "statute" | "regulatory" | "record" | "secondary" | "fast";
 
 /**
  * Where a lane retrieves from: the structured providers, or the firm's
@@ -42,6 +47,8 @@ export interface ResearchLane {
   /** Cap on full-text reads per lane. */
   maxReads: number;
   round: number;
+  /** Registry court ids this lane's judgment retrieval is limited to (deterministic, from the forum); absent = all courts. */
+  courtFilter?: string[];
   /** Lanes whose results this lane waits for and builds on (dependency-aware scheduling). */
   dependsOn?: string[];
   /** Wall-clock budget for the lane; the scheduler aborts it past this. */
@@ -111,6 +118,8 @@ export interface ResearchSource {
 }
 
 export interface AuthorityTreatment {
+  /** Where the signal came from: the judgment corpus (citing judgments / recorded treatment) or a provider's citing search. */
+  basis?: "corpus" | "provider";
   /** "possibly_negative": citing opinions use negative-treatment language — review before relying. */
   signal: "possibly_negative" | "no_negative_signal" | "unavailable";
   citingCount?: number;
@@ -223,6 +232,17 @@ export interface ResearchMessage {
   subQuestions?: string[];
   /** True when no evidence was retrieved and the answer states that the sources reviewed do not establish the point. */
   noAnswer?: boolean;
+  // --- LeClaude India ---
+  /** Forum key the run used (the matter's court resolved when "Matter's court" was selected). */
+  forum?: string;
+  /** Language the question was asked in (deterministic from its script). */
+  queryLanguage?: string;
+  /** Language the answer was written in. */
+  answerLanguage?: string;
+  /** English search terms used when the question was not in English (router/fast model), or null when translation was unavailable. */
+  searchQuery?: string | null;
+  /** Date of offence used for the IPC/BNS rule (settings or the question) and the code the shared rule chose ("requires_review" shown as is). */
+  offence?: { date: string | null; substantive: string };
 }
 
 export interface ResearchPin {

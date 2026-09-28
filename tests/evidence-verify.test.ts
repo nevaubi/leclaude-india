@@ -87,7 +87,7 @@ describe("verdict arithmetic", () => {
 });
 
 describe("verifyClaims (server)", () => {
-  const scope = { tenantId: "seeger-weiss", matterIds: [MATTERS.afff] };
+  const scope = { tenantId: "default", matterIds: [MATTERS.afff] };
   it("refuses sources outside the scope before any model call", async () => {
     await expect(verifyClaims({ artifactText: "x", artifactHash: "h", scope, sources: [{ kind: "document", id: "ed_ng", matterId: MATTERS.northgate, text: "t" }] })).rejects.toBeInstanceOf(AuthError);
   });

@@ -4,7 +4,7 @@ import { runAgent, strictJsonSchema, type AgentEvent } from "../agent";
 import { aiConfig } from "../config";
 import { FIRM_NAME, LEGAL_STYLE_RULES, todayLine } from "../prompts";
 import { defineTool, type ToolDef } from "../tools";
-import { fetchUrlTool, INTERNAL_TOOLS, LEGAL_TOOLS, webSearchTool } from "../toolkit";
+import { fetchUrlTool, INDIA_TOOLS, INTERNAL_TOOLS, LEGAL_TOOLS, webSearchTool } from "../toolkit";
 import type { VerifySource } from "../verify";
 import { audit } from "@/lib/integrity/audit";
 import { searchIntel } from "@/modules/intel/store";
@@ -77,7 +77,7 @@ export function handoffTool(from: AgentId): ToolDef<{ to: string; brief: string;
   });
 }
 
-const NAMED_TOOLS: Record<string, ToolDef<never, unknown>> = Object.fromEntries([...LEGAL_TOOLS, ...INTERNAL_TOOLS, fetchUrlTool, searchIntelTool].map((t) => [t.name, t as ToolDef<never, unknown>]));
+const NAMED_TOOLS: Record<string, ToolDef<never, unknown>> = Object.fromEntries([...LEGAL_TOOLS, ...INTERNAL_TOOLS, ...INDIA_TOOLS, fetchUrlTool, searchIntelTool].map((t) => [t.name, t as ToolDef<never, unknown>]));
 
 /** Resolve tool names into runAgent tools (function tools + OpenAI built-ins). Unknown names are ignored. */
 export function toolsFor(names: Iterable<AgentToolName | string>, opts: { from?: AgentId; webContextSize?: "low" | "medium" | "high" } = {}): { tools: ToolDef<never, unknown>[]; builtinTools: Tool[]; unknown: string[] } {

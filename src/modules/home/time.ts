@@ -141,12 +141,13 @@ export function relativeLabel(iso: string, now: Date): string {
 
 export function fmtTime(iso: string): string {
   if (DATE_ONLY_RE.test(iso)) return "All day";
-  return toDate(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return toDate(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
 }
 
 export function fmtDate(iso: string | Date, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }): string {
   const d = typeof iso === "string" ? toDate(iso) : iso;
-  return d.toLocaleDateString("en-US", opts);
+  // Indian convention: day before month ("31 May", "Friday, 31 May 2024").
+  return d.toLocaleDateString("en-IN", opts);
 }
 
 export function fmtDateLong(iso: string | Date): string {

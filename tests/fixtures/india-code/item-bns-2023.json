@@ -1,0 +1,253 @@
+{
+ "id": "4bb3e636-ed67-4731-8fb1-7ebfd83e1584",
+ "uuid": "4bb3e636-ed67-4731-8fb1-7ebfd83e1584",
+ "name": "The Bharatiya Nyaya Sanhita, 2023",
+ "handle": "123456789/496548",
+ "metadata": {
+  "dc.date.accessioned": [
+   {
+    "value": "2026-07-10T20:12:32Z",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.date.act_year": [
+   {
+    "value": "2023",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.date.enact_date": [
+   {
+    "value": "2023-12-25",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.date.enforcement_date": [
+   {
+    "value": "1-7-2024",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.date.entry_date": [
+   {
+    "value": "2024-06-25",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.date.issued": [
+   {
+    "value": "2023-12-25",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.date.last_modified": [
+   {
+    "value": "2025-11-07",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.act_id": [
+   {
+    "value": "AC_CEN_5_23_00048_2023-45_1719292564123",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.act_number": [
+   {
+    "value": "45",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.collection": [
+   {
+    "value": "ACT",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.department_id": [
+   {
+    "value": "23",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.department_name": [
+   {
+    "value": "Department of Internal Security",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.givenid": [
+   {
+    "value": "2023-45",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.ministry_id": [
+   {
+    "value": "5",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.ministry_name": [
+   {
+    "value": "Ministry of Home Affairs",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.no_of_chapter": [
+   {
+    "value": "0",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.no_of_section": [
+   {
+    "value": "0",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.preamble_description": [
+   {
+    "value": "<center style=\"font-size: 17px;\">THE BHARATIYA NYAYA SANHITA, 2023</center> <center style=\"font-size: 16px;\">ACT NO. 45 OF 2023</center> <p style=\"text-align:right;\">[<i>25th December, 2023.</i>]<p style=\"text-align:right;\"><br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> An Act to consolidate and amend the provisions relating to offences and for matters connected therewith or incidental thereto.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span>BE it enacted by Parliament in the Seventy-fourth Year of the Republic of India as follows:---<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/>",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.refact": [
+   {
+    "value": "0",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.repealed": [
+   {
+    "value": "false",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.state_id": [
+   {
+    "value": "1",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.state_name": [
+   {
+    "value": "CENTRAL",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.identifier.uri": [
+   {
+    "value": "http://test1.indiacode.nic.in/handle/123456789/496548",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.title": [
+   {
+    "value": "The Bharatiya Nyaya Sanhita, 2023",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.title.long_title": [
+   {
+    "value": "An Act to consolidate and amend the provisions relating to offences and for matters connected therewith or incidental thereto.",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ],
+  "dc.type": [
+   {
+    "value": "Developmental",
+    "language": null,
+    "authority": null,
+    "confidence": -1,
+    "place": 0
+   }
+  ]
+ },
+ "inArchive": true,
+ "discoverable": true,
+ "withdrawn": false,
+ "lastModified": "2026-08-24T19:05:28.276237Z",
+ "entityType": null,
+ "type": "item",
+ "_links": {
+  "self": {
+   "href": "https://indiacode.gov.in/server/api/core/items/4bb3e636-ed67-4731-8fb1-7ebfd83e1584"
+  }
+ }
+}

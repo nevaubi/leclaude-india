@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { T } from "@/lib/i18n/client";
 import Link from "next/link";
 import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCorners, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { Check, CheckSquare, Circle, CircleDot, Columns3, ExternalLink, GripVertical, Link2, List, MoreHorizontal, Pencil, Plus, Trash2, User } from "lucide-react";
@@ -75,7 +76,7 @@ export function TasksOverview() {
   return (
     <Section
       id="tasks"
-      title="Tasks"
+      title={<T k="home.section.tasks" />}
       icon={CheckSquare}
       count={open.length}
       actions={
@@ -276,7 +277,7 @@ export function TasksFocus() {
   return (
     <Section
       id="tasks"
-      title="Tasks"
+      title={<T k="home.section.tasks" />}
       icon={CheckSquare}
       count={`${open.length} open`}
       expanded

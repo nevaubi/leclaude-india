@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import { Bookmark, Check, ChevronDown, Loader2, Plus, Search, Trash2, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
@@ -51,6 +52,7 @@ export interface FilterbarProps {
  * sort and view controls.
  */
 export function Filterbar(p: FilterbarProps) {
+  const t = useT();
   const n = activeFilterCount(p.values);
   const snapshot = React.useMemo(() => ({ values: p.values, query: p.query }), [p.values, p.query]);
   const activeView = p.savedViews ? findMatchingView(p.savedViews, snapshot) : undefined;
@@ -64,17 +66,17 @@ export function Filterbar(p: FilterbarProps) {
         {p.leading}
         {p.onQueryChange && (
           <div className="relative w-full sm:w-44 xl:w-56">
-            {p.queryLoading ? <Loader2 className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" /> : <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />}
-            <Input ref={p.inputRef} size={inputSize} value={p.query ?? ""} onChange={(e) => p.onQueryChange?.(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { p.onQueryChange?.(""); (e.target as HTMLInputElement).blur(); } }} placeholder={p.queryPlaceholder ?? "Search…"} className="pl-7 pr-7" aria-label={p.queryPlaceholder ?? "Search"} />
-            <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
-              {p.query ? <button type="button" onClick={() => p.onQueryChange?.("")} className="rounded p-0.5 text-muted-foreground hover:text-foreground cursor-pointer" aria-label="Clear search"><X className="size-3" /></button> : <kbd className="hidden sm:inline">/</kbd>}
+            {p.queryLoading ? <Loader2 className="pointer-events-none absolute start-2 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" /> : <Search className="pointer-events-none absolute start-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />}
+            <Input ref={p.inputRef} size={inputSize} value={p.query ?? ""} onChange={(e) => p.onQueryChange?.(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { p.onQueryChange?.(""); (e.target as HTMLInputElement).blur(); } }} placeholder={p.queryPlaceholder ?? t("common.searchEllipsis")} className="ps-7 pe-7" aria-label={p.queryPlaceholder ?? t("common.search")} />
+            <div className="absolute end-1.5 top-1/2 -translate-y-1/2">
+              {p.query ? <button type="button" onClick={() => p.onQueryChange?.("")} className="rounded p-0.5 text-muted-foreground hover:text-foreground cursor-pointer" aria-label={t("ui.clearSearch")}><X className="size-3" /></button> : <kbd className="hidden sm:inline">/</kbd>}
             </div>
           </div>
         )}
         {visible.map((f) => <FilterChip key={f.id} filter={f} value={p.values[f.id]} onChange={(next) => p.onChange(next)} values={p.values} />)}
         {unpinned.some((f) => !reveal.includes(f.id)) && (
           <DropdownMenu>
-            <DropdownMenuTrigger asChild><Button variant="ghost" size="xs" className="h-7 gap-1 px-2 text-[11.5px] text-muted-foreground"><Plus className="size-3" /> Filter</Button></DropdownMenuTrigger>
+            <DropdownMenuTrigger asChild><Button variant="ghost" size="xs" className="h-7 gap-1 px-2 text-[11.5px] text-muted-foreground"><Plus className="size-3" /> {t("common.filter")}</Button></DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
               {unpinned.filter((f) => !reveal.includes(f.id)).map((f) => <DropdownMenuItem key={f.id} onClick={() => setReveal((r) => [...r, f.id])}>{f.label}</DropdownMenuItem>)}
             </DropdownMenuContent>
@@ -93,6 +95,7 @@ export function Filterbar(p: FilterbarProps) {
 }
 
 function FilterChip({ filter: f, value, values, onChange }: { filter: FilterbarFilter; value: FilterValues[string]; values: FilterValues; onChange: (v: FilterValues) => void }) {
+  const t = useT();
   const active = Array.isArray(value) ? value.length > 0 : Boolean(value);
   const label = chipLabel(f.label, value, (v) => f.options.find((o) => o.value === v)?.label);
   const Icon = f.icon;
@@ -119,7 +122,7 @@ function FilterChip({ filter: f, value, values, onChange }: { filter: FilterbarF
       </PopoverTrigger>
       <PopoverContent align="start" className="max-h-80 w-60 overflow-y-auto p-1 scrollbar-thin">
         <div className="px-2 py-1 text-[11.5px] text-muted-foreground">{f.label}{f.multi ? " · any of" : ""}</div>
-        {f.options.length === 0 && <div className="px-2 py-1.5 text-[11.5px] text-muted-foreground">No options</div>}
+        {f.options.length === 0 && <div className="px-2 py-1.5 text-[11.5px] text-muted-foreground">{t("ui.noOptions")}</div>}
         {f.options.map((o) => {
           const on = selectedSet.has(o.value);
           return (
@@ -136,17 +139,18 @@ function FilterChip({ filter: f, value, values, onChange }: { filter: FilterbarF
 }
 
 function SavedViewsMenu({ views, active, canSave, onSave, onApply, onDelete }: { views: SavedView[]; active?: SavedView; canSave: boolean; onSave?: (name: string) => void; onApply?: (v: SavedView) => void; onDelete?: (id: string) => void }) {
+  const t = useT();
   const [saving, setSaving] = React.useState(false);
   const [name, setName] = React.useState("");
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="xs" className={cn("h-7 gap-1 px-2 text-[11.5px]", active ? "text-foreground" : "text-muted-foreground")} aria-label="Saved views"><Bookmark className={cn("size-3", active && "fill-current")} /><span className="hidden xl:inline">{active ? active.name : "Views"}</span><ChevronDown className="size-3 opacity-60" /></Button>
+          <Button variant="ghost" size="xs" className={cn("h-7 gap-1 px-2 text-[11.5px]", active ? "text-foreground" : "text-muted-foreground")} aria-label={t("ui.savedViews")}><Bookmark className={cn("size-3", active && "fill-current")} /><span className="hidden xl:inline">{active ? active.name : t("ui.views")}</span><ChevronDown className="size-3 opacity-60" /></Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-60">
-          <DropdownMenuLabel>Saved views</DropdownMenuLabel>
-          {views.length === 0 && <div className="px-2 py-1.5 text-[11.5px] text-muted-foreground">No saved views yet.</div>}
+          <DropdownMenuLabel>{t("ui.savedViews")}</DropdownMenuLabel>
+          {views.length === 0 && <div className="px-2 py-1.5 text-[11.5px] text-muted-foreground">{t("ui.noSavedViews")}</div>}
           {views.map((v) => (
             <DropdownMenuItem key={v.id} onClick={() => onApply?.(v)} className="group/view">
               <span className="min-w-0 flex-1 truncate">{v.name}</span>
@@ -154,15 +158,15 @@ function SavedViewsMenu({ views, active, canSave, onSave, onApply, onDelete }: {
               {onDelete && <button type="button" onClick={(e) => { e.stopPropagation(); e.preventDefault(); onDelete(v.id); }} className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-destructive group-hover/view:opacity-100" aria-label={`Delete view ${v.name}`}><Trash2 className="size-3" /></button>}
             </DropdownMenuItem>
           ))}
-          {onSave && (<><DropdownMenuSeparator /><DropdownMenuItem disabled={!canSave} onClick={() => { setName(""); setSaving(true); }}><Plus /> Save current view…</DropdownMenuItem></>)}
+          {onSave && (<><DropdownMenuSeparator /><DropdownMenuItem disabled={!canSave} onClick={() => { setName(""); setSaving(true); }}><Plus /> {t("ui.saveCurrentView")}</DropdownMenuItem></>)}
         </DropdownMenuContent>
       </DropdownMenu>
       <Popover open={saving} onOpenChange={setSaving}>
         <PopoverTrigger asChild><span className="sr-only" aria-hidden /></PopoverTrigger>
         <PopoverContent align="start" className="w-64 space-y-2 p-3">
-          <div className="text-[12px] font-medium">Save view</div>
-          <Input size="sm" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, e.g. Draft PDFs on AFFF" onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) { onSave?.(name.trim()); setSaving(false); } }} />
-          <div className="flex justify-end gap-1.5"><Button variant="ghost" size="xs" onClick={() => setSaving(false)}>Cancel</Button><Button size="xs" disabled={!name.trim()} onClick={() => { onSave?.(name.trim()); setSaving(false); }}>Save</Button></div>
+          <div className="text-[12px] font-medium">{t("ui.saveView")}</div>
+          <Input size="sm" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("ui.viewNamePlaceholder")} onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) { onSave?.(name.trim()); setSaving(false); } }} />
+          <div className="flex justify-end gap-1.5"><Button variant="ghost" size="xs" onClick={() => setSaving(false)}>{t("common.cancel")}</Button><Button size="xs" disabled={!name.trim()} onClick={() => { onSave?.(name.trim()); setSaving(false); }}>{t("common.save")}</Button></div>
         </PopoverContent>
       </Popover>
     </>

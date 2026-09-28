@@ -19,6 +19,7 @@ import { api, useLayouts } from "./use-review-data";
 import { DecisionCell, IssueChip, SuggestedCell, TypeIcon, formatDateTime, formatShortDate } from "./shared";
 import { IssuePicker } from "./issue-picker";
 import { formatBytes } from "./review-helpers";
+import { docClassLabel } from "../india";
 
 const rowId = (r: DocRow) => r.id;
 
@@ -122,7 +123,7 @@ export function DocTable({ hits, loading, error, total, totalWorkspace, tookMs, 
         total={total}
         loading={loading}
         error={error ?? null}
-        empty={<div className="p-8"><EmptyState icon={FileSearch} title="No documents match" description="Adjust the query, view or facets. Bates ranges and field prefixes are exact; try Semantic for concept searches." /></div>}
+        empty={<div className="p-8"><EmptyState icon={FileSearch} title="No documents match" description="Adjust the query, view or facets. Exhibit marks (Ex.P7), document references and field prefixes are exact; try Semantic for concept searches." /></div>}
         onEndReached={onLoadMore}
         ariaLabel="Documents"
         stripActions={<LayoutMenu />}
@@ -163,6 +164,8 @@ function renderCell(id: string, row: DocRow, ctx: CellCtx): React.ReactNode {
       );
     }
     case "batesEnd": return <span className="font-mono text-[11.5px] tabular text-muted-foreground">{row.batesEnd ?? row.bates}</span>;
+    case "exhibit": return row.india?.exhibit ? <span className="font-mono text-[11.5px] font-medium tabular" title={row.india.markedThrough ? `Marked through ${row.india.markedThrough}${row.india.markedOn ? ` on ${formatShortDate(row.india.markedOn)}` : ""}${row.india.markedSubjectToObjection ? " (subject to objection)" : ""}` : undefined}>{row.india.exhibit}</span> : <span className="text-muted-foreground/40">—</span>;
+    case "record": return row.india ? <span className="flex min-w-0 items-center gap-1.5 truncate text-muted-foreground">{docClassLabel(row.india.docClass)}{row.india.language && row.india.language !== "en" && <span className="shrink-0 rounded border px-1 text-[10px] uppercase leading-4" title="Original-language text (text of record)">{row.india.language}</span>}{row.india.docClass === "translation" && <span className="shrink-0 rounded border border-dashed px-1 text-[10px] leading-4" title={`Translation (${row.india.translationOrigin ?? "unknown origin"}); the original is the text of record`}>TR</span>}</span> : <span className="text-muted-foreground/40">—</span>;
     case "family": return f.isParent ? <span className="tabular text-muted-foreground" title={`Parent with ${f.attachmentCount} attachment${f.attachmentCount === 1 ? "" : "s"}`}>P +{f.attachmentCount}</span> : f.isAttachment ? <span className="text-muted-foreground" title="Attachment">A</span> : <span className="text-muted-foreground/40">—</span>;
     case "thread": return f.inThread ? <span className="tabular text-muted-foreground" title={`Thread of ${f.threadSize}`}>{f.threadSize}</span> : <span className="text-muted-foreground/40">—</span>;
     case "dupes": return f.isDuplicate ? <span className="text-muted-foreground" title="Exact duplicate">D</span> : f.nearDuplicateCount ? <span className="tabular text-muted-foreground" title={`${f.nearDuplicateCount} near-duplicate${f.nearDuplicateCount === 1 ? "" : "s"}`}>≈{f.nearDuplicateCount}</span> : <span className="text-muted-foreground/40">—</span>;

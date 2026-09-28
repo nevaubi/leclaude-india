@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import Link from "next/link";
 import { Check, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,12 +15,13 @@ import { firstRunSteps } from "./first-run-model";
 export function FirstRunChecklist() {
   const { setup, aiConfigured, refresh } = useHome();
   const [newMatter, setNewMatter] = React.useState(false);
+  const t = useT();
   const steps = firstRunSteps({ ...setup, aiConfigured });
   const remaining = steps.filter((s) => !s.done).length;
   return (
     <section aria-labelledby="first-run-title" className="w-full max-w-[640px] pt-2">
-      <h2 id="first-run-title" className="text-[14px] font-semibold tracking-tight">Set up your workspace</h2>
-      <p className="mt-0.5 text-[12.5px] text-muted-foreground">{remaining === 0 ? "All set." : `${remaining} of ${steps.length} steps left. Home fills in as matters, deadlines and documents arrive.`}</p>
+      <h2 id="first-run-title" className="text-[14px] font-semibold tracking-tight">{t("home.firstRun.title")}</h2>
+      <p className="mt-0.5 text-[12.5px] text-muted-foreground">{remaining === 0 ? t("home.firstRun.allSet") : t("home.firstRun.remaining", { remaining, total: steps.length })}</p>
       <ol className="mt-3 divide-y divide-line-quiet border-y border-line-quiet">
         {steps.map((s, i) => (
           <li key={s.id}>
@@ -28,11 +30,11 @@ export function FirstRunChecklist() {
                 {s.done ? <Check className="size-3" /> : i + 1}
               </span>
               <span className="min-w-0 flex-1">
-                <span className={cn("block text-[13px] font-medium", s.done && "text-muted-foreground line-through decoration-muted-foreground/40")}>{s.title}</span>
-                <span className="block text-[12px] text-muted-foreground">{s.detail}</span>
+                <span className={cn("block text-[13px] font-medium", s.done && "text-muted-foreground line-through decoration-muted-foreground/40")}>{t(`home.firstRun.${s.id}.title`)}</span>
+                <span className="block text-[12px] text-muted-foreground">{t(`home.firstRun.${s.id}.detail`)}</span>
               </span>
-              <span className="mt-0.5 shrink-0 text-[11.5px] text-muted-foreground">{s.done ? "Done" : <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />}</span>
-              <span className="sr-only">{s.done ? "completed" : "not completed"}</span>
+              <span className="mt-0.5 shrink-0 text-[11.5px] text-muted-foreground">{s.done ? t("home.firstRun.done") : <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5" />}</span>
+              <span className="sr-only">{s.done ? t("home.firstRun.completed") : t("home.firstRun.notCompleted")}</span>
             </Link>
           </li>
         ))}

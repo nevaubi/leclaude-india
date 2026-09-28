@@ -281,7 +281,8 @@ export function formatRange(d: Pick<Designation, "startPage" | "startLine" | "en
 // Phase 3: transcript import, cross references, stories, intelligence panels
 // ---------------------------------------------------------------------------
 
-export type TranscriptFormat = "page-line" | "page-numbered" | "loose";
+/** "indian": deposition sheets with chief-examination (often by affidavit), cross- and re-examination segments. */
+export type TranscriptFormat = "page-line" | "page-numbered" | "loose" | "indian";
 
 export interface ParseIssue {
   /** Where the issue was seen (page:line when known, otherwise the raw line number). */

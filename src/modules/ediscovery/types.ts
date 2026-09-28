@@ -4,6 +4,7 @@
  */
 import type { CodingDecision, DocType, EDocument, IssueCode, PrivilegeLogEntry, ProductionSet, Redaction, ReviewBatch, ReviewLayout, SavedSearchRecord, SearchTermReport } from "@/lib/types/domain";
 import type { BatchProgress, DisagreementReport } from "./batch-pure";
+import type { IndiaDocMeta } from "./india";
 
 export type ReviewTab = "review" | "batches" | "depositions" | "cross" | "timeline" | "story" | "people" | "conflicts" | "productions" | "codes";
 
@@ -43,7 +44,7 @@ export const SCORE_BUCKETS: { id: ScoreBucket; label: string }[] = [
   { id: "unscored", label: "Unscored" },
 ];
 
-export type SortKey = "date" | "bates" | "custodian" | "type" | "subject" | "aiScore" | "relevance" | "from" | "pages" | "size" | "family" | "thread" | "reviewed";
+export type SortKey = "date" | "bates" | "exhibit" | "custodian" | "type" | "subject" | "aiScore" | "relevance" | "from" | "pages" | "size" | "family" | "thread" | "reviewed";
 
 /** Row grouping in the review grid: families, email threads or near-duplicate clusters stay contiguous. */
 export type GroupBy = "none" | "family" | "thread" | "neardup";
@@ -120,6 +121,8 @@ export type DocRow = Omit<EDocument, "text" | "entities" | "aiSummary"> & {
   groupSize?: number;
   /** Number of redactions on the document. */
   redactions?: number;
+  /** Indian record metadata (record class, exhibit mark, witness marked through, language / translation). */
+  india?: IndiaDocMeta;
 };
 
 export interface SearchResponse {
@@ -329,10 +332,11 @@ export type PrivilegeLogRow = PrivilegeLogEntry & { subject: string; custodianNa
 export const ISSUE_COLORS = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5", "info", "warning", "destructive", "success", "primary"] as const;
 
 export const PRIVILEGE_BASES: { id: NonNullable<CodingDecision["privilegeBasis"]>; label: string }[] = [
-  { id: "attorney-client", label: "Attorney–client" },
-  { id: "work-product", label: "Work product" },
+  // Indian wording (BSA 2023 ss.132–134 / IEA 1872 ss.126–129); ids unchanged so stored coding keeps working.
+  { id: "attorney-client", label: "Advocate–client (BSA s.132)" },
+  { id: "work-product", label: "Legal adviser (BSA s.134)" },
   { id: "common-interest", label: "Common interest" },
-  { id: "joint-defense", label: "Joint defense" },
+  { id: "joint-defense", label: "Joint defence" },
 ];
 
 export const CONFIDENTIALITY_LEVELS: { id: NonNullable<CodingDecision["confidentiality"]>; label: string }[] = [

@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import { Command as CommandPrimitive } from "cmdk";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,11 +11,12 @@ const Command = React.forwardRef<React.ElementRef<typeof CommandPrimitive>, Reac
 ));
 Command.displayName = CommandPrimitive.displayName;
 
-function CommandDialog({ children, open, onOpenChange, title = "Command palette" }: { children: React.ReactNode; open: boolean; onOpenChange: (o: boolean) => void; title?: string }) {
+function CommandDialog({ children, open, onOpenChange, title }: { children: React.ReactNode; open: boolean; onOpenChange: (o: boolean) => void; title?: string }) {
+  const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent hideClose className="overflow-hidden p-0 max-w-2xl top-[18%] translate-y-0" size="lg">
-        <DialogTitle className="sr-only">{title}</DialogTitle>
+        <DialogTitle className="sr-only">{title ?? t("ui.commandPalette")}</DialogTitle>
         <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:size-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2 [&_[cmdk-item]_svg]:size-4">
           {children}
         </Command>

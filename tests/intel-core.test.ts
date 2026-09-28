@@ -87,8 +87,8 @@ describe("schedule", () => {
 });
 
 describe("seeds", () => {
-  it("seeds twelve system sources, a sample corpus with chunks and a keyword index, and entities", () => {
-    expect(intelSources().count()).toBe(12);
+  it("seeds eighteen system sources (twelve sample, six India), a sample corpus with chunks and a keyword index, and entities", () => {
+    expect(intelSources().count()).toBe(18);
     const docs = intelDocuments().all();
     expect(docs.length).toBeGreaterThanOrEqual(40);
     expect(docs.every((d) => d.meta?.seeded === true && d.chunkCount > 0 && d.textBlobId)).toBe(true);

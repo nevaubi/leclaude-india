@@ -132,7 +132,7 @@ export function ImportTranscriptDialog({ open, onOpenChange, matterId, depositio
             {previewing ? <div className="flex h-24 items-center justify-center text-xs text-muted-foreground"><Loader2 className="mr-2 size-4 animate-spin" /> Reading…</div> : !preview ? <div className="rounded-md border border-dashed p-6 text-center text-xs text-muted-foreground">Add a file or paste text to see what the parser recognises.</div> : (
               <>
                 <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1 text-[12px]">
-                  <dt className="text-muted-foreground">Format</dt><dd>{preview.format === "page-line" ? "page:line on every line" : preview.format === "page-numbered" ? "page markers + margin numbers" : "unnumbered (estimated)"}</dd>
+                  <dt className="text-muted-foreground">Format</dt><dd>{preview.format === "indian" ? "deposition sheet: chief, cross- and re-examination" : preview.format === "page-line" ? "page:line on every line" : preview.format === "page-numbered" ? "page markers + margin numbers" : "unnumbered (estimated)"}</dd>
                   <dt className="text-muted-foreground">Confidence</dt><dd className={cn("tabular", conf < 70 && "text-warning-foreground dark:text-warning")}>{conf}%</dd>
                   <dt className="text-muted-foreground">Testimony</dt><dd className="tabular">{preview.transcript.length} Q/A · pages {preview.firstPage}–{preview.pages} · {preview.stats.objections} objections · {preview.stats.colloquy} colloquy</dd>
                   <dt className="text-muted-foreground">Speakers</dt><dd className="truncate">{preview.speakers.slice(0, 5).map((s) => `${s.label} (${s.role})`).join(", ") || "—"}</dd>

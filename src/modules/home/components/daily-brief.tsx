@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import Link from "next/link";
 import { AlertTriangle, Calculator, CalendarClock, CheckSquare, ExternalLink, Gavel, KeyRound, ListChecks, MoreHorizontal, Newspaper, PenLine, RefreshCw, Scale, StickyNote, Users, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,7 @@ const SHOW = 5;
 export function DailyBriefCard({ className }: { className?: string }) {
   const { brief, briefLoading, regenerateBrief, aiConfigured, now } = useHome();
   const setFocus = useHomeUI((s) => s.setFocus);
+  const t = useT();
   const [showAll, setShowAll] = React.useState(false);
   const items = showAll ? brief.items : brief.items.slice(0, SHOW);
   const provenance = briefProvenance(brief);
@@ -65,9 +67,9 @@ export function DailyBriefCard({ className }: { className?: string }) {
   };
 
   return (
-    <section className={cn("flex min-w-0 flex-col", className)} aria-label="Daily brief">
+    <section className={cn("flex min-w-0 flex-col", className)} aria-label={t("home.brief.title")}>
       <header className="section-header h-9 px-1">
-        <h2 className="section-title">Daily brief</h2>
+        <h2 className="section-title">{t("home.brief.title")}</h2>
         {brief.source === "ai" ? (
           <TrustBadge provenance={provenance} compact={!provenance} />
         ) : (
@@ -78,7 +80,7 @@ export function DailyBriefCard({ className }: { className?: string }) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" aria-label="Brief options" disabled={briefLoading}>{briefLoading ? <RefreshCw className="size-3.5 animate-spin" /> : <MoreHorizontal className="size-4" />}</Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-60">
-            <DropdownMenuLabel>Daily brief</DropdownMenuLabel>
+            <DropdownMenuLabel>{t("home.brief.title")}</DropdownMenuLabel>
             <DropdownMenuItem onClick={() => void regenerateBrief("ai")}><PenLine /> Draft with AI<span className="ml-auto text-[10px] text-muted-foreground">fast model</span></DropdownMenuItem>
             <DropdownMenuItem onClick={() => void regenerateBrief("computed")}><Calculator /> Recompute from data</DropdownMenuItem>
             <DropdownMenuSeparator />

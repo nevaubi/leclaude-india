@@ -1,0 +1,24 @@
+{
+  "id": "india-sc-vs-hc-binding",
+  "category": "precedent",
+  "title": "Binding effect follows the court resolved from the citation, not the reporter or the name",
+  "constitution": "docs/architecture/india.md (binding vs persuasive is deterministic; Art. 141)",
+  "input": {
+    "forum": "hc-karnataka",
+    "authorities": [
+      { "raw": "2024 INSC 735", "expected": "binding" },
+      { "raw": "(2017) 10 SCC 1", "expected": "binding" },
+      { "raw": "2024:KHC-D:7336", "expected": "binding" },
+      { "raw": "2024:TSHC:55", "expected": "persuasive" },
+      { "raw": "2022 SCC OnLine TS 99", "expected": "persuasive" },
+      { "raw": "2019 (2) KarLJ 45", "expected": "unknown", "note": "KarLJ reports several courts; court not inferred" },
+      { "raw": "2006 Cri LJ 1234", "expected": "unknown" },
+      { "raw": "2024:KHC-X:1", "expected": "unknown" }
+    ],
+    "districtForum": { "territory": ["KA"], "cases": [ { "raw": "2024:KHC:10", "expected": "binding" }, { "raw": "2024:APHC:10", "expected": "persuasive" } ] }
+  },
+  "expected": "Supreme Court citations bind; the forum's own High Court binds; other High Courts persuade; a citation whose court is not certain is 'unknown' (never binding by default).",
+  "passCriteria": ["citationBindingEffect equals the expected value for every authority"],
+  "grading": "code",
+  "requiresModel": false
+}

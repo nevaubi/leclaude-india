@@ -1,0 +1,365 @@
+{
+ "query": "dc.identifier.state_name:KARNATAKA",
+ "appliedFilters": [
+  {
+   "filter": "identifier_collection",
+   "operator": "equals",
+   "value": "ACT",
+   "label": "ACT"
+  }
+ ],
+ "sort": {
+  "by": "dc.date.issued",
+  "order": "DESC"
+ },
+ "type": "discover",
+ "_embedded": {
+  "searchResult": {
+   "_embedded": {
+    "objects": [
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_embedded": {
+       "indexableObject": {
+        "id": "27c74b1e-2624-4602-bba1-bfa5dbe3a2e8",
+        "uuid": "27c74b1e-2624-4602-bba1-bfa5dbe3a2e8",
+        "name": "KARNATAKA FREEDOM OF CHOICE IN MARRIAGE AND PREVENTION AND PROHIBITION OF CRIMES IN THE NAME OF HONOUR AND TRADITION (EVA NAMMAVA EVA NAMMAVA) ACT, 2026",
+        "handle": "123456789/563654",
+        "metadata": {
+         "dc.date.act_year": [
+          {
+           "value": "2026",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.enact_date": [
+          {
+           "value": "2026-04-10",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.entry_date": [
+          {
+           "value": "2026-05-07",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.issued": [
+          {
+           "value": "2026-04-10",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_id": [
+          {
+           "value": "AC_KA_71_401_00013_00013_1778152616229",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_number": [
+          {
+           "value": "26",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.collection": [
+          {
+           "value": "ACT",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_name": [
+          {
+           "value": "Law department",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.givenid": [
+          {
+           "value": "202626",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_name": [
+          {
+           "value": "NO MINISTRY",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_id": [
+          {
+           "value": "19",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_name": [
+          {
+           "value": "Karnataka",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "http://test1.indiacode.nic.in/handle/123456789/563654",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "KARNATAKA FREEDOM OF CHOICE IN MARRIAGE AND PREVENTION AND PROHIBITION OF CRIMES IN THE NAME OF HONOUR AND TRADITION (EVA NAMMAVA EVA NAMMAVA) ACT, 2026",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title.regional": [
+          {
+           "value": "ಕರ್ನಾಟಕ ವಿವಾಹದಲ್ಲಿ ಆಯ್ಕೆಯ ಸ್ವಾತಂತ್ರ್ಯ ಹಾಗೂ ಮರ್ಯಾದೆ ಮತ್ತು ಸಂಪ್ರದಾಯದ ಹೆಸರಿನಲ್ಲಿನ ಅಪರಾಧಗಳ ಪ್ರತಿಬಂಧಕ ಮತ್ತು ನಿಷೇಧ (ಇವ ನಮ್ಮವ ಇವ ನಮ್ಮವ) ಅಧಿನಿಯಮ, 2026",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-08-11T19:27:17.781407Z",
+        "type": "item"
+       }
+      }
+     },
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_embedded": {
+       "indexableObject": {
+        "id": "c33afd20-a7eb-4e31-a0b2-47ea33bfd378",
+        "uuid": "c33afd20-a7eb-4e31-a0b2-47ea33bfd378",
+        "name": "THE KARNATAKA GOVERNMENT EDUCATIONAL INSTITUTIONS LANDS (PROTECTION AND REGULARISATION) ACT, 2026",
+        "handle": "123456789/563813",
+        "metadata": {
+         "dc.date.act_year": [
+          {
+           "value": "2026",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.enact_date": [
+          {
+           "value": "2026-04-09",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.entry_date": [
+          {
+           "value": "2026-05-07",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.issued": [
+          {
+           "value": "2026-04-09",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_id": [
+          {
+           "value": "AC_KA_71_581_00075_00075_1778152263962",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_number": [
+          {
+           "value": "24",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.collection": [
+          {
+           "value": "ACT",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_name": [
+          {
+           "value": "Education Department",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.givenid": [
+          {
+           "value": "202624",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_name": [
+          {
+           "value": "NO MINISTRY",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_id": [
+          {
+           "value": "19",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_name": [
+          {
+           "value": "Karnataka",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "http://test1.indiacode.nic.in/handle/123456789/563813",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "THE KARNATAKA GOVERNMENT EDUCATIONAL INSTITUTIONS LANDS (PROTECTION AND REGULARISATION) ACT, 2026",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title.regional": [
+          {
+           "value": "ಕರ್ನಾಟಕ ಸರ್ಕಾರಿ ಶೈಕ್ಷಣಿಕ ಸಂಸ್ಥೆಯ ಭೂಮಿಗಳ (ರಕ್ಷಣೆ ಮತ್ತು ಸಕ್ರಮಾತಿ) ಅಧಿನಿಯಮ, 2026",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title.long_title": [
+          {
+           "value": "THE KARNATAKA GOVERNMENT EDUCATIONAL INSTITUTION’S LANDS (PROTECTION AND REGULARISATION) ACT, 2026",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-08-11T19:27:17.781407Z",
+        "type": "item"
+       }
+      }
+     }
+    ]
+   },
+   "page": {
+    "number": 0,
+    "size": 2,
+    "totalPages": 177,
+    "totalElements": 353
+   }
+  }
+ }
+}

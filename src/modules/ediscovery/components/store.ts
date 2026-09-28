@@ -10,12 +10,15 @@ export interface ColumnDef { id: string; label: string; width: number; min: numb
 
 /** Review grid columns (Everlaw-style standard metadata). Hidden-by-default columns come back through the column chooser. */
 export const DEFAULT_COLUMNS: ColumnDef[] = [
-  { id: "bates", label: "Bates begin", width: 124, min: 96, sort: "bates", locked: true },
-  { id: "batesEnd", label: "Bates end", width: 110, min: 90, defaultHidden: true },
+  // Indian record: the document reference (production / list number) plus the exhibit mark once marked in evidence.
+  { id: "bates", label: "Doc. ref.", width: 112, min: 90, sort: "bates", locked: true },
+  { id: "exhibit", label: "Exhibit", width: 84, min: 64, sort: "exhibit" },
+  { id: "record", label: "Record", width: 112, min: 80 },
+  { id: "batesEnd", label: "Doc. ref. end", width: 110, min: 90, defaultHidden: true },
   { id: "family", label: "Family", width: 64, min: 52, sort: "family" },
   { id: "thread", label: "Thread", width: 64, min: 52, sort: "thread", defaultHidden: true },
   { id: "dupes", label: "Dupes", width: 60, min: 48, defaultHidden: true },
-  { id: "custodian", label: "Custodian", width: 118, min: 90, sort: "custodian" },
+  { id: "custodian", label: "Source", width: 150, min: 90, sort: "custodian" },
   { id: "date", label: "Date sent / created", width: 100, min: 84, sort: "date" },
   { id: "from", label: "From", width: 120, min: 90, sort: "from", defaultHidden: true },
   { id: "to", label: "To", width: 140, min: 90, defaultHidden: true },

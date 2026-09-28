@@ -15,6 +15,8 @@ export interface RunPolicy {
   softDepWaitMs: number;
   /** How long synthesis waits for in-flight treatment checks once the lanes are done. */
   treatmentWaitMs: number;
+  /** How long a regional-language question waits for its English search terms before lanes start on its own words. */
+  translateWaitMs: number;
   /** Lanes running at once. */
   laneConcurrency: number;
   /** Default per-lane wall-clock budget when the planner sets none. */
@@ -33,7 +35,8 @@ export const DEFAULT_POLICY: Readonly<RunPolicy> = {
   planWaitMs: 4_000,
   softDepWaitMs: 30_000,
   treatmentWaitMs: 2_500,
-  laneConcurrency: 5,
+  translateWaitMs: 6_000,
+  laneConcurrency: 6,
   laneTimeoutMs: 120_000,
   runTimeMs: 8 * 60_000,
   retrievalRetries: 2,

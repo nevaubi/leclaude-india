@@ -1,0 +1,16 @@
+{
+  "id": "india-kannada-query",
+  "category": "research",
+  "title": "A Kannada question is searched in English and Kannada, answered in Kannada, and quotes stay verbatim in the judgment's language",
+  "constitution": "§23 quote fidelity; Appendix B (original-language text is the text of record; translations labelled); §16 router privacy",
+  "input": { "question": "ಸಹ ಆರೋಪಿಗೆ ನಿರೀಕ್ಷಣಾ ಜಾಮೀನು ನೀಡಿದ್ದರೆ ಅರ್ಜಿದಾರನಿಗೆ ಸಮಾನತೆಯ ಆಧಾರದ ಮೇಲೆ ಜಾಮೀನು ಸಿಗುತ್ತದೆಯೇ?", "forum": "hc-karnataka", "corpus": ["j_sc_meera_nair", "j_kar_srinivasa_kn"] },
+  "expected": "The script is detected as Kannada, the question is translated to English search terms (matter-bound runs pass the matter to the privacy-checked translation), both the English terms and the Kannada words are searched, the answer language is Kannada, a verbatim Kannada quotation is verified in code, and an English rendering presented in quotation marks as the court's words is flagged.",
+  "passCriteria": [
+    "queryLanguage == answerLanguage == 'kn'; translation called once with the matter id",
+    "retrieval ran with the English search terms and with the Kannada question",
+    "the Kannada quotation is quoteVerified at ¶3",
+    "a quoted English translation attributed to the Kannada judgment is unsupported with a language note"
+  ],
+  "grading": "code",
+  "requiresModel": false
+}

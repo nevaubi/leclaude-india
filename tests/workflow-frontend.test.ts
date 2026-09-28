@@ -6,7 +6,7 @@ import { addField, moveField, removeField, renameFieldKey, updateField } from "@
 import { nodeSummary } from "@/modules/workflows/components/node-summary";
 import { filterWorkflows, startHref } from "@/modules/workflows/components/gallery/gallery-helpers";
 import { defaultConfigFor } from "@/modules/workflows/registry";
-import { buildTemplates, TEMPLATE_FRONTENDS } from "@/modules/workflows/templates";
+import { buildTemplates, buildUsTemplates, TEMPLATE_FRONTENDS } from "@/modules/workflows/templates";
 import type { WorkflowListItem } from "@/modules/workflows/types";
 
 const FE: WorkflowFrontend = {
@@ -205,8 +205,13 @@ describe("template front ends", () => {
       if (t.nodes.some((n) => n.type === "output.file")) { expect(fe.output?.formats?.length, `${t.id} output formats`).toBeGreaterThan(0); expect(fe.output?.defaultLabel, `${t.id} default label`).toBeTruthy(); }
       expect(validateFrontendValues(fe, {}).every((e) => keys.has(e.key))).toBe(true);
     }
-    const depo = templates.find((t) => t.name === "Deposition designations")!;
-    expect(depo.frontend!.fields.find((f) => f.type === "file")).toBeTruthy();
-    expect(templates.map((t) => t.name)).toEqual(expect.arrayContaining(["Deposition designations", "Production QC", "Judge profile memo"]));
+    const bail = templates.find((t) => t.name === "Bail matter pack")!;
+    expect(bail.frontend!.fields.find((f) => f.type === "file")).toBeTruthy();
+    expect(templates.map((t) => t.name)).toEqual(expect.arrayContaining(["Limitation check", "Hearing-date preparation", "Cause-list watch", "Bail matter pack", "Cheque-dishonour (s.138) pack", "Judgment digest (Kannada / Telugu)", "Production QC"]));
+    // US-practice templates keep their front ends but are not in the default gallery.
+    const us = buildUsTemplates();
+    expect(us.map((t) => t.name)).toEqual(expect.arrayContaining(["Deposition designations", "Judge profile memo"]));
+    for (const t of us) expect(t.frontend, t.id).toBe(TEMPLATE_FRONTENDS[t.id]);
+    expect(templates.some((t) => us.some((u) => u.id === t.id))).toBe(false);
   });
 });

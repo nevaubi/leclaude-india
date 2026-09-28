@@ -1,0 +1,10 @@
+{
+  "_fixture": "Shape fixture built from the field names in the Indian Kanoon API documentation and the vendor's IKAPI client (api.indiankanoon.org is not reachable from the build container and no token is available). Titles and ids are placeholders, not real documents.",
+  "found": "2 - 2 of 2",
+  "encodedformInput": "anticipatory+bail+doctypes%3A+karnataka",
+  "categories": [["Court", [{ "value": "Karnataka High Court", "formInput": "anticipatory bail doctypes: karnataka" }]]],
+  "docs": [
+    { "tid": 900000001, "title": "Test Petitioner vs State Of Karnataka on 12 March, 2025", "headline": "... petition for <b>anticipatory bail</b> under Section 482 of the BNSS ...", "docsource": "Karnataka High Court", "publishdate": "2025-03-12", "numcites": 4, "numcitedby": 0, "docsize": 18234 },
+    { "tid": 900000002, "title": "Placeholder Appellant vs Placeholder Respondent on 3 January, 2015", "headline": "... <b>anticipatory bail</b> ...", "docsource": "Andhra HC (Pre-Telangana)", "publishdate": "2015-01-03", "numcites": 2, "numcitedby": 1, "docsize": 9021 }
+  ]
+}

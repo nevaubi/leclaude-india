@@ -13,10 +13,23 @@ import { courtRulesAdapter } from "./court-rules";
 import { newsAdapter } from "./news";
 import { localCorpusAdapter } from "./local-corpus";
 import { webListAdapter } from "./web-list";
+import { sciOpenDataAdapter } from "./sci-open-data";
+import { hcOpenDataAdapter } from "./hc-open-data";
+import { indianKanoonAdapter } from "./indian-kanoon";
+import { indiaCodeAdapter } from "./india-code";
+import { manupatraAdapter, sccOnlineAdapter } from "./licensed";
 
 type AnyAdapter = IntelAdapter<Record<string, unknown>>;
 
 const BUILT_IN: AnyAdapter[] = [
+  // LeClaude India sources (defaults for this fork).
+  sciOpenDataAdapter,
+  hcOpenDataAdapter,
+  indianKanoonAdapter,
+  indiaCodeAdapter,
+  sccOnlineAdapter,
+  manupatraAdapter,
+  // US sources from the upstream platform: kept compiling and registered, but out of the default source catalog.
   courtListenerOpinionsAdapter,
   courtListenerDocketsAdapter,
   courtListenerJudgesAdapter,

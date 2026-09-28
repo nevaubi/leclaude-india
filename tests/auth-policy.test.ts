@@ -6,7 +6,7 @@ import type { Action, Principal, ResourceRef, Role } from "@/lib/auth/types";
  * The authorization matrix (constitution §22): principal ∩ tenant ∩ role ∩ matter ∩ sensitivity ∩ action.
  * Expectations are literal tables, not a re-implementation of the policy.
  */
-const TENANT = "seeger-weiss";
+const TENANT = "default";
 const MATTER = "m_afff_2873";
 const OTHER = "m_northgate_v_apex";
 

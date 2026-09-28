@@ -15,10 +15,10 @@ import type { Deposition } from "@/lib/types/domain";
 import { checkCitations, resolveCitation, resolveCitationsIn, retryCitation } from "@/lib/evidence/resolve";
 import { assertNoSubstitution, EvidenceSubstitutionError, resolvedRefs } from "@/lib/evidence/guard";
 
-const AFFF: MatterScope = { tenantId: "seeger-weiss", matterIds: [MATTERS.afff] };
-const NG: MatterScope = { tenantId: "seeger-weiss", matterIds: [MATTERS.northgate] };
-const BOTH: MatterScope = { tenantId: "seeger-weiss", matterIds: [MATTERS.afff, MATTERS.northgate] };
-const EMPTY: MatterScope = { tenantId: "seeger-weiss", matterIds: [] };
+const AFFF: MatterScope = { tenantId: "default", matterIds: [MATTERS.afff] };
+const NG: MatterScope = { tenantId: "default", matterIds: [MATTERS.northgate] };
+const BOTH: MatterScope = { tenantId: "default", matterIds: [MATTERS.afff, MATTERS.northgate] };
+const EMPTY: MatterScope = { tenantId: "default", matterIds: [] };
 
 beforeAll(() => { resetSqlite(); db(); });
 
@@ -142,7 +142,7 @@ describe("exhibit, docket and authority resolution", () => {
   it("resolves docket entries within the matter and not outside it", () => {
     const entry = db().collection<{ id: string; kind: string; meta?: { entryNumber?: number }; matterIds?: string[] }>("intel_documents").findOne((d) => d.kind === "docket_entry" && typeof d.meta?.entryNumber === "number")!;
     const n = entry.meta!.entryNumber!;
-    const scope: MatterScope = { tenantId: "seeger-weiss", matterIds: entry.matterIds ?? [] };
+    const scope: MatterScope = { tenantId: "default", matterIds: entry.matterIds ?? [] };
     expect(resolveCitation(`ECF No. ${n}`, scope).ref).toMatchObject({ kind: "docket_entry", id: entry.id });
     expect(resolveCitation(`ECF No. ${n}`, NG).state).toBe("unresolved");
     expect(resolveCitation("ECF No. 999999", scope).state).toBe("unresolved");

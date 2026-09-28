@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import { X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
@@ -43,6 +44,7 @@ export interface InspectorProps {
  */
 export function Inspector(p: InspectorProps) {
   const side = p.side ?? "right";
+  const t = useT();
   const Icon = p.icon;
   const startResize = (e: React.PointerEvent) => {
     if (!p.resizable || !p.width) return;
@@ -57,7 +59,7 @@ export function Inspector(p: InspectorProps) {
   return (
     <aside className={cn("relative flex h-full min-h-0 shrink-0 flex-col bg-background", side === "right" ? "border-l" : "border-r", p.className)} style={p.width ? { width: p.width } : undefined} aria-label={p.ariaLabel ?? (typeof p.title === "string" ? p.title : undefined)}>
       {p.resizable && p.width && (
-        <div role="separator" aria-orientation="vertical" aria-label="Resize panel" onPointerDown={startResize} className={cn("absolute inset-y-0 z-20 w-1.5 cursor-col-resize hover:bg-ring/40", side === "right" ? "-left-0.5" : "-right-0.5")} />
+        <div role="separator" aria-orientation="vertical" aria-label={t("ui.resizePanel")} onPointerDown={startResize} className={cn("absolute inset-y-0 z-20 w-1.5 cursor-col-resize hover:bg-ring/40", side === "right" ? "-left-0.5" : "-right-0.5")} />
       )}
       <header className="flex h-9 shrink-0 items-center gap-2 border-b px-3">
         {Icon && <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
@@ -67,7 +69,7 @@ export function Inspector(p: InspectorProps) {
         </div>
         {p.actions && <div className="flex shrink-0 items-center gap-0.5">{p.actions}</div>}
         {p.onClose && (
-          <Tip label="Close" shortcut={p.closeShortcut}><Button variant="ghost" size="icon-xs" onClick={p.onClose} aria-label="Close panel"><X className="size-3.5" /></Button></Tip>
+          <Tip label={t("ui.close")} shortcut={p.closeShortcut}><Button variant="ghost" size="icon-xs" onClick={p.onClose} aria-label={t("ui.closePanel")}><X className="size-3.5" /></Button></Tip>
         )}
       </header>
       {p.tabs && p.tabs.length > 0 && (

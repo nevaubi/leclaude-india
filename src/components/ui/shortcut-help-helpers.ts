@@ -1,48 +1,54 @@
 /** Shortcut registry model for the `?` help dialog. Pure; unit-tested. */
+import type { MessageKey } from "@/lib/i18n/catalog";
 
-export interface ShortcutItem { keys: string[]; label: string }
-export interface ShortcutGroup { id: string; title: string; items: ShortcutItem[] }
+/** `label`/`title` are the English source text; the dialog renders `labelKey`/`titleKey` when present. */
+export interface ShortcutItem { keys: string[]; label: string; labelKey?: MessageKey }
+export interface ShortcutGroup { id: string; title: string; titleKey?: MessageKey; items: ShortcutItem[] }
 
 /** Shortcuts the shell provides on every page. */
 export const GLOBAL_SHORTCUTS: ShortcutGroup[] = [
   {
     id: "global",
     title: "Everywhere",
+    titleKey: "shortcuts.group.global",
     items: [
-      { keys: ["mod+k"], label: "Command palette" },
-      { keys: ["?"], label: "Keyboard shortcuts" },
-      { keys: ["/"], label: "Focus search" },
-      { keys: ["["], label: "Toggle the navigation rail" },
-      { keys: ["]"], label: "Toggle the right panel" },
-      { keys: ["esc"], label: "Close panel or dialog" },
+      { keys: ["mod+k"], label: "Command palette", labelKey: "shortcuts.commandPalette" },
+      { keys: ["?"], label: "Keyboard shortcuts", labelKey: "shortcuts.keyboardShortcuts" },
+      { keys: ["/"], label: "Focus search", labelKey: "shortcuts.focusSearch" },
+      { keys: ["["], label: "Toggle the navigation rail", labelKey: "shortcuts.toggleRail" },
+      { keys: ["]"], label: "Toggle the right panel", labelKey: "shortcuts.toggleRightPanel" },
+      { keys: ["esc"], label: "Close panel or dialog", labelKey: "shortcuts.closePanel" },
     ],
   },
   {
     id: "go",
     title: "Go to",
+    titleKey: "shortcuts.group.go",
     items: [
-      { keys: ["g", "h"], label: "Home" },
-      { keys: ["g", "s"], label: "Search" },
-      { keys: ["g", "i"], label: "Intelligence" },
-      { keys: ["g", "e"], label: "E-Discovery" },
-      { keys: ["g", "w"], label: "Workflows" },
-      { keys: ["g", "o"], label: "Office" },
-      { keys: ["g", "l"], label: "Library" },
-      { keys: ["g", ","], label: "Settings" },
+      { keys: ["g", "h"], label: "Home", labelKey: "nav.home" },
+      { keys: ["g", "m"], label: "Matters", labelKey: "nav.matters" },
+      { keys: ["g", "s"], label: "Search", labelKey: "nav.search" },
+      { keys: ["g", "i"], label: "Intelligence", labelKey: "nav.intel" },
+      { keys: ["g", "e"], label: "E-Discovery", labelKey: "nav.ediscovery" },
+      { keys: ["g", "w"], label: "Workflows", labelKey: "nav.workflows" },
+      { keys: ["g", "o"], label: "Office", labelKey: "nav.office" },
+      { keys: ["g", "l"], label: "Library", labelKey: "nav.library" },
+      { keys: ["g", ","], label: "Settings", labelKey: "nav.settings" },
     ],
   },
   {
     id: "grid",
     title: "Tables and lists",
+    titleKey: "shortcuts.group.grid",
     items: [
-      { keys: ["j"], label: "Next row" },
-      { keys: ["k"], label: "Previous row" },
-      { keys: ["home"], label: "First row" },
-      { keys: ["end"], label: "Last row" },
-      { keys: ["shift+↑↓"], label: "Extend selection" },
-      { keys: ["mod+click"], label: "Toggle a row" },
-      { keys: ["space"], label: "Select the active row" },
-      { keys: ["enter"], label: "Open the active row" },
+      { keys: ["j"], label: "Next row", labelKey: "shortcuts.nextRow" },
+      { keys: ["k"], label: "Previous row", labelKey: "shortcuts.prevRow" },
+      { keys: ["home"], label: "First row", labelKey: "shortcuts.firstRow" },
+      { keys: ["end"], label: "Last row", labelKey: "shortcuts.lastRow" },
+      { keys: ["shift+↑↓"], label: "Extend selection", labelKey: "shortcuts.extendSelection" },
+      { keys: ["mod+click"], label: "Toggle a row", labelKey: "shortcuts.toggleRow" },
+      { keys: ["space"], label: "Select the active row", labelKey: "shortcuts.selectRow" },
+      { keys: ["enter"], label: "Open the active row", labelKey: "shortcuts.openRow" },
     ],
   },
 ];

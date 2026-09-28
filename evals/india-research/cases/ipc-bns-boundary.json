@@ -1,0 +1,15 @@
+{
+  "id": "india-ipc-bns-boundary",
+  "category": "research",
+  "title": "IPC / BNS date boundary: the offence date decides, a missing or spanning date is requires_review",
+  "constitution": "§23 no substitution; §24 high-risk fields (criminal law transition); Appendix B (coded correspondence table; date of offence decides)",
+  "input": { "section": "IPC 420", "dates": ["2024-06-30", "2024-07-01", null, { "from": "2024-06-15", "to": "2024-07-10" }], "questions": ["Cheating offence committed on 30.06.2024 under Section 420 IPC — which code applies?", "Cheating offence committed on 01.07.2024 — IPC or BNS?"] },
+  "expected": "IPC 420 maps to BNS 318(4); 30 June 2024 → IPC; 1 July 2024 → BNS; no date and a period spanning 1 July 2024 → requires_review (shown as is); the engine reads the date from the question and states the rule in the synthesis input.",
+  "passCriteria": [
+    "mapCriminalSection(IPC 420) → mapped, BNS 318(4)",
+    "applicable code: 2024-06-30 → IPC, 2024-07-01 → BNS, none → requires_review, spanning → requires_review",
+    "run.message.offence matches and the synthesis input states the rule"
+  ],
+  "grading": "code",
+  "requiresModel": false
+}

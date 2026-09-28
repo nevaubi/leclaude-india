@@ -9,6 +9,8 @@ import { slugify } from "@/lib/utils";
 import { ServiceError } from "@/modules/workspace/errors";
 import type { PersonRecord } from "@/modules/workspace/service";
 import { CLIENT_SIDES, MATTER_STATUSES, PRACTICE_AREAS, type MatterInput, type MatterRecord, type MatterRow, type MatterStatusFilter } from "./types";
+import { resolveCaseType } from "@/lib/india/procedure";
+import { CAUSE_LIST_STATUSES, caseTitle, caseTypesFor, courtName, formatCaseNumber, resolveCourt, validateCnr, type IndianCaseInfo } from "./india";
 
 /**
  * Matters: the unit every other module scopes to (documents, depositions, research, office documents).
@@ -65,7 +67,79 @@ function newMatterId(slug: string): string {
   return matters().has(id) ? `${id}_${nanoid(6).toLowerCase().replace(/[^a-z0-9]/g, "x")}` : id;
 }
 
-type Validated = Partial<Omit<MatterRecord, "id" | "slug" | "createdAt" | "updatedAt" | "archivedAt">> & { leadAttorneyId?: string | undefined; clearLead?: boolean };
+type Validated = Partial<Omit<MatterRecord, "id" | "slug" | "createdAt" | "updatedAt" | "archivedAt" | "india">> & { leadAttorneyId?: string | undefined; clearLead?: boolean; india?: IndianCaseInfo | null };
+
+/**
+ * Validate Indian case particulars. The court must be in the registry (or the focus-city forum list): an unknown court
+ * is rejected, never mapped to the nearest one. The bench must belong to the court; the case type must be one the
+ * court uses (or a type the user typed that is not blank); the CNR must be well-formed.
+ */
+function validateIndia(raw: unknown, fields: Record<string, string>): IndianCaseInfo | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) { fields.india = "Case particulars must be an object."; return undefined; }
+  const r = raw as Record<string, unknown>;
+  const out: IndianCaseInfo = {};
+  const courtId = str(r.courtId, 40);
+  if (courtId) {
+    const court = resolveCourt(courtId);
+    if (!court) fields["india.courtId"] = `Unknown court "${courtId}". Choose a court from the list.`;
+    else {
+      out.courtId = courtId;
+      const benchId = str(r.benchId, 40);
+      if (benchId) {
+        const benches = court.kind === "court" ? court.court.benches : [];
+        if (!benches.some((b) => b.id === benchId)) fields["india.benchId"] = `Bench "${benchId}" does not sit in ${court.kind === "court" ? court.court.name : court.forum.name}.`;
+        else out.benchId = benchId;
+      }
+    }
+  }
+  const caseType = str(r.caseType, 24);
+  if (caseType) {
+    const known = caseTypesFor(out.courtId);
+    // The court's own list first, then the registry's alias table ("wp" → "W.P."); an unknown label is kept as typed.
+    out.caseType = known.find((t) => t.code.toLowerCase() === caseType.toLowerCase())?.code ?? resolveCaseType(caseType)?.abbr ?? caseType;
+  }
+  const caseNumber = str(r.caseNumber, 12);
+  if (caseNumber) {
+    if (!/^\d{1,7}$/.test(caseNumber)) fields["india.caseNumber"] = "Case number must be digits (the type and year are separate fields).";
+    else out.caseNumber = caseNumber.replace(/^0+(?=\d)/, "");
+  }
+  if (r.caseYear !== undefined && r.caseYear !== null && r.caseYear !== "") {
+    const y = Number(r.caseYear);
+    if (!Number.isInteger(y) || y < 1950 || y > new Date().getUTCFullYear() + 1) fields["india.caseYear"] = "Case year must be a four-digit year.";
+    else out.caseYear = y;
+  }
+  const cnr = str(r.cnr, 24);
+  if (cnr) {
+    const v = validateCnr(cnr, out.courtId);
+    if (!v.ok) fields["india.cnr"] = v.error;
+    else out.cnr = v.cnr;
+  }
+  const hall = str(r.courtHall, 40);
+  if (hall) out.courtHall = hall;
+  for (const k of ["nextHearing", "lastHearing", "offenceDate"] as const) {
+    const v = str(r[k], 10);
+    if (!v) continue;
+    if (!DATE_RE.test(v) || Number.isNaN(Date.parse(v))) fields[`india.${k}`] = "Dates must be YYYY-MM-DD.";
+    else out[k] = v;
+  }
+  const purpose = str(r.hearingPurpose, 120);
+  if (purpose) out.hearingPurpose = purpose;
+  if (r.causeList && typeof r.causeList === "object") {
+    const cl = r.causeList as Record<string, unknown>;
+    const status = CAUSE_LIST_STATUSES.find((x) => x.id === cl.status)?.id;
+    if (!status) fields["india.causeList"] = "Unknown cause-list status.";
+    else {
+      const item = cl.item === undefined || cl.item === null || cl.item === "" ? undefined : Number(cl.item);
+      if (item !== undefined && (!Number.isInteger(item) || item < 1 || item > 5000)) fields["india.causeList"] = "Item number must be a whole number.";
+      const listDate = str(cl.listDate, 10);
+      if (listDate && !DATE_RE.test(listDate)) fields["india.causeList"] = "List date must be YYYY-MM-DD.";
+      out.causeList = { status, ...(item !== undefined ? { item } : {}), ...(listDate ? { listDate } : {}), checkedAt: new Date().toISOString(), source: "manual" };
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 /**
  * Validate a create (partial=false) or a patch (partial=true). Unknown team ids and a lead who is not an active
@@ -110,6 +184,10 @@ function validate(input: Record<string, unknown>, partial: boolean, current?: Ma
     if (!MATTER_STATUSES.includes(v as Matter["status"])) fields.status = `Status must be one of ${MATTER_STATUSES.join(", ")}.`;
     else out.status = v as Matter["status"];
   }
+  if (has("india")) {
+    const india = validateIndia(input.india, fields);
+    if (india !== undefined) out.india = india;
+  }
   if (has("openedAt")) {
     const v = str(input.openedAt, 10);
     if (v && (!DATE_RE.test(v) || Number.isNaN(Date.parse(v)))) fields.openedAt = "Opened date must be YYYY-MM-DD.";
@@ -145,6 +223,11 @@ function validate(input: Record<string, unknown>, partial: boolean, current?: Ma
   if (Object.keys(fields).length) throw new ServiceError(422, Object.values(fields)[0]!, { ...fields, ...(duplicate ? { number: duplicate } : {}) }, "invalid");
   if (duplicate) throw new ServiceError(409, duplicate, { number: duplicate }, "duplicate_number");
   if (!partial && !out.shortName && out.name) out.shortName = deriveShortName(out.name);
+  // Court and caption default from the case particulars when the user did not type them.
+  if (out.india) {
+    if (!out.court && !current?.court) out.court = courtName(out.india.courtId) ?? undefined;
+    if (!out.caption && !current?.caption) out.caption = formatCaseNumber(out.india.caseType, out.india.caseNumber, out.india.caseYear) || undefined;
+  }
   return out;
 }
 
@@ -179,7 +262,7 @@ export function listMatters(opts: { status?: MatterStatusFilter; q?: string } = 
     .filter((m) => hasMatterAccess(principal, m.id))
     .filter((m) => matchesStatus(m, status))
     .map(toRow)
-    .filter((m) => !q || [m.name, m.shortName, m.number, m.client, m.court, m.caption, m.jurisdiction, m.judge, m.leadAttorneyName].some((v) => v?.toLowerCase().includes(q)))
+    .filter((m) => !q || [m.name, m.shortName, m.number, m.client, m.court, m.caption, m.jurisdiction, m.judge, m.leadAttorneyName, m.india?.cnr, caseTitle(m.india)].some((v) => v?.toLowerCase().includes(q)))
     .sort((a, b) => (b.updatedAt ?? b.openedAt ?? "").localeCompare(a.updatedAt ?? a.openedAt ?? "") || a.name.localeCompare(b.name));
 }
 
@@ -217,6 +300,7 @@ export function createMatter(input: MatterInput | Record<string, unknown>): Matt
     openedAt: v.openedAt ?? today(),
     teamIds: Array.from(team),
     leadAttorneyId: v.leadAttorneyId,
+    ...(v.india ? { india: v.india } : {}),
     keyDates: [],
     tags: [],
     createdAt: now,
@@ -233,9 +317,11 @@ export function updateMatter(id: string, input: MatterInput | Record<string, unk
   if (!cur) throw new ServiceError(404, "Matter not found", undefined, "not_found");
   const raw = input as Record<string, unknown>;
   const v = validate(raw, true, cur);
-  const { clearLead, ...patch } = v;
+  const { clearLead, india, ...patch } = v;
   const next: MatterRecord = { ...cur, ...Object.fromEntries(Object.entries(patch).filter(([k]) => raw[k] !== undefined)), updatedAt: new Date().toISOString() };
   if (clearLead) next.leadAttorneyId = undefined;
+  if (india === null) next.india = undefined;
+  else if (india) next.india = india;
   if (next.leadAttorneyId && !next.teamIds.includes(next.leadAttorneyId)) next.teamIds = [...next.teamIds, next.leadAttorneyId];
   if (!next.shortName) next.shortName = deriveShortName(next.name);
   if (next.name !== cur.name) next.slug = uniqueSlug(next.name, id);

@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import Link from "next/link";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,6 +32,7 @@ export function NewMatterDialog({ open, onOpenChange, onCreated }: NewMatterDial
   const [busy, setBusy] = React.useState(false);
   const [team, setTeam] = React.useState<TeamMember[] | null>(null);
   const [created, setCreated] = React.useState<MatterRow | null>(null);
+  const t = useT();
 
   React.useEffect(() => {
     if (!open) return;
@@ -56,7 +58,7 @@ export function NewMatterDialog({ open, onOpenChange, onCreated }: NewMatterDial
       const r = await apiJSON<{ matter: MatterRow }>("/api/matters", { json: draftToInput(draft) });
       setCreated(r.matter);
       onCreated?.(r.matter);
-      toast.success(`Created ${r.matter.shortName}`);
+      toast.success(t("matters.toast.created", { name: r.matter.shortName }));
     } catch (err) {
       const a = err as ApiError;
       setErrors({ ...(a.fields ?? {}), form: a.fields ? undefined : a.message });
@@ -71,28 +73,28 @@ export function NewMatterDialog({ open, onOpenChange, onCreated }: NewMatterDial
         {created ? (
           <>
             <DialogHeader>
-              <DialogTitle>{created.shortName} is ready</DialogTitle>
-              <DialogDescription>The matter is empty. Add evidence or open its workspace.</DialogDescription>
+              <DialogTitle>{t("matters.dialog.ready", { name: created.shortName })}</DialogTitle>
+              <DialogDescription>{t("matters.dialog.readyDesc")}</DialogDescription>
             </DialogHeader>
-            <nav className="divide-y rounded-md border" aria-label="Next steps">
-              <NextStep href={`/ediscovery?matter=${encodeURIComponent(created.id)}`} label="Upload documents" hint="Add productions, emails and transcripts for review" onNavigate={() => onOpenChange(false)} />
-              <NextStep href={`/?matter=${encodeURIComponent(created.id)}`} label="Open workspace" hint="Tasks, calendar and updates scoped to this matter" onNavigate={() => onOpenChange(false)} />
+            <nav className="divide-y rounded-md border" aria-label={t("matters.dialog.nextSteps")}>
+              <NextStep href={`/ediscovery?matter=${encodeURIComponent(created.id)}`} label={t("matters.dialog.upload")} hint={t("matters.dialog.uploadHint")} onNavigate={() => onOpenChange(false)} />
+              <NextStep href={`/?matter=${encodeURIComponent(created.id)}`} label={t("matters.dialog.workspace")} hint={t("matters.dialog.workspaceHint")} onNavigate={() => onOpenChange(false)} />
             </nav>
-            <DialogFooter><Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>Done</Button></DialogFooter>
+            <DialogFooter><Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>{t("common.done")}</Button></DialogFooter>
           </>
         ) : (
           <form onSubmit={submit} noValidate className="grid gap-4">
             <DialogHeader>
-              <DialogTitle>New matter</DialogTitle>
-              <DialogDescription>Only the name and practice area are required; everything else can be filled in later.</DialogDescription>
+              <DialogTitle>{t("matters.dialog.title")}</DialogTitle>
+              <DialogDescription>{t("matters.dialog.desc")}</DialogDescription>
             </DialogHeader>
             <div>
               <MatterFields draft={draft} onChange={setDraft} errors={shown} team={team} idPrefix="new-matter" collapseDetails />
               {shown.form && <p className="mt-3 text-[12px] text-destructive" role="alert">{shown.form}</p>}
             </div>
             <DialogFooter>
-              <Button type="button" size="sm" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button type="submit" size="sm" disabled={busy}>{busy && <Loader2 className="size-3.5 animate-spin" />} Create matter</Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
+              <Button type="submit" size="sm" disabled={busy}>{busy && <Loader2 className="size-3.5 animate-spin" />} {t("matters.dialog.create")}</Button>
             </DialogFooter>
           </form>
         )}
@@ -108,7 +110,7 @@ function NextStep({ href, label, hint, onNavigate }: { href: string; label: stri
         <span className="block font-medium text-foreground">{label}</span>
         <span className="block truncate text-[11.5px] text-muted-foreground">{hint}</span>
       </span>
-      <ArrowRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+      <ArrowRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
     </Link>
   );
 }

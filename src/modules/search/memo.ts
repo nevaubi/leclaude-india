@@ -3,12 +3,13 @@
  * office module, which supports headings, paragraphs, lists and pipe tables.
  * Client-safe.
  */
-import { formatBluebook, bluebookDate } from "./normalize";
+import { formatBluebook } from "./normalize";
 import { courtAbbreviation } from "./jurisdictions";
 import { SOURCE_LABEL, type MemoSource, type SearchHit } from "./types";
 import type { ResearchMessage, ResearchSource } from "./engine/types";
 import { annotateAnswer, citationCounts, isMessageVerificationCurrent, messageTrustState, SOURCE_STATE_LABEL, sourceTrustState } from "./engine/trust";
-import { tableOfAuthorities, tableOfAuthoritiesMarkdown } from "./engine/authorities";
+import { indiaTableOfAuthoritiesMarkdown } from "./engine/authorities";
+import { indianDate } from "./india-citations";
 import { TREATMENT_LABEL } from "./engine/treatment";
 
 export interface MemoInput {
@@ -57,7 +58,7 @@ export function authoritiesTable(sources: MemoSource[]): string {
   const rows = sources.map((s, i) => {
     const h = s.hit;
     const court = h.source === "caselaw" || h.source === "dockets" ? courtAbbreviation(h.courtId, h.court) : h.source === "federal_register" ? (h.fr?.agencies ?? []).join(", ") : h.source === "ediscovery" ? h.edoc?.custodian ?? "" : h.subtitle ?? "";
-    return `| ${i + 1} | ${cell(SOURCE_LABEL[h.source])} | ${cell(formatBluebook(h))} | ${cell(court)} | ${cell(h.date ? bluebookDate(h.date) : "")} | ${cell(sourceHolding(s))} |`;
+    return `| ${i + 1} | ${cell(SOURCE_LABEL[h.source])} | ${cell(formatBluebook(h))} | ${cell(court)} | ${cell(h.date ? indianDate(h.date) : "")} | ${cell(sourceHolding(s))} |`;
   });
   return [header, ...rows].join("\n");
 }
@@ -72,7 +73,7 @@ export function buildMemoMarkdown(input: MemoInput): string {
   const derived = splitSynthesis(input.synthesis);
   const briefAnswer = (input.briefAnswer ?? "").trim() || derived.briefAnswer || "[Brief answer to be completed after review of the authorities below.]";
   const analysis = (input.analysis ?? "").trim() || derived.analysis || "[Analysis to be completed.]";
-  const date = bluebookDate(input.date ?? new Date().toISOString());
+  const date = indianDate(input.date ?? new Date().toISOString());
   const lines: string[] = [];
   lines.push("# " + memoTitle(input.question));
   lines.push("");
@@ -81,7 +82,7 @@ export function buildMemoMarkdown(input: MemoInput): string {
   lines.push(`**To:** File${input.matterName ? ` — ${input.matterName}${input.matterCaption ? ` (${input.matterCaption})` : ""}` : ""}`);
   lines.push(`**From:** ${input.author ?? "Research agent"}`);
   lines.push(`**Date:** ${date}`);
-  if (input.jurisdictionLabel) lines.push(`**Jurisdiction:** ${input.jurisdictionLabel}`);
+  if (input.jurisdictionLabel) lines.push(`**Forum:** ${input.jurisdictionLabel}`);
   lines.push("");
   lines.push("## Question presented");
   lines.push("");
@@ -115,9 +116,9 @@ export function buildMemoMarkdown(input: MemoInput): string {
   const issues = (input.openIssues ?? []).map((s) => s.trim()).filter(Boolean);
   if (issues.length) for (const i of issues) lines.push(`- ${i}`);
   else {
-    lines.push("- Verify every citation above against the full opinion text before filing (use the citation checker).");
-    lines.push("- Confirm subsequent history and negative treatment for each authority marked persuasive.");
-    lines.push("- Identify contrary authority in the governing jurisdiction and address it in the analysis.");
+    lines.push("- Verify every citation above against the full judgment text before filing (use the citation checker).");
+    lines.push("- Confirm whether any authority relied on has been overruled, doubted or referred to a larger bench.");
+    lines.push("- Identify contrary authority binding on the forum and address it in the analysis.");
   }
   lines.push("");
   return lines.join("\n");
@@ -186,8 +187,9 @@ export function buildResearchMemo(input: ResearchMemoInput): string {
   lines.push(`# ${memoTitle(input.question)}`, "", "**PRIVILEGED & CONFIDENTIAL — ATTORNEY WORK PRODUCT**", "");
   lines.push(`**To:** File${input.matterName ? ` — ${input.matterName}${input.matterCaption ? ` (${input.matterCaption})` : ""}` : ""}`);
   lines.push(`**From:** ${input.author ?? "Research agent (AI-generated draft; attorney review required)"}`);
-  lines.push(`**Date:** ${bluebookDate(input.date ?? m.createdAt ?? new Date().toISOString())}`);
-  if (input.jurisdictionLabel) lines.push(`**Jurisdiction:** ${input.jurisdictionLabel}`);
+  lines.push(`**Date:** ${indianDate(input.date ?? m.createdAt ?? new Date().toISOString())}`);
+  if (input.jurisdictionLabel) lines.push(`**Forum:** ${input.jurisdictionLabel}`);
+  if (m.answerLanguage && m.answerLanguage !== "en") lines.push(`**Answer language:** ${m.answerLanguage} (quotations in the language of the source; renderings marked "(translation)")`);
   lines.push(`**Research mode:** ${m.mode === "fast" ? "Fast orientation (one pass, at most two sources read; not a source-reviewed memo)" : "Deep research (parallel lanes, sources read in full, claims checked)"}`);
   lines.push(`**Status:** ${TRUST_WORDS[trust] ?? trust}${v && current ? ` — ${v.supported} of ${v.supported + v.unsupported + v.contradicted} checked claims supported` : v ? " — verdicts are for an earlier draft; this text was not re-verified" : " — no claim was checked against a source read in full"}`);
   lines.push("");
@@ -214,7 +216,7 @@ export function buildResearchMemo(input: ResearchMemoInput): string {
   lines.push("## Open Issues", "");
   if (open?.body) lines.push(open.body, "");
   if (flags.length) { lines.push("**Flags from verification (generated by the engine, not the model):**", "", ...flags.map((f) => `- ${f}`), ""); }
-  if (!open?.body && !flags.length) lines.push("- Confirm subsequent history and treatment of each authority before filing.", "");
+  if (!open?.body && !flags.length) lines.push("- Confirm whether each authority has been overruled, doubted or referred to a larger bench before filing.", "");
   lines.push("## Sources", "");
   if (cited.length) {
     lines.push("| # | Citation | Weight | State | Treatment | Currentness |", "|---|---|---|---|---|---|");
@@ -224,7 +226,7 @@ export function buildResearchMemo(input: ResearchMemoInput): string {
     }
   } else lines.push("_The answer cites no numbered source._");
   lines.push("");
-  lines.push(tableOfAuthoritiesMarkdown(tableOfAuthorities(m.content, cited)));
+  lines.push(indiaTableOfAuthoritiesMarkdown(m.content, cited));
   if (m.provenance) lines.push("---", "", `_Generated ${new Date(m.provenance.generatedAt).toISOString().slice(0, 16).replace("T", " ")} UTC · ${m.provenance.model} · answer hash ${m.artifactHash?.slice(0, 12) ?? "—"}_`, "");
   return lines.join("\n");
 }
@@ -232,5 +234,5 @@ export function buildResearchMemo(input: ResearchMemoInput): string {
 /** Table-of-authorities export for one answer. */
 export function buildTableOfAuthorities(question: string, message: ResearchMessage, sources: ResearchSource[]): string {
   const numbered = sourcesForMessage(message, sources).filter((s) => s.n != null);
-  return `# Table of Authorities\n\n**Question.** ${question.trim()}\n\n${tableOfAuthoritiesMarkdown(tableOfAuthorities(message.content, numbered), "Authorities cited")}`;
+  return `# Table of Authorities\n\n**Question.** ${question.trim()}\n\n${indiaTableOfAuthoritiesMarkdown(message.content, numbered, "Authorities cited")}`;
 }

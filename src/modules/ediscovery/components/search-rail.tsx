@@ -59,7 +59,7 @@ export function SearchRail({ response, loading, onSaveSearch }: { response: Sear
       <SectionLabel className="pt-3" action={<button type="button" onClick={() => setChartsOpen(!chartsOpen)} className="text-[11px] text-muted-foreground hover:text-foreground cursor-pointer" aria-expanded={chartsOpen}>{chartsOpen ? "Hide" : "Show"}</button>}>Charts</SectionLabel>
       {chartsOpen && (loading || !facets ? <div className="px-3"><Skeleton className="h-20 w-full" /></div> : (
         <div className="space-y-2 px-2.5">
-          <div className="text-[11px] text-muted-foreground">Custodians · click to filter</div>
+          <div className="text-[11px] text-muted-foreground">Sources · click to filter</div>
           <CustodianHistogram buckets={facets.custodian} selected={filters.custodians ?? []} onToggle={(id) => toggleFilter("custodians", id)} />
           <div className="text-[11px] text-muted-foreground">Dates · click to filter</div>
           <DateHistogram months={facets.months} years={facets.years} selectedMonths={filters.months ?? []} selectedYears={filters.years ?? []} onToggleMonth={(m) => toggleFilter("months", m)} onToggleYear={(y) => toggleFilter("years", y)} />
@@ -74,7 +74,7 @@ export function SearchRail({ response, loading, onSaveSearch }: { response: Sear
         <div className="space-y-2 px-3 pt-1">{Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}</div>
       ) : (
         <>
-          <FacetGroup title="Custodian" facetKey="custodians" buckets={facets.custodian} filters={filters} onToggle={toggleFilter} />
+          <FacetGroup title="Source" facetKey="custodians" buckets={facets.custodian} filters={filters} onToggle={toggleFilter} />
           <FacetGroup title="Document type" facetKey="types" buckets={facets.type} filters={filters} onToggle={toggleFilter} />
           <FacetGroup title="Coding status" facetKey="statuses" buckets={facets.status} filters={filters} onToggle={toggleFilter} hideZero={false} />
           <FacetGroup title="Issue codes" facetKey="issues" buckets={facets.issues} filters={filters} onToggle={toggleFilter} renderLabel={(b) => { const ic = issueCodes.find((c) => c.code === b.value); const cls = issueColorClasses(ic?.color); return <span className="flex min-w-0 items-center gap-1.5"><span className={cn("size-1.5 shrink-0 rounded-full", cls.dot)} /><span className="font-mono text-[11px]">{b.value}</span><span className="truncate text-muted-foreground">{b.label}</span></span>; }} />

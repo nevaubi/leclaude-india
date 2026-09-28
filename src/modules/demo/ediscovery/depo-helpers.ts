@@ -1,76 +1,99 @@
 import type { Deposition, DepositionQA, EDocument } from "@/lib/types/domain";
-import { qa, obj } from "@/modules/ediscovery/analysis/seed-helpers";
+import { parseIndianDeposition, type IndiaQA } from "@/modules/ediscovery/analysis/india-deposition";
+import { resolveExhibit, type IndiaEDocument } from "@/modules/ediscovery/india";
+import type { DemoPerson } from "./people";
 
-export { qa, obj };
-
-/** Resolves document references for testimony: `{B:slug}` → Bates of `demo_apl_ed_<slug>`. */
+/** Resolves documents for testimony and analysis by slug (`demo_in_ed_<slug>`); unknown slugs throw so nothing drifts. */
 export interface DocIndex {
-  byId: Map<string, EDocument>;
-  bates(slug: string): string;
-  range(slug: string): string;
-  doc(slug: string): EDocument;
+  byId: Map<string, IndiaEDocument>;
+  doc(slug: string): IndiaEDocument;
+  /** Reference shown in citations: the exhibit mark when marked, else the document reference. */
+  ref(slug: string): string;
 }
 
-export function docIndex(docs: EDocument[]): DocIndex {
+export function docIndex(docs: IndiaEDocument[]): DocIndex {
   const byId = new Map(docs.map((d) => [d.id, d]));
   const doc = (slug: string) => {
-    const d = byId.get(`demo_apl_ed_${slug}`);
-    if (!d) throw new Error(`demo testimony cites unknown document ${slug}`);
+    const d = byId.get(`demo_in_ed_${slug}`);
+    if (!d) throw new Error(`demo India pack cites unknown document ${slug}`);
     return d;
   };
+  return { byId, doc, ref: (slug) => { const d = doc(slug); return d.india?.exhibit ?? d.bates; } };
+}
+
+/** Stored deposition with the Indian record fields. */
+export type IndiaDeposition = Omit<Deposition, "transcript"> & {
+  transcript: IndiaQA[];
+  india: { designation: string; side: "plaintiff" | "defendant"; chiefByAffidavit: boolean; examinedOn: string[]; sheetDocId: string };
+};
+
+export interface DepositionInput {
+  id: string;
+  matterId: string;
+  sheet: string;
+  witness: DemoPerson;
+  designation: string;
+  side: "plaintiff" | "defendant";
+  takenBy: string;
+  defendingBy: string;
+  location: string;
+  examinedOn: string[];
+  sheetDocId: string;
+  docs: IndiaEDocument[];
+}
+
+/**
+ * Build a deposition from its sheet with the Indian parser. Every exhibit mark in the record must resolve to exactly
+ * one document of the same matter (the demo refuses to build otherwise), so the exhibit panel never shows a
+ * substituted document.
+ */
+export function buildDeposition(input: DepositionInput): IndiaDeposition {
+  const parsed = parseIndianDeposition(input.sheet);
+  if (!parsed.transcript.length) throw new Error(`demo deposition ${input.id}: sheet did not parse`);
+  const rows = parsed.transcript as IndiaQA[];
+  if (!rows.some((r) => r.segment === "chief") || !rows.some((r) => r.segment === "cross")) throw new Error(`demo deposition ${input.id}: chief and cross segments are required`);
+  const exhibits = parsed.exhibits.map((e) => {
+    const r = resolveExhibit(e.id, input.docs, input.matterId);
+    if (r.status !== "resolved") throw new Error(`demo deposition ${input.id}: ${e.id} ${r.reason}`);
+    const d = input.docs.find((x) => x.id === r.docId)!;
+    return { id: r.mark, description: d.subject, bates: d.bates };
+  });
   return {
-    byId,
-    doc,
-    bates: (slug) => doc(slug).bates,
-    range: (slug) => { const d = doc(slug); return d.batesEnd ? `${d.bates} through ${d.batesEnd}` : d.bates; },
+    id: input.id,
+    matterId: input.matterId,
+    witnessId: input.witness.id,
+    witnessName: `${input.witness.name} (${input.designation})`,
+    witnessTitle: input.witness.title,
+    date: input.examinedOn[0],
+    takenBy: input.takenBy,
+    defendingBy: input.defendingBy,
+    location: input.location,
+    pages: parsed.pages,
+    transcript: parsed.transcript,
+    exhibits,
+    status: "reviewed",
+    india: { designation: input.designation, side: input.side, chiefByAffidavit: true, examinedOn: input.examinedOn, sheetDocId: input.sheetDocId },
   };
 }
 
-/** Replace `{B:slug}` / `{R:slug}` tokens with a Bates number / Bates range. */
-export function fill(text: string, ix: DocIndex): string {
-  return text.replace(/\{([BR]):([a-z0-9]+)\}/g, (_, k: string, slug: string) => (k === "B" ? ix.bates(slug) : ix.range(slug)));
+/** The one row whose text contains `phrase` (throws when none or several match, so cites cannot drift). */
+export function row(dep: { id: string; transcript: DepositionQA[] }, phrase: string): { index: number; qa: IndiaQA } {
+  const hits = dep.transcript.map((qa, index) => ({ qa: qa as IndiaQA, index })).filter(({ qa }) => `${qa.question} ${qa.answer}`.includes(phrase));
+  if (hits.length !== 1) throw new Error(`demo testimony ${dep.id}: "${phrase.slice(0, 50)}" matched ${hits.length} rows`);
+  return hits[0];
 }
 
-export interface ExhibitSpec {
-  /** Exhibit label, e.g. "Marsh-3". */
-  id: string;
-  slug: string;
-  page: number;
-  description: string;
-  /** Witness's answer to "Do you recognize it?" */
-  recognize: string;
-  /** Witness's answer to "Who prepared it?" (defaults to the document's author). */
-  author?: string;
-  /** Witness's answer to "Who received it?" (defaults to the header recipients). */
-  recipients?: string;
+/** Add flags / a note to the row containing `phrase`. */
+export function flag(dep: IndiaDeposition, phrase: string, flags: NonNullable<DepositionQA["flags"]>, note?: string) {
+  const { qa } = row(dep, phrase);
+  qa.flags = Array.from(new Set([...(qa.flags ?? []), ...flags]));
+  if (note) qa.note = note;
 }
 
-/** Three document-grounded Q/A pairs that introduce an exhibit (lines 3, 8, 13 of its page). */
-export function exhibitQAs(ex: ExhibitSpec, ix: DocIndex): DepositionQA[] {
-  const d = ix.doc(ex.slug);
-  const to = [...(d.to ?? []), ...(d.cc ?? []).map((c) => `${c} (copied)`)];
-  const author = ex.author ?? (d.from ? `${d.from}.` : `It's a ${d.type.toLowerCase()} from ${d.custodianName}'s files; I don't know who prepared it.`);
-  const recipients = ex.recipients ?? (to.length ? `${to.join(", ")}.` : "It doesn't show recipients. I don't know how widely it went.");
-  return [
-    qa(ex.page, 3, `(Exhibit ${ex.id} marked for identification.) I'm handing you Exhibit ${ex.id}, Bates ${ix.range(ex.slug)}, ${ex.description}. Do you recognize it?`, ex.recognize, { exhibit: ex.id }),
-    qa(ex.page, 8, "Who prepared it?", author, { exhibit: ex.id }),
-    qa(ex.page, 13, "Who received it?", recipients, { exhibit: ex.id }),
-  ];
+/** "PW-1 5:3" (designation page:line) or "PW-1 chief ¶7". */
+export function cite(dep: IndiaDeposition, phrase: string): string {
+  const { qa } = row(dep, phrase);
+  return `${dep.india.designation} ${qa.page}:${qa.line}${qa.segment === "chief" && qa.para ? ` (chief ¶${qa.para})` : ""}`;
 }
 
-export type RawQA = [page: number, line: number, question: string, answer: string, extra?: Parameters<typeof qa>[4]];
-
-/** Assemble a transcript: fill Bates tokens, add exhibit introductions, sort by page:line and reject collisions. */
-export function assemble(raw: RawQA[], exhibits: ExhibitSpec[], ix: DocIndex): { transcript: DepositionQA[]; exhibits: NonNullable<Deposition["exhibits"]> } {
-  const rows: DepositionQA[] = [
-    ...raw.map(([p, l, q, a, extra]) => qa(p, l, fill(q, ix), fill(a, ix), extra ? { ...extra, ...(extra.note ? { note: fill(extra.note, ix) } : {}) } : {})),
-    ...exhibits.flatMap((e) => exhibitQAs(e, ix)),
-  ].sort((a, b) => a.page - b.page || a.line - b.line);
-  for (let i = 1; i < rows.length; i++) if (rows[i].page === rows[i - 1].page && rows[i].line === rows[i - 1].line) throw new Error(`demo transcript: two Q/A at ${rows[i].page}:${rows[i].line}`);
-  for (const r of rows) if (r.line < 1 || r.line > 25) throw new Error(`demo transcript: line ${r.line} out of range at page ${r.page}`);
-  return { transcript: rows, exhibits: exhibits.map((e) => ({ id: e.id, description: e.description.charAt(0).toUpperCase() + e.description.slice(1), bates: ix.bates(e.slug) })) };
-}
-
-/** Names used in objection records. */
-export const DEFENSE_ATTORNEY = "Colin Mercer";
-export const EXAMINING_ATTORNEY = "Nina Castell";
+export type { EDocument };

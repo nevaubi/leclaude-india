@@ -91,10 +91,15 @@ export function dedupeSources(sources: ResearchSource[]): ResearchSource[] {
   return mergeSources([], sources);
 }
 
-/** Rank for synthesis: read first, then binding, then by lane order/foundAt. */
+/**
+ * Rank for synthesis: read first, then binding, then the Supreme Court before High Courts, then larger benches first
+ * (deterministic from the corpus record), then by lane order/foundAt.
+ */
 export function rankSources(sources: ResearchSource[]): ResearchSource[] {
   const auth = (s: ResearchSource) => (s.authority === "binding" ? 0 : s.authority === "persuasive" ? 1 : 2);
-  return [...sources].sort((a, b) => Number(b.read) - Number(a.read) || auth(a) - auth(b) || a.foundAt - b.foundAt);
+  const sc = (s: ResearchSource) => ((s.hit.india?.courtId ?? s.hit.courtId) === "sci" ? 0 : 1);
+  const bench = (s: ResearchSource) => s.hit.india?.benchStrength ?? 0;
+  return [...sources].sort((a, b) => Number(b.read) - Number(a.read) || auth(a) - auth(b) || sc(a) - sc(b) || bench(b) - bench(a) || a.foundAt - b.foundAt);
 }
 
 /** Assign citation numbers (1-based) in rank order and return the cite map. */

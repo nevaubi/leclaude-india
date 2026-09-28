@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowUpRight, Gavel, Maximize2, MessageSquareText, Minimize2, Scale, Workflow, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/client";
 import { Button } from "@/components/ui/button";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { Tip } from "@/components/ui/tooltip";
@@ -106,6 +107,7 @@ export function PersonChip({ id, className, size = "xs" }: { id?: string | null;
 
 /** Section wrapper with a dense header and optional expand/collapse toggle. */
 export function Section({ id, title, icon: Icon, count, actions, children, className, bodyClassName, onExpand, expanded, description }: { id?: string; title: React.ReactNode; icon?: LucideIcon; count?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode; className?: string; bodyClassName?: string; onExpand?: () => void; expanded?: boolean; description?: React.ReactNode }) {
+  const t = useT();
   return (
     <section id={id} className={cn("@container flex min-w-0 flex-col", expanded && "h-full rounded-md border bg-card", className)}>
       <header className={cn("section-header h-9", !expanded && "px-1")}>
@@ -116,8 +118,8 @@ export function Section({ id, title, icon: Icon, count, actions, children, class
         <div className="flex-1" />
         <div className="flex items-center gap-1">{actions}</div>
         {onExpand && (
-          <Tip label={expanded ? "Back to overview" : "Expand"} shortcut={expanded ? "Esc" : undefined}>
-            <Button variant="ghost" size="icon-xs" onClick={onExpand} aria-label={expanded ? "Collapse" : "Expand"}>{expanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}</Button>
+          <Tip label={expanded ? t("common.backToOverview") : t("common.expand")} shortcut={expanded ? "Esc" : undefined}>
+            <Button variant="ghost" size="icon-xs" onClick={onExpand} aria-label={expanded ? t("common.collapse") : t("common.expand")}>{expanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}</Button>
           </Tip>
         )}
       </header>

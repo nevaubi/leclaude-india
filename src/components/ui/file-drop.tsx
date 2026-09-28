@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import { FileText, FileUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
@@ -33,6 +34,7 @@ function toDropped(f: File): DroppedFile {
  * The parent owns the list so a form can validate and submit it.
  */
 export function FileDrop(p: FileDropProps) {
+  const t = useT();
   const [over, setOver] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const multiple = p.multiple ?? true;
@@ -55,17 +57,17 @@ export function FileDrop(p: FileDropProps) {
         onDragOver={(e) => { e.preventDefault(); if (!p.disabled) setOver(true); }}
         onDragLeave={() => setOver(false)}
         onDrop={(e) => { e.preventDefault(); setOver(false); take(e.dataTransfer.files); }}
-        className={cn("flex cursor-pointer items-center gap-3 rounded-md border border-dashed px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50", p.compact ? "h-9" : "min-h-16 py-3", over ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30 hover:bg-accent/30", p.disabled && "cursor-not-allowed opacity-50")}
+        className={cn("flex cursor-pointer items-center gap-3 rounded-md border border-dashed px-3 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50", p.compact ? "h-9" : "min-h-16 py-3", over ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30 hover:bg-accent/30", p.disabled && "cursor-not-allowed opacity-50")}
       >
         <FileUp className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1 leading-tight">
-          <div className="text-[12.5px] font-medium">{p.label ?? (multiple ? "Drop files here or click to choose" : "Drop a file here or click to choose")}</div>
+          <div className="text-[12.5px] font-medium">{p.label ?? (multiple ? t("ui.dropFiles") : t("ui.dropFile"))}</div>
           <div className="text-[11px] text-muted-foreground">{p.help ?? [acceptText ? `Accepts ${acceptText}` : null, p.maxSize ? `up to ${formatFileSize(p.maxSize)} each` : null, p.maxFiles ? `max ${p.maxFiles}` : null].filter(Boolean).join(" · ")}</div>
         </div>
         <input ref={inputRef} id={p.id} type="file" className="hidden" multiple={multiple} accept={Array.isArray(p.accept) ? p.accept.join(",") : p.accept} disabled={p.disabled} onChange={(e) => { take(e.target.files); e.target.value = ""; }} />
       </div>
       {p.files.length > 0 && (
-        <ul className="mt-1.5 divide-y divide-line-quiet rounded-md border" aria-label="Selected files">
+        <ul className="mt-1.5 divide-y divide-line-quiet rounded-md border" aria-label={t("ui.selectedFiles")}>
           {p.files.map((f) => (
             <li key={f.id} className="flex h-7 items-center gap-2 px-2 text-[12px]">
               <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />

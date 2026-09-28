@@ -62,7 +62,7 @@ export function decideCoverage(input: CoverageInput): CoverageDecision {
   for (const lane of input.lanes) {
     const wasEmpty = input.emptyLaneIds?.includes(lane.id);
     const list: string[] = [];
-    if (claimQueries.length && (lane.kind === "controlling" || lane.kind === "regulatory" || lane.kind === "secondary" || lane.kind === "fast")) list.push(...claimQueries);
+    if (claimQueries.length && (lane.kind === "controlling" || lane.kind === "persuasive" || lane.kind === "statute" || lane.kind === "regulatory" || lane.kind === "secondary" || lane.kind === "fast")) list.push(...claimQueries);
     if (wasEmpty) list.push(broaden(lane.queries[0] ?? ""));
     if (list.length) refinements[lane.kind] = Array.from(new Set(list.filter(Boolean)));
   }

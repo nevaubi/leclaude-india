@@ -17,10 +17,11 @@ export interface DemoStatusView {
   counts: Record<string, number> | null;
   matterId: string;
   relatedMatterId: string;
+  matterIds?: string[];
 }
 
 const COUNT_LABELS: [string, string][] = [
-  ["matters", "Matters"], ["teamMembers", "Team members"], ["edocs", "E-discovery documents"], ["depositions", "Depositions"],
+  ["matters", "Matters"], ["teamMembers", "Team members"], ["edocs", "Case-record documents"], ["depositions", "Depositions (PW / DW)"],
   ["officeDocs", "Office documents"], ["libraryItems", "Library items"], ["tasks", "Tasks"], ["events", "Calendar events"],
   ["timeline", "Timeline events"], ["conflicts", "Conflicts"],
 ];
@@ -28,11 +29,12 @@ const COUNT_LABELS: [string, string][] = [
 function when(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 /**
- * Settings → Demo data: loads (or removes) the synthetic Apple antitrust matter used for demonstrations. The server
+ * Settings → Demo data: loads (or removes) the synthetic India demo pack — a commercial suit before the Commercial
+ * Court, Bengaluru, and a writ petition and a related bail matter before the Telangana High Court. The server
  * decides who may (owner, partner or admin) and records every id it writes, so removal touches nothing else.
  */
 export function DemoDataSection({ initial }: { initial: DemoStatusView }) {
@@ -49,7 +51,7 @@ export function DemoDataSection({ initial }: { initial: DemoStatusView }) {
       const next = await apiJSON<DemoStatusView & { durationMs?: number }>("/api/demo", { method: kind === "load" ? "POST" : "DELETE" });
       setStatus(next);
       setConfirm(false);
-      if (kind === "load") toast.success(status.loaded ? "Demo data reloaded" : "Demo data loaded", { description: "The Apple antitrust matter is ready in Matters and E-discovery." });
+      if (kind === "load") toast.success(status.loaded ? "Demo data reloaded" : "Demo data loaded", { description: "The Bengaluru commercial suit and the Hyderabad writ and bail matters are ready in Matters and Case records." });
       else toast.success("Demo data removed", { description: "Only the records the demo added were deleted." });
       router.refresh();
     } catch (e) {
@@ -68,7 +70,7 @@ export function DemoDataSection({ initial }: { initial: DemoStatusView }) {
         <div className="flex min-w-0 flex-1 items-center gap-2 text-[12.5px]" role="status">
           <StatusDot tone={status.loaded ? "success" : "muted"} pulse={!!busy} />
           {busy === "load" ? (
-            <span className="text-muted-foreground">Loading the demo matter, documents and depositions…</span>
+            <span className="text-muted-foreground">Loading the demo matters, case records and depositions…</span>
           ) : busy === "remove" ? (
             <span className="text-muted-foreground">Removing the demo records…</span>
           ) : status.loaded ? (
@@ -98,7 +100,8 @@ export function DemoDataSection({ initial }: { initial: DemoStatusView }) {
           </div>
           <div className="mt-2.5 flex flex-wrap gap-1.5">
             <Button size="xs" variant="outline" asChild><Link href={`/matters?id=${encodeURIComponent(status.matterId)}`}>Open matter <ArrowUpRight className="size-3" /></Link></Button>
-            <Button size="xs" variant="outline" asChild><Link href={`/ediscovery?matter=${encodeURIComponent(status.matterId)}`}>Open e-discovery <ArrowUpRight className="size-3" /></Link></Button>
+            <Button size="xs" variant="outline" asChild><Link href={`/ediscovery?matter=${encodeURIComponent(status.matterId)}`}>Open case records <ArrowUpRight className="size-3" /></Link></Button>
+            <Button size="xs" variant="outline" asChild><Link href={`/matters?id=${encodeURIComponent(status.relatedMatterId)}`}>Open Hyderabad writ <ArrowUpRight className="size-3" /></Link></Button>
           </div>
         </div>
       )}
@@ -106,7 +109,7 @@ export function DemoDataSection({ initial }: { initial: DemoStatusView }) {
         <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Remove the demo data?</DialogTitle>
-            <DialogDescription>This deletes the two demo matters, the demo team members and every document, deposition, task and file the demo added, including edits made to them. Your own matters, people and the workspace owner are not touched. This cannot be undone.</DialogDescription>
+            <DialogDescription>This deletes the three demo matters, the demo team members and every document, deposition, task and file the demo added, including edits made to them. Your own matters, people and the workspace owner are not touched. This cannot be undone.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button size="sm" variant="ghost" onClick={() => setConfirm(false)} disabled={!!busy}>Cancel</Button>

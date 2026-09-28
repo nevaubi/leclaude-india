@@ -11,6 +11,13 @@ import type { DepositionQA } from "@/lib/types/domain";
 import { QA_FLAGS, formatPageLine, type Designation, type QAFlag } from "../types";
 import { highlightTerms, inRange } from "../transcript";
 import { FLAG_STYLES, FlagBadge, ObjectionBadge } from "./shared";
+import { segmentLabel } from "../../india";
+import type { IndiaQA } from "../india-deposition";
+
+/** Exhibit chip text: Indian marks ("Ex.P7", "M.O.2") are shown as recorded; other ids get the "Ex." prefix. */
+function exhibitChip(ref: string) {
+  return /^(?:Ex\.|M\.O\.)/i.test(ref) ? ref : `Ex. ${ref}`;
+}
 
 export interface TranscriptViewerProps {
   transcript: DepositionQA[];
@@ -62,6 +69,10 @@ export function TranscriptViewer(props: TranscriptViewerProps) {
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((v) => {
           const { qa, index } = rows[v.index];
+          const iq = qa as IndiaQA;
+          const prevSeg = v.index > 0 ? (rows[v.index - 1].qa as IndiaQA).segment : undefined;
+          const segHeader = iq.segment && iq.segment !== prevSeg ? `${segmentLabel(iq.segment)}${iq.segment === "chief" && iq.para ? " (affidavit, Order XVIII Rule 4 CPC)" : ""}${iq.by ? ` · by ${iq.by}` : ""}` : null;
+          const statementOnly = !!iq.segment && !qa.question;
           const active = index === activeIndex;
           const { inDesignation, inSel } = rangeMark(qa);
           return (
@@ -74,16 +85,20 @@ export function TranscriptViewer(props: TranscriptViewerProps) {
               onClick={() => { onActiveIndex(index); if (designating) onPickBoundary?.(qa, index); }}
               className={cn("group grid cursor-pointer grid-cols-[64px_1fr] border-b transition-colors", active ? "bg-accent/60" : "hover:bg-accent/30", inSel && "bg-primary/8", designating && "cursor-crosshair")}
             >
+              {segHeader && <div className="col-span-2 border-b bg-muted/50 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{segHeader}</div>}
               <div className={cn("relative flex flex-col items-end gap-1 border-r px-2 py-2 font-mono text-[10.5px] text-muted-foreground tabular", inDesignation && "border-r-2 border-r-chart-2")}>
                 <span className={cn(active && "font-semibold text-foreground")}>{formatPageLine(qa.page, qa.line)}</span>
+                {iq.para != null && <span className="text-[10px]">¶{iq.para}</span>}
                 {inDesignation && <Tip label={`Designated ${inDesignation.purpose}`}><span><Highlighter className="size-3 text-chart-2" /></span></Tip>}
                 {designating && <span className="text-[10.5px] text-primary">{selection?.start && !selection.end ? "end" : "start"}</span>}
               </div>
               <div className="min-w-0 px-3 py-2">
-                <div className="flex items-start gap-2">
-                  <span className="mt-px shrink-0 select-none font-semibold text-[12px] text-muted-foreground">Q.</span>
-                  <p className="min-w-0 flex-1 text-[13px] leading-relaxed"><Highlighted text={qa.question} re={re} /></p>
-                </div>
+                {!statementOnly && (
+                  <div className="flex items-start gap-2">
+                    <span className="mt-px shrink-0 select-none font-semibold text-[12px] text-muted-foreground">Q.</span>
+                    <p className="min-w-0 flex-1 text-[13px] leading-relaxed"><Highlighted text={qa.question} re={re} /></p>
+                  </div>
+                )}
                 {qa.objection && (
                   <div className="ml-6 mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md border border-dashed bg-muted/40 px-2 py-1 text-[12px] italic text-muted-foreground">
                     <span className="not-italic font-medium text-foreground/80">{qa.objection.by.toUpperCase()}:</span>
@@ -92,14 +107,14 @@ export function TranscriptViewer(props: TranscriptViewerProps) {
                     {qa.objection.text && <span className="basis-full"><Highlighted text={qa.objection.text} re={re} /></span>}
                   </div>
                 )}
-                <div className="mt-1.5 flex items-start gap-2">
-                  <span className="mt-px shrink-0 select-none font-semibold text-[12px] text-muted-foreground">A.</span>
+                <div className={cn("flex items-start gap-2", !statementOnly && "mt-1.5")}>
+                  <span className="mt-px w-4 shrink-0 select-none font-semibold text-[12px] text-muted-foreground">{statementOnly ? "" : "A."}</span>
                   <p className={cn("min-w-0 flex-1 text-[13px] leading-relaxed", qa.flags?.includes("admission") && "font-medium")}><Highlighted text={qa.answer} re={re} /></p>
                 </div>
                 <div className="mt-1.5 flex min-h-[18px] flex-wrap items-center gap-1 pl-6">
                   {qa.exhibit && (
                     <button type="button" onClick={(e) => { e.stopPropagation(); onOpenExhibit?.(qa.exhibit!); }} className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-px font-mono text-[10.5px] leading-4 transition-colors", exhibitDocIds?.[qa.exhibit] ? "cursor-pointer border-foreground/25 bg-accent text-foreground hover:bg-accent" : "border-border bg-muted text-muted-foreground")} title={exhibitDocIds?.[qa.exhibit] ? "Open the exhibit in the review viewer" : "Exhibit not in this workspace"}>
-                      <Paperclip className="size-3" /> Ex. {qa.exhibit}
+                      <Paperclip className="size-3" /> {exhibitChip(qa.exhibit)}
                     </button>
                   )}
                   {qa.flags?.map((f) => <FlagBadge key={f} flag={f} />)}

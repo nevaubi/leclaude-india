@@ -85,7 +85,7 @@ export function strictScopeEnabled(): boolean {
  * layer does not import the auth layer (which imports the database, which seeds through this module).
  */
 export function configuredTenantId(): string {
-  return process.env.LECLAUDE_TENANT_ID?.trim() || "seeger-weiss";
+  return process.env.LECLAUDE_TENANT_ID?.trim() || "default";
 }
 
 /** Well-known vector collections. Rows in the two library-visible collections belong to the "library" corpus. */

@@ -2,13 +2,15 @@
  * Citation-native evidence for synthesis (constitution §25 "citation-native internal RAG", §53.4).
  *
  * Every numbered research source becomes one `search_result` block with a stable, server-resolvable
- * `source` (authority://courtlistener/opinion/<id>, authority://ecfr/…, matter://<matter>/document/<id>,
- * library://…, intel://…, or the canonical URL) and focused, paragraph-numbered text blocks so citation
+ * `source` (judgment://<courtId>/<judgmentId>, statute://<enactmentId>/s/<n>, authority://indiankanoon/doc/<tid>,
+ * matter://<matter>/document/<id>, library://…, intel://…, or the canonical URL; the US authority:// forms remain) and focused, paragraph-numbered text blocks so citation
  * boundaries stay narrow and "[n ¶k]" pinpoints resolve to the reader's paragraph k. Sources that were
  * not read carry only their search snippet, labelled as such. Array order == source number, so providers
  * that cannot take search_result blocks render the same numbering as text. Pure and client-safe.
  */
 import type { SearchResultBlock } from "@/lib/ai/providers/types";
+import { languageInfo } from "@/lib/india/languages";
+import { benchLabel, hitCourtLabel, indianDate, judgmentCitations } from "../india-citations";
 import { formatBluebook } from "../normalize";
 import { focusParagraphs } from "./paragraphs";
 import { TREATMENT_LABEL } from "./treatment";
@@ -21,6 +23,9 @@ export function evidenceSourceId(s: Pick<ResearchSource, "id" | "kind" | "url" |
   const h = s.hit;
   const ref = h.readRef;
   if (s.id.startsWith("intel:")) return `intel://${enc(ctx.tenantId ?? "firm")}/document/${enc(s.id.slice(6))}`;
+  if (ref?.kind === "judgment") return `judgment://${enc(h.india?.courtId || "unresolved")}/${enc(ref.id)}`;
+  if (ref?.kind === "section") return h.india?.enactment && h.india.section ? `statute://${enc(ref.id.split(/[:#]/)[0])}/s/${enc(h.india.section)}` : `statute://${enc(ref.id)}`;
+  if (ref?.kind === "url" && ref.url.startsWith("ik://")) return `authority://indiankanoon/doc/${enc(ref.url.slice(5))}`;
   switch (s.kind) {
     case "caselaw":
       if (ref?.kind === "opinion") return `authority://courtlistener/opinion/${enc(ref.id)}`;
@@ -66,10 +71,35 @@ export interface EvidenceOptions {
   maxBlockChars?: number;
 }
 
+/**
+ * Authority facts for an Indian judgment, all deterministic (the model restates them; it never decides them):
+ * court, bench strength, date, neutral/reporter citations, binding or persuasive for the forum, treatment and the
+ * language of the text of record.
+ */
+export function judgmentFacts(s: Pick<ResearchSource, "hit" | "authority" | "treatment" | "date">): string[] {
+  const h = s.hit;
+  const out: string[] = [];
+  out.push(`court: ${hitCourtLabel(h) || "not resolved"}`);
+  out.push(h.india?.benchStrength ? benchLabel(h.india.benchStrength) : "bench strength unknown");
+  if (s.date ?? h.date) out.push(`decided ${indianDate(s.date ?? h.date)}`);
+  const cites = judgmentCitations(h);
+  out.push(cites.length ? `citation: ${cites.join(" : ")}` : "no neutral or reporter citation recorded");
+  out.push(s.authority === "binding" ? "BINDING on the forum" : s.authority === "persuasive" ? "PERSUASIVE for the forum" : "precedential effect not assessed");
+  const recorded = h.india?.corpusTreatment?.map((t) => `${t.status}${t.by ? ` by ${t.by}` : ""}`).join("; ");
+  out.push(recorded ? `TREATMENT RECORDED IN CORPUS: ${recorded}` : s.treatment?.signal === "possibly_negative" ? TREATMENT_LABEL.possibly_negative.toUpperCase() : s.treatment ? TREATMENT_LABEL[s.treatment.signal] : "treatment not checked");
+  const lang = h.india?.language;
+  if (lang && lang !== "en") out.push(`text of record in ${languageInfo(lang)?.name ?? lang}`);
+  return out;
+}
+
 /** Title line of a source's evidence block (the model sees it; the text renderer prefixes "[n]"). */
 export function evidenceTitle(s: ResearchSource): string {
+  if (s.kind === "caselaw" && s.hit.india) {
+    const facts = judgmentFacts(s);
+    return `Source ${s.n} — ${s.hit.title} · ${facts.join(" · ")} · ${s.read ? "READ IN FULL" : "NOT READ — SEARCH SNIPPET ONLY"}`;
+  }
   const parts = [formatBluebook(s.hit)];
-  if (s.authority && s.authority !== "n/a") parts.push(s.authority === "binding" ? "binding in the selected jurisdiction" : "persuasive");
+  if (s.authority && s.authority !== "n/a") parts.push(s.authority === "binding" ? "binding on the forum" : "persuasive");
   if (s.scope === "record") parts.push("MATTER RECORD");
   else if (s.scope === "internal") parts.push("FIRM LIBRARY");
   if (s.treatment?.signal === "possibly_negative") parts.push(TREATMENT_LABEL.possibly_negative.toUpperCase());

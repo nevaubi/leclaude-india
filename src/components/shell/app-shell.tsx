@@ -14,8 +14,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { PersonAvatar } from "@/components/ui/avatar";
 import { ShortcutHelpProvider, useShortcutHelp } from "@/components/ui/shortcut-help";
 import { CommandPalette } from "./command-palette";
-import { SWMark, BrandLockup } from "@/components/brand/logo";
+import { BrandMark, BrandLockup } from "@/components/brand/logo";
 import { DEFAULT_USER } from "@/lib/current-user";
+import { useT } from "@/lib/i18n/client";
+import { LocaleMenu } from "./locale-switcher";
 
 export interface ShellUser { id: string; name: string; role?: string; email?: string }
 
@@ -40,6 +42,7 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
   const router = useRouter();
   const { sidebarCollapsed, toggleSidebar, setPaletteOpen } = useShellStore();
   const help = useShortcutHelp(undefined);
+  const t = useT();
   const [hydrated, setHydrated] = React.useState(false);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   React.useEffect(() => setHydrated(true), []);
@@ -82,10 +85,11 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
 
   const railItem = (item: (typeof NAV)[number]) => {
     const active = isActive(item.href);
+    const label = item.labelKey ? t(item.labelKey) : item.label;
     const link = (
       <Link
         href={item.href}
-        aria-label={item.label}
+        aria-label={label}
         aria-current={active ? "page" : undefined}
         className={cn(
           "group relative flex items-center rounded-md text-[12.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
@@ -94,35 +98,35 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
         )}
       >
         <item.icon className={cn("size-[17px] shrink-0", active ? "text-primary" : "")} strokeWidth={active ? 2 : 1.75} />
-        {expanded && <span className="flex-1 truncate">{item.label}</span>}
+        {expanded && <span className="flex-1 truncate">{label}</span>}
         {expanded && item.shortcut && <span className="text-[10px] tabular text-muted-foreground/70 opacity-0 transition-opacity group-hover:opacity-100">{item.shortcut}</span>}
       </Link>
     );
-    return expanded ? <div key={item.href}>{link}</div> : <Tip key={item.href} label={item.label} side="right" shortcut={item.shortcut}>{link}</Tip>;
+    return expanded ? <div key={item.href}>{link}</div> : <Tip key={item.href} label={label} side="right" shortcut={item.shortcut}>{link}</Tip>;
   };
 
   return (
     <div className="flex h-full w-full overflow-hidden">
-      {mobileOpen && <button aria-label="Close navigation" className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} />}
+      {mobileOpen && <button aria-label={t("shell.closeNav")} className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} />}
       <aside
         className={cn(
-          "h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-150",
+          "h-full shrink-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-150",
           expanded ? "md:w-[220px]" : "md:w-[68px]",
-          "fixed inset-y-0 left-0 z-50 w-[248px] md:static md:z-auto md:flex",
+          "fixed inset-y-0 start-0 z-50 w-[248px] md:static md:z-auto md:flex",
           mobileOpen ? "flex shadow-2xl" : "hidden",
         )}
       >
         <div className={cn("flex h-11 items-center border-b border-sidebar-border", expanded ? "px-3" : "justify-center px-0")}>
-          <Link href="/" className="flex min-w-0 items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" aria-label={`${appName} home`}>
-            {expanded || mobileOpen ? <BrandLockup /> : <SWMark size={26} />}
+          <Link href="/" className="flex min-w-0 items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" aria-label={t("brand.homeAria", { app: appName })}>
+            {expanded || mobileOpen ? <BrandLockup firmName={firmName} /> : <BrandMark size={26} />}
           </Link>
         </div>
 
         <div className={cn("pt-2", expanded ? "px-3" : "px-0 flex justify-center")}>
-          <Tip label="Search or jump to anything" side="right" shortcut="⌘K">
+          <Tip label={t("shell.searchOrJump")} side="right" shortcut="⌘K">
             <button
               onClick={() => setPaletteOpen(true)}
-              aria-label="Search or jump to anything"
+              aria-label={t("shell.searchOrJump")}
               className={cn(
                 "flex items-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                 expanded && "border",
@@ -130,25 +134,25 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
               )}
             >
               <Search className="size-4 shrink-0" strokeWidth={1.75} />
-              {expanded && (<><span className="flex-1 text-left">Search or jump to…</span><kbd className="hidden sm:inline">⌘K</kbd></>)}
+              {expanded && (<><span className="flex-1 truncate text-start">{t("shell.searchOrJumpShort")}</span><kbd className="hidden sm:inline">⌘K</kbd></>)}
             </button>
           </Tip>
         </div>
 
-        <nav className={cn("mt-2 flex flex-1 flex-col gap-0.5 overflow-y-auto no-scrollbar", expanded ? "px-3" : "items-center px-0")} aria-label="Primary">
+        <nav className={cn("mt-2 flex flex-1 flex-col gap-0.5 overflow-y-auto no-scrollbar", expanded ? "px-3" : "items-center px-0")} aria-label={t("shell.primaryNav")}>
           {NAV.map(railItem)}
         </nav>
 
         <div className={cn("flex flex-col gap-0.5 border-t border-sidebar-border py-2", expanded ? "px-3" : "items-center px-0")}>
           {SECONDARY_NAV.map(railItem)}
-          <Tip label={expanded ? "Collapse" : "Expand"} side="right" shortcut="[">
-            <button onClick={toggleSidebar} aria-label={expanded ? "Collapse navigation" : "Expand navigation"} className={cn("flex items-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50", expanded ? "gap-2.5 px-2.5 py-1.5 text-[12.5px]" : "size-9 justify-center")}>
-              {expanded ? <><ChevronLeft className="size-[17px]" /> Collapse</> : <ChevronRight className="size-[17px]" />}
+          <Tip label={expanded ? t("common.collapse") : t("common.expand")} side="right" shortcut="[">
+            <button onClick={toggleSidebar} aria-label={expanded ? t("shell.collapseNav") : t("shell.expandNav")} className={cn("flex items-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50", expanded ? "gap-2.5 px-2.5 py-1.5 text-[12.5px]" : "size-9 justify-center")}>
+              {expanded ? <><ChevronLeft className="size-[17px] rtl:rotate-180" /> {t("common.collapse")}</> : <ChevronRight className="size-[17px] rtl:rotate-180" />}
             </button>
           </Tip>
           {expanded && (
-            <button aria-label="Sign out" className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] text-muted-foreground/70 hover:bg-sidebar-accent hover:text-foreground" disabled>
-              <LogOut className="size-[17px]" /> Sign out
+            <button aria-label={t("shell.signOut")} className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] text-muted-foreground/70 hover:bg-sidebar-accent hover:text-foreground" disabled>
+              <LogOut className="size-[17px] rtl:-scale-x-100" /> {t("shell.signOut")}
             </button>
           )}
         </div>
@@ -156,14 +160,14 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-11 shrink-0 items-center gap-2 border-b bg-background px-3" style={{ height: "var(--topbar-height)" }}>
-          <Button variant="ghost" size="icon-xs" className="md:hidden" aria-label="Open navigation" onClick={() => setMobileOpen((o) => !o)}>{mobileOpen ? <X className="size-4" /> : <Menu className="size-4" />}</Button>
+          <Button variant="ghost" size="icon-xs" className="md:hidden" aria-label={t("shell.openNav")} onClick={() => setMobileOpen((o) => !o)}>{mobileOpen ? <X className="size-4" /> : <Menu className="size-4" />}</Button>
           <div className="min-w-0 flex-1" id="topbar-slot" />
           <div className="flex items-center gap-2">
             <AiStatus />
             <ReviewQueueIndicator />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="ml-0.5 rounded-full ring-offset-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 cursor-pointer" aria-label="Account menu"><PersonAvatar name={user.name} size="sm" /></button>
+                <button className="ms-0.5 rounded-full ring-offset-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 cursor-pointer" aria-label={t("shell.accountMenu")}><PersonAvatar name={user.name} size="sm" /></button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-60">
                 <DropdownMenuLabel className="font-normal">
@@ -172,15 +176,18 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
                   {user.email && <div className="text-[11.5px] text-muted-foreground">{user.email}</div>}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild><Link href="/settings">Settings</Link></DropdownMenuItem>
-                <DropdownMenuItem asChild><Link href="/settings#ai">AI configuration</Link></DropdownMenuItem>
-                <DropdownMenuItem asChild><Link href="/settings#data">Data &amp; automation</Link></DropdownMenuItem>
-                <DropdownMenuItem asChild><Link href="/settings#review">Review queue</Link></DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTimeout(() => help.open(), 50)}><Keyboard /> Keyboard shortcuts<DropdownMenuShortcut>?</DropdownMenuShortcut></DropdownMenuItem>
+                <DropdownMenuItem asChild><Link href="/settings">{t("shell.menu.settings")}</Link></DropdownMenuItem>
+                <DropdownMenuItem asChild><Link href="/settings#language">{t("shell.menu.language")}</Link></DropdownMenuItem>
+                <DropdownMenuItem asChild><Link href="/settings#ai">{t("shell.menu.ai")}</Link></DropdownMenuItem>
+                <DropdownMenuItem asChild><Link href="/settings#data">{t("shell.menu.data")}</Link></DropdownMenuItem>
+                <DropdownMenuItem asChild><Link href="/settings#review">{t("shell.menu.review")}</Link></DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTimeout(() => help.open(), 50)}><Keyboard /> {t("shell.menu.shortcuts")}<DropdownMenuShortcut>?</DropdownMenuShortcut></DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <LocaleMenu />
                 <DropdownMenuSeparator />
                 <ThemeItems />
                 <DropdownMenuSeparator />
-                <DropdownMenuItem disabled>Sign out</DropdownMenuItem>
+                <DropdownMenuItem disabled>{t("shell.signOut")}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -194,6 +201,7 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
 
 /** AI availability: nothing when configured; a dot and "AI off · add key" when it needs setup. */
 function AiStatus() {
+  const t = useT();
   const [status, setStatus] = React.useState<{ configured: boolean; model: string } | null>(null);
   React.useEffect(() => {
     let alive = true;
@@ -203,12 +211,13 @@ function AiStatus() {
   // Quiet when healthy: the top bar only speaks up when AI needs configuring.
   if (!status || status.configured) return null;
   return (
-    <Tip label="Add OPENAI_API_KEY to .env.local to enable AI features"><Link href="/settings#ai" className="hidden h-7 items-center gap-1.5 rounded px-1.5 text-[11px] text-muted-foreground hover:text-foreground md:inline-flex" aria-label="AI off, add key"><span className="size-1.5 rounded-full bg-warning" aria-hidden /> AI off · add key</Link></Tip>
+    <Tip label={t("shell.aiOffTip")}><Link href="/settings#ai" className="hidden h-7 items-center gap-1.5 rounded px-1.5 text-[11px] text-muted-foreground hover:text-foreground md:inline-flex" aria-label={t("shell.aiOff")}><span className="size-1.5 rounded-full bg-warning" aria-hidden /> {t("shell.aiOff")}</Link></Tip>
   );
 }
 
 /** Pending AI records awaiting a human decision, as text and a dot; hidden when none or when the endpoint is unavailable. */
 function ReviewQueueIndicator() {
+  const t = useT();
   const pathname = usePathname();
   const [pending, setPending] = React.useState<number | null>(null);
   React.useEffect(() => {
@@ -219,8 +228,8 @@ function ReviewQueueIndicator() {
   }, [pathname]);
   if (!pending) return null;
   return (
-    <Tip label={`${pending} AI record${pending === 1 ? "" : "s"} awaiting review`}>
-      <Link href="/settings#review" className="hidden h-7 items-center gap-1.5 rounded px-1.5 text-[11px] text-muted-foreground hover:text-foreground md:inline-flex" aria-label="Review queue"><span className="size-1.5 rounded-full bg-warning" aria-hidden /> <span className="tabular">{pending}</span> to review</Link>
+    <Tip label={t("shell.reviewPendingTip", { count: pending })}>
+      <Link href="/settings#review" className="hidden h-7 items-center gap-1.5 rounded px-1.5 text-[11px] text-muted-foreground hover:text-foreground md:inline-flex" aria-label={t("shell.reviewQueue")}><span className="size-1.5 rounded-full bg-warning" aria-hidden /> <span className="tabular">{pending}</span> {t("shell.toReview")}</Link>
     </Tip>
   );
 }
@@ -228,17 +237,18 @@ function ReviewQueueIndicator() {
 /** Theme choice lives in the account menu so the top bar keeps one control per job. */
 function ThemeItems() {
   const { theme, setTheme } = useTheme();
+  const t = useT();
   const item = (value: "light" | "dark" | "system", label: string, Icon: typeof Sun) => (
     <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setTheme(value); }} aria-checked={theme === value} role="menuitemradio">
-      <Icon /> {label}{theme === value && <Check className="ml-auto size-3.5 text-muted-foreground" />}
+      <Icon /> {label}{theme === value && <Check className="ms-auto size-3.5 text-muted-foreground" />}
     </DropdownMenuItem>
   );
   return (
     <>
-      <DropdownMenuLabel className="py-1 text-[11px] font-normal text-muted-foreground">Theme</DropdownMenuLabel>
-      {item("light", "Light", Sun)}
-      {item("dark", "Dark", Moon)}
-      {item("system", "System", Monitor)}
+      <DropdownMenuLabel className="py-1 text-[11px] font-normal text-muted-foreground">{t("shell.theme")}</DropdownMenuLabel>
+      {item("light", t("shell.theme.light"), Sun)}
+      {item("dark", t("shell.theme.dark"), Moon)}
+      {item("system", t("shell.theme.system"), Monitor)}
     </>
   );
 }

@@ -1,12 +1,16 @@
 import type { CodingDecision, DocType, EDocument } from "@/lib/types/domain";
-import type { CustKey } from "./people";
+import type { IndiaDocMeta } from "@/modules/ediscovery/india";
+import type { SourceKey } from "./people";
 
-/** Authoring shape for one demo document; `buildCorpus` turns specs into `EDocument`s with Bates, headers and hashes. */
+/**
+ * Authoring shape for one demo case-record document; `buildCorpus` turns specs into stored documents with a document
+ * reference (production-style number per source), headers, hashes and the Indian record metadata (`india`).
+ */
 export interface DocSpec {
   id: string;
+  source: SourceKey;
   date: string;
   time?: string;
-  cust: CustKey;
   type: DocType;
   subject: string;
   from?: string;
@@ -14,20 +18,17 @@ export interface DocSpec {
   cc?: string[];
   body: string;
   pages?: number;
-  /** Email thread id (shared by the messages of a conversation). */
   thread?: string;
-  /** Parent email id for an attachment. */
   parent?: string;
-  /** Attachment ids for a parent email. */
   attachments?: string[];
-  /** Exact duplicate of another spec (same text and hash, different custodian). */
   dupOf?: string;
   aiScore?: number;
   aiSummary?: string;
-  aiIssues?: string[];
   entities?: EDocument["entities"];
   coding?: Partial<CodingDecision>;
   tags?: string[];
+  /** Indian record metadata; `docClass` is required, the exhibit mark is set once the document is marked. */
+  india: IndiaDocMeta;
 }
 
-export const DEMO_ID = (slug: string) => `demo_apl_ed_${slug}`;
+export const DEMO_ID = (slug: string) => `demo_in_ed_${slug}`;

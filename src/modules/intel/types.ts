@@ -27,7 +27,14 @@ export type IntelAdapterId =
   | "court-rules"
   | "news"
   | "local-corpus"
-  | "web-list";
+  | "web-list"
+  // LeClaude India sources (src/modules/india/sources)
+  | "sci-open-data"
+  | "hc-open-data"
+  | "indian-kanoon"
+  | "india-code"
+  | "scc-online"
+  | "manupatra";
 
 export type IntelEvery = "10m" | "1h" | "6h" | "daily" | "weekly" | "manual";
 
@@ -527,7 +534,8 @@ export interface IntelEntityMention {
 }
 
 export interface IntelProviderStatus {
-  id: "openai" | "courtlistener" | "govinfo" | "firecrawl" | "tavily" | "openfda" | "ecfr" | "federal-register" | "jpml" | "web";
+  id: "openai" | "courtlistener" | "govinfo" | "firecrawl" | "tavily" | "openfda" | "ecfr" | "federal-register" | "jpml" | "web"
+    | "sci-open-data" | "hc-open-data" | "indian-kanoon" | "india-code" | "scc-online" | "manupatra";
   name: string;
   /** True when the provider can be used (public endpoints count as configured). */
   configured: boolean;

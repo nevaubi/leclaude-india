@@ -8,8 +8,10 @@
  */
 import type { Deposition, DepositionQA } from "@/lib/types/domain";
 import type { CrossReference } from "./types";
+import { canonicalExhibit, findExhibitMarks } from "../india";
 
-export interface DocLike { id: string; bates: string; batesEnd?: string; subject: string; date: string; type?: string }
+/** `exhibit` is the document's canonical Indian exhibit mark ("Ex.P7") when it has been marked. */
+export interface DocLike { id: string; bates: string; batesEnd?: string; subject: string; date: string; type?: string; exhibit?: string }
 
 const BATES_RE = /\b([A-Z]{2,6}-\d{5,})\b/g;
 const EXHIBIT_RE = /(?:Exhibit|Ex\.)\s+(?:No\.?\s*)?([A-Za-z]+-\d+|\d+[A-Za-z]?)\b/gi;
@@ -19,7 +21,13 @@ const STOP = new Set(["the", "a", "an", "of", "to", "in", "on", "for", "and", "a
 function dateMentions(text: string): string[] {
   const out: string[] = [];
   for (const m of text.matchAll(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+((?:19|20)\d{2})\b/gi)) out.push(`${m[3]}-${String(MONTHS.indexOf(m[1].toLowerCase()) + 1).padStart(2, "0")}-${m[2].padStart(2, "0")}`);
-  for (const m of text.matchAll(/\b(\d{1,2})\/(\d{1,2})\/((?:19|20)\d{2})\b/g)) out.push(`${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`);
+  for (const m of text.matchAll(/\b(\d{1,2})\/(\d{1,2})\/((?:19|20)\d{2})\b/g)) {
+    // Indian records write dd/mm/yyyy; a first number above 12 can only be a day. Otherwise keep month/day.
+    if (Number(m[1]) > 12) out.push(`${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`);
+    else out.push(`${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`);
+  }
+  // dd.mm.yyyy and dd-mm-yyyy (the usual form in Indian orders and depositions).
+  for (const m of text.matchAll(/\b(\d{1,2})[.-](\d{1,2})[.-]((?:19|20)\d{2})\b/g)) if (Number(m[2]) <= 12) out.push(`${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`);
   return out;
 }
 
@@ -36,6 +44,8 @@ export function findCrossReferences(dep: Pick<Deposition, "transcript" | "exhibi
   for (const d of docs) { byBates.set(d.bates.toUpperCase(), d); if (d.batesEnd) byBates.set(d.batesEnd.toUpperCase(), d); }
   const exhibitBates = new Map<string, string>();
   for (const e of dep.exhibits ?? []) if (e.bates) exhibitBates.set(e.id.toLowerCase(), e.bates.toUpperCase());
+  const byMark = new Map<string, DocLike[]>();
+  for (const d of docs) { const c = canonicalExhibit(d.exhibit); if (c) byMark.set(c, [...(byMark.get(c) ?? []), d]); }
   const byDate = new Map<string, DocLike[]>();
   for (const d of docs) { const k = d.date.slice(0, 10); byDate.set(k, [...(byDate.get(k) ?? []), d]); }
   const subjectWords = docs.map((d) => ({ d, w: new Set(words(d.subject)) })).filter((x) => x.w.size >= 2);
@@ -55,9 +65,18 @@ export function findCrossReferences(dep: Pick<Deposition, "transcript" | "exhibi
       const doc = byBates.get(m[1].toUpperCase());
       add({ kind: "bates", docId: doc?.id, bates: m[1].toUpperCase(), label: doc?.subject ?? m[1].toUpperCase(), match: m[1], confidence: doc ? 1 : 0.5 });
     }
+    // Indian exhibit marks: exact mark in this matter only; an unmarked or doubly-marked exhibit stays unresolved (§23).
+    const marks = new Set<string>(findExhibitMarks(text));
+    const own = canonicalExhibit(qa.exhibit);
+    if (own) marks.add(own);
+    for (const mark of marks) {
+      const hits = byMark.get(mark) ?? [];
+      const doc = hits.length === 1 ? hits[0] : undefined;
+      add({ kind: "exhibit", docId: doc?.id, bates: doc?.bates, label: doc?.subject ?? `${mark} (${hits.length > 1 ? "marked on more than one document" : "not marked in this matter"})`, match: mark, confidence: doc ? 1 : 0.5 });
+    }
     const exRefs = new Set<string>();
-    if (qa.exhibit) exRefs.add(qa.exhibit.toLowerCase());
-    for (const m of text.matchAll(EXHIBIT_RE)) exRefs.add(m[1].toLowerCase());
+    if (qa.exhibit && !own) exRefs.add(qa.exhibit.toLowerCase());
+    for (const m of text.matchAll(EXHIBIT_RE)) if (!canonicalExhibit(m[0])) exRefs.add(m[1].toLowerCase());
     for (const ex of exRefs) {
       const bates = exhibitBates.get(ex) ?? Array.from(exhibitBates.entries()).find(([k]) => k.endsWith(`-${ex}`) || k === ex)?.[1];
       const doc = bates ? byBates.get(bates) : undefined;

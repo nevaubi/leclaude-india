@@ -1,24 +1,30 @@
 import "server-only";
 import type { ResponseInput } from "openai/resources/responses/responses";
-import { generateJSON, generateText, runAgent, type AgentEvent } from "@/lib/ai/agent";
+import { generateJSON, generateText, runAgent, strictJsonSchema, type AgentEvent } from "@/lib/ai/agent";
+import { infer } from "@/lib/ai/runtime";
 import { aiConfig } from "@/lib/ai/config";
 import type { TokenUsage } from "@/lib/ai/events";
 import type { ToolContext, ToolDef } from "@/lib/ai/tools";
 import { webSearchTool } from "@/lib/ai/toolkit/web";
-import { findCitingOpinions, resolveCitationTool, searchCaseLawTool, searchDocketsTool, searchRegulationsTool, searchFederalRegisterTool, searchStatutesTool, verifyCitationsTool, type CitationResolution } from "@/lib/ai/toolkit/legal";
+import type { CitationResolution } from "@/lib/ai/toolkit/legal";
+import { citingReferences, ikSource, indianKanoonClient, isIndiaSourceDoc, judgmentRow, resolveIndianCitation, searchJudgments, searchStatuteSections, statuteRow, visibleMatters, type IndianCitationResolution } from "@/lib/ai/toolkit/india";
+import { htmlToText } from "@/lib/ai/toolkit/http";
+import { listEnactments } from "@/modules/india/sources";
+import { courtForDocsource } from "@/modules/india/sources/indian-kanoon";
 import type { SearchResultBlock } from "@/lib/ai/providers/types";
 import { searchLibraryTool, searchEdiscoveryTool } from "@/lib/ai/toolkit/internal";
 import { verifyClaims, type VerificationResult } from "@/lib/ai/verify";
 import { getDocumentText, intelDocuments, primaryDate, searchIntel } from "@/modules/intel/store";
 import type { IntelDocumentKind, IntelSearchHit } from "@/modules/intel/types";
+import { extractAnswerCitations } from "../india-citations";
 import { classifyAuthority, resolveCourts } from "../jurisdictions";
-import { normalizeToolResult } from "../normalize";
-import { datePresetRange, toCourtListenerSyntax } from "../query-builder";
+import { normalizeIndiaSection, normalizeJudgment, normalizeToolResult } from "../normalize";
+import { datePresetRange } from "../query-builder";
 import { readSource } from "../service";
 import type { ReadRef, SearchHit, SearchSettings, SearchSource } from "../types";
 import { RESEARCH_MODEL_POLICY as POLICY } from "./model-policy";
-import { PLAN_INSTRUCTIONS } from "./prompts";
-import { classifyTreatment } from "./treatment";
+import { FOLLOW_UP_INSTRUCTIONS, PLAN_INSTRUCTIONS, REFINE_INSTRUCTIONS, TRANSLATE_QUERY_INSTRUCTIONS } from "./prompts";
+import { classifyTreatment, INDIAN_NEGATIVE_TREATMENT_PHRASES } from "./treatment";
 import type { AuthorityTreatment, LaneKind } from "./types";
 
 /** Model-derived plan: jurisdiction-aware sub-questions and extra retrieval queries per lane kind. */
@@ -37,7 +43,7 @@ export interface EngineDeps {
   fastModel: string;
   /** Structured provider search for one source kind. Never throws for "no results"; throws for provider failures. */
   retrieve(source: SearchSource, query: string, settings: SearchSettings, signal?: AbortSignal): Promise<{ hits: SearchHit[]; total: number }>;
-  /** Full text for a read reference (cached 24h by the service). */
+  /** Full text for a read reference (cached 24h by the service for external reads). */
   read(ref: ReadRef, opts: { title?: string; signal?: AbortSignal }): Promise<{ text: string; title?: string; cite?: string; url?: string; cached: boolean }>;
   /** A bounded lane agent run. Returns the lane note (and token usage when the runtime reports it). */
   laneAgent(input: { instructions: string; input: string; tools: ToolDef<never, unknown>[]; web: boolean; maxSteps: number; signal?: AbortSignal; onEvent: (e: AgentEvent) => void }): Promise<{ text: string; steps: number; usage?: TokenUsage }>;
@@ -51,15 +57,20 @@ export interface EngineDeps {
   correct(input: { instructions: string; input: string; signal?: AbortSignal }): Promise<string>;
   refine(input: { question: string; gaps: string[]; laneKinds: LaneKind[]; signal?: AbortSignal }): Promise<Partial<Record<LaneKind, string[]>>>;
   followUps(input: { question: string; answer: string; matterLine: string; signal?: AbortSignal }): Promise<string[]>;
-  /** Resolve case citations on CourtListener; returns the normalised citations that resolved. */
+  /** Citations that resolve somewhere other than the sources read (LeClaude India: the judgment corpus). */
   verifyCitationsRemote(text: string, signal?: AbortSignal): Promise<string[]>;
   // ---- optional capabilities (absent in minimal fakes; the run degrades to the deterministic path) ----
   /** Fast-model planning: sub-questions and per-lane queries. Runs concurrently with the first retrieval wave. */
   planQueries?(input: { question: string; context: string; laneKinds: LaneKind[]; signal?: AbortSignal }): Promise<ResearchPlan>;
-  /** Citing-reference treatment signal for a case (never an assertion of good law). */
-  citing?(input: { opinionId: number; signal?: AbortSignal }): Promise<AuthorityTreatment>;
-  /** Resolve one reporter citation without substitution. */
-  resolveCitation?(citation: string, signal?: AbortSignal): Promise<CitationResolution>;
+  /** Citing-reference treatment signal for a judgment (corpus) or a CourtListener opinion (never an assertion of good law). */
+  citing?(input: { opinionId?: number; judgmentId?: string; signal?: AbortSignal }): Promise<AuthorityTreatment>;
+  /** Resolve one citation without substitution (Indian corpus; the US resolution shape is accepted for compatibility). */
+  resolveCitation?(citation: string, signal?: AbortSignal): Promise<CitationResolution | IndianCitationResolution>;
+  /**
+   * Translate a non-English question into English search terms (legal terms and section numbers preserved). Runs on the
+   * fast router role when the privacy policy allows it, else on the internal fast role. Absent in minimal fakes.
+   */
+  translateQuery?(input: { question: string; language: string; matterId?: string | null; signal?: AbortSignal }): Promise<{ query: string; model?: string }>;
 }
 
 function toolCtx(signal?: AbortSignal): ToolContext {
@@ -75,20 +86,30 @@ function withTimeout<T>(p: Promise<T>, ms: number, signal?: AbortSignal): Promis
   });
 }
 
-/** Intelligence record kinds that feed each provider source. */
+/**
+ * Intelligence record kinds that feed each provider source. LeClaude India: judgments and India Code Acts ingested by
+ * the India source layer reach the lanes through `searchJudgments` / `searchStatuteSections` (with their registry court
+ * and citations), so the intel feed skips those records (`excludeIndiaSourceDocs`) and adds only other intelligence
+ * (opinions and statutes from other adapters, local files, news).
+ */
 export const INTEL_KINDS_FOR_SOURCE: Partial<Record<SearchSource, IntelDocumentKind[]>> = {
   caselaw: ["opinion"],
   statutes: ["statute"],
-  regulations: ["regulation", "court_rule"],
-  federal_register: ["register_notice", "recall", "adverse_event"],
-  dockets: ["docket", "docket_entry", "mdl"],
   library: ["local_file", "news", "web_page", "judge", "attorney", "firm", "expert"],
 };
 
-const INTEL_KIND_LABEL: Partial<Record<IntelDocumentKind, string>> = { opinion: "Opinion", statute: "Statute", regulation: "CFR", court_rule: "Court rule", register_notice: "Federal Register", recall: "FDA recall", adverse_event: "FDA adverse event", docket: "Docket", docket_entry: "Docket entry", mdl: "MDL", local_file: "Local file", news: "News", web_page: "Web page", judge: "Judge", attorney: "Attorney", firm: "Firm", expert: "Expert" };
+/** True for intel documents the India source layer owns (judgments carry meta.india; Acts are linked from enactments). */
+function indiaOwnedDocIds(): Set<string> {
+  try { return new Set(listEnactments({ limit: 1000 }).map((e) => e.intelDocId).filter((x): x is string => Boolean(x))); } catch { return new Set(); }
+}
+
+const INTEL_KIND_LABEL: Partial<Record<IntelDocumentKind, string>> = { opinion: "Judgment", statute: "Statute", regulation: "Rule", court_rule: "Court rule", register_notice: "Gazette notification", local_file: "Local file", news: "News", web_page: "Web page", judge: "Judge", attorney: "Advocate", firm: "Firm", expert: "Expert" };
 
 /** Read reference scheme for intelligence records (`deps.read` resolves it from the store, no network). */
 export const INTEL_READ_PREFIX = "intel://";
+
+/** Read reference scheme for live Indian Kanoon documents (`deps.read` fetches them with the firm token). */
+export const IK_READ_PREFIX = "ik://";
 
 /** Normalize an intelligence hit onto a provider source kind so lanes, citations and reading treat it like any other authority. */
 export function intelHitToSearchHit(h: IntelSearchHit, source: SearchSource, settings: Pick<SearchSettings, "jurisdiction" | "courts">): SearchHit {
@@ -109,7 +130,7 @@ export function intelHitToSearchHit(h: IntelSearchHit, source: SearchSource, set
     snippet: h.chunk.text.slice(0, 400),
     url: d.url,
     score: h.score,
-    authority: source === "caselaw" ? classifyAuthority(courtId, settings.jurisdiction, settings.courts) : "n/a",
+    authority: source === "caselaw" ? classifyAuthority(courtId, settings.jurisdiction, settings.courts, primaryDate(d.dates)) : "n/a",
     readRef: { kind: "url", url: `${INTEL_READ_PREFIX}${d.id}` },
     docketNumber: d.docketNumber,
   };
@@ -121,9 +142,15 @@ export async function intelHitsFor(source: SearchSource, query: string, settings
   if (!kinds?.length || !query.trim()) return [];
   try {
     const range = datePresetRange(settings.datePreset, { from: settings.dateFrom, to: settings.dateTo });
-    const hits = await searchIntel({ q: query, kinds, matterId: settings.matterId ?? undefined, dateFrom: range.from, dateTo: range.to, limit });
+    const hits = await searchIntel({ q: query, kinds, matterId: settings.matterId ?? undefined, dateFrom: range.from, dateTo: range.to, limit: limit * 2 });
     const seen = new Set<string>();
-    return hits.filter((h) => { if (seen.has(h.doc.id)) return false; seen.add(h.doc.id); return true; }).map((h) => intelHitToSearchHit(h, source, settings));
+    const acts = source === "statutes" ? indiaOwnedDocIds() : new Set<string>();
+    const docs = intelDocuments();
+    return hits
+      .filter((h) => { if (seen.has(h.doc.id)) return false; seen.add(h.doc.id); return true; })
+      .filter((h) => !acts.has(h.doc.id) && !isIndiaSourceDoc(docs.get(h.doc.id)))
+      .slice(0, limit)
+      .map((h) => intelHitToSearchHit(h, source, settings));
   } catch (e) {
     console.warn("[research] intel retrieval failed:", (e as Error).message);
     return [];
@@ -137,9 +164,34 @@ export function mergeIntelHits(provider: SearchHit[], intel: SearchHit[]): Searc
   return [...provider, ...intel.filter((h) => !(h.url && urls.has(h.url.toLowerCase())) && !(h.cite && cites.has(h.cite.toLowerCase().replace(/\s+/g, " "))))];
 }
 
-const PLAN_SCHEMA = { type: "object", properties: { subQuestions: { type: "array", items: { type: "string" } }, lanes: { type: "array", items: { type: "object", properties: { lane: { type: "string", enum: ["controlling", "contrary", "regulatory", "record", "secondary", "fast"] }, queries: { type: "array", items: { type: "string" } } }, required: ["lane", "queries"] } } }, required: ["subQuestions", "lanes"] };
+/** Live Indian Kanoon hits (only when the connector is ready), normalized as judgments with an ik:// read reference. Court from the exact docsource name. */
+async function indianKanoonHits(query: string, courts: string[], settings: SearchSettings, signal?: AbortSignal): Promise<SearchHit[]> {
+  const ik = indianKanoonClient();
+  if (!ik) return [];
+  const data = await ik.search({ formInput: query, signal });
+  const out: SearchHit[] = [];
+  for (const d of data.docs.slice(0, 8)) {
+    const date = typeof d.publishdate === "string" ? d.publishdate.slice(0, 10) : undefined;
+    const { court, unresolved } = courtForDocsource(d.docsource, date);
+    if (courts.length && !(court && courts.includes(court.id))) continue;
+    out.push({
+      id: `ik:${d.tid}`, source: "caselaw", title: htmlToText(d.title ?? "").text || `Indian Kanoon ${d.tid}`, subtitle: [d.docsource, "Indian Kanoon (live)"].filter(Boolean).join(" · "),
+      court: court?.name ?? d.docsource, courtId: court?.id, date, snippet: htmlToText(d.headline ?? "").text.slice(0, 400), url: ik.webUrl(d.tid),
+      authority: classifyAuthority(court?.id, settings.jurisdiction, settings.courts, date), readRef: { kind: "url", url: `${IK_READ_PREFIX}${d.tid}` },
+      india: { courtId: court?.id ?? null, unresolvedCourt: unresolved, provider: "indian-kanoon" },
+    });
+  }
+  return out;
+}
+
+/** Stable source for a live Indian Kanoon hit (the evidence id the model sees). */
+export const ikEvidenceSource = ikSource;
+
+const LANE_ENUM = ["controlling", "persuasive", "contrary", "statute", "regulatory", "record", "secondary", "fast"];
+const PLAN_SCHEMA = { type: "object", properties: { subQuestions: { type: "array", items: { type: "string" } }, lanes: { type: "array", items: { type: "object", properties: { lane: { type: "string", enum: LANE_ENUM }, queries: { type: "array", items: { type: "string" } } }, required: ["lane", "queries"] } } }, required: ["subQuestions", "lanes"] };
 const FOLLOWUP_SCHEMA = { type: "object", properties: { questions: { type: "array", items: { type: "string" } } }, required: ["questions"] };
-const REFINE_SCHEMA = { type: "object", properties: { refinements: { type: "array", items: { type: "object", properties: { lane: { type: "string", enum: ["controlling", "contrary", "regulatory", "record", "secondary", "fast"] }, queries: { type: "array", items: { type: "string" } } }, required: ["lane", "queries"] } } }, required: ["refinements"] };
+const REFINE_SCHEMA = { type: "object", properties: { refinements: { type: "array", items: { type: "object", properties: { lane: { type: "string", enum: LANE_ENUM }, queries: { type: "array", items: { type: "string" } } }, required: ["lane", "queries"] } } }, required: ["refinements"] };
+const TRANSLATE_SCHEMA = { type: "object", properties: { query: { type: "string" } }, required: ["query"] };
 
 export function defaultDeps(): EngineDeps {
   const cfg = aiConfig();
@@ -150,29 +202,36 @@ export function defaultDeps(): EngineDeps {
 
     async retrieve(source, query, settings, signal) {
       const ctx = toolCtx(signal);
-      const courts = resolveCourts(settings.jurisdiction, settings.courts);
       const range = datePresetRange(settings.datePreset, { from: settings.dateFrom, to: settings.dateTo });
       const limit = Math.min(settings.limit, 12);
       const nctx = { jurisdiction: settings.jurisdiction, courts: settings.courts };
-      const clQuery = toCourtListenerSyntax(query);
-      const job = (): Promise<unknown> => {
+      const year = (d?: string) => (d ? Number(d.slice(0, 4)) : undefined);
+      const job = async (): Promise<{ hits: SearchHit[]; total: number }> => {
         switch (source) {
-          case "caselaw": return Promise.resolve(searchCaseLawTool.execute({ query: clQuery, courts: courts || undefined, filed_after: range.from, filed_before: range.to, order_by: settings.order === "date" ? "dateFiled desc" : "score desc", limit }, ctx));
-          case "dockets": return Promise.resolve(searchDocketsTool.execute({ query: clQuery, courts: courts || undefined, filed_after: range.from, filed_before: range.to, limit }, ctx));
-          case "regulations": return Promise.resolve(searchRegulationsTool.execute({ query, limit }, ctx));
-          case "federal_register": return Promise.resolve(searchFederalRegisterTool.execute({ query, published_after: range.from, published_before: range.to, limit }, ctx));
-          case "statutes": return Promise.resolve(searchStatutesTool.execute({ query, limit }, ctx));
-          case "library": return Promise.resolve(searchLibraryTool.execute({ query, matter_id: settings.matterId ?? undefined, limit }, ctx));
-          case "ediscovery": return Promise.resolve(searchEdiscoveryTool.execute({ query, matter_id: settings.matterId ?? undefined, date_after: range.from, date_before: range.to, limit }, ctx));
-          case "web": return Promise.resolve({ results: [] });
+          case "caselaw": {
+            const courts = resolveCourts(settings.jurisdiction, settings.courts).split(" ").filter(Boolean);
+            // Judgments are public authority; a matter-linked record is visible only inside its matters (never widened).
+            const allowed = visibleMatters({ state: { matterId: settings.matterId ?? undefined } });
+            const local = await searchJudgments(query, { courts, yearFrom: year(range.from), yearTo: year(range.to) }, { limit, allowed });
+            const hits = local.map((h) => normalizeJudgment(judgmentRow(h), nctx));
+            try { hits.push(...(await indianKanoonHits(query, courts, settings, signal))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] Indian Kanoon search failed:", (e as Error).message); }
+            return { hits, total: hits.length };
+          }
+          case "statutes": {
+            const rows = await searchStatuteSections(query, { limit });
+            return { hits: rows.map((r) => normalizeIndiaSection(statuteRow(r))), total: rows.length };
+          }
+          case "library": return normalizeToolResult(source, await Promise.resolve(searchLibraryTool.execute({ query, matter_id: settings.matterId ?? undefined, limit }, ctx)), nctx);
+          case "ediscovery": return normalizeToolResult(source, await Promise.resolve(searchEdiscoveryTool.execute({ query, matter_id: settings.matterId ?? undefined, date_after: range.from, date_before: range.to, limit }, ctx)), nctx);
+          // US providers are not offered in LeClaude India (the US toolkit still compiles for the US fork).
+          case "regulations": case "federal_register": case "dockets": case "web": return { hits: [], total: 0 };
         }
       };
-      // The intelligence corpus feeds the same lane in parallel; its hits are normalized onto the provider kind.
+      // The intelligence corpus feeds the same lane in parallel where it adds material (library); its hits are normalized onto the provider kind.
       const intel = intelHitsFor(source, query, settings, 6);
       let provider: { hits: SearchHit[]; total: number };
       try {
-        const payload = await withTimeout(job(), 25_000, signal);
-        provider = normalizeToolResult(source, payload, nctx);
+        provider = await withTimeout(job(), 25_000, signal);
       } catch (e) {
         const fallback = await intel;
         if (!fallback.length || (e as Error).name === "AbortError") throw e;
@@ -185,6 +244,13 @@ export function defaultDeps(): EngineDeps {
     },
 
     async read(ref, opts) {
+      if (ref.kind === "url" && ref.url.startsWith(IK_READ_PREFIX)) {
+        const ik = indianKanoonClient();
+        if (!ik) throw new Error("Indian Kanoon is not configured (the connector is not ready).");
+        const tid = Math.floor(Number(ref.url.slice(IK_READ_PREFIX.length)));
+        const data = await withTimeout(ik.doc(tid, { signal: opts.signal }), 30_000, opts.signal);
+        return { text: htmlToText(data.doc ?? "", { maxChars: 1_000_000 }).text, title: htmlToText(data.title ?? "").text || opts.title, url: ik.webUrl(tid), cached: false };
+      }
       if (ref.kind === "url" && ref.url.startsWith(INTEL_READ_PREFIX)) {
         const id = ref.url.slice(INTEL_READ_PREFIX.length);
         const doc = intelDocuments().get(id);
@@ -193,7 +259,7 @@ export function defaultDeps(): EngineDeps {
         return { text, title: doc.title, cite: doc.citation ?? doc.docketNumber, url: doc.url, cached: true };
       }
       const r = await withTimeout(readSource(ref, opts), 30_000, opts.signal);
-      return { text: r.text, title: r.title, cite: r.cite, url: r.url, cached: Boolean(r.meta?.cached) };
+      return { text: r.text, title: r.title, cite: r.cite, url: r.url, cached: Boolean(r.meta?.cached) || ref.kind === "judgment" || ref.kind === "section" };
     },
 
     async laneAgent(input) {
@@ -248,7 +314,7 @@ export function defaultDeps(): EngineDeps {
         taskType: POLICY.refine.taskType,
         reasoningEffort: POLICY.refine.reasoningEffort,
         cacheStablePrefix: POLICY.refine.cacheStablePrefix,
-        instructions: "You are a legal research librarian planning a second search round. For each research lane listed, write up to two precise boolean search queries (AND/OR/NOT, quoted phrases, wildcards*) that would locate authority for the unsupported claims. Skip lanes that cannot help. Under 20 words per query.",
+        instructions: REFINE_INSTRUCTIONS,
         input: `Question: ${input.question}\nLanes: ${input.laneKinds.join(", ")}\nUnsupported claims:\n${input.gaps.map((g) => `- ${g}`).join("\n")}`,
         schema: REFINE_SCHEMA,
         name: "lane_refinements",
@@ -266,7 +332,7 @@ export function defaultDeps(): EngineDeps {
         taskType: POLICY.followUps.taskType,
         reasoningEffort: POLICY.followUps.reasoningEffort,
         cacheStablePrefix: POLICY.followUps.cacheStablePrefix,
-        instructions: "Propose exactly three precise follow-up research questions a litigator would ask next, each bound to the matter, jurisdiction and posture in play (name the court, standard or authority where it sharpens the question). One sentence each, no numbering.",
+        instructions: FOLLOW_UP_INSTRUCTIONS,
         input: `${input.matterLine}\n\nQuestion: ${input.question}\n\nAnswer:\n${input.answer.slice(0, 6000)}`,
         schema: FOLLOWUP_SCHEMA,
         name: "follow_ups",
@@ -295,18 +361,36 @@ export function defaultDeps(): EngineDeps {
     },
 
     async citing(input) {
-      const r = await withTimeout(findCitingOpinions(input.opinionId, { limit: 6, signal: input.signal }), 12_000, input.signal);
-      const row = (c: (typeof r.citing)[number]) => ({ title: c.case_name ?? "Citing opinion", cite: c.citations[0], date: c.date_filed, url: c.url, snippet: c.snippet });
-      return classifyTreatment({ citing: r.citing.map(row), citingCount: r.citing_count, negative: r.negative.map(row) });
+      if (!input.judgmentId) return classifyTreatment({ citing: [], citingCount: 0 }, undefined, { basis: "provider" });
+      const r = await citingReferences(input.judgmentId, visibleMatters({ state: {} }), { limit: 10 });
+      const row = (c: (typeof r.citing)[number]) => ({ title: c.title, date: c.decided, url: c.source, snippet: c.context });
+      // Treatment recorded in the corpus by the ingestion/citation workers is a negative signal only when it says so.
+      const recorded = (r.target.corpusTreatment ?? []).map((t) => ({ title: t.by ?? "Treatment recorded in the corpus", snippet: `${t.status}${t.note ? `: ${t.note}` : ""}` }));
+      return classifyTreatment({ citing: [...recorded, ...r.citing.map(row)], citingCount: r.citing.length }, undefined, { basis: "corpus", phrases: INDIAN_NEGATIVE_TREATMENT_PHRASES });
     },
 
-    async resolveCitation(citation, signal) {
-      return (await withTimeout(Promise.resolve(resolveCitationTool.execute({ citation }, toolCtx(signal))), 15_000, signal)) as CitationResolution;
+    async resolveCitation(citation) {
+      return resolveIndianCitation(citation);
     },
 
-    async verifyCitationsRemote(text, signal) {
-      const r = (await withTimeout(Promise.resolve(verifyCitationsTool.execute({ text }, toolCtx(signal))), 12_000, signal)) as { citations: { citation: string; resolved: boolean }[] };
-      return r.citations.filter((c) => c.resolved).map((c) => c.citation);
+    async verifyCitationsRemote(text) {
+      // "Remote" for LeClaude India is the judgment corpus: citations some judgment in the corpus carries (found, not read here).
+      return extractAnswerCitations(text).map((c) => c.citation).filter((c) => resolveIndianCitation(c).state === "resolved");
+    },
+
+    async translateQuery(input) {
+      const text = `Language: ${input.language}\nQuestion: ${input.question}`;
+      // The fast router role may be an external endpoint: a matter-bound question carries privacy "internal", which the router
+      // enforces in code (constitution §16). When no eligible router exists, the internal fast role translates instead.
+      try {
+        const r = await infer({ role: "router", taskType: "route", privacy: input.matterId ? "internal" : "external", matterId: input.matterId ?? undefined, instructions: TRANSLATE_QUERY_INSTRUCTIONS, messages: [{ role: "user", content: [{ type: "text", text }] }], jsonSchema: { name: "search_terms", schema: strictJsonSchema(TRANSLATE_SCHEMA) }, maxOutputTokens: 200, cacheStablePrefix: true, signal: input.signal });
+        const json = (r.json ?? JSON.parse(r.text || "{}")) as { query?: string };
+        if (json.query?.trim()) return { query: json.query.trim(), model: "router" };
+      } catch (e) {
+        if ((e as Error).name === "AbortError") throw e;
+      }
+      const r = await generateJSON<{ query: string }>({ fast: true, taskType: "extract", privacy: "internal", matterId: input.matterId ?? undefined, instructions: TRANSLATE_QUERY_INSTRUCTIONS, input: text, schema: TRANSLATE_SCHEMA, name: "search_terms", maxOutputTokens: 200, cacheStablePrefix: true, signal: input.signal });
+      return { query: (r.query ?? "").trim(), model: "fast" };
     },
   };
 }

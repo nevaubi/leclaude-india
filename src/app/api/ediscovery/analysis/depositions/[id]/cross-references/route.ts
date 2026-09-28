@@ -13,7 +13,7 @@ async function GET__handler(req: NextRequest, { params }: { params: Promise<{ id
   const dep = getDeposition(id);
   if (!dep) return jsonError(`No deposition ${id}`, 404);
   const min = Number(req.nextUrl.searchParams.get("min") ?? 0) || 0;
-  const docs = db().edocs.find((x) => x.matterId === dep.matterId).map((x) => ({ id: x.id, bates: x.bates, batesEnd: x.batesEnd, subject: x.subject, date: x.date, type: x.type }));
+  const docs = db().edocs.find((x) => x.matterId === dep.matterId).map((x) => ({ id: x.id, bates: x.bates, batesEnd: x.batesEnd, subject: x.subject, date: x.date, type: x.type, exhibit: (x as { india?: { exhibit?: string } }).india?.exhibit }));
   const references = findCrossReferences(dep, docs).filter((r) => r.confidence >= min);
   return Response.json({ references, groups: groupCrossReferences(references), total: references.length });
 }

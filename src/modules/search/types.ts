@@ -10,25 +10,30 @@ import type { AnswerBanner, ResearchMode, ResearchSource, RunStats } from "./eng
 
 export type SearchSource = "caselaw" | "statutes" | "regulations" | "federal_register" | "dockets" | "web" | "library" | "ediscovery";
 
-export const ALL_SOURCES: SearchSource[] = ["caselaw", "statutes", "regulations", "federal_register", "dockets", "web", "library", "ediscovery"];
+/**
+ * LeClaude India: "caselaw" is the Supreme Court and High Court judgment corpus (plus Indian Kanoon when configured) and
+ * "statutes" is India Code. The US providers ("regulations", "federal_register", "dockets") stay in the type so the US
+ * toolkit keeps compiling, but they are not offered in this fork (sanitizeSettings drops them).
+ */
+export const ALL_SOURCES: SearchSource[] = ["caselaw", "statutes", "web", "library", "ediscovery"];
 
 export const SOURCE_LABEL: Record<SearchSource, string> = {
-  caselaw: "Case law",
-  statutes: "Statutes & U.S. Code",
-  regulations: "Regulations (CFR)",
-  federal_register: "Federal Register",
-  dockets: "Dockets",
+  caselaw: "Judgments (SC & High Courts)",
+  statutes: "India Code",
+  regulations: "Regulations",
+  federal_register: "Gazette notifications",
+  dockets: "Case status",
   web: "Web",
   library: "Firm library",
   ediscovery: "Matter documents",
 };
 
 export const SOURCE_SHORT: Record<SearchSource, string> = {
-  caselaw: "Cases",
+  caselaw: "Judgments",
   statutes: "Statutes",
-  regulations: "CFR",
-  federal_register: "Fed. Reg.",
-  dockets: "Dockets",
+  regulations: "Rules",
+  federal_register: "Gazette",
+  dockets: "Case status",
   web: "Web",
   library: "Library",
   ediscovery: "Matter docs",
@@ -46,7 +51,37 @@ export type ReadRef =
   | { kind: "url"; url: string }
   | { kind: "library"; id: string }
   | { kind: "edoc"; id: string }
-  | { kind: "statute"; url: string; id?: string };
+  | { kind: "statute"; url: string; id?: string }
+  /** A judgment in the local SC/HC corpus (intel document id). */
+  | { kind: "judgment"; id: string }
+  /** An India Code section in the store. */
+  | { kind: "section"; id: string };
+
+/** Indian authority metadata carried on a hit (court identity from the registry; never guessed). */
+export interface IndianHitMeta {
+  judgmentId?: string;
+  /** Registry court id; null when the court did not resolve. */
+  courtId?: string | null;
+  unresolvedCourt?: string;
+  benchId?: string;
+  benchStrength?: number;
+  judges?: string[];
+  neutralCitation?: string;
+  reporterCitations?: string[];
+  caseNumber?: string;
+  caseType?: string;
+  /** Language of the text of record. */
+  language?: string;
+  translations?: { language: string; origin: string }[];
+  statutes?: string[];
+  /** Treatment recorded in the corpus (overruled / doubted / referred…), only from sources. */
+  corpusTreatment?: { status: string; by?: string; note?: string }[];
+  /** Statute hits: enactment and section. */
+  enactment?: string;
+  section?: string;
+  replacedBy?: string;
+  provider?: string;
+}
 
 /** One normalized result, regardless of provider. */
 export interface SearchHit {
@@ -87,14 +122,16 @@ export interface SearchHit {
   statute?: { packageId?: string; granuleId?: string; collection?: string; textUrl?: string; pdfUrl?: string };
   // library
   library?: { type: string; tags?: string[]; practiceArea?: string; officeDocId?: string; description?: string };
+  // India (judgments / India Code)
+  india?: IndianHitMeta;
   // e-discovery
   edoc?: { bates: string; custodian: string; type: string; from?: string; to?: string[]; aiScore?: number; coding?: CodingDecision };
 }
 
 export interface SearchSettings {
   sources: SearchSource[];
-  jurisdiction: string; // key from JURISDICTIONS ("all-federal", "scotus", "4th-circuit", …)
-  courts?: string; // free-text CourtListener court ids, overrides jurisdiction
+  jurisdiction: string; // forum key from JURISDICTIONS ("matter-forum", "hc-karnataka", "hc-telangana", "hc-andhra", "sci", "all-india", …)
+  courts?: string; // registry court ids (space separated) that narrow judgment retrieval; binding/persuasive still follows the forum
   datePreset: DatePreset;
   dateFrom?: string;
   dateTo?: string;
@@ -102,11 +139,15 @@ export interface SearchSettings {
   order: SearchOrder;
   matterId?: string | null;
   fast: boolean;
+  /** Language the answer is written in (quotations stay in the judgment's original language). Default: the query's language. */
+  answerLanguage?: string;
+  /** Date of the offence (YYYY-MM-DD) for the IPC/BNS transition; also read from the question when stated there. */
+  offenceDate?: string;
 }
 
 export const DEFAULT_SETTINGS: SearchSettings = {
-  sources: ["caselaw", "statutes", "regulations", "federal_register", "dockets", "library"],
-  jurisdiction: "all-federal",
+  sources: ["caselaw", "statutes", "library"],
+  jurisdiction: "matter-forum",
   courts: "",
   datePreset: "any",
   limit: 15,

@@ -49,8 +49,8 @@ describe("sources API", () => {
   it("lists sources and adapters, creates, reads, patches and refuses to delete system sources", async () => {
     const list = await json(await sources.GET(req("/sources")));
     expect(list.status).toBe(200);
-    expect(list.body.sources).toHaveLength(12);
-    expect(list.body.adapters).toHaveLength(12);
+    expect(list.body.sources).toHaveLength(18); // 12 demo sample sources + 6 India sources
+    expect(list.body.adapters).toHaveLength(18);
     expect(list.body.sources[0]).toMatchObject({ documents: expect.any(Number), adapterName: expect.any(String) });
     const bad = await json(await sources.POST(post("/sources", { adapter: "web-list", name: "x", config: { pages: "many" } })));
     expect(bad.status).toBe(422);
@@ -109,11 +109,11 @@ describe("sources API", () => {
     const sp = await json(await search.POST(post("/search", { q: "government contractor", kinds: ["opinion"], limit: 3 })));
     expect(sp.body.hits[0].doc.kind).toBe("opinion");
     const h = await json(await health.GET());
-    expect(h.body.health).toMatchObject({ background: "off", documents: expect.any(Number), sources: { total: 13 } });
+    expect(h.body.health).toMatchObject({ background: "off", documents: expect.any(Number), sources: { total: 19 } }); // 18 system sources (12 sample + 6 India) + the one created above
     const c = await json(await config.GET());
     expect(c.body).toMatchObject({ background: "off", corpusDirs: [], jobs: { concurrency: expect.any(Number) } });
     expect(c.body.providers.find((p: { id: string }) => p.id === "openai").configured).toBe(false);
-    expect(c.body.adapters).toHaveLength(12);
+    expect(c.body.adapters).toHaveLength(18);
   });
   it("tick runs due work and enforces CRON_SECRET when set", async () => {
     const r = await json(await tick.POST(req("/jobs/tick?limit=2&deadlineMs=3000&housekeeping=0", { method: "POST" })));

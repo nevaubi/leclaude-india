@@ -1,10 +1,10 @@
 import "server-only";
 /**
- * Apple antitrust demonstration pack: load, status and removal (Settings → Demo data).
+ * India demonstration pack (Bengaluru and Hyderabad practice): load, status and removal (Settings → Demo data).
  *
  * The pack is loaded only on request by the owner, a partner or an admin (never implicitly). Every record it writes
  * has a stable id, so loading again updates the same records in place. Every written id is recorded, by collection,
- * in the manifest (kv "demo:apple-antitrust:manifest"); removal deletes exactly those records (plus the blobs and
+ * in the manifest (kv "demo:india-blr-hyd:manifest"); removal deletes exactly those records (plus the blobs and
  * search-index rows of the demo documents) and the manifest, and never the workspace owner.
  *
  * Everything runs synchronously against the local mirror except PDF generation and search indexing, so a load or a
@@ -12,7 +12,7 @@ import "server-only";
  */
 import { db } from "@/lib/db";
 import type { Principal } from "@/lib/auth/types";
-import type { EDocument, LibraryItem, OfficeDocument, OfficeKind } from "@/lib/types/domain";
+import type { LibraryItem, OfficeDocument, OfficeKind } from "@/lib/types/domain";
 import { configuredTenantId, indexDocuments, removeDocument, VECTOR_COLLECTIONS } from "@/lib/ai/vector-store";
 import { extractPlainText } from "@/lib/ai/toolkit/internal";
 import { indexTextFor as libraryIndexText } from "@/modules/library/data";
@@ -21,14 +21,14 @@ import { getWorkspace } from "@/lib/workspace";
 import { ensureLibraryStructure } from "@/modules/library/service";
 import { createOfficeDoc, deleteOfficeDoc } from "@/modules/office/shared/docs-service";
 import { settingsForTemplate } from "@/modules/office/word/constants";
-import { generatePdf } from "@/modules/office/pdf/generate";
-import { modelFromBytes } from "@/modules/office/pdf/service";
 import { matterRetrievalScope } from "@/modules/ediscovery/service";
 import { indexTextFor } from "@/modules/ediscovery/privilege";
-import { buildAppleEdiscoveryDemo, type AppleEdiscoveryDemo } from "@/modules/demo/ediscovery";
-import { DEMO_CUSTODIANS, DEMO_MATTERS, DEMO_PACK } from "./ids";
+import type { IndiaEDocument } from "@/modules/ediscovery/india";
+import { buildIndiaEdiscoveryDemo, type IndiaEdiscoveryDemo } from "@/modules/demo/ediscovery";
+import { cite } from "@/modules/demo/ediscovery/depo-helpers";
+import { DEMO_MATTERS, DEMO_PACK } from "./ids";
 import { buildDemoWorkspace, demoMeta, emailDomainOf, DEMO_FOLDERS, type DemoBuildContext } from "./workspace";
-import { damagesWorkbook, keyDocRows, researchMemo, reyesOutlineSpec, rfpDraft, strategyDeck, DEMO_OFFICE_IDS, DEMO_OUTLINE_BLOB } from "./workspace/office";
+import { bailDraft, synopsisDraft, writDraft, DEMO_OFFICE_IDS } from "./workspace/office";
 
 export const DEMO_MANIFEST_KEY = `demo:${DEMO_PACK}:manifest`;
 export const DEMO_MANIFEST_VERSION = 1;
@@ -90,8 +90,12 @@ export interface DemoStatus {
   loadedAt: string | null;
   loadedBy: string | null;
   counts: DemoCounts | null;
+  /** Bengaluru commercial suit (opened by "Open matter"). */
   matterId: string;
+  /** Hyderabad writ petition. */
   relatedMatterId: string;
+  /** Every demo matter id (commercial suit, writ, bail). */
+  matterIds: string[];
 }
 
 export class DemoPackError extends Error {
@@ -114,7 +118,7 @@ interface EdiscoveryPart {
 }
 
 /** The e-discovery pack's typed bundle as collections by stored name (its module-private collections included). */
-function normalizeEdiscovery(b: AppleEdiscoveryDemo): EdiscoveryPart {
+function normalizeEdiscovery(b: IndiaEdiscoveryDemo): EdiscoveryPart {
   const out: EdiscoveryPart = { collections: {}, kv: { ...b.kv }, blobs: [] };
   const add = (name: string, recs: { id: string }[]) => { if (recs.length) out.collections[name] = [...(out.collections[name] ?? []), ...(recs as Rec[])]; };
   add(C.edocs, b.edocs);
@@ -172,14 +176,14 @@ function countsFor(m: DemoManifest): DemoCounts {
 
 export function demoStatus(): DemoStatus {
   const m = readManifest();
-  return { loaded: !!m, loadedAt: m?.loadedAt ?? null, loadedBy: m?.loadedBy.name ?? null, counts: m ? countsFor(m) : null, matterId: DEMO_MATTERS.consumer, relatedMatterId: DEMO_MATTERS.doj };
+  return { loaded: !!m, loadedAt: m?.loadedAt ?? null, loadedBy: m?.loadedBy.name ?? null, counts: m ? countsFor(m) : null, matterId: DEMO_MATTERS.commercial, relatedMatterId: DEMO_MATTERS.writ, matterIds: Object.values(DEMO_MATTERS) };
 }
 
 // ---------------------------------------------------------------------------
 // Load
 // ---------------------------------------------------------------------------
 
-interface OfficeSpec { id: string; key: string; kind: OfficeKind; title: string; folder: string; tags: string[]; content: () => unknown | Promise<unknown>; meta?: Record<string, unknown> }
+interface OfficeSpec { id: string; key: string; kind: OfficeKind; matterId: string; title: string; folder: string; tags: string[]; content: () => unknown | Promise<unknown>; meta?: Record<string, unknown> }
 
 export interface LoadResult { status: DemoStatus; durationMs: number }
 
@@ -205,18 +209,17 @@ export async function loadDemoPack({ principal }: { principal: Principal }): Pro
     track(name, docs.map((x) => x.id));
   };
 
-  // E-discovery half first: the calendar uses the transcripts' own deposition dates.
-  const ed = normalizeEdiscovery(buildAppleEdiscoveryDemo());
-  const edDocs = (ed.collections[C.edocs] ?? []) as unknown as EDocument[];
-  const depositions = (ed.collections[C.depositions] ?? []) as unknown as { id: string; witnessId: string; witnessName: string; date: string; location?: string }[];
+  const built = buildIndiaEdiscoveryDemo();
+  const ed = normalizeEdiscovery(built);
+  const edDocs = (ed.collections[C.edocs] ?? []) as unknown as IndiaEDocument[];
 
   const takenEmails = new Set(d.people.all().filter((p) => !p.id.includes("_demo_") && p.email).map((p) => p.email!.toLowerCase()));
-  const w = buildDemoWorkspace(ctx, { takenEmails, depositions });
+  const w = buildDemoWorkspace(ctx, { takenEmails });
 
-  // People: the parties floor, then the e-discovery pack's richer records for the same ids, then the team.
-  // The workspace owner is never written or recorded by the pack.
+  // People: the matters' witnesses, officers and record sources, then the team. The workspace owner is never
+  // written or recorded by the pack.
   const people = new Map<string, Rec>();
-  for (const p of [...w.parties, ...((ed.collections[C.people] ?? []) as Rec[]), ...w.team] as Rec[]) if (p.id !== owner.id) people.set(p.id, { ...(people.get(p.id) ?? {}), ...p });
+  for (const p of [...((ed.collections[C.people] ?? []) as Rec[]), ...w.team] as Rec[]) if (p.id !== owner.id) people.set(p.id, { ...(people.get(p.id) ?? {}), ...p });
   put(C.people, Array.from(people.values()));
 
   put(C.matters, w.matters);
@@ -235,39 +238,25 @@ export async function loadDemoPack({ principal }: { principal: Principal }): Pro
   for (const b of ed.blobs) { d.blobs.put(b.bytes, b.mime, { id: b.id, name: b.name, meta: { ...(b.meta ?? {}), ...demoMeta() } }); blobIds.push(b.id); }
 
   // Office documents through the office service (versions, library rows and search index as the editors produce).
-  const consumer = DEMO_MATTERS.consumer;
-  const hot = keyDocRows(edDocs.filter((x) => x.matterId === consumer));
-  const reyesDocs = edDocs
-    .filter((x) => x.matterId === consumer && (x.custodianId === DEMO_CUSTODIANS.walletNfc || (x.coding?.issues ?? x.aiIssues ?? []).some((i) => /^NFC/i.test(i))))
-    .sort((a, b) => (b.aiScore ?? 0) - (a.aiScore ?? 0) || a.date.localeCompare(b.date))
-    .slice(0, 8)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  // The drafts are built from the Indian drafting templates against the demo matters just written.
+  const matterById = new Map(w.matters.map((m) => [m.id, m]));
+  const [pw1, dw1] = built.depositions;
   const officeSpecs: OfficeSpec[] = [
-    { id: DEMO_OFFICE_IDS.memo, key: "memo", kind: "word", title: "Research memo — market definition and anti-steering", folder: DEMO_FOLDERS.research, tags: ["memo", "research", "market definition"], content: () => researchMemo(ctx), meta: { settings: settingsForTemplate("word-research-memo") } },
-    { id: DEMO_OFFICE_IDS.rfp, key: "rfp", kind: "word", title: "Plaintiffs' First Requests for Production (draft)", folder: DEMO_FOLDERS.discovery, tags: ["RFP", "discovery", "draft"], content: () => rfpDraft(ctx), meta: { settings: settingsForTemplate("word-interrogatories") } },
-    { id: DEMO_OFFICE_IDS.damages, key: "damages", kind: "sheet", title: "Damages model — overcharge × volume by year", folder: DEMO_FOLDERS.experts, tags: ["damages", "model"], content: () => damagesWorkbook(ctx) },
-    { id: DEMO_OFFICE_IDS.deck, key: "deck", kind: "slides", title: "Case strategy — consumer class", folder: DEMO_FOLDERS.pleadings, tags: ["strategy", "deck"], content: () => strategyDeck(ctx, hot), meta: { themeId: "seeger-navy" } },
-    {
-      id: DEMO_OFFICE_IDS.outline, key: "outline", kind: "pdf", title: "Deposition outline — Tomas Reyes (Wallet & NFC)", folder: DEMO_FOLDERS.depoPrep, tags: ["deposition", "outline"],
-      content: async () => {
-        const bytes = await generatePdf(reyesOutlineSpec(ctx, reyesDocs));
-        const { model } = await modelFromBytes(bytes, { name: "Reyes-deposition-outline.pdf", title: "Deposition outline — Tomas Reyes (Wallet & NFC)", blobId: DEMO_OUTLINE_BLOB, meta: { ...demoMeta() } });
-        blobIds.push(DEMO_OUTLINE_BLOB);
-        return model;
-      },
-    },
+    { id: DEMO_OFFICE_IDS.bail, key: "bail", kind: "word", matterId: DEMO_MATTERS.bail, title: "Bail petition under s.483 BNSS — Crl.P. 7710/2026 (draft)", folder: DEMO_FOLDERS.bail, tags: ["bail", "BNSS", "draft"], content: () => bailDraft(matterById.get(DEMO_MATTERS.bail)!), meta: { settings: settingsForTemplate("word-in-regular-bail"), templateId: "word-in-regular-bail" } },
+    { id: DEMO_OFFICE_IDS.writ, key: "writ", kind: "word", matterId: DEMO_MATTERS.writ, title: "Writ petition — W.P. 18234/2026 (Telangana format, draft)", folder: DEMO_FOLDERS.writ, tags: ["writ", "Article 226", "draft"], content: () => writDraft(matterById.get(DEMO_MATTERS.writ)!), meta: { settings: settingsForTemplate("word-in-writ-telangana"), templateId: "word-in-writ-telangana" } },
+    { id: DEMO_OFFICE_IDS.synopsis, key: "synopsis", kind: "word", matterId: DEMO_MATTERS.commercial, title: "Synopsis of arguments — Com.O.S. 1187/2023 (draft)", folder: DEMO_FOLDERS.arguments, tags: ["arguments", "synopsis", "draft"], content: () => synopsisDraft({ dw1Admission: cite(dw1, "It is true that Ex.P9 UAT sign-off e-mail was sent by me."), dw1Qualification: cite(dw1, "was not a final acceptance"), dw1Defects: cite(dw1, "It is true that all 14 defects listed in Ex.D2 were closed before the rollout."), pw1Slip: cite(pw1, "Witness volunteers that the slip was due to the Defendant's delay") }), meta: { settings: settingsForTemplate("word-in-plaint") } },
   ];
   const officeDocs: OfficeDocument[] = [];
   for (const spec of officeSpecs) {
     const content = await spec.content();
     if (d.officeDocs.has(spec.id)) deleteOfficeDoc(spec.id);
-    const doc = createOfficeDoc({ id: spec.id, kind: spec.kind, title: spec.title, content, matterId: consumer, folderId: spec.folder, tags: ["demo", ...spec.tags], meta: demoMeta(spec.meta ?? {}) });
+    const doc = createOfficeDoc({ id: spec.id, kind: spec.kind, title: spec.title, content, matterId: spec.matterId, folderId: spec.folder, tags: ["demo", ...spec.tags], meta: demoMeta(spec.meta ?? {}) });
     officeDocs.push(doc);
     track(C.officeDocs, [doc.id]);
     track(C.officeVersions, d.officeVersions.find((v) => v.docId === doc.id).map((v) => v.id));
   }
   const officeRows: LibraryItem[] = officeDocs.map((doc, i) => ({
-    id: `demo_apl_lib_doc_${officeSpecs[i].key}`, parentId: officeSpecs[i].folder, name: doc.title, type: ({ word: "docx", sheet: "xlsx", slides: "pptx", pdf: "pdf" } as const)[doc.kind], matterId: consumer, officeDocId: doc.id,
+    id: `demo_in_lib_doc_${officeSpecs[i].key}`, parentId: officeSpecs[i].folder, name: doc.title, type: ({ word: "docx", sheet: "xlsx", slides: "pptx", pdf: "pdf" } as const)[doc.kind], matterId: officeSpecs[i].matterId, officeDocId: doc.id,
     size: doc.size, tags: doc.tags, ownerId: owner.id, sharedWith: ["matter-team"], practiceArea: "Litigation", createdAt: doc.createdAt, updatedAt: doc.updatedAt, version: doc.contentVersion, status: "draft",
   }));
   put(C.library, officeRows);
@@ -283,7 +272,7 @@ export async function loadDemoPack({ principal }: { principal: Principal }): Pro
   vectors[VECTOR_COLLECTIONS.library] = notes.map((i) => i.id);
   await indexDocuments(VECTOR_COLLECTIONS.office, officeDocs.map((doc) => ({ id: doc.id, text: `${doc.title}\n${extractPlainText(doc.content)}`, matterId: doc.matterId ?? null, meta: { kind: doc.kind, title: doc.title, matterId: doc.matterId } })), { embed: false, scope: libraryScope });
   vectors[VECTOR_COLLECTIONS.office] = officeDocs.map((x) => x.id);
-  const byMatter = new Map<string, EDocument[]>();
+  const byMatter = new Map<string, IndiaEDocument[]>();
   for (const doc of edDocs) byMatter.set(doc.matterId, [...(byMatter.get(doc.matterId) ?? []), doc]);
   for (const [matterId, docs] of byMatter) {
     await indexDocuments(VECTOR_COLLECTIONS.edocs, docs.map((x) => ({ id: x.id, text: indexTextFor(x), meta: { matterId: x.matterId, custodianId: x.custodianId, type: x.type, date: x.date, bates: x.bates } })), { embed: false, scope: matterRetrievalScope(matterId) });
@@ -306,7 +295,7 @@ export async function loadDemoPack({ principal }: { principal: Principal }): Pro
   d.kv.set(DEMO_MANIFEST_KEY, manifest);
 
   const status = demoStatus();
-  audit(previous ? "update" : "create", { kind: "demo.pack", id: DEMO_PACK, label: "Apple antitrust demo data", matterId: consumer }, { counts: status.counts, reload: !!previous }, { id: principal.id, name: principal.name });
+  audit(previous ? "update" : "create", { kind: "demo.pack", id: DEMO_PACK, label: "India demo data (Bengaluru and Hyderabad)", matterId: DEMO_MATTERS.commercial }, { counts: status.counts, reload: !!previous }, { id: principal.id, name: principal.name });
   return { status, durationMs: Date.now() - started };
 }
 
@@ -363,6 +352,6 @@ export function removeDemoPack({ principal }: { principal: Principal }): RemoveR
   if (!m) throw new DemoPackError("The demo data is not loaded.", 404, "not_loaded");
   const removed = removeRecords({ ...m, records: { ...m.records } }, getWorkspace().owner?.id);
   db().kv.delete(DEMO_MANIFEST_KEY);
-  audit("delete", { kind: "demo.pack", id: DEMO_PACK, label: "Apple antitrust demo data", matterId: DEMO_MATTERS.consumer }, { removed }, { id: principal.id, name: principal.name });
+  audit("delete", { kind: "demo.pack", id: DEMO_PACK, label: "India demo data (Bengaluru and Hyderabad)", matterId: DEMO_MATTERS.commercial }, { removed }, { id: principal.id, name: principal.name });
   return { removed, durationMs: Date.now() - started };
 }

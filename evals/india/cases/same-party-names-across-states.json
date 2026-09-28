@@ -1,0 +1,21 @@
+{
+  "id": "india-same-party-names-across-states",
+  "category": "citations",
+  "title": "Identical party names in Karnataka and Telangana stay two authorities",
+  "constitution": "CLAUDE.md §23 (no closest-name binding), §44 cross-matter name collision",
+  "input": {
+    "authorities": [
+      { "caseName": "Ramesh v. State", "neutral": "2024:KHC:100" },
+      { "caseName": "Ramesh vs. State", "neutral": "2024:TSHC:100" }
+    ]
+  },
+  "expected": "Different authority keys; the Table of Authorities lists both under High Courts with their own courts; a later short form names the citation because the case names are identical; ibid only for the immediately preceding identical authority.",
+  "passCriteria": [
+    "authorityKey differs",
+    "table of authorities has 2 High Court entries (Karnataka and Telangana)",
+    "second reference to the Karnataka case reads 'Ramesh v. State (supra, 2024:KHC:100)'",
+    "citing the Telangana case right after the Karnataka case never yields Ibid."
+  ],
+  "grading": "code",
+  "requiresModel": false
+}

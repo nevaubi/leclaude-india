@@ -2,8 +2,8 @@ import "server-only";
 import type { Database } from "@/lib/db";
 import type { Workflow, WorkflowRunStep } from "@/lib/types/domain";
 import { MATTERS, PEOPLE } from "@/lib/seed/ids";
-import { buildTemplates, WORKFLOW_TEMPLATE_IDS as T } from "./templates";
-import { buildSystemTemplates, SYSTEM_WORKFLOW_IDS as S } from "./templates-system";
+import { buildTemplates, buildUsTemplates, WORKFLOW_TEMPLATE_IDS as T } from "./templates";
+import { buildUsSystemTemplates, SYSTEM_WORKFLOW_IDS as S } from "./templates-system";
 import type { RunApproval, RunArtifact, RunOutput, RunUsage, WorkflowRunRecord } from "./types";
 
 const P = PEOPLE;
@@ -620,8 +620,11 @@ function systemRuns(workflows: Map<string, Workflow>): WorkflowRunRecord[] {
 /** workflows module seed: templates, user workflows, system workflows and run history (idempotent, stable ids). */
 export function seedWorkflows(db: Database) {
   const templates = buildTemplates();
-  const systemWorkflows = buildSystemTemplates();
-  const byId = new Map(templates.map((t) => [t.id, t]));
+  // The sample dataset's intelligence corpus and run history are bound to the US sample sources, so the sample seed
+  // keeps the US system workflows; production (reference) workspaces get the India set (buildSystemTemplates).
+  const systemWorkflows = buildUsSystemTemplates();
+  // Sample user workflows may be copies of US-practice templates that are no longer in the default gallery.
+  const byId = new Map([...templates, ...buildUsTemplates()].map((t) => [t.id, t]));
   const userWorkflows: Workflow[] = USER_WORKFLOWS.map((u) => {
     const t = byId.get(u.templateId)!;
     const w: Workflow & { sourceTemplateId?: string; version?: number } = {

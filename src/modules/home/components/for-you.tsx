@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { T } from "@/lib/i18n/client";
 import Link from "next/link";
 import { TrustBadge } from "@/components/ai/trust-badge";
 import { useHome } from "./home-provider";
@@ -26,7 +27,7 @@ export function ForYouSection() {
   }, [userId, matterFilter, intelInsights]);
   if (!items || items.length === 0) return null;
   return (
-    <Section id="for-you" title="For you" count={items.length} description="From your connected sources, ranked for your matters and watches" actions={<Link href="/intel" className="text-[11px] text-muted-foreground hover:text-primary">Intelligence</Link>}>
+    <Section id="for-you" title={<T k="home.section.forYou" />} count={items.length} description={<T k="home.section.forYouDesc" />} actions={<Link href="/intel" className="text-[11px] text-muted-foreground hover:text-primary"><T k="home.section.intelligence" /></Link>}>
       <ul className="divide-y divide-line-quiet">
         {items.map((it) => {
           const matter = matterById(it.scope?.matterId);

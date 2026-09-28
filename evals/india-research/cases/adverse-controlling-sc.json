@@ -1,0 +1,16 @@
+{
+  "id": "india-adverse-controlling-sc",
+  "category": "research",
+  "title": "Adverse controlling Supreme Court authority is found, labelled binding and ranked first",
+  "constitution": "§25 deliberately search for contrary authority; §24 adverse authority is high-risk; §44 adverse authority; Appendix B (Art. 141)",
+  "input": { "forum": "hc-karnataka", "question": "Can anticipatory bail be refused only because the offence is economic?", "corpus": ["j_sc_meera_nair", "j_kar_ravi_kumar", "j_sc_kavitha_reddy"], "adverse": "j_sc_kavitha_reddy" },
+  "expected": "The adverse lane runs from the start, finds Union of India v. Kavitha Reddy (Supreme Court, 3-judge bench), the evidence labels it BINDING on the Karnataka forum with its court, bench, date and citations, Supreme Court authority is numbered before High Court authority, and the adverse sub-question is kept.",
+  "passCriteria": [
+    "lane 'contrary' completed with the adverse judgment among its sources",
+    "evidence block judgment://sci/j_sc_kavitha_reddy title contains 'BINDING on the forum', '3-judge bench', 'decided 6 May 2024', '2024 INSC 390'",
+    "every Supreme Court source is numbered before every High Court source",
+    "sub-questions include the adverse-authority question"
+  ],
+  "grading": "code",
+  "requiresModel": false
+}

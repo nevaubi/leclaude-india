@@ -13,6 +13,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import type { CodingDecision, Redaction } from "@/lib/types/domain";
 import type { DocRow, SimilarDoc } from "../types";
 import { highlightRegex, parseBates, formatBates } from "../query";
+import { docClassLabel, type IndiaEDocument } from "../india";
+import { languageInfo } from "@/lib/india/languages";
 import { useReviewStore, type ViewerTab } from "./store";
 import { api, useDoc, useDocHistory, useRedactions, useSimilar, type DocDetailResponse } from "./use-review-data";
 import { useReview } from "./review-page";
@@ -136,7 +138,9 @@ export function DocViewer({ docId, terms, onNavigate, onClose, index, count, onN
         {doc ? (
           <div className="flex min-w-[160px] flex-1 items-center gap-2">
             <TypeIcon type={doc.type} />
+            {(doc as IndiaEDocument).india?.exhibit && <span className="shrink-0 rounded border border-foreground/25 bg-accent px-1.5 font-mono text-[12px] font-semibold leading-5 tabular" title={(doc as IndiaEDocument).india?.markedThrough ? `Marked through ${(doc as IndiaEDocument).india?.markedThrough}` : undefined}>{(doc as IndiaEDocument).india?.exhibit}</span>}
             <span className="shrink-0 font-mono text-[12.5px] font-semibold tabular">{doc.bates}{doc.batesEnd && <span className="font-normal text-muted-foreground"> – {doc.batesEnd.slice(-4)}</span>}</span>
+            {(doc as IndiaEDocument).india?.docClass === "translation" && <span className="shrink-0 rounded border border-dashed px-1 text-[10.5px] leading-4 text-muted-foreground" title="The original-language document is the text of record">Translation</span>}
             <span className="min-w-0 truncate text-[13px] font-medium" title={doc.subject}>{doc.subject}</span>
             {dirty && <Badge variant="warning" size="sm" className="shrink-0">Unsaved</Badge>}
             {qcMode && <StateChip tone="info">QC call</StateChip>}
@@ -483,20 +487,36 @@ function SheetOverlay({ sheet, redactions, drag, onOpen }: { sheetIdx: number; s
 // Metadata
 // ---------------------------------------------------------------------------
 
+/** Indian record fields: exhibit mark and marking, record class, number in the list of documents, language / translation. */
+function indiaMetadata(doc: IndiaEDocument): { label: string; value: React.ReactNode; mono?: boolean }[] {
+  const i = doc.india;
+  if (!i) return [];
+  const lang = (code?: string) => (code ? languageInfo(code)?.name ?? code : undefined);
+  return [
+    { label: "Exhibit", value: i.exhibit ? `${i.exhibit}${i.markedThrough ? ` · marked through ${i.markedThrough}` : ""}${i.markedOn ? ` on ${formatShortDate(i.markedOn)}` : ""}${i.markedSubjectToObjection ? " (subject to objection)" : ""}` : "Not marked", mono: !!i.exhibit },
+    { label: "Record", value: `${docClassLabel(i.docClass)}${i.title ? ` — ${i.title}` : ""}` },
+    { label: "Doc. no.", value: i.docNumber },
+    { label: "Filed by", value: i.filedBy ? i.filedBy.charAt(0).toUpperCase() + i.filedBy.slice(1).replace(/_/g, " ") : undefined },
+    { label: "Language", value: i.docClass === "translation" ? `${lang(i.language) ?? "—"} (translation${i.translationOrigin === "machine" ? ", machine" : i.translationOrigin === "provider" ? ", filed by a party" : ""}; the original is the text of record)` : lang(i.language) ? `${lang(i.language)} (original, text of record)` : undefined },
+    { label: "Translation of", value: i.translationOf, mono: true },
+  ];
+}
+
 function MetadataView({ detail }: { detail: DocDetailResponse }) {
   const { doc } = detail;
   const { issueCodes } = useReview();
   const items = [
-    { label: "Bates", value: `${doc.bates}${doc.batesEnd ? ` – ${doc.batesEnd}` : ""}`, mono: true },
+    ...indiaMetadata(doc as IndiaEDocument),
+    { label: "Doc. ref.", value: `${doc.bates}${doc.batesEnd ? ` – ${doc.batesEnd}` : ""}`, mono: true },
     { label: "Document id", value: doc.id, mono: true },
     { label: "Date", value: formatShortDate(doc.date) },
     { label: "Type", value: <span className="flex items-center gap-1.5"><TypeIcon type={doc.type} />{doc.type}</span> },
-    { label: "Custodian", value: doc.custodianName },
+    { label: "Source", value: doc.custodianName },
     { label: "From", value: doc.from },
     { label: "To", value: doc.to?.length ? doc.to.join("; ") : undefined },
     { label: "Cc", value: doc.cc?.length ? doc.cc.join("; ") : undefined },
     { label: "Pages", value: String(doc.pages ?? 1) },
-    { label: "Source", value: doc.source },
+    { label: "Collection", value: doc.source },
     { label: "MD5 / hash", value: doc.hash, mono: true },
     { label: "Thread id", value: doc.family?.threadId, mono: true },
     { label: "Parent", value: detail.family.parent?.bates, mono: true },

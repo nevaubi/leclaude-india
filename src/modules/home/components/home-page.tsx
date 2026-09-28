@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useT } from "@/lib/i18n/client";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { CalendarPlus, CheckSquare, ChevronDown, Home as HomeIcon, Keyboard, MessageSquarePlus, MessageSquareText, Plus, RefreshCw, Scale, SlidersHorizontal, X } from "lucide-react";
@@ -30,20 +31,20 @@ import { FirstRunChecklist } from "./first-run";
 
 /** Home page shortcuts, listed in the `?` help dialog. */
 export const HOME_SHORTCUTS: ShortcutGroup[] = [
-  { id: "home", title: "Home", items: [
-    { keys: ["n", "t"], label: "New task" },
-    { keys: ["n", "e"], label: "New event" },
-    { keys: ["n", "u"], label: "New team update" },
-    { keys: ["a"], label: "Toggle the assistant" },
-    { keys: ["c"], label: "Open the calendar" },
-    { keys: ["k"], label: "Open the task board" },
-    { keys: ["esc"], label: "Back to the overview" },
+  { id: "home", title: "Home", titleKey: "home.shortcuts.group", items: [
+    { keys: ["n", "t"], label: "New task", labelKey: "home.shortcuts.newTask" },
+    { keys: ["n", "e"], label: "New event", labelKey: "home.shortcuts.newEvent" },
+    { keys: ["n", "u"], label: "New team update", labelKey: "home.shortcuts.newUpdate" },
+    { keys: ["a"], label: "Toggle the assistant", labelKey: "home.shortcuts.toggleAssistant" },
+    { keys: ["c"], label: "Open the calendar", labelKey: "home.shortcuts.openCalendar" },
+    { keys: ["k"], label: "Open the task board", labelKey: "home.shortcuts.openTaskBoard" },
+    { keys: ["esc"], label: "Back to the overview", labelKey: "home.shortcuts.backToOverview" },
   ] },
-  { id: "home-calendar", title: "Calendar", items: [
-    { keys: ["["], label: "Previous period" }, { keys: ["]"], label: "Next period" }, { keys: ["t"], label: "Today" }, { keys: ["m"], label: "Month" }, { keys: ["w"], label: "Week" }, { keys: ["d"], label: "Agenda" },
+  { id: "home-calendar", title: "Calendar", titleKey: "home.shortcuts.calendarGroup", items: [
+    { keys: ["["], label: "Previous period", labelKey: "home.shortcuts.prevPeriod" }, { keys: ["]"], label: "Next period", labelKey: "home.shortcuts.nextPeriod" }, { keys: ["t"], label: "Today", labelKey: "home.shortcuts.today" }, { keys: ["m"], label: "Month", labelKey: "home.shortcuts.month" }, { keys: ["w"], label: "Week", labelKey: "home.shortcuts.week" }, { keys: ["d"], label: "Agenda", labelKey: "home.shortcuts.agenda" },
   ] },
-  { id: "home-tasks", title: "Task rows", items: [
-    { keys: ["enter"], label: "Rename" }, { keys: ["space"], label: "Complete" }, { keys: ["s"], label: "Next status" }, { keys: ["e"], label: "Details" }, { keys: ["backspace"], label: "Delete" },
+  { id: "home-tasks", title: "Task rows", titleKey: "home.shortcuts.taskRowsGroup", items: [
+    { keys: ["enter"], label: "Rename", labelKey: "home.shortcuts.rename" }, { keys: ["space"], label: "Complete", labelKey: "home.shortcuts.complete" }, { keys: ["s"], label: "Next status", labelKey: "home.shortcuts.nextStatus" }, { keys: ["e"], label: "Details", labelKey: "home.shortcuts.details" }, { keys: ["backspace"], label: "Delete", labelKey: "home.shortcuts.delete" },
   ] },
 ];
 
@@ -69,6 +70,7 @@ function DeepLinkHandler() {
   const task = params.get("task");
   const event = params.get("event");
   const section = params.get("section") as HomeSection | null;
+  const t = useT();
   // Only react to the URL once per link (data refreshes must not re-open a dialog the user closed).
   const handled = React.useRef<string | null>(null);
   React.useEffect(() => {
@@ -77,14 +79,14 @@ function DeepLinkHandler() {
     handled.current = key;
     if (task) {
       if (tasks.some((t) => t.id === task)) openTaskDialog({ taskId: task });
-      else toast.error("Task not found", { description: "It may have been deleted." });
+      else toast.error(t("home.toast.taskNotFound"), { description: t("home.toast.taskNotFoundDesc") });
     }
     if (event) {
       if (events.some((e) => e.id === event)) openEvent(event);
-      else toast.error("Event not found", { description: "It may have been deleted or moved." });
+      else toast.error(t("home.toast.eventNotFound"), { description: t("home.toast.eventNotFoundDesc") });
     }
     if (section && ["calendar", "tasks", "news", "updates", "matters"].includes(section)) setFocus(section);
-  }, [task, event, section, tasks, events, openTaskDialog, openEvent, setFocus]);
+  }, [task, event, section, tasks, events, openTaskDialog, openEvent, setFocus, t]);
   return null;
 }
 
@@ -177,52 +179,53 @@ function Topbar() {
   const dockOpen = useHomeUI((s) => s.dockOpen);
   const setDockOpen = useHomeUI((s) => s.setDockOpen);
   const help = useShortcutHelp(undefined);
-  const sectionLabel: Record<HomeSection, string> = { calendar: "Calendar", tasks: "Tasks", news: "News", updates: "Team updates", matters: "Matters" };
+  const t = useT();
+  const sectionLabel: Record<HomeSection, string> = { calendar: t("home.section.calendar"), tasks: t("home.section.tasks"), news: t("home.section.news"), updates: t("home.section.updates"), matters: t("home.section.matters") };
   const active = matterById(matterFilter);
   return (
     <TopbarSlot>
       <HomeIcon className="size-4 text-muted-foreground" />
-      <button onClick={() => setFocus(null)} className="shrink-0 text-[13px] font-semibold hover:text-primary cursor-pointer">Home</button>
-      {focus && <><span className="text-muted-foreground">/</span><span className="text-[13px] text-muted-foreground">{sectionLabel[focus]}</span><Button variant="ghost" size="icon-xs" onClick={() => setFocus(null)} aria-label="Back to overview"><X className="size-3.5" /></Button></>}
+      <button onClick={() => setFocus(null)} className="shrink-0 text-[13px] font-semibold hover:text-primary cursor-pointer">{t("home.title")}</button>
+      {focus && <><span className="text-muted-foreground">/</span><span className="text-[13px] text-muted-foreground">{sectionLabel[focus]}</span><Button variant="ghost" size="icon-xs" onClick={() => setFocus(null)} aria-label={t("common.backToOverview")}><X className="size-3.5" /></Button></>}
       {active && (
-        <button onClick={() => setMatterFilter(null)} className="chip chip-accent ml-1 hidden md:inline-flex cursor-pointer" title="Clear matter filter"><Scale className="size-3" /> {active.shortName} <X className="size-3 opacity-70" /></button>
+        <button onClick={() => setMatterFilter(null)} className="chip chip-accent ms-1 hidden md:inline-flex cursor-pointer" title={t("home.topbar.clearMatterFilter")}><Scale className="size-3" /> {active.shortName} <X className="size-3 opacity-70" /></button>
       )}
       <div className="flex-1" />
       {/* Filters and shortcuts live in one quiet popover instead of a row of controls. */}
       <Popover>
-        <Tip label="Filters"><PopoverTrigger asChild><Button variant={matterFilter ? "secondary" : "ghost"} size="icon-xs" aria-label="Filters"><SlidersHorizontal className="size-4" /></Button></PopoverTrigger></Tip>
+        <Tip label={t("home.topbar.filters")}><PopoverTrigger asChild><Button variant={matterFilter ? "secondary" : "ghost"} size="icon-xs" aria-label={t("home.topbar.filters")}><SlidersHorizontal className="size-4" /></Button></PopoverTrigger></Tip>
         <PopoverContent align="end" className="w-72 space-y-3 p-3">
           <div>
-            <Label className="text-[11px] text-muted-foreground">Matter</Label>
+            <Label className="text-[11px] text-muted-foreground">{t("home.topbar.matter")}</Label>
             <Select value={matterFilter ?? ALL} onValueChange={(v) => setMatterFilter(v === ALL ? null : v)}>
-              <SelectTrigger size="xs" className="mt-1 w-full" aria-label="Matter filter"><SelectValue placeholder="All matters" /></SelectTrigger>
+              <SelectTrigger size="xs" className="mt-1 w-full" aria-label={t("home.topbar.matterFilter")}><SelectValue placeholder={t("home.topbar.allMatters")} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>All matters</SelectItem>
+                <SelectItem value={ALL}>{t("home.topbar.allMatters")}</SelectItem>
                 {matters.map((m) => <SelectItem key={m.id} value={m.id}>{m.shortName} <span className="text-muted-foreground">· {m.caption ?? m.practiceArea}</span></SelectItem>)}
               </SelectContent>
             </Select>
-            <p className="mt-1 text-[11px] text-muted-foreground">Filters the spine, matters, news and the assistant&apos;s scope.</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">{t("home.topbar.filterHint")}</p>
           </div>
           <div className="flex items-center justify-between border-t pt-2">
-            <span className="text-[11px] text-muted-foreground">Data</span>
-            <Button variant="outline" size="xs" onClick={() => void refresh()} disabled={refreshing}><RefreshCw className={cn("size-3", refreshing && "animate-spin")} /> Refresh</Button>
+            <span className="text-[11px] text-muted-foreground">{t("home.topbar.data")}</span>
+            <Button variant="outline" size="xs" onClick={() => void refresh()} disabled={refreshing}><RefreshCw className={cn("size-3", refreshing && "animate-spin")} /> {t("common.refresh")}</Button>
           </div>
         </PopoverContent>
       </Popover>
-      <Tip label="Keyboard shortcuts" shortcut="?"><Button variant="ghost" size="icon-xs" onClick={() => help.open()} aria-label="Keyboard shortcuts"><Keyboard className="size-4" /></Button></Tip>
-      <Tip label={dockOpen ? "Hide assistant" : "Show assistant"} shortcut="A"><Button variant={dockOpen ? "secondary" : "ghost"} size="icon-xs" onClick={() => setDockOpen(!dockOpen)} aria-label="Toggle assistant"><MessageSquareText className="size-4" /></Button></Tip>
-      <div className="ml-1 flex items-center">
-        <Button size="xs" className="rounded-r-none" onClick={() => openTaskDialog({})}><Plus className="size-3.5" /> New</Button>
+      <Tip label={t("shell.menu.shortcuts")} shortcut="?"><Button variant="ghost" size="icon-xs" onClick={() => help.open()} aria-label={t("shell.menu.shortcuts")}><Keyboard className="size-4" /></Button></Tip>
+      <Tip label={dockOpen ? t("home.topbar.hideAssistant") : t("home.topbar.showAssistant")} shortcut="A"><Button variant={dockOpen ? "secondary" : "ghost"} size="icon-xs" onClick={() => setDockOpen(!dockOpen)} aria-label={t("home.topbar.toggleAssistant")}><MessageSquareText className="size-4" /></Button></Tip>
+      <div className="ms-1 flex items-center">
+        <Button size="xs" className="rounded-e-none" onClick={() => openTaskDialog({})}><Plus className="size-3.5" /> {t("common.new")}</Button>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button size="xs" className="rounded-l-none border-l border-primary-foreground/20 px-1.5" aria-label="More new items"><ChevronDown className="size-3.5" /></Button></DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild><Button size="xs" className="rounded-s-none border-s border-primary-foreground/20 px-1.5" aria-label={t("home.topbar.moreNew")}><ChevronDown className="size-3.5" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel>Create</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => openTaskDialog({})}><CheckSquare /> Task<DropdownMenuShortcut>N T</DropdownMenuShortcut></DropdownMenuItem>
-            <DropdownMenuItem onClick={() => openEventDialog({})}><CalendarPlus /> Event<DropdownMenuShortcut>N E</DropdownMenuShortcut></DropdownMenuItem>
-            <DropdownMenuItem onClick={focusComposer}><MessageSquarePlus /> Team update<DropdownMenuShortcut>N U</DropdownMenuShortcut></DropdownMenuItem>
+            <DropdownMenuLabel>{t("common.create")}</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => openTaskDialog({})}><CheckSquare /> {t("home.topbar.task")}<DropdownMenuShortcut>N T</DropdownMenuShortcut></DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openEventDialog({})}><CalendarPlus /> {t("home.topbar.event")}<DropdownMenuShortcut>N E</DropdownMenuShortcut></DropdownMenuItem>
+            <DropdownMenuItem onClick={focusComposer}><MessageSquarePlus /> {t("home.topbar.teamUpdate")}<DropdownMenuShortcut>N U</DropdownMenuShortcut></DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => { setFocus("calendar"); }}>Open calendar<DropdownMenuShortcut>C</DropdownMenuShortcut></DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { useHomeUI.getState().setTasksView("board"); setFocus("tasks"); }}>Open task board<DropdownMenuShortcut>K</DropdownMenuShortcut></DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setFocus("calendar"); }}>{t("home.topbar.openCalendar")}<DropdownMenuShortcut>C</DropdownMenuShortcut></DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { useHomeUI.getState().setTasksView("board"); setFocus("tasks"); }}>{t("home.topbar.openTaskBoard")}<DropdownMenuShortcut>K</DropdownMenuShortcut></DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

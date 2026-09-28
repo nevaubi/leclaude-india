@@ -10,8 +10,8 @@ export const maxDuration = 60;
 
 /**
  * Demo data (Settings → Demo data).
- *   GET    status: { loaded, loadedAt, loadedBy, counts, matterId, relatedMatterId }
- *   POST   load (or reload in place) the Apple antitrust demo pack — owner, partner or admin only
+ *   GET    status: { loaded, loadedAt, loadedBy, counts, matterId, relatedMatterId, matterIds }
+ *   POST   load (or reload in place) the India demo pack (Bengaluru and Hyderabad) — owner, partner or admin only
  *   DELETE remove exactly the records the pack wrote — owner, partner or admin only
  */
 function requireAdmin() {

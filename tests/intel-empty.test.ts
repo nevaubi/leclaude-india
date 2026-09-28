@@ -36,7 +36,7 @@ describe("intelligence layer on an empty production workspace", () => {
     expect(intelEntities().count()).toBe(0);
     expect(intelInsights().count()).toBe(0);
     const sources = intelSources().all();
-    expect(sources.length).toBe(Object.keys(SEED_SOURCE_IDS).length);
+    expect(sources.length).toBe(referenceSources().length); // LeClaude India catalog: India sources + local folders + web pages
     expect(sources.every((s) => !s.enabled)).toBe(true); // nothing runs until the firm enables it
     expect(JSON.stringify(sources)).not.toMatch(SAMPLE);
     expect(db().kv.get("intel:seed:version")).toBeNull();
@@ -65,7 +65,8 @@ describe("intelligence layer on an empty production workspace", () => {
       expect(enabled).toEqual([SEED_SOURCE_IDS.localCorpus]);
     } finally { process.env.LECLAUDE_CORPUS_DIRS = prev; }
     expect(referenceSources().some((s) => s.enabled)).toBe(false);
-    expect(referenceSources().find((s) => s.id === SEED_SOURCE_IDS.jpml)?.config.allowFallback).toBe(false);
+    // The upstream JPML source is out of the India catalog; its neutral form (used to reset old rows) never falls back.
+    expect(referenceSources(new Date(), { includeUs: true }).find((s) => s.id === SEED_SOURCE_IDS.jpml)?.config.allowFallback).toBe(false);
   });
 });
 

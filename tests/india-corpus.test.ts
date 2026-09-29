@@ -136,3 +136,11 @@ describe("enable switch", () => {
     expect(backfillEnabledByEnv({ CORPUS_BACKFILL: " TRUE " })).toBe(true);
   });
 });
+
+describe("year", () => {
+  it("is the judgment's decision year, not the dataset folder's", () => {
+    const unit = { id: "hc:u2", source: "hc-open-data" as const, year: 2023, courtCode: "29_3", benchCode: "karhcdharwad" };
+    const r = rowFromEntry(unit, "KAHC020100052022_1_2024-08-07.json", new TextEncoder().encode(JSON.stringify(HC_RECORD)));
+    expect(r.ok && r.row.year).toBe(2024);
+  });
+});

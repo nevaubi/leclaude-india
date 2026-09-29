@@ -54,6 +54,11 @@ const MAX_SNIPPET = 1500;
 const basename = (name: string) => name.split("/").pop() ?? name;
 const n = <T>(v: T | undefined | null): T | null => (v === undefined || v === "" ? null : v);
 const isoOrNull = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+/**
+ * The judgment's own year (decision date), not the dataset folder it was listed in: the Supreme Court dataset lists some
+ * judgments under two adjacent years with identical metadata, and the row must not depend on which folder was read last.
+ */
+const yearOf = (decisionDate: string | undefined, folderYear: number) => (decisionDate && /^\d{4}-/.test(decisionDate) ? Number(decisionDate.slice(0, 4)) : folderYear);
 
 /** The per-record metadata key the dataset's JSON layout uses (the parsers read year, court and bench from it). */
 export function jsonKeyFor(unit: CorpusUnitRef, entryName: string): string {
@@ -90,7 +95,7 @@ export function rowFromEntry(unit: CorpusUnitRef, entryName: string, data: Uint8
           court_code: null,
           bench_id: n(draft.benchId),
           bench_code: null,
-          year: unit.year,
+          year: yearOf(draft.decisionDate, unit.year),
           title: draft.title,
           petitioner: n(draft.petitioner),
           respondent: n(draft.respondent),
@@ -128,7 +133,7 @@ export function rowFromEntry(unit: CorpusUnitRef, entryName: string, data: Uint8
         court_code: unit.courtCode ?? null,
         bench_id: n(draft.benchId),
         bench_code: unit.benchCode ?? null,
-        year: unit.year,
+        year: yearOf(draft.decisionDate, unit.year),
         title: draft.title,
         petitioner: n(draft.petitioner),
         respondent: n(draft.respondent),

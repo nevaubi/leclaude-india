@@ -240,7 +240,11 @@ async function processArchive(store: RemoteStore, unit: Row, deps: BackfillDeps,
   }
 
   // Declared in the archive index but absent from the archive: recorded, never silently skipped.
+  let extraNote: string | null = null;
   if (declared) {
+    const declaredSet = new Set(declared.map(base));
+    const extra = entries.filter((e) => !declaredSet.has(base(e.name))).length;
+    if (extra) extraNote = `${extra} record(s) in the archive are not declared in its index (stored)`;
     const present = new Set(entries.map((e) => base(e.name)));
     const missing = declared.filter((f) => !present.has(base(f)));
     if (missing.length) {
@@ -253,8 +257,9 @@ async function processArchive(store: RemoteStore, unit: Row, deps: BackfillDeps,
   }
   const complete = stored + rejected >= expected;
   const note = declared ? undefined : "archive index not available; completeness measured against the archive itself";
-  await store.query({ query: `UPDATE corpus_units SET status = 'done', rejected = $2, finished_at = now(), lease_until = NULL, error = $3, updated_at = now() WHERE id = $1`, params: [ref.id, rejected, complete ? note ?? null : `stored ${stored} + rejected ${rejected} < expected ${expected}`] });
-  return { status: "done", stored, rejected, expected, note };
+  const unitNote = [note, extraNote].filter(Boolean).join("; ") || null;
+  await store.query({ query: `UPDATE corpus_units SET status = 'done', rejected = $2, finished_at = now(), lease_until = NULL, error = $3, note = $4, updated_at = now() WHERE id = $1`, params: [ref.id, rejected, complete ? null : `stored ${stored} + rejected ${rejected} < expected ${expected}`, unitNote] });
+  return { status: "done", stored, rejected, expected, note: unitNote ?? undefined };
 }
 
 async function dbSize(store: RemoteStore): Promise<number> {
@@ -350,27 +355,29 @@ export interface CorpusStatus {
   byCourt: { court_id: string | null; court_code: string | null; judgments: number; min_year: number | null; max_year: number | null }[];
   archives: { source: string; court_code: string | null; done: number; total: number; expected: number; stored: number; rejected: number }[];
   incomplete: { id: string; error: string | null; stored: number; rejected: number; expected: number | null }[];
+  notes: { id: string; note: string }[];
   failed: { id: string; error: string | null; attempts: number }[];
   issues: { withIssues: number; unresolvedCourt: number; noDecisionDate: number };
 }
 
 export async function corpusStatus(deps: BackfillDeps = {}): Promise<CorpusStatus> {
   const store = deps.store === undefined ? remoteStore() : deps.store;
-  const empty: CorpusStatus = { configured: false, enabled: false, dbBytes: null, limitBytes: limitBytes(), stop: null, units: {}, discovery: { done: 0, total: 0 }, judgments: 0, byCourt: [], archives: [], incomplete: [], failed: [], issues: { withIssues: 0, unresolvedCourt: 0, noDecisionDate: 0 } };
+  const empty: CorpusStatus = { configured: false, enabled: false, dbBytes: null, limitBytes: limitBytes(), stop: null, units: {}, discovery: { done: 0, total: 0 }, judgments: 0, byCourt: [], archives: [], incomplete: [], notes: [], failed: [], issues: { withIssues: 0, unresolvedCourt: 0, noDecisionDate: 0 } };
   if (!store) return empty;
   await ensureCorpusSchema(store);
-  const [units, disc, total, byCourt, archives, incomplete, failed, issues, size, enabled, stop] = await Promise.all([
+  const [units, disc, total, byCourt, archives, incomplete, failed, issues, size, enabled, stop, notes] = await Promise.all([
     store.query({ query: `SELECT status, count(*)::int AS n FROM corpus_units WHERE id NOT LIKE 'discover:%' GROUP BY status` }),
     store.query({ query: `SELECT count(*) FILTER (WHERE status = 'done')::int AS done, count(*)::int AS total FROM corpus_units WHERE id LIKE 'discover:%'` }),
     store.query({ query: `SELECT count(*)::bigint AS n FROM corpus_judgments` }),
     store.query({ query: `SELECT court_id, court_code, count(*)::int AS n, min(year) AS min_year, max(year) AS max_year FROM corpus_judgments GROUP BY court_id, court_code ORDER BY n DESC` }),
     store.query({ query: `SELECT source, court_code, count(*) FILTER (WHERE status = 'done')::int AS done, count(*)::int AS total, coalesce(sum(expected),0)::bigint AS expected, coalesce(sum(stored),0)::bigint AS stored, coalesce(sum(rejected),0)::bigint AS rejected FROM corpus_units WHERE id NOT LIKE 'discover:%' GROUP BY source, court_code ORDER BY min(priority)` }),
-    store.query({ query: `SELECT id, error, stored, rejected, expected FROM corpus_units WHERE status = 'done' AND error IS NOT NULL AND error LIKE 'stored %' ORDER BY priority LIMIT 20` }),
+    store.query({ query: `SELECT id, error, stored, rejected, expected FROM corpus_units WHERE status = 'done' AND error IS NOT NULL ORDER BY priority LIMIT 20` }),
     store.query({ query: `SELECT id, error, attempts FROM corpus_units WHERE status = 'failed' OR (status = 'pending' AND error IS NOT NULL) ORDER BY priority LIMIT 20` }),
     store.query({ query: `SELECT count(*) FILTER (WHERE issues IS NOT NULL)::int AS w, count(*) FILTER (WHERE court_id IS NULL)::int AS u, count(*) FILTER (WHERE decision_date IS NULL)::int AS d FROM corpus_judgments` }),
     dbSize(store),
     enabledIn(store),
     getState<unknown>(store, "stop"),
+    store.query({ query: `SELECT id, note FROM corpus_units WHERE note IS NOT NULL ORDER BY priority LIMIT 50` }),
   ]);
   return {
     configured: true,
@@ -384,6 +391,7 @@ export async function corpusStatus(deps: BackfillDeps = {}): Promise<CorpusStatu
     byCourt: byCourt.map((r) => ({ court_id: r.court_id, court_code: r.court_code, judgments: Number(r.n), min_year: r.min_year ? Number(r.min_year) : null, max_year: r.max_year ? Number(r.max_year) : null })),
     archives: archives.map((r) => ({ source: String(r.source), court_code: r.court_code, done: Number(r.done), total: Number(r.total), expected: Number(r.expected), stored: Number(r.stored), rejected: Number(r.rejected) })),
     incomplete: incomplete.map((r) => ({ id: String(r.id), error: r.error, stored: Number(r.stored), rejected: Number(r.rejected), expected: r.expected ? Number(r.expected) : null })),
+    notes: notes.map((r) => ({ id: String(r.id), note: String(r.note) })),
     failed: failed.map((r) => ({ id: String(r.id), error: r.error, attempts: Number(r.attempts) })),
     issues: { withIssues: Number(issues[0]?.w ?? 0), unresolvedCourt: Number(issues[0]?.u ?? 0), noDecisionDate: Number(issues[0]?.d ?? 0) },
   };

@@ -60,4 +60,5 @@ The corpus of judgments lives in Postgres tables (`corpus_units`, `corpus_judgme
   the database plan and the backfill continues where it stopped. About 2.7 KB per judgment including indexes.
 - Retrieval: `GET /api/india/corpus/search` and the `search_judgment_index` research tool (exact CNR, neutral citation or
   case number first; weighted full-text over citations, title, coram and the published snippet).
+- Duplicates: the Supreme Court dataset lists 5,181 judgments under two adjacent years with identical metadata (verified field by field); they are stored once, and a row's `year` is its decision year. Records present in an archive but not declared in its index are stored and noted on the unit (`note`).
 - Not yet: full judgment text (PDF extraction) in the corpus, India Code Acts in the corpus.

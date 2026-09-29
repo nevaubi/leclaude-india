@@ -120,7 +120,9 @@ export async function searchCorpus(o: CorpusQuery, store: RemoteStore | null = r
   // The index holds titles and published snippets, not full text, so requiring every word is often too strict. When
   // the strict query leaves room, add records matching any of the words, ranked by how many (and where) they match.
   const words = q.replace(/["()]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !/^(or|and|not)$/i.test(w));
-  if (hits.length < limit && words.length > 1) {
+  // An identifier query that resolved exactly does not get loosely matching neighbours appended.
+  const exactFound = hits.some((h) => h.match === "exact");
+  if (!exactFound && hits.length < limit && words.length > 1) {
     const orParams: SqlValue[] = [words.join(" or ")];
     const fo = filters(o, orParams);
     const more = await store.query({

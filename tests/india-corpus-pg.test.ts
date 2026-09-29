@@ -116,6 +116,7 @@ describe.skipIf(!PG)("corpus backfill against real archives and Postgres", () =>
     if (nc[0]) {
       const byNc = await searchCorpus({ q: nc[0].neutral_citation! }, store);
       expect(byNc.hits[0]?.neutral_citation).toBe(nc[0].neutral_citation);
+      expect(byNc.hits.every((h) => h.match !== "partial")).toBe(true);
     }
     const text = await searchCorpus({ q: "land acquisition compensation", courts: ["hc-karnataka"], limit: 5 }, store);
     expect(text.hits.length).toBeGreaterThan(0);

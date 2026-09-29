@@ -270,10 +270,20 @@ export async function setBackfillEnabled(enabled: boolean, deps: BackfillDeps = 
   if (enabled) await seedDiscovery(store, deps);
 }
 
+/** Deployment switch: CORPUS_BACKFILL=1 turns the backfill on (an operator decision, set in the hosting environment). */
+export function backfillEnabledByEnv(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
+  return ["1", "true", "yes"].includes((env.CORPUS_BACKFILL ?? "").trim().toLowerCase());
+}
+
+async function enabledIn(store: RemoteStore): Promise<boolean> {
+  if (backfillEnabledByEnv()) return true;
+  return (await getState<boolean>(store, "enabled")) === true;
+}
+
 export async function backfillEnabled(deps: BackfillDeps = {}): Promise<boolean> {
   const store = deps.store === undefined ? remoteStore() : deps.store;
   if (!store) return false;
-  try { await ensureCorpusSchema(store); return (await getState<boolean>(store, "enabled")) === true; } catch { return false; }
+  try { await ensureCorpusSchema(store); return await enabledIn(store); } catch { return false; }
 }
 
 /**
@@ -289,7 +299,7 @@ export async function runBackfill(o: { deadlineMs: number; force?: boolean } & B
   try { store = requireStore(o); } catch (e) { return { ...out, stop: "not_configured", error: (e as Error).message }; }
   try {
     await ensureCorpusSchema(store);
-    if (!o.force && (await getState<boolean>(store, "enabled")) !== true) return { ...out, stop: "disabled" };
+    if (!o.force && !(await enabledIn(store))) return { ...out, stop: "disabled" };
     const seeded = await store.query({ query: `SELECT count(*)::int AS n FROM corpus_units WHERE id LIKE 'discover:%'` });
     if (!Number(seeded[0]?.n)) await seedDiscovery(store, o);
     while (now() < deadline - 5_000) {
@@ -359,12 +369,12 @@ export async function corpusStatus(deps: BackfillDeps = {}): Promise<CorpusStatu
     store.query({ query: `SELECT id, error, attempts FROM corpus_units WHERE status = 'failed' OR (status = 'pending' AND error IS NOT NULL) ORDER BY priority LIMIT 20` }),
     store.query({ query: `SELECT count(*) FILTER (WHERE issues IS NOT NULL)::int AS w, count(*) FILTER (WHERE court_id IS NULL)::int AS u, count(*) FILTER (WHERE decision_date IS NULL)::int AS d FROM corpus_judgments` }),
     dbSize(store),
-    getState<boolean>(store, "enabled"),
+    enabledIn(store),
     getState<unknown>(store, "stop"),
   ]);
   return {
     configured: true,
-    enabled: enabled === true,
+    enabled,
     dbBytes: size,
     limitBytes: limitBytes(),
     stop,

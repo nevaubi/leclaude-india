@@ -126,3 +126,13 @@ describe("tools and languages", () => {
     expect(languageBySciCode("SAN")?.code).toBe("sa");
   });
 });
+
+describe("enable switch", () => {
+  it("is on only when the deployment sets CORPUS_BACKFILL to a true value", async () => {
+    const { backfillEnabledByEnv } = await import("@/modules/india/corpus/backfill");
+    expect(backfillEnabledByEnv({})).toBe(false);
+    expect(backfillEnabledByEnv({ CORPUS_BACKFILL: "0" })).toBe(false);
+    expect(backfillEnabledByEnv({ CORPUS_BACKFILL: "1" })).toBe(true);
+    expect(backfillEnabledByEnv({ CORPUS_BACKFILL: " TRUE " })).toBe(true);
+  });
+});

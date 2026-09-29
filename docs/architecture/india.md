@@ -55,7 +55,7 @@ The corpus of judgments lives in Postgres tables (`corpus_units`, `corpus_judgme
 - Mapping: the registry-backed parsers (`sources/sci.ts`, `sources/hc.ts`). All 25 High Court dataset codes were checked
   against the court names in the records. Unknown codes stay unresolved (`court_id` null, raw code kept).
 - Durable and resumable: leases, per-archive cursors, idempotent upserts keyed on the dataset record and skipped when the
-  record hash is unchanged. Runs from `POST /api/india/corpus {action:"run"}` and from the hourly cron tick when enabled.
+  record hash is unchanged. Enabled by `CORPUS_BACKFILL=1` (deployment) or an administrator (`POST /api/india/corpus {action:"enable"}`); runs from `POST /api/india/corpus/run` (same permission as the cron tick) and from the hourly tick.
 - Storage budget: stops before `CORPUS_MAX_DB_MB` (default 450) and reports `storage_budget`; raise it after upgrading
   the database plan and the backfill continues where it stopped. About 2.7 KB per judgment including indexes.
 - Retrieval: `GET /api/india/corpus/search` and the `search_judgment_index` research tool (exact CNR, neutral citation or

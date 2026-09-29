@@ -10,7 +10,7 @@
  * provider translation, or machine translation) — see `TranslationOrigin`.
  */
 
-export type LocaleCode = "en" | "hi" | "kn" | "te" | "ta" | "mr" | "bn" | "ur" | "gu" | "ml" | "pa" | "or" | "as";
+export type LocaleCode = "en" | "hi" | "kn" | "te" | "ta" | "mr" | "bn" | "ur" | "gu" | "ml" | "pa" | "or" | "as" | "ne" | "kok" | "sa";
 
 export interface LanguageInfo {
   code: LocaleCode;
@@ -46,6 +46,10 @@ export const LANGUAGES: LanguageInfo[] = [
   { code: "pa", name: "Punjabi", native: "ਪੰਜਾਬੀ", script: "Gurmukhi", dir: "ltr", font: "Noto Sans Gurmukhi", intl: "pa-IN", ui: false, sciCode: "PUN" },
   { code: "or", name: "Odia", native: "ଓଡ଼ିଆ", script: "Odia", dir: "ltr", font: "Noto Sans Oriya", intl: "or-IN", ui: false, sciCode: "ORI" },
   { code: "as", name: "Assamese", native: "অসমীয়া", script: "Bengali", dir: "ltr", font: "Noto Sans Bengali", intl: "as-IN", ui: false, sciCode: "ASM" },
+  // Court-published Supreme Court translations seen in the dataset (codes NEP, KOK, SAN); content languages only.
+  { code: "ne", name: "Nepali", native: "नेपाली", script: "Devanagari", dir: "ltr", font: "Noto Sans Devanagari", intl: "ne-IN", ui: false, sciCode: "NEP" },
+  { code: "kok", name: "Konkani", native: "कोंकणी", script: "Devanagari", dir: "ltr", font: "Noto Sans Devanagari", intl: "kok-IN", ui: false, sciCode: "KOK" },
+  { code: "sa", name: "Sanskrit", native: "संस्कृतम्", script: "Devanagari", dir: "ltr", font: "Noto Sans Devanagari", intl: "sa-IN", ui: false, sciCode: "SAN" },
 ];
 
 export const UI_LOCALES = LANGUAGES.filter((l) => l.ui).map((l) => l.code);

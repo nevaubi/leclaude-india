@@ -1,5 +1,5 @@
 {
   "crons": [
-    { "path": "/api/intel/jobs/tick", "schedule": "*/10 * * * *" }
+    { "path": "/api/intel/jobs/tick", "schedule": "0 * * * *" }
   ]
 }

@@ -42,3 +42,22 @@ Nothing is scraped from a subscription service. A connector without credentials 
 3. Research engine — `src/modules/search/**`, `src/lib/ai/toolkit/**`, `src/lib/ai/prompts.ts`: Indian tools, jurisdiction-aware ranking, multilingual queries and answers.
 4. Internationalisation and UI — `src/lib/i18n/**`, `src/components/**`, `src/app/layout.tsx`, fonts, locale switcher, branding.
 5. Litigation workspace and demo — `src/modules/{ediscovery,matters,demo,workflows/templates,office/*/templates}/**`: Indian procedure vocabulary (CNR, case types, exhibits Ex.P/Ex.D, witnesses PW/DW, examination-in-chief/cross), Indian drafting templates, Bengaluru/Hyderabad demo matters.
+
+## Judgment corpus (Postgres)
+The corpus of judgments lives in Postgres tables (`corpus_units`, `corpus_judgments`, `corpus_rejects`, `corpus_state`;
+`src/modules/india/corpus/**`), queried in place — not in the in-memory application mirror.
+
+- Sources: the court-published open datasets on AWS (Supreme Court of India; all 25 High Courts). One unit per source
+  archive (a Supreme Court year; a High Court bench-year), discovered from the buckets.
+- Order: Supreme Court newest year first; then Karnataka, Telangana, Andhra Pradesh newest first; then the other High Courts.
+- Completeness: each archive is checked against the dataset's own index. Every declared record is stored or recorded in
+  `corpus_rejects` with the reason; a unit whose counts do not add up keeps an error.
+- Mapping: the registry-backed parsers (`sources/sci.ts`, `sources/hc.ts`). All 25 High Court dataset codes were checked
+  against the court names in the records. Unknown codes stay unresolved (`court_id` null, raw code kept).
+- Durable and resumable: leases, per-archive cursors, idempotent upserts keyed on the dataset record and skipped when the
+  record hash is unchanged. Runs from `POST /api/india/corpus {action:"run"}` and from the hourly cron tick when enabled.
+- Storage budget: stops before `CORPUS_MAX_DB_MB` (default 450) and reports `storage_budget`; raise it after upgrading
+  the database plan and the backfill continues where it stopped. About 2.7 KB per judgment including indexes.
+- Retrieval: `GET /api/india/corpus/search` and the `search_judgment_index` research tool (exact CNR, neutral citation or
+  case number first; weighted full-text over citations, title, coram and the published snippet).
+- Not yet: full judgment text (PDF extraction) in the corpus, India Code Acts in the corpus.

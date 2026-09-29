@@ -4,19 +4,20 @@ import { jsonError } from "@/lib/ai/sse";
 import { intelConfig } from "@/modules/intel/config";
 import { intelHealth } from "@/modules/intel/health";
 import { runDue } from "@/modules/intel/jobs";
+import { backfillEnabled, runBackfill } from "@/modules/india/corpus/backfill";
 import { ensureIntelSeeded } from "@/modules/intel/seed";
 import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 
 export const runtime = "nodejs";
-/** Vercel Hobby functions stop at 60s; the tick works for up to ~50s and returns. */
-export const maxDuration = 60;
+/** The tick runs due intel jobs (up to ~50s), then continues the judgment corpus backfill when it is enabled, and returns before 300s. */
+export const maxDuration = 300;
 
 /**
  * External cron driver. Runs due intel jobs for up to 50 seconds and also the
  * housekeeping cadences (workflow scheduler tick, integrity scans, sweep,
  * embedding backfill) that the in-process loop would otherwise cover.
- * vercel.json schedules it every 10 minutes; note that Vercel Hobby plans only
+ * vercel.json schedules it hourly (each run wakes the database, so a tighter cadence exhausts a free-tier quota); note that Vercel Hobby plans only
  * allow one cron invocation per day, so use an external cron (or the inline
  * runner on a persistent host) for the intended cadence. When CRON_SECRET is
  * set, the request must carry "Authorization: Bearer <secret>".
@@ -32,8 +33,15 @@ async function tick(req: NextRequest) {
   const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 50) || 50, 200));
   const deadlineMs = Math.max(1000, Math.min(Number(url.searchParams.get("deadlineMs") ?? 50_000) || 50_000, 55_000));
   const housekeeping = url.searchParams.get("housekeeping") !== "0";
+  const started = Date.now();
   const result = await runDue({ limit, deadlineMs, housekeeping });
-  return Response.json({ ...result, health: intelHealth() });
+  // Judgment corpus backfill (durable queue in Postgres): uses the rest of the invocation when enabled.
+  let corpus: Awaited<ReturnType<typeof runBackfill>> | { stop: "skipped" } = { stop: "skipped" };
+  if (url.searchParams.get("corpus") !== "0" && (await backfillEnabled())) {
+    const left = 270_000 - (Date.now() - started);
+    if (left > 30_000) corpus = await runBackfill({ deadlineMs: left });
+  }
+  return Response.json({ ...result, corpus, health: intelHealth() });
 }
 
 async function handlePOST(req: NextRequest) { return tick(req); }

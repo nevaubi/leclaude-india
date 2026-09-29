@@ -46,12 +46,15 @@ import { mapCriminalSection } from "./india-criminal-map";
 export interface IndiaCapabilities {
   /** Indian Kanoon live API: the connector is `ready` (firm token set, network allowed). */
   indianKanoon: boolean;
+  /** The judgment corpus index in Postgres (DATABASE_URL set). */
+  corpus?: boolean;
 }
 
 export function indiaCapabilities(env: Readonly<Record<string, string | undefined>> = process.env): IndiaCapabilities {
   let ready = false;
   try { ready = indiaConnectorStatuses(env).some((s) => s.source === "indian-kanoon" && s.state === "ready"); } catch { ready = false; }
-  return { indianKanoon: ready };
+  const db = (env.DATABASE_URL || env.POSTGRES_URL || "").trim();
+  return { indianKanoon: ready, corpus: /^postgres(ql)?:\/\//.test(db) };
 }
 
 /** The firm's Indian Kanoon client (null unless its connector is ready). */
@@ -733,19 +736,52 @@ export function isIndianLegalFetchHost(url: string, allow: string[] = INDIA_FETC
   return allow.some((d) => host === d || host.endsWith(`.${d}`));
 }
 
+type CorpusIndexArgs = { query: string; courts?: string[]; year_from?: number; year_to?: number; judge?: string; limit?: number };
+
+export const searchJudgmentIndexTool = defineTool<CorpusIndexArgs>({
+  name: "search_judgment_index",
+  description: "Search the official judgment index: every Supreme Court of India and High Court judgment backfilled from the court-published open datasets (metadata: title, parties, case number, CNR, neutral/SCR citation, coram, decision date, disposal, the source snippet, and the link to the original PDF). Exact CNR, neutral citation or case number resolves directly. Each result's source is corpus://judgment/<id>. The index holds metadata and the published snippet, not the full judgment text: open the PDF link (fetch) or read_judgment when the judgment is also in the full-text corpus before characterising a holding.",
+  parameters: { type: "object", properties: { query: { type: "string", description: "Words, a party name, a CNR (e.g. KAHC020100052022), a neutral citation (2024 INSC 735, 2024:KHC-D:7336) or a case number (WP/98/2024)" }, courts: { type: "array", items: { type: "string" }, description: "Registry court ids: sci, hc-karnataka, hc-telangana, hc-andhra, hc-bombay, hc-madras, hc-delhi…" }, year_from: { type: "integer" }, year_to: { type: "integer" }, judge: { type: "string" }, limit: { type: "integer", description: "Default 10, max 25" } }, required: ["query"] },
+  examples: [{ query: "land acquisition compensation enhancement", courts: ["hc-karnataka"], year_from: 2020, limit: 10 }, { query: "KAHC020100052022" }],
+  timeoutMs: 20_000,
+  maxResultChars: 24_000,
+  access: "read",
+  label: (a) => `Searching the judgment index: ${a.query}`,
+  async execute(args, ctx) {
+    const { searchCorpus } = await import("@/modules/india/corpus/search");
+    const { hits } = await searchCorpus({ q: args.query, courts: args.courts, yearFrom: args.year_from, yearTo: args.year_to, judge: args.judge, limit: Math.min(args.limit ?? 10, 25) });
+    const retrievedAt = new Date().toISOString();
+    emit(ctx, hits.map((h, i) => ({ source: `corpus://judgment/${h.id}`, kind: "opinion", provider: h.source, tool: "search_judgment_index", query: args.query, rank: i + 1, score: h.rank, documentId: h.id, authorityId: h.neutral_citation ?? h.reporter_citation ?? h.cnr ?? undefined, url: h.pdf_url ?? undefined, hash: contentHash(`${h.id}|${h.title}|${h.snippet ?? ""}`), retrievedAt })));
+    return {
+      count: hits.length,
+      results: hits.map((h) => ({
+        type: "search_result" as const,
+        source: `corpus://judgment/${h.id}`,
+        title: `${h.title}${h.neutral_citation ? `, ${h.neutral_citation}` : h.reporter_citation ? `, ${h.reporter_citation}` : ""} (${h.court ?? h.court_code ?? "court unresolved"}${h.decision_date ? `, ${h.decision_date}` : ""})`,
+        content: [h.snippet ? h.snippet.slice(0, 1200) : "(no snippet published in the source metadata)"],
+        id: h.id, match: h.match, court: h.court, court_id: h.court_id, bench: h.bench_code, decided: h.decision_date, case_number: h.case_number, cnr: h.cnr,
+        neutral_citation: h.neutral_citation, reporter_citation: h.reporter_citation, judges: h.judges, disposal: h.disposal, pdf_url: h.pdf_url,
+        text: h.text_status === "none" ? "metadata and published snippet only; full text not ingested" : h.text_status, issues: h.issues ?? undefined,
+      })),
+      ...(hits.length ? {} : { note: "No judgment in the index matched. Broaden the query or filters; do not cite authority that was not found." }),
+    };
+  },
+});
+
 /** Tools that exist only with a capability (fail closed: absent from the toolset without it). */
 export const INDIAN_KANOON_TOOLS = [indianKanoonSearchTool, indianKanoonDocTool];
+export const CORPUS_INDEX_TOOLS = [searchJudgmentIndexTool];
 
 /** Always-available Indian research tools (local corpus, India Code, coded tables). */
 export const INDIA_CORE_TOOLS = [searchJudgmentsTool, readJudgmentTool, citingReferencesTool, searchStatutesIndiaTool, readSectionTool, mapCriminalSectionTool];
 
 /** Indian research toolset for the current capabilities. */
 export function indiaResearchTools(caps: IndiaCapabilities = indiaCapabilities()) {
-  return caps.indianKanoon ? [...INDIA_CORE_TOOLS, ...INDIAN_KANOON_TOOLS] : [...INDIA_CORE_TOOLS];
+  return [...INDIA_CORE_TOOLS, ...(caps.corpus ? CORPUS_INDEX_TOOLS : []), ...(caps.indianKanoon ? INDIAN_KANOON_TOOLS : [])];
 }
 
 /** Every Indian tool (for contract tests); runtime toolsets use indiaResearchTools(). */
-export const INDIA_TOOLS = [...INDIA_CORE_TOOLS, ...INDIAN_KANOON_TOOLS];
+export const INDIA_TOOLS = [...INDIA_CORE_TOOLS, ...CORPUS_INDEX_TOOLS, ...INDIAN_KANOON_TOOLS];
 
 /** Intel documents that belong to the India source layer (judgments and India Code Acts); other feeds must not duplicate them. */
 export function isIndiaSourceDoc(doc: { meta?: Record<string, unknown> } | null | undefined): boolean {

@@ -71,7 +71,8 @@ export function providerError(provider: ProviderId, status: number, body: string
     message = j.error?.message ?? j.message ?? j.Message ?? body;
     if (j.error?.type) message = `${j.error.type}: ${message}`;
   } catch { /* plain text */ }
-  const code = errorCodeForStatus(status);
+  // A 400 that rejects the credentials themselves (unscoped key without a workspace, invalid key) is an auth failure.
+  const code = status === 400 && /api[ -]?key|workspace|x-api-key|authentication|credential/i.test(message) ? "auth" : errorCodeForStatus(status);
   return new InferenceError(code, `${provider} HTTP ${status}${message ? `: ${message.slice(0, 600)}` : ""}${hint ? ` (${hint})` : ""}`, { status, provider, retryable: RETRYABLE_STATUS.has(status) });
 }
 

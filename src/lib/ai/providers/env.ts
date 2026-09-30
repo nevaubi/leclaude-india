@@ -30,6 +30,8 @@ export interface OpenAIEnv {
 
 export interface AnthropicEnv {
   apiKey?: string;
+  /** Workspace for an organisation-level (unscoped) API key; sent as `anthropic-workspace-id`. */
+  workspaceId?: string;
   baseURL: string;
   model?: string;
   fastModel?: string;
@@ -95,6 +97,7 @@ export function readRuntimeEnv(env: Env = process.env as Env): RuntimeEnv {
     },
     anthropic: {
       apiKey: trim(env.ANTHROPIC_API_KEY),
+      workspaceId: trim(env.ANTHROPIC_WORKSPACE_ID),
       baseURL: (trim(env.ANTHROPIC_BASE_URL) ?? "https://api.anthropic.com").replace(/\/+$/, ""),
       model: trim(env.ANTHROPIC_MODEL),
       fastModel: trim(env.ANTHROPIC_FAST_MODEL),

@@ -142,40 +142,49 @@ export async function uploadBrowserPdf(principal: Principal, setId: string, body
 export async function appendPages(principal: Principal, setId: string, fileId: string, body: { appendPages?: unknown; fromPage?: unknown }): Promise<{ file: DocFile }> {
   const set = await loadSet(principal, setId, "write");
   const store = await docStore();
-  const file = await store.getFile(set.id, fileId);
-  if (!file) throw new DocsError("File not found", 404, "not_found");
-  if (file.method !== "browser-pdfjs") throw new DocsError("Pages can only be appended to a PDF read in the browser", 409, "conflict");
   const pages = body?.appendPages;
   const from = Number(body?.fromPage);
   if (!Array.isArray(pages) || !pages.length || pages.some((p) => typeof p !== "string")) throw new DocsError("appendPages must be a list of page texts", 422, "invalid");
   if (!Number.isInteger(from) || from < 1) throw new DocsError("fromPage must be a page number", 422, "invalid");
-  const received = file.pagesReceived ?? file.pages;
-  const last = from + pages.length - 1;
-  if (last <= received) return { file: publicFile(file) }; // already stored (retry)
-  if (from !== received + 1) throw new DocsError(`Expected pages from ${received + 1}; got ${from}`, 409, "conflict");
-  if (last > file.pages) throw new DocsError(`The file has ${file.pages} pages; got pages up to ${last}`, 422, "invalid");
   const sent = (pages as string[]).reduce((n, p) => n + p.length, 0);
   if (sent > MAX_PAGE_TEXT_PER_CALL) throw new DocsError("Too much text in one request; send smaller batches", 413, "too_large");
-  await assertStorageAvailable();
 
-  const already = isTruncated(file);
-  const taken = takePages(pages as string[], from, file.chars, already);
-  const start = (await store.maxChunkIdx(file.id)) + 1;
-  await store.addChunks(pageChunkRows(file.id, set.id, taken.stored, start));
-  const next: StoredFile = {
-    ...file,
-    pagesReceived: last,
-    ocrPages: already ? file.ocrPages : [...file.ocrPages, ...taken.ocrPages],
-    chars: taken.chars,
-    note: taken.truncatedAt != null ? joinNotes(file.note, truncNote(taken.truncatedAt)) : file.note,
-    extraction: "pending",
-    extractionAttempts: 0,
-  };
-  next.status = computeStatus(next);
-  await store.updateFile(next);
-  await store.deleteExtraction(file.id);
-  await store.refreshSetCounts(set.id);
-  return { file: publicFile(next) };
+  // Serialised with OCR on the same file; each page is written with replacePageChunks, so a retry after a partial
+  // write (chunks stored, file row not updated) replaces those pages instead of duplicating their text.
+  return withFileLock(fileId, async () => {
+    const file = await store.getFile(set.id, fileId);
+    if (!file) throw new DocsError("File not found", 404, "not_found");
+    if (file.method !== "browser-pdfjs") throw new DocsError("Pages can only be appended to a PDF read in the browser", 409, "conflict");
+    const received = file.pagesReceived ?? file.pages;
+    const last = from + pages.length - 1;
+    if (last <= received) return { file: publicFile(file) }; // already stored (retry)
+    if (from !== received + 1) throw new DocsError(`Expected pages from ${received + 1}; got ${from}`, 409, "conflict");
+    if (last > file.pages) throw new DocsError(`The file has ${file.pages} pages; got pages up to ${last}`, 422, "invalid");
+    await assertStorageAvailable();
+
+    const already = isTruncated(file);
+    const taken = takePages(pages as string[], from, file.chars, already);
+    let idx = (await store.maxChunkIdx(file.id)) + 1;
+    for (let page = from; page <= last; page++) {
+      const rows = pageChunkRows(file.id, set.id, taken.stored.filter((p) => p.page === page), idx);
+      idx += rows.length;
+      await store.replacePageChunks(file.id, page, rows);
+    }
+    const next: StoredFile = {
+      ...file,
+      pagesReceived: last,
+      ocrPages: already ? file.ocrPages : [...file.ocrPages.filter((p) => p < from || p > last), ...taken.ocrPages],
+      chars: taken.chars,
+      note: taken.truncatedAt != null ? joinNotes(file.note, truncNote(taken.truncatedAt)) : file.note,
+      extraction: "pending",
+      extractionAttempts: 0,
+    };
+    next.status = computeStatus(next);
+    await store.updateFile(next);
+    await store.deleteExtraction(file.id);
+    await store.refreshSetCounts(set.id);
+    return { file: publicFile(next) };
+  });
 }
 
 // ---- server-extracted files (multipart) -------------------------------------------------------------------------

@@ -132,6 +132,11 @@ describe.skipIf(!PG)("document sets on Postgres", () => {
     const ocr = await ocrPage(principal, set.id, up.file.id, { page: 3, image: png });
     expect(ocr.file).toMatchObject({ status: "ready", ocrPages: [], ocrDonePages: [3] });
     expect((await searchDocSets(principal, [set.id], "seat arbitration Mumbai"))[0]).toMatchObject({ page: 3, ocr: true });
+    // Indian scripts: whole words (vowel signs included) match in Postgres full-text search.
+    const hindiSet = await createSet(principal, { name: "Hindi bundle" });
+    await uploadBrowserPdf(principal, hindiSet.id, { kind: "pdf-text", name: "hindi.pdf", size: 100, sha256: "f".repeat(64), pages: ["यह किराया समझौता है। किरायेदार ने किराया नहीं दिया।"] });
+    expect((await searchDocSets(principal, [hindiSet.id], "किराया")).map((h) => h.fileName)).toEqual(["hindi.pdf"]);
+    await deleteSet(principal, hindiSet.id);
 
     const x = await runExtraction(principal, set.id, {});
     expect(x).toMatchObject({ processed: 2, failed: 0, remaining: 0 });

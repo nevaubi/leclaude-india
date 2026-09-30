@@ -82,3 +82,16 @@ Routes: `export const runtime = "nodejs"`, `withDb(withAuth(...))`, `maxDuration
 The Chat composer's knowledge switch selects Web, Indian law (judgments, statutes, sections), the firm library and
 document sets. Selected sets are validated on the server against `listDocSets(principal)`; the `search_documents`
 tool only searches those.
+
+## Integrity rules (from the review)
+
+- Extraction results are written only if the file still exists and its text hash is unchanged since the model calls
+  started; otherwise they are discarded and the file stays pending (OCR and page appends reset it).
+- Facts and events are listed only for files still in the set.
+- Cancelling extraction keeps progress and is never counted as a failed attempt.
+- Page appends are serialised with OCR per file and written page by page (replace, not insert), so a retried batch
+  cannot duplicate text. An incomplete PDF uploaded again is returned as a duplicate with `pagesReceived < pages`; the
+  client continues from the next page.
+- Query terms keep combining marks, so words in Devanagari, Tamil, Kannada, Telugu, Bengali and Urdu are searched whole.
+- Running extraction needs write access to the set (it spends model calls and writes derived records).
+- Unexpected server errors return a generic message; details go to the server log.

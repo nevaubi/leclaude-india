@@ -217,6 +217,7 @@ async function extractFile(store: DocStore, file: StoredFile, limit: ReturnType<
       results[win.index] = processWindow(file, win, raw ?? {}, pageText);
     } catch (e) {
       if (timeout.aborted && !signal?.aborted) { stoppedByClock = true; return; }
+      if (signal?.aborted) return; // cancelled by the caller: progress is kept, never counted as a failed attempt
       error = (e as Error).message || String(e);
     }
   })));
@@ -227,6 +228,12 @@ async function extractFile(store: DocStore, file: StoredFile, limit: ReturnType<
   const facts = dedupe([...(resume?.facts ?? []), ...results.slice(startAt, done).flatMap((r) => r!.facts)]);
   const events = dedupe([...(resume?.events ?? []), ...results.slice(startAt, done).flatMap((r) => r!.events)]);
   const row: ExtractionRow = { fileId: file.id, setId: file.setId, textHash: hash, version: EXTRACTOR_VERSION, status: "done", facts, events, error: null, windowsDone: done, updatedAt: now() };
+
+  // The text may have changed while the model ran (OCR of a page, appended pages) or the file may be gone: results
+  // bound to the old text are discarded and the file stays pending (OCR/append already reset it).
+  const current = await store.getFile(file.setId, file.id);
+  if (!current) return { status: "partial" };
+  if (textHash(pagesFromChunks(await store.fileChunks(file.id))) !== hash) return { status: "partial" };
 
   if (done >= windows.length) {
     await store.putExtraction(row);
@@ -244,7 +251,7 @@ async function extractFile(store: DocStore, file: StoredFile, limit: ReturnType<
 }
 
 export async function runExtraction(principal: Principal, setId: string, opts: { max?: unknown; signal?: AbortSignal; budgetMs?: number } = {}): Promise<ExtractProgress> {
-  const set = await loadSet(principal, setId, "read");
+  const set = await loadSet(principal, setId, "write");
   const store = await docStore();
   const max = Math.max(1, Math.min(Number.isFinite(Number(opts.max)) && Number(opts.max) > 0 ? Math.floor(Number(opts.max)) : 8, 50));
   const started = Date.now();

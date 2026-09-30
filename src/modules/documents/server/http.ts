@@ -34,7 +34,7 @@ export function docsErrorResponse(e: unknown): Response {
   if (e instanceof AIConfigError || (e as { name?: string })?.name === "AIConfigError") return jsonError((e as Error).message, 503, { code: "ai_not_configured" });
   if (e instanceof AuthError) throw e; // mapped to 401/403 by withAuth
   console.error("[documents]", e);
-  return jsonError((e as Error)?.message || "Unexpected error", 500);
+  return jsonError("Something went wrong on the server; please try again.", 500);
 }
 
 export async function readJsonBody<T>(req: Request): Promise<T | null> {

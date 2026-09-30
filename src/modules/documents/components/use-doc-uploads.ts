@@ -97,34 +97,38 @@ export function useDocUploads(setId: string, opts: { onSettled?: () => void } = 
       const read = await readPdf(file, { signal, onPage: (d, t) => { if (d === t || d % 10 === 0) patch(key, { progress: d / t }); } });
       const batches = batchPages(read.pages, MAX_BATCH_BYTES);
       patch(key, { state: "uploading", progress: 0 });
+      const fileUrl = (id: string) => setUrl(setId, `/files/${encodeURIComponent(id)}`);
+      // Incomplete PDFs (a batch failed, or the tab was closed mid-upload) continue from the page the server has.
+      const incomplete = (f: DocFile) => f.method === "browser-pdfjs" && (f.pagesReceived ?? f.pages) < f.pages;
       let fileId = item.resume?.fileId;
-      let start = item.resume?.batch ?? 0;
       let doc: DocFile | undefined;
-      if (!fileId) {
+      if (fileId) {
+        doc = (await docsApi<{ file: DocFile }>(fileUrl(fileId), { signal })).file;
+      } else {
         const upload: BrowserPdfUpload & { totalPages?: number } = {
           kind: "pdf-text", name: file.name, size: file.size, sha256: read.sha256, pages: batches[0].pages, docDate: read.docDate, lastModified: file.lastModified || undefined,
         };
         if (batches.length > 1) upload.totalPages = read.pages.length;
         result = await docsApi<UploadResult>(setUrl(setId, "/files"), { json: upload, signal });
-        if (result.status === "rejected" || result.status === "duplicate") {
-          if (result.status === "duplicate") { originals.current.bySha.set(read.sha256, file); remember(result.file, file); }
-          return finish(key, result);
-        }
-        doc = result.file; fileId = doc.id; start = 1;
+        if (result.status === "rejected") return finish(key, result);
+        if (result.status === "duplicate" && !incomplete(result.file)) { originals.current.bySha.set(read.sha256, file); remember(result.file, file); return finish(key, result); }
+        doc = result.file; fileId = doc.id;
         remember(doc, file);
       }
-      for (let b = start; b < batches.length; b++) {
+      const received = doc.pagesReceived ?? doc.pages;
+      const rest = received < read.pages.length ? batchPages(read.pages.slice(received), MAX_BATCH_BYTES).map((b) => ({ ...b, fromPage: b.fromPage + received })) : [];
+      for (const [b, batch] of rest.entries()) {
         try {
-          const r = await docsApi<{ file: DocFile }>(setUrl(setId, `/files/${encodeURIComponent(fileId)}`), { method: "PATCH", json: { appendPages: batches[b].pages, fromPage: batches[b].fromPage }, signal });
+          const r = await docsApi<{ file: DocFile }>(fileUrl(fileId), { method: "PATCH", json: { appendPages: batch.pages, fromPage: batch.fromPage }, signal });
           doc = r.file;
-          patch(key, { progress: (b + 1) / batches.length, doc });
+          patch(key, { progress: (b + 1) / rest.length, doc });
         } catch (e) {
           patch(key, { resume: { fileId, batch: b } });
-          throw e instanceof DocsApiError ? new DocsApiError(`${e.message} (stopped at page ${batches[b].fromPage}; retry continues from there)`, e.status, e.kind) : e;
+          throw e instanceof DocsApiError ? new DocsApiError(`${e.message} (stopped at page ${batch.fromPage}; retry continues from there)`, e.status, e.kind) : e;
         }
       }
       originals.current.bySha.set(read.sha256, file);
-      result = { status: "created", file: doc ?? (await docsApi<{ file: DocFile }>(setUrl(setId, `/files/${encodeURIComponent(fileId)}`), { signal })).file };
+      result = { status: "created", file: doc };
     }
     return finish(key, result);
 

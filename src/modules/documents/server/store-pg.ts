@@ -338,8 +338,8 @@ export class PgDocStore implements DocStore {
 
   async listExtractions(setId: string, fileId?: string) {
     const rows = fileId
-      ? await this.q(`SELECT * FROM docs_extractions WHERE set_id = $1 AND file_id = $2 AND status = 'done' AND version = ${EXTRACTOR_VERSION}`, [setId, fileId])
-      : await this.q(`SELECT * FROM docs_extractions WHERE set_id = $1 AND status = 'done' AND version = ${EXTRACTOR_VERSION}`, [setId]);
+      ? await this.q(`SELECT * FROM docs_extractions WHERE set_id = $1 AND file_id = $2 AND status = 'done' AND version = ${EXTRACTOR_VERSION} AND file_id IN (SELECT id FROM docs_files WHERE set_id = $1)`, [setId, fileId])
+      : await this.q(`SELECT * FROM docs_extractions WHERE set_id = $1 AND status = 'done' AND version = ${EXTRACTOR_VERSION} AND file_id IN (SELECT id FROM docs_files WHERE set_id = $1)`, [setId]);
     return rows.map(extractionFromRow);
   }
 

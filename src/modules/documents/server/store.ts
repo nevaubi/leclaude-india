@@ -195,9 +195,10 @@ const STOP = new Set("a an and are as at be but by for from has have he her his 
 /** Distinct content words of a query (letters/digits), at most 16. */
 export function queryTerms(q: string): string[] {
   const out: string[] = [];
-  for (const m of (q ?? "").toLowerCase().matchAll(/[\p{L}\p{N}]+/gu)) {
+  // \p{M} keeps vowel signs and viramas inside words (Devanagari, Tamil, Kannada, Bengali…), which \p{L} alone would split.
+  for (const m of (q ?? "").toLowerCase().normalize("NFC").matchAll(/[\p{L}\p{M}\p{N}]+/gu)) {
     const w = m[0];
-    if (w.length < 2 && !/\d/.test(w)) continue;
+    if (w.length < 2 && !/\d/.test(w) && /^[\p{Script=Latin}]+$/u.test(w)) continue;
     if (STOP.has(w) || out.includes(w)) continue;
     out.push(w);
     if (out.length >= 16) break;

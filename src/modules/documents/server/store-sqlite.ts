@@ -320,8 +320,8 @@ export class SqliteDocStore implements DocStore {
 
   async listExtractions(setId: string, fileId?: string) {
     const rows = fileId
-      ? this.all(`SELECT * FROM docs_extractions WHERE set_id = ? AND file_id = ? AND status = 'done' AND version = ${EXTRACTOR_VERSION}`, [setId, fileId])
-      : this.all(`SELECT * FROM docs_extractions WHERE set_id = ? AND status = 'done' AND version = ${EXTRACTOR_VERSION}`, [setId]);
+      ? this.all(`SELECT * FROM docs_extractions WHERE set_id = ? AND file_id = ? AND status = 'done' AND version = ${EXTRACTOR_VERSION} AND file_id IN (SELECT id FROM docs_files WHERE set_id = ?)`, [setId, fileId, setId])
+      : this.all(`SELECT * FROM docs_extractions WHERE set_id = ? AND status = 'done' AND version = ${EXTRACTOR_VERSION} AND file_id IN (SELECT id FROM docs_files WHERE set_id = ?)`, [setId, setId]);
     return rows.map(extractionFromRow);
   }
 

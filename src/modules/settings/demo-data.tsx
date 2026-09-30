@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StatusDot } from "@/components/ui/misc";
 import { apiJSON, ApiError } from "@/modules/matters/components/api";
+import { matterHref } from "@/lib/features";
 
 /** Client view of GET /api/demo (mirrors DemoStatus in src/modules/demo; kept local so no server module is imported). */
 export interface DemoStatusView {
@@ -100,7 +101,7 @@ export function DemoDataSection({ initial }: { initial: DemoStatusView }) {
           </div>
           <div className="mt-2.5 flex flex-wrap gap-1.5">
             <Button size="xs" variant="outline" asChild><Link href={`/matters?id=${encodeURIComponent(status.matterId)}`}>Open matter <ArrowUpRight className="size-3" /></Link></Button>
-            <Button size="xs" variant="outline" asChild><Link href={`/ediscovery?matter=${encodeURIComponent(status.matterId)}`}>Open case records <ArrowUpRight className="size-3" /></Link></Button>
+            <Button size="xs" variant="outline" asChild><Link href={matterHref(status.matterId)}>Open case records <ArrowUpRight className="size-3" /></Link></Button>
             <Button size="xs" variant="outline" asChild><Link href={`/matters?id=${encodeURIComponent(status.relatedMatterId)}`}>Open Hyderabad writ <ArrowUpRight className="size-3" /></Link></Button>
           </div>
         </div>

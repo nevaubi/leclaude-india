@@ -3,20 +3,24 @@ import { db } from "@/lib/db";
 import { getOpenAI } from "@/lib/ai/openai";
 import { isReasoningModel } from "@/lib/ai/providers/openai-models";
 import { fetchUrlTool } from "@/lib/ai/toolkit/web";
-import type { AgentEmit, ToolContext } from "@/lib/ai/tools";
+import { normalizeArgs, runTool, toOpenAITool, type AgentEmit, type ToolContext, type ToolDef, type ToolRunResult } from "@/lib/ai/tools";
 import type { Principal } from "@/lib/auth/types";
-import type { ChatAttachmentInput, ChatEvent, ChatFile, ChatMessage, ChatSource, ChatToolFlags } from "../types";
+import { DEFAULT_KNOWLEDGE, type ChatAttachmentInput, type ChatEvent, type ChatFile, type ChatKnowledge, type ChatMessage, type ChatSource, type ChatToolFlags } from "../types";
+import { knowledgeTools } from "./knowledge";
 import { chatModels, routeMessage, type ChatRoute } from "./routing";
 import { newId } from "./store";
 
 /**
  * The Chat engine: one streaming OpenAI Responses call per round, OpenAI's native tools (web search, code interpreter,
- * image generation) plus two local function tools (fetch_url for reading a page, create_file for text documents),
- * function calls executed in parallel, at most MAX_ROUNDS rounds, and a hard deadline under the function limit.
+ * image generation) plus local function tools (fetch_url for reading a page, create_file for text documents, and the
+ * knowledge switch's tools: Indian law, firm library, the user's document sets), function calls executed in parallel, at most MAX_ROUNDS rounds, and a hard deadline under the function limit.
  * Nothing here is legal research of record: answers are labelled as chat, and deep work goes to Research.
  */
 
-const MAX_ROUNDS = 6;
+/** Search → read → read → answer with law or documents needs more rounds than a plain web answer. */
+const MAX_ROUNDS = 8;
+/** Sources a single tool call may add to the message (search tools return many hits; the chips stay readable). */
+const SOURCES_PER_CALL = 5;
 const HISTORY_TURNS = 16;
 const DEADLINE_MS = 240_000;
 
@@ -25,6 +29,9 @@ const INSTRUCTIONS = [
   "Use web search for anything current, factual or checkable, and cite what you rely on with the links from your search results. Say plainly when something could not be verified. Never invent citations, quotes, case names or numbers.",
   "Use the code interpreter for calculations, data files, charts, and to produce files the user asks for (spreadsheets, Word documents, PDFs, CSVs); mention the file you produced. Use create_file for simple text, Markdown, CSV, HTML or JSON documents.",
   "Use fetch_url to read a specific page the user links to or that you need to read in full.",
+  "When the Indian law tools are available (search_judgments, read_judgment, search_statutes, read_section, map_criminal_section, citing_references), prefer them over web search for Indian legal questions: find the judgment or section, read it before characterizing it, and cite judgments with the neutral or SCR/reporter citation exactly as the tool returned it and sections as Act and section number. Never invent a citation, paragraph or holding; if the tools do not find an authority, say so. Use map_criminal_section for IPC/BNS, CrPC/BNSS and Evidence Act/BSA correspondence and report its status as returned.",
+  "When search_documents is available, the user has selected their own document sets: use it for questions about their documents, read passages with read_document_passage when you need more context, and cite the file name and page for every statement drawn from them (e.g. \"Lease deed.pdf, p. 4\"). If the documents do not contain the answer, say the documents do not establish it.",
+  "When the firm library tools are available (search_library, get_library_item), use them for the firm's templates, precedents, clauses and notes, and name the item you relied on.",
   "This chat is for quick tasks. For exhaustive legal research with verified citations, suggest the Research page.",
 ].join("\n");
 
@@ -32,6 +39,12 @@ export interface RunChatInput {
   message: string;
   history: ChatMessage[];
   flags: ChatToolFlags;
+  /** Validated knowledge switch (document sets already filtered to what the principal may read). Default: web from flags.search, law on. */
+  knowledge?: ChatKnowledge;
+  /** Validated document sets the document tools search (id → name). */
+  docSets?: { id: string; name: string }[];
+  /** Notes to show as steps (e.g. "Document sets unavailable"). */
+  notes?: string[];
   attachments: ChatAttachmentInput[];
   principal: Principal | null;
   userId: string;
@@ -84,8 +97,8 @@ const FETCH_URL_TOOL = {
   },
 };
 
-function toolsFor(route: ChatRoute): unknown[] {
-  const t: unknown[] = [CREATE_FILE_TOOL];
+function toolsFor(route: ChatRoute, defs: ToolDef<never, unknown>[]): unknown[] {
+  const t: unknown[] = [CREATE_FILE_TOOL, ...defs.map((d) => toOpenAITool(d))];
   if (route.tools.search) t.push({ type: "web_search", search_context_size: route.tier === "fast" ? "low" : "medium", user_location: { type: "approximate", country: "US" } });
   if (route.tools.browse || route.tools.search) t.push(FETCH_URL_TOOL);
   if (route.tools.code) t.push({ type: "code_interpreter", container: { type: "auto" } });
@@ -126,10 +139,16 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
   const started = Date.now();
   const client = getOpenAI();
   const models = await chatModels(input.signal);
-  const route = routeMessage(input.message, input.flags, { attachments: input.attachments.length, historyTurns: input.history.length / 2 });
+  const knowledge: ChatKnowledge = input.knowledge ?? { ...DEFAULT_KNOWLEDGE, web: input.flags.search, docSetIds: [] };
+  const flags: ChatToolFlags = { ...input.flags, search: knowledge.web };
+  const defs = knowledgeTools(knowledge, input.docSets ?? []);
+  const defsByName = new Map(defs.map((d) => [d.name, d]));
+  const docs = defsByName.has("search_documents");
+  const route = routeMessage(input.message, flags, { attachments: input.attachments.length, historyTurns: input.history.length / 2, law: knowledge.law, docs });
   const model = route.tier === "fast" ? models.fast : models.standard;
-  const tools = toolsFor(route);
-  input.send({ type: "route", tier: route.tier, model, tools: Object.entries(route.tools).filter(([, v]) => v).map(([k]) => k) });
+  const tools = toolsFor(route, defs);
+  const toolNames = [...Object.entries(route.tools).filter(([, v]) => v).map(([k]) => k), ...(knowledge.law ? ["law"] : []), ...(knowledge.library ? ["library"] : []), ...(docs ? ["documents"] : [])];
+  input.send({ type: "route", tier: route.tier, model, tools: toolNames });
 
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(), DEADLINE_MS);
@@ -159,6 +178,8 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
     sources.push(s);
     input.send({ type: "source", source: s });
   };
+
+  for (const note of input.notes ?? []) step(note, "failed");
 
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -227,6 +248,14 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
       const results = await Promise.all(calls.map(async (c) => {
         let args: Record<string, unknown> = {};
         try { args = c.arguments ? JSON.parse(c.arguments) : {}; } catch { args = {}; }
+        const def = defsByName.get(c.name ?? "");
+        if (def) {
+          const clean = normalizeArgs(args);
+          const sid = step(knowledgeLabel(def, clean, "running"), "running");
+          const r = await runKnowledgeTool(def, clean, input, deadline.signal, addSource);
+          step(knowledgeLabel(def, clean, r.ok ? "done" : "failed", r), r.ok ? "done" : "failed", sid);
+          return { type: "function_call_output", call_id: c.call_id, output: r.output };
+        }
         const sid = step(c.name === "fetch_url" ? `Reading ${hostOf(String(args.url ?? ""))}` : c.name === "create_file" ? `Creating ${String(args.filename ?? "a file")}` : c.name ?? "Working", "running");
         try {
           const out = await runFunction(c.name ?? "", args, input, deadline.signal, addSource, (f) => { files.push(f); input.send({ type: "file", file: f }); });
@@ -279,6 +308,95 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
 }
 
 function hostOf(url: string): string { try { return new URL(url).host; } catch { return "the page"; } }
+
+const clip = (s: unknown, n = 80) => { const t = String(s ?? "").replace(/\s+/g, " ").trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
+
+/** The title a read tool returned (judgment title line, "Act, s. N — heading", file + page, library item name). */
+function resultTitle(r?: ToolRunResult): string | undefined {
+  const v = r?.value as { title?: unknown; name?: unknown } | undefined;
+  const t = v && typeof v === "object" ? (typeof v.title === "string" ? v.title : typeof v.name === "string" ? v.name : undefined) : undefined;
+  return t ? clip(t, 90) : undefined;
+}
+
+function resultCount(r?: ToolRunResult): number | undefined {
+  const c = (r?.value as { count?: unknown } | undefined)?.count;
+  return typeof c === "number" ? c : undefined;
+}
+
+/** Friendly step labels for the knowledge tools ("Searching judgments: …", "Reading section 138", "Searching your documents: …"). */
+export function knowledgeLabel(def: ToolDef<never, unknown>, a: Record<string, unknown>, phase: "running" | "done" | "failed", r?: ToolRunResult): string {
+  const q = clip(a.query);
+  const n = resultCount(r);
+  const found = n == null ? "" : ` (${n} found)`;
+  const section = String(a.id ?? "").split(":").pop() ?? "";
+  const running: Record<string, string> = {
+    search_judgments: `Searching judgments: ${q}`,
+    search_judgment_index: `Searching the judgment index: ${q}`,
+    read_judgment: "Reading a judgment",
+    citing_references: "Checking later judgments that cite it",
+    search_statutes: `Searching India Code: ${q}`,
+    read_section: section ? `Reading section ${clip(section, 20)}` : "Reading a section",
+    map_criminal_section: `Mapping ${clip(a.code, 8)} s. ${clip(a.section, 12)}`,
+    indian_kanoon_search: `Searching Indian Kanoon: ${q}`,
+    indian_kanoon_doc: "Reading an Indian Kanoon judgment",
+    search_library: `Searching the firm library: ${q}`,
+    get_library_item: "Reading a library item",
+    search_documents: `Searching your documents: ${q}`,
+    read_document_passage: "Reading a document passage",
+  };
+  const base = running[def.name] ?? clip(def.name.replace(/_/g, " "));
+  if (phase === "failed") {
+    const code = r?.error?.code;
+    return `${base} — ${code === "timeout" ? "timed out" : code === "unauthorized" ? "not permitted" : code === "not_found" ? "not found" : "failed"}`;
+  }
+  if (phase === "running") return base;
+  const title = resultTitle(r);
+  if (/^(read_judgment|read_section|get_library_item|read_document_passage|indian_kanoon_doc)$/.test(def.name) && title) return `Read ${title}`;
+  if (def.name === "search_judgments") return `Searched judgments: ${q}${found}`;
+  if (def.name === "search_statutes") return `Searched India Code: ${q}${found}`;
+  if (def.name === "search_library") return `Searched the firm library: ${q}${found}`;
+  if (def.name === "search_documents") return `Searched your documents: ${q}${found}`;
+  return base;
+}
+
+/** Titles for sources in a tool result, by source id (rows with `source` + `title`, at any depth up to 3). */
+function titlesBySource(value: unknown): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (v: unknown, depth: number) => {
+    if (!v || typeof v !== "object" || depth > 3) return;
+    if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1); return; }
+    const o = v as Record<string, unknown>;
+    if (typeof o.source === "string" && typeof o.title === "string" && !out.has(o.source)) out.set(o.source, o.title);
+    for (const x of Object.values(o)) if (x && typeof x === "object") walk(x, depth + 1);
+  };
+  walk(value, 0);
+  return out;
+}
+
+/**
+ * Run a knowledge ToolDef under the tool contract (authorization, timeout, bounded result, deterministic errors) with
+ * the caller's principal. Sources: citations the tool emits and evidence that carries a URL, at most SOURCES_PER_CALL.
+ */
+async function runKnowledgeTool(def: ToolDef<never, unknown>, args: Record<string, unknown>, input: RunChatInput, signal: AbortSignal, addSource: (url: string, title?: string) => void): Promise<ToolRunResult> {
+  const found: { url: string; title?: string; source?: string }[] = [];
+  const emit = (e: AgentEmit) => {
+    if (e.type === "citation" && e.citation.url) found.push({ url: e.citation.url, title: e.citation.title, source: e.citation.source });
+    else if (e.type === "evidence") for (const ev of e.evidence) if (ev.url) found.push({ url: ev.url, source: ev.source });
+  };
+  const ctx: ToolContext = { emit, signal, state: { userId: input.userId }, principal: input.principal ?? undefined };
+  const r = await runTool(def, args as never, ctx);
+  if (r.ok) {
+    const titles = titlesBySource(r.value);
+    const seen = new Set<string>();
+    for (const f of found) {
+      if (seen.has(f.url)) continue;
+      seen.add(f.url);
+      if (seen.size > SOURCES_PER_CALL) break;
+      addSource(f.url, f.title ?? (f.source ? titles.get(f.source) : undefined));
+    }
+  }
+  return r;
+}
 
 async function runFunction(name: string, args: Record<string, unknown>, input: RunChatInput, signal: AbortSignal, addSource: (url: string, title?: string) => void, addFile: (f: ChatFile) => void): Promise<unknown> {
   if (name === "fetch_url") {

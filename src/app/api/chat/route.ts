@@ -6,6 +6,7 @@ import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 import { currentPrincipal } from "@/lib/auth/context";
 import { runChat } from "@/modules/chat/server/engine";
+import { authorizeKnowledge, parseKnowledge } from "@/modules/chat/server/knowledge";
 import { createThread, getThread, newId, saveThread } from "@/modules/chat/server/store";
 import { DEFAULT_TOOL_FLAGS, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, MAX_TOTAL_ATTACHMENT_BYTES, type ChatAttachmentInput, type ChatEvent, type ChatMessage, type ChatRequest } from "@/modules/chat/types";
 
@@ -43,6 +44,8 @@ async function handlePOST(req: NextRequest) {
   if (message.length > 32_000) return jsonError("The message is too long", 422);
   const attachments = validAttachments(body?.attachments);
   if (typeof attachments === "string") return jsonError(attachments, 422);
+  const requested = parseKnowledge(body);
+  if (typeof requested === "string") return jsonError(requested, 422);
   if (!process.env.OPENAI_API_KEY?.trim()) return jsonError(new AIConfigError().message, 503, { code: "ai_not_configured" });
 
   let thread = body?.threadId ? getThread(body.threadId, principal.id) : null;
@@ -66,12 +69,14 @@ async function handlePOST(req: NextRequest) {
     thread = saveThread({ ...thread, messages: [...thread.messages, userMsg] });
   }
   const threadId = thread.id;
-  const flags = { ...DEFAULT_TOOL_FLAGS, ...(body?.tools ?? {}) };
+  // Document sets are narrowed to what the caller may read (fail closed; the tools only ever see these ids).
+  const { knowledge, sets: docSets, notes } = await authorizeKnowledge(principal, requested);
+  const flags = { ...DEFAULT_TOOL_FLAGS, ...(body?.tools ?? {}), search: knowledge.web };
 
   return sseResponse(async (send, signal) => {
     const emit = (e: ChatEvent) => send(e);
     emit({ type: "thread", threadId, title: thread!.title, userMessageId });
-    const answer = await runChat({ message: prompt, history, flags, attachments: body?.regenerate ? [] : attachments, principal, userId: principal.id, signal, send: emit });
+    const answer = await runChat({ message: prompt, history, flags, knowledge, docSets, notes, attachments: body?.regenerate ? [] : attachments, principal, userId: principal.id, signal, send: emit });
     const current = getThread(threadId, principal.id);
     if (current) saveThread({ ...current, messages: [...current.messages, answer] });
     emit({ type: "done", message: answer });

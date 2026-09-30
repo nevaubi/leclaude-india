@@ -10,6 +10,7 @@ import { intelAnalysisBootstrap } from "@/modules/intel/analysis/bootstrap";
 import { DOC_KIND_LABEL, FLAG_LABEL, entityHref, fmtDate } from "@/modules/intel/analysis/pure";
 import { getDocument, getDocumentText, intelEntities, intelSources, listChunks } from "@/modules/intel/store";
 import type { IntelEntity } from "@/modules/intel/types";
+import { matterHref } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,7 @@ export default async function IntelDocumentPage({ params }: Props) {
               {matters.length > 0 && (
                 <div>
                   <div className="flex h-8 items-center border-b text-[12.5px] font-semibold tracking-tight">Matters</div>
-                  <div className="divide-hairline">{matters.map((m) => <div key={m.id} className="flex h-7 items-center text-[12px]"><Link href={`/ediscovery?matter=${m.id}`} className="truncate hover:text-primary hover:underline">{m.shortName}</Link></div>)}</div>
+                  <div className="divide-hairline">{matters.map((m) => <div key={m.id} className="flex h-7 items-center text-[12px]"><Link href={matterHref(m.id)} className="truncate hover:text-primary hover:underline">{m.shortName}</Link></div>)}</div>
                 </div>
               )}
               {doc.tags.length > 0 && <div className="text-[11px] text-muted-foreground">Tags: {doc.tags.join(", ")}</div>}

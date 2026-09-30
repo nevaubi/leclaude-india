@@ -3,17 +3,20 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  ArrowUp, Check, ChevronDown, Code2, Copy, Download, FileText, Globe, History, ImageIcon, Loader2, MonitorPlay, Paperclip, Plus,
+  ArrowUp, Check, ChevronDown, Code2, Copy, Download, FileText, Globe, History, ImageIcon, Loader2, Mic, MicOff, MonitorPlay, Paperclip, Plus,
   RotateCcw, Square, Telescope, ThumbsDown, ThumbsUp, Trash2, X,
 } from "lucide-react";
 import { Markdown } from "@/components/ai/markdown";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { readSSE } from "@/lib/ai/sse";
+import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_TOOL_FLAGS, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS,
-  type ChatAttachmentInput, type ChatEvent, type ChatFile, type ChatMessage, type ChatSource, type ChatThreadSummary, type ChatToolFlags,
+  type ChatAttachmentInput, type ChatEvent, type ChatFile, type ChatKnowledge, type ChatMessage, type ChatSource, type ChatThreadSummary, type ChatToolFlags,
 } from "../types";
+import { KnowledgeMenu, useStoredKnowledge } from "./knowledge-menu";
+import { speechLang, useDictation } from "./use-dictation";
 
 const SUGGESTIONS: { text: string; icon: typeof Globe; tools?: Partial<ChatToolFlags> }[] = [
   { text: "What did the Supreme Court decide this week?", icon: Globe },
@@ -55,6 +58,7 @@ export function ChatPage({ initialThreadId, threads: initialThreads, configured,
   const [loadingThread, setLoadingThread] = React.useState(Boolean(initialThreadId));
   const [input, setInput] = React.useState("");
   const [flags, setFlags] = React.useState<ChatToolFlags>(DEFAULT_TOOL_FLAGS);
+  const [knowledge, setKnowledge] = useStoredKnowledge();
   const [attachments, setAttachments] = React.useState<ChatAttachmentInput[]>([]);
   const [streaming, setStreaming] = React.useState(false);
   const [draft, setDraft] = React.useState<Draft | null>(null);
@@ -129,7 +133,8 @@ export function ChatPage({ initialThreadId, threads: initialThreads, configured,
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId, message, tools: { ...flags, ...(o.tools ?? {}) }, attachments: sentAttachments, regenerate: o.regenerate }),
+        // Web search follows the knowledge switch (the Search chip and the Sources menu share it).
+        body: JSON.stringify({ threadId, message, tools: { ...flags, ...(o.tools ?? {}), search: knowledge.web }, knowledge, attachments: sentAttachments, regenerate: o.regenerate }),
         signal: ctrl.signal,
       });
       if (!res.ok) {
@@ -212,6 +217,8 @@ export function ChatPage({ initialThreadId, threads: initialThreads, configured,
       disabled={!configured || !signedIn}
       flags={flags}
       onFlags={setFlags}
+      knowledge={knowledge}
+      onKnowledge={setKnowledge}
       attachments={attachments}
       onRemoveAttachment={(i) => setAttachments((a) => a.filter((_, j) => j !== i))}
       onFiles={onFiles}
@@ -277,7 +284,7 @@ export function ChatPage({ initialThreadId, threads: initialThreads, configured,
 function Chip({ on, onClick, icon: Icon, label, title }: { on?: boolean; onClick: () => void; icon: typeof Globe; label: string; title?: string }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={on} title={title}
-      className={cn("inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[13px] transition-colors sm:px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         on ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground")}>
       <Icon className="size-4" /> <span className="hidden sm:inline">{label}</span>
     </button>
@@ -286,7 +293,7 @@ function Chip({ on, onClick, icon: Icon, label, title }: { on?: boolean; onClick
 
 function Composer(p: {
   value: string; onChange: (v: string) => void; onSend: () => void; onStop: () => void; streaming: boolean; disabled: boolean;
-  flags: ChatToolFlags; onFlags: (f: ChatToolFlags) => void; attachments: ChatAttachmentInput[]; onRemoveAttachment: (i: number) => void;
+  flags: ChatToolFlags; onFlags: (f: ChatToolFlags) => void; knowledge: ChatKnowledge; onKnowledge: (k: ChatKnowledge) => void; attachments: ChatAttachmentInput[]; onRemoveAttachment: (i: number) => void;
   onFiles: (f: FileList | null) => void; onDeepResearch: () => void; autoFocus?: boolean;
 }) {
   const ref = React.useRef<HTMLTextAreaElement>(null);
@@ -299,6 +306,11 @@ function Composer(p: {
   }, [p.value]);
   const toggle = (k: keyof ChatToolFlags) => p.onFlags({ ...p.flags, [k]: !p.flags[k] });
   const canSend = p.value.trim().length > 0 && !p.disabled;
+  const { locale } = useI18n();
+  const dictation = useDictation({ value: p.value, onChange: p.onChange, lang: speechLang(locale) });
+  const { stop: stopDictation } = dictation;
+  const send = () => { stopDictation(); p.onSend(); };
+  React.useEffect(() => { if (p.disabled || p.streaming) stopDictation(); }, [p.disabled, p.streaming, stopDictation]);
   return (
     <div className="rounded-[26px] border bg-background px-3 pb-2.5 pt-3 shadow-sm transition-shadow focus-within:shadow-md">
       {p.attachments.length > 0 && (
@@ -321,33 +333,62 @@ function Composer(p: {
         placeholder={p.disabled ? "Chat is not available" : "Ask anything"}
         aria-label="Message"
         onChange={(e) => p.onChange(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (canSend && !p.streaming) p.onSend(); } }}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (canSend && !p.streaming) send(); } }}
         className="block max-h-[220px] min-h-[28px] w-full resize-none bg-transparent px-2 text-[15px] leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed"
       />
       <div className="mt-2 flex items-center gap-1">
         <input ref={fileRef} type="file" multiple hidden accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/csv,text/markdown,.md,.csv,.txt,application/json" onChange={(e) => { p.onFiles(e.target.files); e.target.value = ""; }} />
         <button type="button" aria-label="Attach files" title="Attach files (up to 3 MB each)" onClick={() => fileRef.current?.click()} disabled={p.disabled}
-          className="inline-flex size-8 items-center justify-center rounded-full text-foreground hover:bg-accent disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-accent disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <Plus className="size-5" />
         </button>
-        <Chip on={p.flags.search} onClick={() => toggle("search")} icon={Globe} label="Search" title="Search the web" />
+        {/* Tool chips scroll sideways on narrow screens so the mic and send buttons always stay visible. */}
+        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+        {/* Web search is one of the sources (the former Search chip is folded into this menu). */}
+        <KnowledgeMenu value={p.knowledge} onChange={p.onKnowledge} disabled={p.disabled} />
         <Chip onClick={p.onDeepResearch} icon={Telescope} label="Deep research" title="Open Research for a sourced, verified legal answer" />
         <Chip on={p.flags.code} onClick={() => toggle("code")} icon={Code2} label="Code" title="Run code: calculations, data, charts, files" />
         <Chip on={p.flags.image} onClick={() => toggle("image")} icon={ImageIcon} label="Image" title="Create images" />
         <Chip on={p.flags.browse} onClick={() => toggle("browse")} icon={MonitorPlay} label="Browse" title="Read specific web pages" />
-        <div className="ml-auto">
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <MicButton d={dictation} disabled={p.disabled || p.streaming} />
           {p.streaming ? (
             <button type="button" onClick={p.onStop} aria-label="Stop" className="inline-flex size-9 items-center justify-center rounded-full bg-foreground text-background hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <Square className="size-3.5 fill-current" />
             </button>
           ) : (
-            <button type="button" onClick={p.onSend} disabled={!canSend} aria-label="Send" className="inline-flex size-9 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-90 disabled:bg-muted-foreground/30 disabled:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <button type="button" onClick={send} disabled={!canSend} aria-label="Send" className="inline-flex size-9 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-90 disabled:bg-muted-foreground/30 disabled:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <ArrowUp className="size-4" />
             </button>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function MicButton({ d, disabled }: { d: ReturnType<typeof useDictation>; disabled: boolean }) {
+  if (d.supported === null) return null;
+  if (!d.supported) {
+    return (
+      <span title="Dictation is not supported in this browser" aria-label="Dictation is not supported in this browser" role="img"
+        className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground/40">
+        <MicOff className="size-4" />
+      </span>
+    );
+  }
+  const label = d.listening ? "Stop dictation" : "Dictate";
+  return (
+    <>
+      <span role="status" aria-live="polite" className="sr-only">{d.listening ? "Listening" : d.error ?? ""}</span>
+      <button type="button" onClick={d.toggle} disabled={disabled} aria-pressed={d.listening} aria-label={label} title={d.error ?? (d.listening ? "Listening… click to stop" : "Dictate (speech is recognised by your browser)")}
+        className={cn("relative inline-flex size-8 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+          d.listening ? "bg-destructive/10 text-destructive" : d.error ? "text-destructive hover:bg-accent" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
+        <Mic className="size-4" />
+        {d.listening && <span aria-hidden className="absolute right-1 top-1 size-1.5 animate-pulse rounded-full bg-destructive" />}
+      </button>
+    </>
   );
 }
 
@@ -372,14 +413,20 @@ function Sources({ sources }: { sources: ChatSource[] }) {
   if (!sources.length) return null;
   return (
     <div className="flex flex-wrap gap-1.5">
-      {sources.slice(0, 12).map((s, i) => (
-        <a key={s.url} href={s.url} target="_blank" rel="noreferrer" title={s.title}
-          className="inline-flex max-w-[240px] items-center gap-1.5 rounded-full bg-accent/70 px-2.5 py-1 text-[12px] text-foreground hover:bg-accent">
-          <span aria-hidden className="inline-flex size-4 items-center justify-center rounded-sm bg-background text-[9px] font-semibold uppercase text-muted-foreground">{host(s.url).charAt(0)}</span>
-          <span className="truncate">{host(s.url)}</span>
-          <span className="text-muted-foreground">{i + 1}</span>
-        </a>
-      ))}
+      {sources.slice(0, 12).map((s, i) => {
+        // In-app sources (a page of the user's documents) open in place and show their title ("Lease.pdf, p. 4").
+        const internal = s.url.startsWith("/");
+        return (
+          <a key={s.url} href={s.url} {...(internal ? {} : { target: "_blank", rel: "noreferrer" })} title={s.title}
+            className="inline-flex max-w-[240px] items-center gap-1.5 rounded-full bg-accent/70 px-2.5 py-1 text-[12px] text-foreground hover:bg-accent">
+            {internal
+              ? <FileText aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              : <span aria-hidden className="inline-flex size-4 items-center justify-center rounded-sm bg-background text-[9px] font-semibold uppercase text-muted-foreground">{host(s.url).charAt(0)}</span>}
+            <span className="truncate">{internal ? s.title : host(s.url)}</span>
+            <span className="text-muted-foreground">{i + 1}</span>
+          </a>
+        );
+      })}
     </div>
   );
 }

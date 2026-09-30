@@ -14,6 +14,7 @@ import type { DocLite, EntityProfile } from "../analysis/types";
 import { ActivityBars } from "./activity-chart";
 import { chronologyKindLabel, groupByMonth } from "./models";
 import { BodySection, ConfidenceText, DateText, DocLink, EntityLink, FlagList, MethodNote } from "./shared";
+import { matterHref } from "@/lib/features";
 
 /** One line for a nested attribute value: scalars as-is, objects as their string fields ("U.S. District Judge · D.S.C. · 2010–"). */
 function describeValue(v: unknown): string {
@@ -163,7 +164,7 @@ export function EntityProfileView({ profile, userId, matterNames }: { profile: E
             </BodySection>
             {profile.matters.length > 0 && (
               <BodySection title="Matters" count={profile.matters.length}>
-                <div className="divide-hairline">{profile.matters.map((m) => <div key={m.id} className="flex h-7 items-center text-[12px]"><Link href={`/ediscovery?matter=${m.id}`} className="truncate hover:text-primary hover:underline" title={m.name}>{m.shortName}</Link></div>)}</div>
+                <div className="divide-hairline">{profile.matters.map((m) => <div key={m.id} className="flex h-7 items-center text-[12px]"><Link href={matterHref(m.id)} className="truncate hover:text-primary hover:underline" title={m.name}>{m.shortName}</Link></div>)}</div>
               </BodySection>
             )}
             <BodySection title="Insights" count={profile.insights.length || undefined}>

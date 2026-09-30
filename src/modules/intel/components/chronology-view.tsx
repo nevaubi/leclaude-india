@@ -13,6 +13,7 @@ import { DOC_KIND_LABEL, fmtInt } from "../analysis/pure";
 import type { ChronologyExportResult, ChronologyResult } from "../analysis/types";
 import { chronologyKindLabel, groupByMonth } from "./models";
 import { ConfidenceText, DateText, EmptySources, MethodNote, useJson } from "./shared";
+import { matterDocumentsHref } from "@/lib/features";
 
 const KINDS: IntelDocumentKind[] = ["docket", "docket_entry", "opinion", "register_notice", "regulation", "recall", "adverse_event", "mdl", "news"];
 
@@ -72,7 +73,7 @@ export function ChronologyView({ initial, options, entityName }: { initial: Chro
     <div className="flex min-h-0 flex-1 flex-col">
       <Filterbar filters={filters} values={values} onChange={setValues} status={<span className="tabular">{loading ? "Building…" : error ? `Error: ${error}` : `${fmtInt(result.entries.length)} events · ${result.sources.intel} from intelligence records · ${result.sources.ediscovery} from the e-discovery timeline · ${result.merged} merged`}</span>}>
         {matterId && <Button size="xs" onClick={() => void exportToTimeline()} disabled={exporting}>{exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} Export to e-discovery timeline</Button>}
-        {matterId && <Button size="xs" variant="ghost" asChild><Link href={`/ediscovery?matter=${matterId}&tab=timeline`}>Open timeline</Link></Button>}
+        {matterId && <Button size="xs" variant="ghost" asChild><Link href={matterDocumentsHref(matterId)}>Documents</Link></Button>}
       </Filterbar>
       <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
         <div className="mx-auto max-w-[1100px] space-y-4 p-3 pb-8">

@@ -11,6 +11,7 @@ import type { CalendarEvent, Task } from "@/lib/types/domain";
 import { countdown, dueText, type Urgency } from "../time";
 import { EVENT_KIND_LABEL } from "../types";
 import { useHome } from "./home-provider";
+import { matterHref } from "@/lib/features";
 
 /** Event kind → token classes (dot, chip background/text, calendar bar). */
 export const KIND_STYLE: Record<CalendarEvent["kind"], { dot: string; chip: string; bar: string; label: string }> = {
@@ -72,7 +73,7 @@ export function MatterBadge({ matterId, className, link }: { matterId?: string |
   const m = matterById(matterId);
   if (!m) return null;
   const inner = <span className={cn("inline-flex max-w-[160px] items-center gap-1 truncate text-[11px] text-muted-foreground", link && "hover:text-primary", className)} title={m.name}><Scale className="size-2.5 shrink-0" /><span className="truncate">{m.shortName}</span></span>;
-  return link ? <Link href={`/ediscovery?matter=${m.id}`} onClick={(e) => e.stopPropagation()}>{inner}</Link> : inner;
+  return link ? <Link href={matterHref(m.id)} onClick={(e) => e.stopPropagation()}>{inner}</Link> : inner;
 }
 
 export function SourceIcon({ source, className }: { source?: Task["source"]; className?: string }) {

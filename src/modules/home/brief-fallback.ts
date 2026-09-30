@@ -5,6 +5,7 @@
 import type { NewsItem, Task, TeamUpdate } from "@/lib/types/domain";
 import type { BriefItem, CalendarEntry, DailyBrief, MatterLite, PersonLite } from "./types";
 import { addDays, countdownPhrase, dateKey, daysBetween, endOfWeek, fmtTime, startOfDay, startOfWeek, toDate } from "./time";
+import { matterHref } from "@/lib/features";
 
 export interface BriefContext {
   now: Date;
@@ -79,7 +80,7 @@ export function computeFallbackBrief(ctx: BriefContext): DailyBrief {
 
   // 3. Matter key dates in the next 30 days.
   for (const k of facts.keyDatesSoon.slice(0, 3)) {
-    items.push({ kind: "deadline", text: `${k.matter.shortName}: ${k.label} ${countdownPhrase(k.date, now)} (${fmtLong(k.date)}).`, matterId: k.matter.id, href: `/ediscovery?matter=${k.matter.id}` });
+    items.push({ kind: "deadline", text: `${k.matter.shortName}: ${k.label} ${countdownPhrase(k.date, now)} (${fmtLong(k.date)}).`, matterId: k.matter.id, href: matterHref(k.matter.id) });
   }
 
   // 4. Due-soon tasks.

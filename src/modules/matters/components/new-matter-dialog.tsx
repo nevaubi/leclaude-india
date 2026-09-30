@@ -10,6 +10,7 @@ import type { TeamMember } from "@/modules/workspace/roles";
 import type { MatterRow } from "../types";
 import { apiJSON, ApiError, loadTeam } from "./api";
 import { draftToInput, emptyDraft, MatterFields, validateDraft, type DraftErrors, type MatterDraft } from "./matter-form";
+import { matterDocumentsHref } from "@/lib/features";
 
 export interface NewMatterDialogProps {
   open: boolean;
@@ -77,7 +78,7 @@ export function NewMatterDialog({ open, onOpenChange, onCreated }: NewMatterDial
               <DialogDescription>{t("matters.dialog.readyDesc")}</DialogDescription>
             </DialogHeader>
             <nav className="divide-y rounded-md border" aria-label={t("matters.dialog.nextSteps")}>
-              <NextStep href={`/ediscovery?matter=${encodeURIComponent(created.id)}`} label={t("matters.dialog.upload")} hint={t("matters.dialog.uploadHint")} onNavigate={() => onOpenChange(false)} />
+              <NextStep href={matterDocumentsHref(created.id)} label={t("matters.dialog.upload")} hint={t("matters.dialog.uploadHint")} onNavigate={() => onOpenChange(false)} />
               <NextStep href={`/?matter=${encodeURIComponent(created.id)}`} label={t("matters.dialog.workspace")} hint={t("matters.dialog.workspaceHint")} onNavigate={() => onOpenChange(false)} />
             </nav>
             <DialogFooter><Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>{t("common.done")}</Button></DialogFooter>

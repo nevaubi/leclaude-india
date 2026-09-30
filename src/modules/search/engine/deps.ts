@@ -26,6 +26,10 @@ import { RESEARCH_MODEL_POLICY as POLICY } from "./model-policy";
 import { FOLLOW_UP_INSTRUCTIONS, PLAN_INSTRUCTIONS, REFINE_INSTRUCTIONS, TRANSLATE_QUERY_INSTRUCTIONS } from "./prompts";
 import { classifyTreatment, INDIAN_NEGATIVE_TREATMENT_PHRASES } from "./treatment";
 import type { AuthorityTreatment, LaneKind } from "./types";
+import { FEATURES } from "@/lib/features";
+import { currentPrincipal } from "@/lib/auth/context";
+import { listDocSets, readDocPassage, searchDocSets } from "@/modules/documents/server";
+import type { DocSearchHit } from "@/modules/documents/types";
 
 /** Model-derived plan: jurisdiction-aware sub-questions and extra retrieval queries per lane kind. */
 export interface ResearchPlan {
@@ -77,6 +81,34 @@ export interface EngineDeps {
 
 function toolCtx(signal?: AbortSignal): ToolContext {
   return { emit: () => {}, signal, state: {} };
+}
+
+/**
+ * "Matter documents" in LeClaude India: the matter's document sets (e-discovery is hidden). Only sets on the selected
+ * matter that the principal can read; no matter selected → nothing (never widened to other sets).
+ */
+async function matterDocumentHits(query: string, matterId: string | null | undefined, limit: number): Promise<{ hits: SearchHit[]; total: number }> {
+  const principal = currentPrincipal();
+  if (!principal || !matterId) return { hits: [], total: 0 };
+  const setIds = (await listDocSets(principal)).filter((s) => s.matterId === matterId).map((s) => s.id);
+  if (!setIds.length) return { hits: [], total: 0 };
+  const found = await searchDocSets(principal, setIds, query, { limit });
+  const hits = found.map(docHit);
+  return { hits, total: hits.length };
+}
+
+function docHit(h: DocSearchHit): SearchHit {
+  const where = h.page != null ? `, p. ${h.page}` : "";
+  return {
+    id: `ediscovery:${h.source}`,
+    source: "ediscovery",
+    title: `${h.fileName}${where}${h.ocr ? " (OCR)" : ""}`,
+    snippet: h.text.slice(0, 400),
+    url: `/documents/${encodeURIComponent(h.setId)}?tab=files&file=${encodeURIComponent(h.fileId)}${h.page != null ? `&page=${h.page}` : ""}`,
+    score: h.score,
+    authority: "n/a",
+    readRef: { kind: "url", url: h.source },
+  };
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
@@ -224,7 +256,9 @@ export function defaultDeps(): EngineDeps {
             return { hits: rows.map((r) => normalizeIndiaSection(statuteRow(r))), total: rows.length };
           }
           case "library": return normalizeToolResult(source, await Promise.resolve(searchLibraryTool.execute({ query, matter_id: settings.matterId ?? undefined, limit }, ctx)), nctx);
-          case "ediscovery": return normalizeToolResult(source, await Promise.resolve(searchEdiscoveryTool.execute({ query, matter_id: settings.matterId ?? undefined, date_after: range.from, date_before: range.to, limit }, ctx)), nctx);
+          case "ediscovery":
+            if (!FEATURES.ediscovery) return matterDocumentHits(query, settings.matterId, limit);
+            return normalizeToolResult(source, await Promise.resolve(searchEdiscoveryTool.execute({ query, matter_id: settings.matterId ?? undefined, date_after: range.from, date_before: range.to, limit }, ctx)), nctx);
           // US providers are not offered in LeClaude India (the US toolkit still compiles for the US fork).
           case "regulations": case "federal_register": case "dockets": case "web": return { hits: [], total: 0 };
         }
@@ -246,6 +280,12 @@ export function defaultDeps(): EngineDeps {
     },
 
     async read(ref, opts) {
+      if (ref.kind === "url" && ref.url.startsWith("docs://")) {
+        const principal = currentPrincipal();
+        const r = principal ? await readDocPassage(principal, ref.url) : null;
+        if (!r) throw new Error("Document passage not found or not accessible");
+        return { text: r.context || r.hit.text, title: `${r.hit.fileName}${r.hit.page != null ? `, p. ${r.hit.page}` : ""}`, url: docHit(r.hit).url, cached: true };
+      }
       if (ref.kind === "url" && ref.url.startsWith(IK_READ_PREFIX)) {
         const ik = indianKanoonClient();
         if (!ik) throw new Error("Indian Kanoon is not configured (the connector is not ready).");

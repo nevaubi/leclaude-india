@@ -90,6 +90,7 @@ export const en = {
   // Navigation
   "nav.home": "Home",
   "nav.chat": "Chat",
+  "nav.documents": "Documents",
   "nav.matters": "Matters",
   "nav.search": "Research",
   "nav.intel": "Intelligence",
@@ -104,6 +105,7 @@ export const en = {
   "nav.office.pdfs": "PDFs",
   "nav.desc.home": "Today, matters, tasks, calendar and the team's updates",
   "nav.desc.chat": "Quick answers, web search, calculations and files",
+  "nav.desc.documents": "Upload document sets; ask questions, pull facts and build timelines",
   "nav.desc.matters": "Matters, parties, hearing dates and the workspace each one scopes",
   "nav.desc.search": "Judgments, statutes, rules, cause lists and internal knowledge",
   "nav.desc.intel": "Courts, benches, authorities and notifications, watched and cross-analysed",

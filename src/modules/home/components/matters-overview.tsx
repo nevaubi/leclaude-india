@@ -16,6 +16,7 @@ import { useHomeUI } from "../store";
 import { useHome } from "./home-provider";
 import { EmptyRow, PeopleStack, Section } from "./shared";
 import { hotCell, matterMeta, matterRows, taskCell } from "./matters-table-model";
+import { matterHref, matterDocumentsHref } from "@/lib/features";
 
 /** Columns the overview leaves out so the table fits beside the brief; the focused view offers them in the chooser. */
 const OVERVIEW_HIDDEN = ["stage", "events", "team", "area", "client"];
@@ -54,7 +55,7 @@ function MattersTable({ rows, virtualize, activeId, density }: { rows: MatterOve
       id: "matter", header: t("home.matters.matter"), width: 260, minWidth: 160, sortable: true, locked: true, accessor: (m) => m.shortName,
       render: (m) => (
         <span className="flex min-w-0 items-baseline gap-1.5">
-          <Link href={`/ediscovery?matter=${m.id}`} className="max-w-full shrink-0 truncate font-medium hover:underline underline-offset-2" onClick={(e) => e.stopPropagation()}>{m.shortName}</Link>
+          <Link href={matterHref(m.id)} className="max-w-full shrink-0 truncate font-medium hover:underline underline-offset-2" onClick={(e) => e.stopPropagation()}>{m.shortName}</Link>
           <span className="hidden min-w-0 truncate text-[11px] text-muted-foreground xl:inline" title={matterMeta(m)}>{matterMeta(m)}</span>
         </span>
       ),
@@ -109,7 +110,7 @@ function MattersTable({ rows, virtualize, activeId, density }: { rows: MatterOve
       hiddenColumns={virtualize ? undefined : OVERVIEW_HIDDEN}
       activeId={activeId ?? undefined}
       ariaLabel={t("home.section.matters")}
-      onRowActivate={(m) => router.push(`/ediscovery?matter=${m.id}`)}
+      onRowActivate={(m) => router.push(matterHref(m.id))}
       rowClassName={(m) => (matterFilter === m.id ? "row-selected" : undefined)}
       rowActions={(m) => (
         <span className="flex items-center">
@@ -119,7 +120,7 @@ function MattersTable({ rows, virtualize, activeId, density }: { rows: MatterOve
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" className="size-6" data-row-action onClick={(e) => e.stopPropagation()} aria-label="Matter actions"><MoreHorizontal className="size-3.5" /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem asChild><Link href={`/ediscovery?matter=${m.id}`}><FileSearch /> E-Discovery</Link></DropdownMenuItem>
+              <DropdownMenuItem asChild><Link href={matterDocumentsHref(m.id)}><FileSearch /> Documents</Link></DropdownMenuItem>
               <DropdownMenuItem asChild><Link href={`/library?matter=${m.id}`}><Library /> Library</Link></DropdownMenuItem>
               <DropdownMenuItem asChild><Link href={`/search?q=${encodeURIComponent(m.shortName)}`}><Scale /> Research</Link></DropdownMenuItem>
               <DropdownMenuSeparator />

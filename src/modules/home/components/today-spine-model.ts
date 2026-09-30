@@ -6,6 +6,7 @@
 import type { Task } from "@/lib/types/domain";
 import type { CalendarEntry, MatterOverview } from "../types";
 import { dateKey, daysBetween, toDate } from "../time";
+import { matterHref } from "@/lib/features";
 
 export type SpineDeadlineKind = "deadline" | "filing" | "hearing" | "key-date";
 
@@ -55,7 +56,7 @@ export function upcomingDeadlines(input: SpineInput, limit = 3, horizonDays = 12
     const key = `${e.matterId ?? ""}|${dateKey(e.startsAt)}|${e.title.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ id: e.id, title: e.title, date: e.startsAt, matterId: e.matterId, kind: e.kind === "hearing" ? "hearing" : e.kind === "filing" ? "filing" : e.derived ? "key-date" : "deadline", days, source: e.derived ? "matter" : "event", href: e.derived ? `/ediscovery?matter=${e.derived.matterId}` : `/?event=${e.id}` });
+    out.push({ id: e.id, title: e.title, date: e.startsAt, matterId: e.matterId, kind: e.kind === "hearing" ? "hearing" : e.kind === "filing" ? "filing" : e.derived ? "key-date" : "deadline", days, source: e.derived ? "matter" : "event", href: e.derived ? matterHref(e.derived.matterId) : `/?event=${e.id}` });
   }
   for (const m of input.matterOverview) {
     if (matterFilter && m.id !== matterFilter) continue;
@@ -65,7 +66,7 @@ export function upcomingDeadlines(input: SpineInput, limit = 3, horizonDays = 12
       // A key date already projected onto the calendar (same matter + day) is not repeated.
       if (seen.has(key) || out.some((d) => d.matterId === m.id && dateKey(d.date) === k.date)) continue;
       seen.add(key);
-      out.push({ id: `${m.id}:${k.date}:${k.label}`, title: k.label, date: k.date, matterId: m.id, kind: "key-date", days: k.daysUntil, source: "matter", href: `/ediscovery?matter=${m.id}` });
+      out.push({ id: `${m.id}:${k.date}:${k.label}`, title: k.label, date: k.date, matterId: m.id, kind: "key-date", days: k.daysUntil, source: "matter", href: matterHref(m.id) });
     }
   }
   out.sort((a, b) => a.days - b.days || a.date.localeCompare(b.date) || a.title.localeCompare(b.title));

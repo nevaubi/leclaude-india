@@ -1,4 +1,6 @@
 import { pageDb } from "@/lib/db/request";
+import { redirect } from "next/navigation";
+import { FEATURES, matterDocumentsHref } from "@/lib/features";
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
@@ -14,8 +16,10 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "E-Discovery" };
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ matter?: string; tab?: string; doc?: string; person?: string; q?: string; view?: string; custodian?: string; batch?: string; production?: string }> }) {
-  await pageDb();
   const sp = await searchParams;
+  // Hidden in the India product: every e-discovery link lands on the matter's document sets instead.
+  if (!FEATURES.ediscovery) redirect(matterDocumentsHref(sp.matter));
+  await pageDb();
   const d = db();
   ensureReviewSeeded(d);
   const counts = new Map<string, number>();

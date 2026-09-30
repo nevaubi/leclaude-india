@@ -17,6 +17,7 @@ import { fmtDate, relativeLabel, toDate } from "../time";
 import { useHomeUI } from "../store";
 import { useHome } from "./home-provider";
 import { EmptyRow, MatterBadge, Section } from "./shared";
+import { matterHref } from "@/lib/features";
 
 const CATEGORY: Record<NewsItem["category"], { label: string; icon: LucideIcon; className: string }> = {
   court: { label: "Court", icon: Gavel, className: "text-primary" },
@@ -165,7 +166,7 @@ function NewsCard({ item: n, index, full }: { item: NewsItem; index: number; ful
               <p className="mt-1 leading-relaxed">{whyRelevant(n, matters.map((m) => m!.shortName))}</p>
               {matters.length > 0 && (
                 <ul className="mt-2 space-y-1">
-                  {matters.map((m) => <li key={m!.id}><Link href={`/ediscovery?matter=${m!.id}`} className="inline-flex items-center gap-1 text-primary hover:underline"><Scale className="size-3" />{m!.shortName}<span className="text-muted-foreground">· {m!.practiceArea}</span></Link></li>)}
+                  {matters.map((m) => <li key={m!.id}><Link href={matterHref(m!.id)} className="inline-flex items-center gap-1 text-primary hover:underline"><Scale className="size-3" />{m!.shortName}<span className="text-muted-foreground">· {m!.practiceArea}</span></Link></li>)}
                 </ul>
               )}
               <div className="mt-2 flex items-center gap-1 text-[10.5px] text-muted-foreground">Relevance score <span className="tabular font-medium text-foreground">{relevance}</span>/100 · published {fmtDate(n.publishedAt, { month: "short", day: "numeric", year: "numeric" })}{toDate(n.publishedAt).getTime() > now.getTime() ? " (future-dated)" : ""}</div>

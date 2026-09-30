@@ -25,6 +25,7 @@ import { useHomeUI, type CalendarView } from "../store";
 import { eventFormFor, type EventForm } from "../forms";
 import { useHome } from "./home-provider";
 import { CountdownChip, DateInput, EmptyRow, FieldLabel, KIND_STYLE, KindDot, MatterBadge, NONE, Section, TimeInput } from "./shared";
+import { matterHref, matterDocumentsHref } from "@/lib/features";
 
 // ---------------------------------------------------------------------------
 // Data helpers
@@ -477,7 +478,7 @@ export function EventSheet() {
                   <div className="text-[11.5px] font-medium text-muted-foreground">Matter</div>
                   <div className="mt-0.5 font-medium">{matter.shortName} <span className="font-normal text-muted-foreground">· {matter.caption ?? matter.practiceArea}</span></div>
                   <div className="mt-1.5 flex gap-1.5">
-                    <Button asChild variant="outline" size="xs"><Link href={`/ediscovery?matter=${matter.id}`}><FileSearch className="size-3" /> E-Discovery</Link></Button>
+                    <Button asChild variant="outline" size="xs"><Link href={matterDocumentsHref(matter.id)}><FileSearch className="size-3" /> Documents</Link></Button>
                     <Button asChild variant="outline" size="xs"><Link href={`/library?matter=${matter.id}`}><ScrollText className="size-3" /> Library</Link></Button>
                   </div>
                 </div>
@@ -529,7 +530,7 @@ export function EventSheet() {
                     <Button size="sm" onClick={() => openEventDialog({ eventId: e.id })}><Pencil className="size-3.5" /> Edit</Button>
                   </>
                 )}
-                {e.derived && <Button asChild size="sm" variant="outline"><Link href={`/ediscovery?matter=${e.derived.matterId}`}>Open matter <ExternalLink className="size-3" /></Link></Button>}
+                {e.derived && <Button asChild size="sm" variant="outline"><Link href={matterHref(e.derived.matterId)}>Open matter <ExternalLink className="size-3" /></Link></Button>}
               </div>
             </SheetFooter>
             <span className="sr-only">{daysBetween(now, toDate(e.startsAt))} days</span>

@@ -25,7 +25,7 @@ const BRIEF_SCHEMA = strictJsonSchema({
           kind: { type: "string", enum: ["deadline", "hearing", "task", "news", "update", "matter", "note"] },
           text: { type: "string", description: "One or two sentences. Specific: names, dates, Bates or docket numbers when given." },
           matterId: { type: "string", description: "Matter id when the bullet concerns one matter" },
-          href: { type: "string", description: "In-app link: /#calendar, /#tasks, /#news, /#updates, /ediscovery?matter=<id>, or the news URL" },
+          href: { type: "string", description: "In-app link: /#calendar, /#tasks, /#news, /#updates, /matters?id=<id>, or the news URL" },
         },
         required: ["kind", "text"],
       },

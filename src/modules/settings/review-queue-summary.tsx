@@ -7,6 +7,7 @@ import { CountChip, EmptyState } from "@/components/ui/misc";
 import type { ReviewQueueItem } from "@/lib/integrity/types";
 import { isEndpointMissing, summarizeByMatter } from "@/modules/ediscovery/components/review-queue-helpers";
 import { SettingsBlock } from "./settings-section";
+import { FEATURES, matterHref } from "@/lib/features";
 
 /**
  * Settings → Integrity → Review queue. Pending AI records grouped by matter,
@@ -50,8 +51,10 @@ export function ReviewQueueSummary({ matters }: { matters: { id: string; shortNa
             <li key={r.matterId ?? "firm"} className="flex h-8 items-center gap-3 text-[12px]">
               <span className="w-8 shrink-0 text-right tabular font-medium text-warning-foreground dark:text-warning">{r.pending}</span>
               <div className="min-w-0 flex-1 truncate"><span className="font-medium">{r.matterName}</span><span className="ml-2 text-[11px] text-muted-foreground">{r.kinds.join(" · ")}</span></div>
-              {r.matterId ? (
+              {r.matterId && FEATURES.ediscovery ? (
                 <Button asChild size="xs" variant="ghost"><Link href={`/ediscovery?matter=${encodeURIComponent(r.matterId)}&tab=codes&view=review`}>Open queue <ArrowRight className="size-3" /></Link></Button>
+              ) : r.matterId ? (
+                <Button asChild size="xs" variant="ghost"><Link href={matterHref(r.matterId)}>Open matter <ArrowRight className="size-3" /></Link></Button>
               ) : (
                 <span className="text-[11px] text-muted-foreground">firm-wide records</span>
               )}

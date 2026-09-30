@@ -58,7 +58,7 @@ describe("Today spine model", () => {
     // A derived key-date event links to the matter; the trial key date (not on the calendar) is added from the matter.
     const derived = more.find((x) => x.id === "e_derived")!;
     expect(derived.source).toBe("matter");
-    expect(derived.href).toBe("/ediscovery?matter=m_north");
+    expect(derived.href).toBe("/matters?id=m_north");
     expect(more.map((x) => x.title)).toContain("Trial");
   });
   it("adds matter key dates that are not on the calendar and respects the horizon", () => {

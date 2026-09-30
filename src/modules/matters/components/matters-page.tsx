@@ -19,6 +19,7 @@ import { apiJSON, ApiError, loadTeam } from "./api";
 import { draftFrom, draftToInput, MatterFields, validateDraft, type DraftErrors, type MatterDraft } from "./matter-form";
 import { NewMatterDialog } from "./new-matter-dialog";
 import { causeListLabel, courtName, formatCaseNumber } from "../india";
+import { matterDocumentsHref } from "@/lib/features";
 
 type LoadState = { status: "loading" } | { status: "ready"; rows: MatterRow[]; archived: number } | { status: "error"; message: string; denied?: boolean };
 
@@ -328,7 +329,7 @@ function MatterInspector({ matter: m, onClose, onSaved, onArchived }: { matter: 
             </section>
           )}
           <section className="flex flex-col gap-1 border-t pt-3 text-[12.5px]">
-            <Link className="w-fit text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground" href={`/ediscovery?matter=${encodeURIComponent(m.id)}`}>{t("matters.documentsLink")}</Link>
+            <Link className="w-fit text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground" href={matterDocumentsHref(m.id)}>{t("matters.documentsLink")}</Link>
             <Link className="w-fit text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground" href={`/?matter=${encodeURIComponent(m.id)}`}>{t("matters.openWorkspace")}</Link>
           </section>
         </div>

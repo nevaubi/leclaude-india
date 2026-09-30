@@ -10,6 +10,23 @@ export interface ChatToolFlags {
 
 export const DEFAULT_TOOL_FLAGS: ChatToolFlags = { search: true, code: false, image: false, browse: false };
 
+/**
+ * The composer's knowledge switch: which sources the assistant may consult. Web maps to the web-search tool (and
+ * stays in sync with `tools.search`); law adds the Indian judgment/statute tools; library the firm library tools;
+ * docSetIds the user's document sets (validated on the server against the sets the caller may read; fail closed).
+ */
+export interface ChatKnowledge {
+  web: boolean;
+  law: boolean;
+  library: boolean;
+  docSetIds: string[];
+}
+
+export const DEFAULT_KNOWLEDGE: ChatKnowledge = { web: true, law: true, library: false, docSetIds: [] };
+
+/** At most this many document sets per message. */
+export const MAX_DOC_SETS = 20;
+
 export interface ChatSource {
   url: string;
   title: string;
@@ -75,6 +92,8 @@ export interface ChatRequest {
   threadId?: string;
   message: string;
   tools?: Partial<ChatToolFlags>;
+  /** Knowledge switch. Absent (older clients): web follows `tools.search`, law on, library off, no document sets. */
+  knowledge?: Partial<ChatKnowledge>;
   attachments?: ChatAttachmentInput[];
   /** Replace the last assistant answer (regenerate) instead of appending a new user turn. */
   regenerate?: boolean;

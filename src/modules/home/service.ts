@@ -1,4 +1,6 @@
 import "server-only";
+import type { Principal } from "@/lib/auth/types";
+import { listDocSets } from "@/modules/documents/server";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import type { CalendarEvent, LibraryItem, NewsItem, PracticeArea, Task, TeamUpdate } from "@/lib/types/domain";
@@ -418,6 +420,17 @@ export function getOrComputeBrief(now = new Date(), userId = currentUser().id): 
 // ---------------------------------------------------------------------------
 // Initial page payload
 // ---------------------------------------------------------------------------
+
+/** First-run "Upload documents" counts files in the document sets the principal can see (documents live outside the mirror). */
+export async function withDocumentSetFiles(data: HomeInitialData, principal: Principal | null): Promise<HomeInitialData> {
+  if (!principal) return data;
+  try {
+    const files = (await listDocSets(principal)).reduce((n, s) => n + s.fileCount, 0);
+    return files && data.setup ? { ...data, setup: { ...data.setup, documents: data.setup.documents + files } } : data;
+  } catch {
+    return data;
+  }
+}
 
 export function loadHomeInitialData(opts: { now?: Date; userId?: string; aiConfigured: boolean }): HomeInitialData {
   const now = opts.now ?? new Date();

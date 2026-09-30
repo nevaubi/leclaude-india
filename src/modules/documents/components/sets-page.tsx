@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AlertCircle, Files, Loader2, Plus, RotateCcw, ShieldAlert, Trash2 } from "lucide-react";
@@ -22,7 +23,8 @@ export interface MatterChoice { id: string; shortName: string; name?: string }
 type Load = { status: "loading" } | { status: "ready"; sets: DocSet[] } | { status: "error"; message: string; kind: ApiErrorKind; code?: number };
 
 /** /documents: the document sets the user can see, with create and delete. */
-export function SetsPage({ initialSets, matters }: { initialSets: DocSet[] | null; matters: MatterChoice[] }) {
+/** `matterFilter` (?matter=<id>, where matter links across the app land) narrows the list to that matter's sets. */
+export function SetsPage({ initialSets, matters, matterFilter = null }: { initialSets: DocSet[] | null; matters: MatterChoice[]; matterFilter?: string | null }) {
   const router = useRouter();
   const [load, setLoad] = React.useState<Load>(initialSets ? { status: "ready", sets: initialSets } : { status: "loading" });
   const [reload, setReload] = React.useState(initialSets ? 0 : 1);
@@ -47,7 +49,9 @@ export function SetsPage({ initialSets, matters }: { initialSets: DocSet[] | nul
     return () => ac.abort();
   }, []);
 
-  const sets = load.status === "ready" ? load.sets : [];
+  const allSets = load.status === "ready" ? load.sets : [];
+  const sets = matterFilter ? allSets.filter((s) => s.matterId === matterFilter) : allSets;
+  const filterMatter = matterFilter ? matters.find((m) => m.id === matterFilter) : null;
 
   const columns = React.useMemo<DataTableColumn<DocSet>[]>(() => [
     { id: "name", header: "Set", width: 400, minWidth: 180, sortable: true, locked: true, accessor: (s) => s.name, render: (s) => (
@@ -80,6 +84,13 @@ export function SetsPage({ initialSets, matters }: { initialSets: DocSet[] | nul
           <Button size="sm" onClick={() => setNewOpen(true)} disabled={load.status === "error" && load.kind === "auth"}><Plus className="size-3.5" /> New set</Button>
         </div>
       </PageTopbar>
+      {matterFilter && (
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-[12px]">
+          <span className="text-muted-foreground">Matter</span>
+          <span className="font-medium">{filterMatter ? filterMatter.shortName : "Not found or no access"}</span>
+          <Link href="/documents" className="text-primary hover:underline">Show all sets</Link>
+        </div>
+      )}
       {status?.storage.full && (
         <Notice tone="warning" className="m-3 mb-0">Document storage is full ({Math.round(status.storage.usedMb)} of {status.storage.limitMb} MB). New files cannot be added until storage is increased.</Notice>
       )}
@@ -113,7 +124,7 @@ export function SetsPage({ initialSets, matters }: { initialSets: DocSet[] | nul
           />
         )}
       </div>
-      <NewSetDialog open={newOpen} onOpenChange={setNewOpen} matters={matters} onCreated={(s) => router.push(`/documents/${encodeURIComponent(s.id)}`)} />
+      <NewSetDialog open={newOpen} onOpenChange={setNewOpen} matters={matters} defaultMatterId={filterMatter?.id} onCreated={(s) => router.push(`/documents/${encodeURIComponent(s.id)}`)} />
       <DeleteSetDialog set={toDelete} onClose={() => setToDelete(null)} onDeleted={(id) => setLoad((l) => (l.status === "ready" ? { ...l, sets: l.sets.filter((s) => s.id !== id) } : l))} />
     </div>
   );
@@ -121,7 +132,7 @@ export function SetsPage({ initialSets, matters }: { initialSets: DocSet[] | nul
 
 const NO_MATTER = "__none__";
 
-export function NewSetDialog({ open, onOpenChange, matters, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; matters: MatterChoice[]; onCreated: (s: DocSet) => void }) {
+export function NewSetDialog({ open, onOpenChange, matters, onCreated, defaultMatterId }: { open: boolean; onOpenChange: (o: boolean) => void; matters: MatterChoice[]; onCreated: (s: DocSet) => void; defaultMatterId?: string }) {
   const [name, setName] = React.useState("");
   const [matterId, setMatterId] = React.useState<string>(NO_MATTER);
   const [description, setDescription] = React.useState("");
@@ -131,8 +142,8 @@ export function NewSetDialog({ open, onOpenChange, matters, onCreated }: { open:
 
   React.useEffect(() => {
     if (!open) return;
-    setName(""); setMatterId(NO_MATTER); setDescription(""); setError(null); setTouched(false);
-  }, [open]);
+    setName(""); setMatterId(defaultMatterId ?? NO_MATTER); setDescription(""); setError(null); setTouched(false);
+  }, [open, defaultMatterId]);
 
   const nameError = touched && !name.trim() ? "Give the set a name." : undefined;
 

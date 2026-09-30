@@ -9,12 +9,13 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Documents" };
 
 /** /documents: document sets. Sets are listed on the server when possible; otherwise the client loads them from the API. */
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ matter?: string }> }) {
+  const sp = await searchParams;
   await pageDb();
   const principal = await pagePrincipal("/documents");
   let sets: DocSet[] | null = null;
   if (principal) {
     try { sets = await listDocSets(principal); } catch { sets = null; /* the client retries through /api/documents/sets and shows the error */ }
   }
-  return <SetsPage initialSets={sets} matters={visibleMatters(principal)} />;
+  return <SetsPage initialSets={sets} matters={visibleMatters(principal)} matterFilter={sp.matter ?? null} />;
 }

@@ -36,6 +36,13 @@ export function SetWorkspace({ setId, initialTab, matters }: { setId: string; in
 
   const refreshSet = React.useCallback(() => setReload((n) => n + 1), []);
 
+  // Deep link from Chat and Research sources: ?file=<fileId>&page=<n> opens the text viewer at that page.
+  const linkFile = params.get("file");
+  const linkPage = Number(params.get("page"));
+  React.useEffect(() => {
+    if (linkFile) setViewer({ fileId: linkFile, page: Number.isFinite(linkPage) && linkPage > 0 ? linkPage : null });
+  }, [linkFile, linkPage]);
+
   React.useEffect(() => {
     const ac = new AbortController();
     docsApi<{ set: DocSet }>(setUrl(setId), { signal: ac.signal })

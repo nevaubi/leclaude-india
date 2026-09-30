@@ -62,7 +62,7 @@ describe("Home on an empty workspace", () => {
     const steps = firstRunSteps({ matters: 0, documents: 0, people: 0, aiConfigured: false });
     expect(steps.map((s) => [s.id, s.href, s.done])).toEqual([
       ["matter", "/matters?new=1", false],
-      ["documents", "/ediscovery", false],
+      ["documents", "/documents", false],
       ["provider", "/settings#ai", false],
       ["team", "/settings#team", false],
     ]);

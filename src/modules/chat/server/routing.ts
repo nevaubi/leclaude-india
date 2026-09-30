@@ -68,13 +68,18 @@ const URL_RE = /https?:\/\/[^\s)]+/i;
 const CODE_HINT = /\b(calculat|compute|interest|amortiz|spreadsheet|excel|xlsx|csv|chart|plot|graph|table of|regression|statistic|average|median|sum of|percent|python|parse this|convert (this|to)|word count|docx|pdf file|make a file|create a file|download)/i;
 const IMAGE_HINT = /\b(draw|generate an? (image|picture|illustration|logo|diagram)|make an? (image|picture|illustration|logo)|illustrat)/i;
 const DEPTH_HINT = /\b(analy[sz]e|compare|contrast|explain why|step by step|draft|memo|brief|argument|strategy|evaluate|pros and cons|thorough|detailed|in depth|summari[sz]e (this|the attached))/i;
+/** A legal question that needs reasoning over authority (not a one-line lookup such as "what is section 138"). */
+const LEGAL_ANALYTIC = /\b(whether|can (a|an|the|my|our|i|we)\b|should|liab(le|ility)|remed(y|ies)|defen[cs]es?|maintainab|applicab|limitation period|quash|bail|acquit|convict|injunction|stay of|appeal against|cause of action|burden of proof|admissib|precedent|overrul|binding|ratio|held that|interpret)/i;
+/** A question about the user's documents that needs reading across them (not a single fact lookup). */
+const DOCS_ANALYTIC = /\b(timeline|chronolog|contradict|inconsisten|all (the )?(references|mentions)|across|each (document|file)|key (facts|terms|issues)|obligations|breach|summar)/i;
 
 /**
  * Route a message (pure, deterministic). Short conversational or lookup messages go to the fast tier; longer, analytic,
- * attachment-bearing or tool-heavy ones to the standard tier. Tools the user switched on stay on; code, image and
+ * attachment-bearing or tool-heavy ones — and legal/analytic questions when Indian law or document sets are selected —
+ * to the standard tier. Tools the user switched on stay on; code, image and
  * browsing are also turned on when the message plainly asks for them.
  */
-export function routeMessage(message: string, flags: ChatToolFlags, o: { attachments?: number; historyTurns?: number } = {}): ChatRoute {
+export function routeMessage(message: string, flags: ChatToolFlags, o: { attachments?: number; historyTurns?: number; law?: boolean; docs?: boolean } = {}): ChatRoute {
   const text = message.trim();
   const tools: ChatToolFlags = {
     search: flags.search,
@@ -82,7 +87,9 @@ export function routeMessage(message: string, flags: ChatToolFlags, o: { attachm
     image: flags.image || IMAGE_HINT.test(text),
     browse: flags.browse || URL_RE.test(text),
   };
-  const heavy = text.length > 600 || DEPTH_HINT.test(text) || (o.attachments ?? 0) > 0 || tools.code || tools.image || (o.historyTurns ?? 0) > 12;
+  // With Indian law or document sets selected, a legal/analytic question goes to the standard tier; lookups stay fast.
+  const knowledgeHeavy = (o.law === true && LEGAL_ANALYTIC.test(text)) || (o.docs === true && (DOCS_ANALYTIC.test(text) || LEGAL_ANALYTIC.test(text)));
+  const heavy = knowledgeHeavy || text.length > 600 || DEPTH_HINT.test(text) || (o.attachments ?? 0) > 0 || tools.code || tools.image || (o.historyTurns ?? 0) > 12;
   return heavy
     ? { tier: "standard", effort: text.length > 1500 || /\b(draft|memo|brief|strategy)\b/i.test(text) ? "medium" : "low", verbosity: "medium", tools, maxOutputTokens: 8_000 }
     : { tier: "fast", effort: "low", verbosity: "low", tools, maxOutputTokens: 3_000 };

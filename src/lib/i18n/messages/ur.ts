@@ -79,6 +79,8 @@ export const ur: Messages = {
   "ui.commandPalette": "کمانڈ پیلیٹ",
 
   "nav.home": "صفحۂ اول",
+
+  "nav.chat": "چیٹ",
   "nav.matters": "مقدمات",
   "nav.search": "قانونی تحقیق",
   "nav.intel": "انٹیلیجنس",
@@ -92,6 +94,7 @@ export const ur: Messages = {
   "nav.office.decks": "پیشکشیں",
   "nav.office.pdfs": "PDF",
   "nav.desc.home": "آج کا دن، مقدمات، کام، کیلنڈر اور ٹیم کی تازہ اطلاعات",
+  "nav.desc.chat": "فوری جوابات، ویب تلاش، حسابات اور فائلیں",
   "nav.desc.matters": "مقدمات، فریقین، سماعت کی تاریخیں اور ہر مقدمے کا دائرۂ کار",
   "nav.desc.search": "فیصلے، قوانین، ضوابط، مقدمات کی فہرستیں اور داخلی معلومات",
   "nav.desc.intel": "عدالتیں، بنچ، حکام اور اعلامیے — نگرانی اور تجزیہ",

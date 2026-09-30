@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 /** POST /api/search/read {kind, id|url|title+section, title?} → full text for the reader drawer. */
 async function handlePOST(req: Request) {

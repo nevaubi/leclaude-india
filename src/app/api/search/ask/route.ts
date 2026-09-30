@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 /** POST /api/search/ask — "Ask about this source" mini chat (useAgent-compatible body + {source, text}). */
 async function handlePOST(req: Request) {

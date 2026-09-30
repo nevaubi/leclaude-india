@@ -7,6 +7,7 @@ import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 /** POST /api/search/expand {query, jurisdiction?} → three alternate boolean queries (fast model, JSON schema). */
 async function handlePOST(req: Request) {

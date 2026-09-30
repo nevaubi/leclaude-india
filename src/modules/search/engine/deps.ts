@@ -64,6 +64,8 @@ export interface EngineDeps {
   planQueries?(input: { question: string; context: string; laneKinds: LaneKind[]; signal?: AbortSignal }): Promise<ResearchPlan>;
   /** Citing-reference treatment signal for a judgment (corpus) or a CourtListener opinion (never an assertion of good law). */
   citing?(input: { opinionId?: number; judgmentId?: string; signal?: AbortSignal }): Promise<AuthorityTreatment>;
+  /** Overrides the run wall (researchWallMs); stage budgets scale with it. Tests only. */
+  wallMs?: number;
   /** Resolve one citation without substitution (Indian corpus; the US resolution shape is accepted for compatibility). */
   resolveCitation?(citation: string, signal?: AbortSignal): Promise<CitationResolution | IndianCitationResolution>;
   /**

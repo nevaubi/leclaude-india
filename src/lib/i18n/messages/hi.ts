@@ -79,6 +79,8 @@ export const hi: Messages = {
   "ui.commandPalette": "कमांड पैलेट",
 
   "nav.home": "मुखपृष्ठ",
+
+  "nav.chat": "चैट",
   "nav.matters": "मामले",
   "nav.search": "विधिक शोध",
   "nav.intel": "इंटेलिजेंस",
@@ -92,6 +94,7 @@ export const hi: Messages = {
   "nav.office.decks": "प्रस्तुतियाँ",
   "nav.office.pdfs": "PDF",
   "nav.desc.home": "आज का दिन, मामले, कार्य, कैलेंडर और टीम की सूचनाएँ",
+  "nav.desc.chat": "त्वरित उत्तर, वेब खोज, गणना और फ़ाइलें",
   "nav.desc.matters": "मामले, पक्षकार, सुनवाई की तिथियाँ और प्रत्येक मामले का कार्यक्षेत्र",
   "nav.desc.search": "निर्णय, अधिनियम, नियम, वाद सूचियाँ और आंतरिक ज्ञान",
   "nav.desc.intel": "न्यायालय, पीठ, प्राधिकरण और अधिसूचनाएँ — निगरानी और विश्लेषण सहित",

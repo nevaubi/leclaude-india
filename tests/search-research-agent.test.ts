@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { db, resetSqlite } from "@/lib/db";
 import type { ToolDef } from "@/lib/ai/tools";
 import { isIndianLegalFetchHost } from "@/lib/ai/toolkit/india";
-import { runResearch, mergeSubQuestions } from "@/modules/search/engine/run";
+import { runResearch, mergeSubQuestions, researchWallMs } from "@/modules/search/engine/run";
 import { planLanes, planSubQuestions, contraryQuery, ADVERSE_SUBQUESTION_MARK } from "@/modules/search/engine/planner";
 import { buildLaneTools, rankForReading } from "@/modules/search/engine/lanes";
 import { createReadRegistry, cacheKey } from "@/modules/search/engine/cache";
@@ -353,5 +353,56 @@ describe("memo, table of authorities and Send to Word", () => {
     expect(JSON.stringify(stored.content)).toContain("Table of Authorities");
     expect(() => sendResearchToWord({ threadId: "thr_missing" })).toThrow(/Thread not found/);
     void TS_HC;
+  });
+});
+
+// ---- time budget -------------------------------------------------------------------
+
+describe("run wall (serverless limit)", () => {
+  /** A synthesis that streams part of the answer and then stalls until its stage signal fires. */
+  const stalling = (partial: string): EngineDeps["synthesize"] => async (input) => {
+    input.onDelta(partial);
+    await new Promise((_, reject) => {
+      const fail = () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+      if (input.signal?.aborted) fail();
+      input.signal?.addEventListener("abort", fail, { once: true });
+    });
+    return partial;
+  };
+  const QUESTION = "Can anticipatory bail be refused only because the offence is economic?";
+
+  it("defaults under the 300s function limit and honours RESEARCH_WALL_MS only when sane", () => {
+    expect(researchWallMs({})).toBe(265_000);
+    expect(researchWallMs({ RESEARCH_WALL_MS: "600000" })).toBe(600_000);
+    expect(researchWallMs({ RESEARCH_WALL_MS: "5000" })).toBe(265_000);
+    expect(researchWallMs({ RESEARCH_WALL_MS: "abc" })).toBe(265_000);
+  });
+
+  it("keeps a streamed partial answer when synthesis hits its deadline and ends as budget_exhausted, not failed", async () => {
+    const deps = Object.assign(fakeDeps(), { wallMs: 2_000 });
+    deps.synthesize = stalling("## Short Answer\nThe gravity of an economic offence is one factor, not a bar [1].");
+    const t0 = Date.now();
+    const res = await runResearch({ question: QUESTION, settings: settings(), runId: "run_wall_partial" }, () => {}, undefined, deps);
+    expect(Date.now() - t0).toBeLessThan(4_000);
+    expect(res.message.content).toContain("one factor, not a bar");
+    expect(res.message.content).toContain("cut short by the run's time limit");
+    expect(res.terminal).toBe("budget_exhausted");
+    expect(res.stop).toBe("hard_limit");
+  });
+
+  it("reports a timeout failure when synthesis produced nothing before the deadline", async () => {
+    const deps = Object.assign(fakeDeps(), { wallMs: 1_500 });
+    deps.synthesize = stalling("");
+    const res = await runResearch({ question: QUESTION, settings: settings(), runId: "run_wall_empty" }, () => {}, undefined, deps);
+    expect(res.terminal).toBe("failed");
+    expect(res.failure).toBe("timeout");
+  });
+
+  it("a client cancel during synthesis is still a cancel, not a timeout", async () => {
+    const deps = fakeDeps();
+    deps.synthesize = stalling("Partial");
+    const ctrl = new AbortController();
+    const res = await runResearch({ question: QUESTION, settings: settings(), runId: "run_wall_cancel" }, (e) => { if (e.type === "answer.delta") ctrl.abort(); }, ctrl.signal, deps);
+    expect(res.terminal).toBe("cancelled");
   });
 });

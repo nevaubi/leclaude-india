@@ -79,6 +79,8 @@ export const bn: Messages = {
   "ui.commandPalette": "কমান্ড প্যালেট",
 
   "nav.home": "মূল পাতা",
+
+  "nav.chat": "চ্যাট",
   "nav.matters": "মামলা",
   "nav.search": "আইনি গবেষণা",
   "nav.intel": "ইন্টেলিজেন্স",
@@ -92,6 +94,7 @@ export const bn: Messages = {
   "nav.office.decks": "উপস্থাপনা",
   "nav.office.pdfs": "PDF",
   "nav.desc.home": "আজকের দিন, মামলা, কাজ, ক্যালেন্ডার ও দলের আপডেট",
+  "nav.desc.chat": "দ্রুত উত্তর, ওয়েব অনুসন্ধান, হিসাব ও ফাইল",
   "nav.desc.matters": "মামলা, পক্ষ, শুনানির তারিখ ও প্রতিটি মামলার কার্যক্ষেত্র",
   "nav.desc.search": "রায়, আইন, বিধি, মামলার তালিকা ও অভ্যন্তরীণ জ্ঞান",
   "nav.desc.intel": "আদালত, বেঞ্চ, কর্তৃপক্ষ ও বিজ্ঞপ্তি — নজরদারি ও বিশ্লেষণ",

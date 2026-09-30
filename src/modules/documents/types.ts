@@ -56,6 +56,10 @@ export interface DocFile {
   pages: number;
   /** 1-based page numbers with no text layer (candidates for OCR). */
   ocrPages: number[];
+  /** 1-based pages whose stored text was transcribed by the vision model (method "ocr-ai" for those pages). */
+  ocrDonePages?: number[];
+  /** Batched PDF uploads: pages received so far (equals `pages` once complete). */
+  pagesReceived?: number;
   chars: number;
   /** Date carried by the file itself (PDF/DOCX metadata, email Date header), ISO; never the upload time. */
   docDate?: string | null;
@@ -88,6 +92,8 @@ export interface DocSearchHit {
   idx: number;
   text: string;
   score: number;
+  /** True when the page text was transcribed by the vision model (OCR), not read from a text layer. */
+  ocr?: boolean;
 }
 
 /** A citation in an answer: the [n] marker and the passage it points to. */

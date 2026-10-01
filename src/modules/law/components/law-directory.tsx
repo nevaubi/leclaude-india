@@ -160,7 +160,7 @@ export function LawDirectory() {
   const active = hasActiveLawFilters(filters);
   const sortOptions: { value: LawSort; label: string }[] = [
     ...(filters.q ? [{ value: "relevance" as const, label: "Best match" }] : []),
-    { value: "title", label: "Title A–Z" }, { value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" },
+    { value: "title", label: "Acts first, A–Z" }, { value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" },
   ];
 
   if (unavailable) {

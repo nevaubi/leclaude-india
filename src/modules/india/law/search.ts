@@ -48,12 +48,20 @@ export function decodeOffsetCursor(c: string | null | undefined, max: number): n
   return Number.isInteger(n) && n >= 0 && n <= max ? n : 0;
 }
 
+/**
+ * Browse order puts what a litigator reaches for first: Central Acts, then State Acts, then regulator instruments and
+ * reports; within each, titles that start with a letter (ignoring a leading "The") before file-name-like titles
+ * (digits, hashes, brackets) that some regulator sources publish.
+ */
+const GROUP = `CASE i.jurisdiction WHEN 'central' THEN 0 WHEN 'state' THEN 1 ELSE 2 END, CASE WHEN i.kind = 'report' THEN 1 ELSE 0 END, CASE WHEN i.title ~* '^(the\\s+)?[a-z\\u0900-\\u0dff]' AND i.title !~* '^[0-9a-f]{16,}' THEN 0 ELSE 1 END`;
+const TITLE_KEY = `regexp_replace(lower(i.title), '^the\\s+', '')`;
+
 function instrumentOrder(sort: LawSort, hasQ: boolean): string {
   switch (sort) {
-    case "newest": return "i.year DESC NULLS LAST, lower(i.title), i.id";
-    case "oldest": return "i.year ASC NULLS LAST, lower(i.title), i.id";
-    case "title": return "lower(i.title), i.id";
-    default: return hasQ ? "exact DESC, rank DESC, i.year DESC NULLS LAST, i.id" : "lower(i.title), i.id";
+    case "newest": return `${GROUP}, i.year DESC NULLS LAST, ${TITLE_KEY}, i.id`;
+    case "oldest": return `${GROUP}, i.year ASC NULLS LAST, ${TITLE_KEY}, i.id`;
+    case "title": return `${GROUP}, ${TITLE_KEY}, i.id`;
+    default: return hasQ ? "exact DESC, rank DESC, i.year DESC NULLS LAST, i.id" : `${GROUP}, ${TITLE_KEY}, i.id`;
   }
 }
 

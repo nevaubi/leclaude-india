@@ -283,7 +283,7 @@ describe("search", () => {
     expect(q.params).toEqual(["Karnataka Rent Act", "%karnataka rent act%", "state", "KA"]);
     store.calls = [];
     await searchInstruments({ cursor: "o:50", sort: "newest" }, store);
-    expect(store.calls[0].query).toContain("ORDER BY i.year DESC NULLS LAST");
+    expect(store.calls[0].query).toMatch(/ORDER BY CASE i.jurisdiction WHEN .central. THEN 0 .*i.year DESC NULLS LAST/);
     expect(store.calls[0].query).toMatch(/LIMIT 51 OFFSET 50$/);
     expect(store.calls[0].query).not.toContain("tsquery");
   });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RemoteStore, Row, SqlQuery } from "@/lib/db/remote";
 import { isSafeFetchError } from "@/lib/net/safe-fetch";
 import { getMedia, storeImageFromUrl } from "@/modules/media/store";
+import { MAX_SOURCE_BYTES } from "@/modules/media/resize";
 import { isMediaId, MAX_IMAGE_BYTES, MediaValidationError, sniffImage, validateImage } from "@/modules/media/validate";
 
 class FakeStore implements RemoteStore {
@@ -94,8 +95,8 @@ describe("SSRF-safe image fetch", () => {
     expect(isSafeFetchError(err) && err.code).toBe("blocked_address");
   });
 
-  it("aborts a body above the image limit", async () => {
-    const big = (async () => new Response(new Uint8Array(10), { status: 200, headers: { "content-type": "image/png", "content-length": String(MAX_IMAGE_BYTES + 1) } })) as unknown as typeof fetch;
+  it("aborts a body above the source download limit", async () => {
+    const big = (async () => new Response(new Uint8Array(10), { status: 200, headers: { "content-type": "image/png", "content-length": String(MAX_SOURCE_BYTES + 1) } })) as unknown as typeof fetch;
     const err = await storeImageFromUrl("https://judges.example.gov.in/p.png", {}, { store, fetchImpl: big }).catch((e) => e);
     expect(isSafeFetchError(err) && err.code).toBe("body_too_large");
   });

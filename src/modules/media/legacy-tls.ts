@@ -10,7 +10,7 @@ import { constants } from "node:crypto";
  */
 
 const LEGACY_HOSTS = /(^|\.)(gov\.in|nic\.in)$/i;
-const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_BYTES = 8 * 1024 * 1024; // matches MAX_SOURCE_BYTES in resize.ts
 
 export function isLegacyTlsError(e: unknown): boolean {
   const cause = (e as { cause?: { code?: string; message?: string } })?.cause;

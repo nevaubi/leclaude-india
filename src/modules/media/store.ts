@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { fromBytea, remoteStore, type RemoteStore, type SqlQuery } from "@/lib/db/remote";
 import { safeFetch, type EgressPolicy, type SafeFetchInit } from "@/lib/net/safe-fetch";
 import { isLegacyTlsError, legacyTlsAllowed, legacyTlsFetch } from "./legacy-tls";
-import { isMediaId, MAX_IMAGE_BYTES, mediaUrl, validateImage, type ImageMime } from "./validate";
+import { fitImageForStore, MAX_SOURCE_BYTES } from "./resize";
+import { isMediaId, mediaUrl, validateImage, type ImageMime } from "./validate";
 
 /**
  * Media store: images we fetched from official sources, kept in Postgres (`media_assets`) and served by us at
@@ -118,12 +119,15 @@ export async function storeImageBytes(bytes: Uint8Array, declaredType: string | 
 
 /** Download an image from an official page (SSRF-safe) and store it. Throws SafeFetchError / MediaValidationError. */
 export async function storeImageFromUrl(url: string, meta: MediaMeta = {}, deps: MediaDeps = {}): Promise<StoredMedia> {
-  const get = (fetchImpl?: typeof fetch) => safeFetch(url, { headers: { accept: "image/png,image/jpeg,image/gif,image/webp;q=0.9,*/*;q=0.1", "user-agent": "LeClaude-Enrichment/1.0 (+court and judge identity; attribution kept)" }, signal: deps.signal, fetchImpl }, {
+  const get = (fetchImpl?: typeof fetch, legacy = false) => safeFetch(url, { headers: { accept: "image/png,image/jpeg,image/gif,image/webp;q=0.9,*/*;q=0.1", "user-agent": "LeClaude-Enrichment/1.0 (+court and judge identity; attribution kept)" }, signal: deps.signal, fetchImpl }, {
     name: "media",
-    maxBytes: MAX_IMAGE_BYTES,
+    // Originals may be larger than the store limit; fitImageForStore validates and downsizes them below.
+    maxBytes: MAX_SOURCE_BYTES,
     timeoutMs: 20_000,
     maxRedirects: 3,
     ...deps.egress,
+    // A custom transport would otherwise skip the private-address DNS check; the legacy retry keeps it.
+    ...(legacy ? { dnsCheck: true } : {}),
   });
   let res;
   try {
@@ -131,10 +135,11 @@ export async function storeImageFromUrl(url: string, meta: MediaMeta = {}, deps:
   } catch (e) {
     // Older government servers need TLS legacy renegotiation; retry once for those hosts only (see legacy-tls.ts).
     if (deps.fetchImpl || !isLegacyTlsError(e) || !legacyTlsAllowed(url)) throw e;
-    res = await get(legacyTlsFetch);
+    res = await get(legacyTlsFetch, true);
   }
   if (!res.ok) throw new Error(`Image request failed with HTTP ${res.status}`);
-  return storeImageBytes(res.body, res.contentType || null, res.finalUrl || url, meta, deps);
+  const fitted = await fitImageForStore(res.body, res.contentType || null);
+  return storeImageBytes(fitted.bytes, fitted.declaredType, res.finalUrl || url, meta, deps);
 }
 
 export async function setMediaVision(id: string, vision: VisionVerdict, deps: { store?: RemoteStore | null } = {}): Promise<void> {

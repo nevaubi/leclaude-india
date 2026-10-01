@@ -33,6 +33,7 @@ export function cacheKey(ref: ReadRef): string {
     case "statute": return `url:${ref.url.trim()}`;
     case "judgment": return `judgment:${ref.id}`;
     case "section": return `section:${ref.id}`;
+    case "law": return `law:${ref.actId}:${ref.section}:${ref.variant}`;
   }
 }
 
@@ -49,7 +50,7 @@ export function putCached(ref: ReadRef, r: { title?: string; cite?: string; url?
   const key = cacheKey(ref);
   // Matter documents, library items, corpus judgments and India Code sections are already local; caching them buys nothing and risks staleness after edits.
   const row: CachedSource = { id: sha256(key).slice(0, 24), key, kind: ref.kind, title: r.title, cite: r.cite, url: r.url, text: r.text.slice(0, MAX_TEXT), length: r.text.length, fetchedAt: new Date().toISOString(), hits: 0 };
-  if (ref.kind !== "edoc" && ref.kind !== "library" && ref.kind !== "judgment" && ref.kind !== "section") sourceCache().put(row);
+  if (ref.kind !== "edoc" && ref.kind !== "library" && ref.kind !== "judgment" && ref.kind !== "section" && ref.kind !== "law") sourceCache().put(row);
   return row;
 }
 

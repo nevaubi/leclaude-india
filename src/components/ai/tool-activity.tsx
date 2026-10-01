@@ -6,7 +6,7 @@ import type { ToolActivity, Citation } from "@/hooks/use-agent";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   web_search: Globe, fetch_url: Globe, search_case_law: Scale, get_opinion_text: Scale, search_dockets: Landmark, get_docket_entries: Landmark, verify_citations: Check,
-  search_cfr: BookOpen, get_cfr_section: BookOpen, search_federal_register: BookOpen, get_federal_register_document: BookOpen, search_statutes: BookOpen,
+  search_cfr: BookOpen, get_cfr_section: BookOpen, search_federal_register: BookOpen, get_federal_register_document: BookOpen, search_statutes: BookOpen, search_law: BookOpen, read_law_section: BookOpen, list_law_instruments: BookOpen,
   search_ediscovery: Search, get_ediscovery_document: FileText, search_library: Library, get_library_item: FileText, get_matter_context: FileText,
 };
 

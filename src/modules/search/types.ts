@@ -55,7 +55,9 @@ export type ReadRef =
   /** A judgment in the local SC/HC corpus (intel document id). */
   | { kind: "judgment"; id: string }
   /** An India Code section in the store. */
-  | { kind: "section"; id: string };
+  | { kind: "section"; id: string }
+  /** A section of the statutes corpus in Postgres (Open India Law parse): exact act id, section number and variant. */
+  | { kind: "law"; actId: string; section: string; variant: number };
 
 /** Indian authority metadata carried on a hit (court identity from the registry; never guessed). */
 export interface IndianHitMeta {

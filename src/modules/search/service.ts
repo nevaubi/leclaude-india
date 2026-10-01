@@ -9,6 +9,7 @@ import { fetchUrlTool } from "@/lib/ai/toolkit/web";
 import { getOpinionTextTool, getCfrSectionTool, getFederalRegisterDocumentTool } from "@/lib/ai/toolkit/legal";
 import { citingReferencesTool, mapCriminalSectionTool, readJudgment, readJudgmentTool, readSectionTool, readStatuteSection, resolveIndianCitation, searchJudgmentsTool, searchStatutesIndiaTool, visibleMatters } from "@/lib/ai/toolkit/india";
 import { formatStatuteCitation } from "./india-citations";
+import { isLawActId, LAW_DATASET, lawHref, lawSourceId, normSectionKey, normVariant, publisherLabel, statusLabel } from "@/modules/law/shared";
 import { JURISDICTIONS } from "./jurisdictions";
 import { getLibraryItemTool, getEdiscoveryDocumentTool } from "@/lib/ai/toolkit/internal";
 import { LEGAL_STYLE_RULES, todayLine } from "@/lib/ai/prompts";
@@ -244,6 +245,14 @@ async function readSourceUncached(ref: ReadRef, opts: { title?: string; signal?:
       const cite = formatStatuteCitation({ enactment: r.enactment, sections: r.section ? [r.section] : [] });
       return { kind: "section", title: opts.title ?? `${cite}${r.heading ? ` — ${r.heading}` : ""}`, cite, url: r.url, text: r.text, length: r.text.length, meta: { enactmentId: r.enactmentId, section: r.section, replacedBy: r.replacedBy, correspondsTo: r.correspondsTo, source: r.source } };
     }
+    case "law": {
+      // Public law; the route that calls the reader authorizes the principal. Exact section only (never the nearest).
+      const { readProvisionText } = await import("@/modules/india/law/directory");
+      const r = await readProvisionText(ref.actId, ref.section, ref.variant, READ_MAX);
+      if (!r) throw new Error(`No section ${ref.section} in instrument ${ref.actId} in the statutes corpus`);
+      const header = `${r.citation}${r.section.heading ? ` — ${r.section.heading}` : ""}\nStatus: ${statusLabel(r.instrument.status)}${r.section.in_force === false ? " (provision marked not in force)" : ""}\nOfficial text: ${r.section.source_url ?? r.instrument.source_url ?? "not recorded"} (${publisherLabel(r.instrument)})\nSource: ${LAW_DATASET.attribution}, dataset ${r.instrument.dataset_version}`;
+      return { kind: "law", title: opts.title ?? `${r.citation}${r.section.heading ? ` — ${r.section.heading}` : ""}`, cite: r.citation, url: lawHref(r.instrument.id, r.section.section, r.section.variant), text: `${header}\n\n${r.text}`, length: r.section.chars, meta: { actId: r.instrument.id, section: r.section.section, variant: r.section.variant, status: r.instrument.status, officialUrl: r.section.source_url ?? r.instrument.source_url, datasetVersion: r.instrument.dataset_version, source: lawSourceId(r.instrument.id, r.section.section, r.section.variant) } };
+    }
     case "library": {
       const item = (await getLibraryItemTool.execute({ id: ref.id, max_chars: READ_MAX }, ctx)) as LibraryItem & { content: string };
       return { kind: "library", title: item.name, text: item.content || item.description || "(This library item has no text content. Open it in the Office editor.)", url: item.officeDocId ? `/office/word/${item.officeDocId}` : item.url, length: (item.content ?? "").length, meta: { type: item.type, tags: item.tags, practiceArea: item.practiceArea, officeDocId: item.officeDocId, updatedAt: item.updatedAt } };
@@ -271,6 +280,11 @@ export function parseReadRef(body: unknown): ReadRef | null {
     case "edoc": return typeof id === "string" && id ? { kind: "edoc", id } : null;
     case "judgment": return typeof id === "string" && id ? { kind: "judgment", id } : null;
     case "section": return typeof id === "string" && id ? { kind: "section", id } : null;
+    case "law": {
+      const actId = typeof b.actId === "string" && isLawActId(b.actId) ? b.actId : null;
+      const section = normSectionKey(b.section);
+      return actId && section ? { kind: "law", actId, section, variant: normVariant(b.variant) } : null;
+    }
     default: return null;
   }
 }

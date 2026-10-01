@@ -18,7 +18,7 @@ import { getDocumentText, intelDocuments, primaryDate, searchIntel } from "@/mod
 import type { IntelDocumentKind, IntelSearchHit } from "@/modules/intel/types";
 import { extractAnswerCitations } from "../india-citations";
 import { classifyAuthority, resolveCourts } from "../jurisdictions";
-import { normalizeIndiaSection, normalizeJudgment, normalizeToolResult } from "../normalize";
+import { normalizeIndiaSection, normalizeJudgment, normalizeLawSection, normalizeToolResult } from "../normalize";
 import { datePresetRange } from "../query-builder";
 import { readSource } from "../service";
 import type { ReadRef, SearchHit, SearchSettings, SearchSource } from "../types";
@@ -186,6 +186,34 @@ function textHit(h: TextSearchHit, nctx: { jurisdiction: SearchSettings["jurisdi
     india: { judgmentId: id, courtId: h.courtId, judges: h.judges, neutralCitation: h.neutralCitation ?? undefined, reporterCitations: h.reporterCitation ? [h.reporterCitation] : undefined, caseNumber: h.caseNumber ?? undefined, provider: "corpus" },
     readRef: { kind: "url", url: `${CORPUS_TEXT_PREFIX}${id}` },
   };
+}
+
+/** "The Bharatiya Nyaya Sanhita, 2023" and "Bharatiya Nyaya Sanhita, 2023" → one key (the year is kept: 1956 ≠ 2013). */
+export function actTitleKey(title: string): string {
+  return title.toLowerCase().replace(/^\s*the\s+/, "").replace(/[^a-z0-9]+/g, "");
+}
+
+/**
+ * Sections from the statutes corpus in Postgres (Open India Law parse of India Code and regulator publications) for
+ * the statutes lane. Each hit is readable in full (readRef kind "law", exact section) and links to /law/<actId>?s=…;
+ * its status (in force / repealed) is carried, and a section another provider already returned (same Act title and
+ * section number) is not repeated. Nothing when no database is configured.
+ */
+export async function lawStatuteHits(query: string, o: { limit: number; existing: SearchHit[] }): Promise<SearchHit[]> {
+  if (!remoteStore() || !query.trim()) return [];
+  const { searchProvisions } = await import("@/modules/india/law/search");
+  const { hits } = await searchProvisions({ q: query, limit: o.limit });
+  const seen = new Set<string>();
+  for (const h of o.existing) if (h.india?.enactment && h.india.section) seen.add(`${actTitleKey(h.india.enactment)}|${h.india.section.toUpperCase()}`);
+  const out: SearchHit[] = [];
+  for (const h of hits) {
+    const hit = normalizeLawSection(h);
+    const key = hit.india?.enactment && hit.india.section ? `${actTitleKey(hit.india.enactment)}|${hit.india.section.toUpperCase()}` : null;
+    // Variants (a second provision printed with the same number) are distinct sections and are both kept.
+    if (key && seen.has(key)) continue;
+    out.push(hit);
+  }
+  return out;
 }
 
 /**
@@ -360,7 +388,9 @@ export function defaultDeps(): EngineDeps {
           }
           case "statutes": {
             const rows = await searchStatuteSections(query, { limit });
-            return { hits: rows.map((r) => normalizeIndiaSection(statuteRow(r))), total: rows.length };
+            const hits = rows.map((r) => normalizeIndiaSection(statuteRow(r)));
+            try { hits.push(...(await lawStatuteHits(query, { limit: Math.min(limit, 8), existing: hits }))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] statutes corpus search failed:", (e as Error).message); }
+            return { hits, total: hits.length };
           }
           case "library": return normalizeToolResult(source, await Promise.resolve(searchLibraryTool.execute({ query, matter_id: settings.matterId ?? undefined, limit }, ctx)), nctx);
           case "ediscovery":
@@ -414,7 +444,7 @@ export function defaultDeps(): EngineDeps {
         return { text, title: doc.title, cite: doc.citation ?? doc.docketNumber, url: doc.url, cached: true };
       }
       const r = await withTimeout(readSource(ref, opts), 30_000, opts.signal);
-      return { text: r.text, title: r.title, cite: r.cite, url: r.url, cached: Boolean(r.meta?.cached) || ref.kind === "judgment" || ref.kind === "section" };
+      return { text: r.text, title: r.title, cite: r.cite, url: r.url, cached: Boolean(r.meta?.cached) || ref.kind === "judgment" || ref.kind === "section" || ref.kind === "law" };
     },
 
     async laneAgent(input) {

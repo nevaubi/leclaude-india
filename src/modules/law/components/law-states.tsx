@@ -53,6 +53,40 @@ export function AttributionNote({ version, className }: { version?: string | nul
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 
+/** The header's coverage line: totals, the dataset and its freshness. Never claims more than the facets say. */
+export function LawCoverageLine({ facets, loading, error, onRetry }: { facets: LawFacets | null; loading: boolean; error: LawApiError | null; onRetry?: () => void }) {
+  if (loading && !facets) return <><Skeleton className="h-3 w-44" /><Skeleton className="h-3 w-28" /></>;
+  if (!facets) {
+    return error ? (
+      <>
+        <span title={error.message}>Coverage unavailable</span>
+        {onRetry ? <button type="button" className="rounded text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" onClick={onRetry}>Retry</button> : null}
+      </>
+    ) : null;
+  }
+  const loadingFiles = facets.datasets.filter((d) => d.status !== "done");
+  const failed = facets.datasets.filter((d) => d.status === "error");
+  const finished = facets.datasets.map((d) => d.finished_at).filter((x): x is string => Boolean(x)).sort().pop() ?? null;
+  return (
+    <>
+      <span className="tabular"><span className="font-medium text-foreground/85">{fmt(facets.total)}</span> instruments</span>
+      <span aria-hidden className="text-muted-foreground/50">·</span>
+      <span className="tabular">{fmt(facets.sections)} sections</span>
+      <span aria-hidden className="text-muted-foreground/50">·</span>
+      <Tip label={`${LAW_DATASET.attribution}. A section-level parse of India Code (Central, State and Union Territory legislation) and regulator publications. Each instrument links to its publisher's page; rely on the official text.`}>
+        <span tabIndex={0} className="inline-flex items-center gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"><Info className="size-3" aria-hidden />{LAW_DATASET.name}{facets.versions.length ? ` ${facets.versions.join(", ")}` : ""}</span>
+      </Tip>
+      {finished ? <><span aria-hidden className="text-muted-foreground/50">·</span><span>loaded {formatTimestamp(finished)}</span></> : null}
+      {loadingFiles.length ? (
+        <Tip label={loadingFiles.map((d) => `${d.label}: ${d.status}`).join("; ")}>
+          <span tabIndex={0} className="text-warning-foreground dark:text-warning">· loading {facets.datasets.length - loadingFiles.length} of {facets.datasets.length} files{failed.length ? `, ${failed.length} failed` : ""}</span>
+        </Tip>
+      ) : null}
+      {facets.stale ? <span className="text-warning-foreground dark:text-warning">· counts may be out of date</span> : null}
+    </>
+  );
+}
+
 /** One quiet line: what is in the corpus, per jurisdiction, with load progress and the dataset attribution. */
 export function LawCoverageStrip({ facets, loading, error, onRetry, onPick, active }: { facets: LawFacets | null; loading: boolean; error: LawApiError | null; onRetry?: () => void; onPick?: (j: "central" | "state" | "regulator") => void; active?: string }) {
   if (loading && !facets) return <div className="flex h-8 items-center gap-3 border-b px-4" aria-busy><Skeleton className="h-3 w-40" /><Skeleton className="h-3 w-32" /><Skeleton className="h-3 w-28" /></div>;

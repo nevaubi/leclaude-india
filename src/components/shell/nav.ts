@@ -1,5 +1,5 @@
 import { FEATURES } from "@/lib/features";
-import { BookOpen, Home, MessageCircle, Briefcase, Files, Gavel, Newspaper, Search, Radar, FileSearch, Workflow, LayoutGrid, Library, Settings, FileText, FileSpreadsheet, Presentation, FileType, type LucideIcon } from "lucide-react";
+import { BookOpen, Home, MessageCircle, Briefcase, Files, Gavel, Landmark, Newspaper, Search, Radar, FileSearch, Workflow, LayoutGrid, Library, Settings, FileText, FileSpreadsheet, Presentation, FileType, type LucideIcon } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/catalog";
 
 /**
@@ -26,6 +26,7 @@ export const NAV: NavItem[] = [
   { label: "Case law", labelKey: "nav.caselaw", href: "/cases", icon: Gavel, shortcut: "G J", description: "Supreme Court and High Court judgments: browse, search and trace each record to its source", descriptionKey: "nav.desc.caselaw" },
   { label: "Statutes", labelKey: "nav.statutes", href: "/law", icon: BookOpen, shortcut: "G A", description: "Central and State Acts and regulator regulations: browse, search and read section by section", descriptionKey: "nav.desc.statutes" },
   { label: "News", labelKey: "nav.news", href: "/news", icon: Newspaper, shortcut: "G N", description: "Indian legal news headlines from LiveLaw, Bar & Bench and other publishers", descriptionKey: "nav.desc.news" },
+  { label: "Courts", labelKey: "nav.courts", href: "/courts", icon: Landmark, shortcut: "G K", description: "Courts, tribunals and local law by city: official websites, e-filing, cause lists and case status", descriptionKey: "nav.desc.courts" },
   { label: "Documents", labelKey: "nav.documents", href: "/documents", icon: Files, shortcut: "G D", description: "Upload document sets; ask questions, pull facts and build timelines", descriptionKey: "nav.desc.documents" },
   ...(FEATURES.ediscovery ? [{ label: "E-Discovery", labelKey: "nav.ediscovery", href: "/ediscovery", icon: FileSearch, shortcut: "G E", description: "Document review, witness evidence, chronologies and privilege", descriptionKey: "nav.desc.ediscovery" } satisfies NavItem] : []),
   { label: "Workflows", labelKey: "nav.workflows", href: "/workflows", icon: Workflow, shortcut: "G W", description: "Automations and multi-step agent playbooks", descriptionKey: "nav.desc.workflows" },
@@ -52,4 +53,4 @@ export const NAV: NavItem[] = [
 export const SECONDARY_NAV: NavItem[] = [{ label: "Settings", labelKey: "nav.settings", href: "/settings", icon: Settings, shortcut: "G ,", description: "Language, AI, research providers, data & automation, integrity and the review queue", descriptionKey: "nav.desc.settings" }];
 
 /** "G" chord targets: key → href (shared by the shell and the palette so both stay in sync). */
-export const GO_CHORD: Record<string, string> = { h: "/", c: "/chat", m: "/matters", s: "/search", i: "/intel", d: "/documents", j: "/cases", a: "/law", n: "/news", ...(FEATURES.ediscovery ? { e: "/ediscovery" } : {}), w: "/workflows", o: "/office", l: "/library", ",": "/settings" };
+export const GO_CHORD: Record<string, string> = { h: "/", c: "/chat", m: "/matters", s: "/search", i: "/intel", d: "/documents", j: "/cases", a: "/law", n: "/news", k: "/courts", ...(FEATURES.ediscovery ? { e: "/ediscovery" } : {}), w: "/workflows", o: "/office", l: "/library", ",": "/settings" };

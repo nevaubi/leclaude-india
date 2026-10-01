@@ -4,12 +4,14 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/form";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { courtById } from "@/lib/india/courts";
+import { CITIES } from "@/lib/india/forums";
 import { CAUSE_LIST_STATUSES, INDIA_STAGES, caseTypesFor, courtOptions, formatCaseNumber, validateCnr, type CauseListStatus, type IndianCaseInfo } from "../india";
 
 const NONE = "__none__";
 
 /** Editable Indian case particulars (strings for inputs). */
 export interface IndiaDraft {
+  cityId: string;
   courtId: string;
   benchId: string;
   caseType: string;
@@ -25,13 +27,13 @@ export interface IndiaDraft {
 }
 
 export function emptyIndiaDraft(): IndiaDraft {
-  return { courtId: "", benchId: "", caseType: "", caseNumber: "", caseYear: "", cnr: "", courtHall: "", nextHearing: "", hearingPurpose: "", causeStatus: "", causeItem: "", offenceDate: "" };
+  return { cityId: "", courtId: "", benchId: "", caseType: "", caseNumber: "", caseYear: "", cnr: "", courtHall: "", nextHearing: "", hearingPurpose: "", causeStatus: "", causeItem: "", offenceDate: "" };
 }
 
 export function indiaDraftFrom(i: IndianCaseInfo | undefined): IndiaDraft {
   if (!i) return emptyIndiaDraft();
   return {
-    courtId: i.courtId ?? "", benchId: i.benchId ?? "", caseType: i.caseType ?? "", caseNumber: i.caseNumber ?? "", caseYear: i.caseYear ? String(i.caseYear) : "",
+    cityId: i.cityId ?? "", courtId: i.courtId ?? "", benchId: i.benchId ?? "", caseType: i.caseType ?? "", caseNumber: i.caseNumber ?? "", caseYear: i.caseYear ? String(i.caseYear) : "",
     cnr: i.cnr ?? "", courtHall: i.courtHall ?? "", nextHearing: i.nextHearing ?? "", hearingPurpose: i.hearingPurpose ?? "",
     causeStatus: i.causeList?.status ?? "", causeItem: i.causeList?.item ? String(i.causeList.item) : "", offenceDate: i.offenceDate ?? "",
   };
@@ -40,6 +42,7 @@ export function indiaDraftFrom(i: IndianCaseInfo | undefined): IndiaDraft {
 /** Payload for the API: null when nothing is filled (clears stored particulars on edit). */
 export function indiaDraftToInput(d: IndiaDraft): IndianCaseInfo | null {
   const out: IndianCaseInfo = {};
+  if (d.cityId) out.cityId = d.cityId;
   if (d.courtId) out.courtId = d.courtId;
   if (d.benchId) out.benchId = d.benchId;
   if (d.caseType.trim()) out.caseType = d.caseType.trim();
@@ -69,7 +72,9 @@ export function validateIndiaDraft(d: IndiaDraft): Record<string, string> {
 export function IndiaCaseFields({ draft, onChange, errors, idPrefix, grid }: { draft: IndiaDraft; onChange: (d: IndiaDraft) => void; errors: Record<string, string | undefined>; idPrefix: string; grid: string }) {
   const set = <K extends keyof IndiaDraft>(k: K, v: IndiaDraft[K]) => onChange({ ...draft, [k]: v });
   const id = (k: string) => `${idPrefix}-in-${k}`;
-  const groups = React.useMemo(() => courtOptions(), []);
+  // Choosing a city narrows the court list to that city's forums (plus the Supreme Court); a court already chosen
+  // outside the city stays selectable so an existing matter is never silently changed.
+  const groups = React.useMemo(() => courtOptions(draft.cityId || null, draft.courtId || null), [draft.cityId, draft.courtId]);
   const court = courtById(draft.courtId);
   const benches = court?.benches ?? [];
   const types = caseTypesFor(draft.courtId);
@@ -77,6 +82,15 @@ export function IndiaCaseFields({ draft, onChange, errors, idPrefix, grid }: { d
   const preview = formatCaseNumber(draft.caseType, draft.caseNumber, draft.caseYear);
   return (
     <div className="space-y-3 rounded-md border border-line-quiet p-2.5">
+      <Field label="City" htmlFor={id("city")} error={errors["india.cityId"]} help="Filters the court list to forums in the city.">
+        <Select value={draft.cityId || NONE} onValueChange={(v) => set("cityId", v === NONE ? "" : v)}>
+          <SelectTrigger id={id("city")} size="sm"><SelectValue placeholder="Any city" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}><span className="text-muted-foreground">Any city</span></SelectItem>
+            {CITIES.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </Field>
       <Field label="Court" htmlFor={id("court")} error={errors["india.courtId"]}>
         <Select value={draft.courtId || NONE} onValueChange={(v) => onChange({ ...draft, courtId: v === NONE ? "" : v, benchId: "", caseType: caseTypesFor(v).some((t) => t.code === draft.caseType) ? draft.caseType : "" })}>
           <SelectTrigger id={id("court")} size="sm"><SelectValue placeholder="Choose a court" /></SelectTrigger>

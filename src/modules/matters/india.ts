@@ -1,44 +1,52 @@
 /**
  * Indian case particulars for matters (client-safe, pure): court and bench from the registry, case type and number,
- * CNR, court hall, hearing dates and cause-list status.
+ * CNR, court hall, hearing dates and cause-list status, and the city whose forums the court picker offers.
  *
- * Superior courts come from the court registry (`src/lib/india/courts.ts`). Subordinate forums in the focus cities
- * (civil, commercial, sessions and magistrate courts at Bengaluru and Hyderabad) are listed here until the registry
- * carries district courts; each names the High Court it sits under so binding-authority logic still applies.
+ * Superior courts come from the court registry (`src/lib/india/courts.ts`). Subordinate courts and tribunals come from
+ * the sourced city forum list (`src/lib/india/forums.ts`); each names the High Court it sits under so binding-authority
+ * logic still applies. Forum ids used by earlier matters ("ka-blr-commercial", "ts-hyd-mm", ...) are kept there
+ * unchanged, so stored matters keep resolving.
  * [VERIFY] Forum designations (which Additional City Civil & Sessions Judge sits as the Commercial Court, court-hall
  * numbers) change by notification; the list names the forum, never a specific court hall.
  */
 import { COURTS, FOCUS_COURT_IDS, courtById, type Court, type StateCode } from "@/lib/india/courts";
+import { CITIES, DISTRICT_JUDICIARY_KINDS, FORUMS, cityById, forumsForCity, stateName, type ForumKind } from "@/lib/india/forums";
 import { CASE_TYPES, caseTypeById, CIVIL_SUIT_STAGES, CRIMINAL_TRIAL_STAGES, formatCaseNumber as registryFormatCaseNumber, parseCaseNumber as registryParseCaseNumber, resolveCaseType, type CaseCategory, type CaseType as RegistryCaseType } from "@/lib/india/procedure";
 
-/** A subordinate forum (district-level court) in a focus city. */
-export interface Forum {
+/** A subordinate court or tribunal a matter can be filed in (derived from the sourced city forum list). */
+export interface SubordinateForum {
   id: string;
   name: string;
   shortName: string;
   level: "district";
+  kind: ForumKind;
   state: StateCode;
   city: string;
+  cityId: string;
   /** High Court with superintendence over the forum (registry id). */
   highCourtId: string;
-  focus: true;
+  focus: boolean;
 }
+/** @deprecated use SubordinateForum (kept for earlier imports). */
+export type Forum = SubordinateForum;
 
-export const SUBORDINATE_FORUMS: Forum[] = [
-  { id: "ka-blr-city-civil", name: "City Civil Court, Bengaluru", shortName: "CCC Bengaluru", level: "district", state: "KA", city: "Bengaluru", highCourtId: "hc-karnataka", focus: true },
-  { id: "ka-blr-commercial", name: "Commercial Court, Bengaluru", shortName: "Com. Court Bengaluru", level: "district", state: "KA", city: "Bengaluru", highCourtId: "hc-karnataka", focus: true },
-  { id: "ka-blr-sessions", name: "City Civil and Sessions Court, Bengaluru (Sessions)", shortName: "Sessions Bengaluru", level: "district", state: "KA", city: "Bengaluru", highCourtId: "hc-karnataka", focus: true },
-  { id: "ka-blr-acmm", name: "Court of the Additional Chief Metropolitan Magistrate, Bengaluru", shortName: "ACMM Bengaluru", level: "district", state: "KA", city: "Bengaluru", highCourtId: "hc-karnataka", focus: true },
-  { id: "ts-hyd-city-civil", name: "City Civil Court, Hyderabad", shortName: "CCC Hyderabad", level: "district", state: "TS", city: "Hyderabad", highCourtId: "hc-telangana", focus: true },
-  { id: "ts-hyd-commercial", name: "Commercial Court, Hyderabad", shortName: "Com. Court Hyderabad", level: "district", state: "TS", city: "Hyderabad", highCourtId: "hc-telangana", focus: true },
-  { id: "ts-hyd-sessions", name: "Metropolitan Sessions Court, Hyderabad", shortName: "Sessions Hyderabad", level: "district", state: "TS", city: "Hyderabad", highCourtId: "hc-telangana", focus: true },
-  { id: "ts-hyd-mm", name: "Court of the Metropolitan Magistrate, Hyderabad", shortName: "MM Hyderabad", level: "district", state: "TS", city: "Hyderabad", highCourtId: "hc-telangana", focus: true },
-];
+const FOCUS_STATES: StateCode[] = ["KA", "TS", "AP"];
 
-export type ForumOrCourt = { kind: "court"; court: Court } | { kind: "forum"; forum: Forum };
+/** Every non-High-Court forum in the city list; ids are stable (earlier matter ids included). */
+export const SUBORDINATE_FORUMS: SubordinateForum[] = FORUMS.filter((f) => f.kind !== "high_court" && f.kind !== "bench").map((f) => {
+  const city = cityById(f.cityId)!;
+  return {
+    id: f.id, name: f.name, shortName: f.name.replace(/^(?:Court of the |The )/, ""), level: "district", kind: f.kind, state: f.state,
+    city: city.name, cityId: city.id, highCourtId: f.courtId ?? city.highCourt.courtId, focus: FOCUS_STATES.includes(f.state),
+  };
+});
 
-export function forumById(id: string | null | undefined): Forum | null {
-  return id ? SUBORDINATE_FORUMS.find((f) => f.id === id) ?? null : null;
+const subordinateById = new Map(SUBORDINATE_FORUMS.map((f) => [f.id, f]));
+
+export type ForumOrCourt = { kind: "court"; court: Court } | { kind: "forum"; forum: SubordinateForum };
+
+export function forumById(id: string | null | undefined): SubordinateForum | null {
+  return id ? subordinateById.get(id) ?? null : null;
 }
 
 /** Resolve a court id from the registry or the subordinate-forum list. Unknown ids return null (never the nearest court). */
@@ -54,20 +62,56 @@ export function courtName(id: string | null | undefined): string | null {
   return r ? (r.kind === "court" ? r.court.name : r.forum.name) : null;
 }
 
-/** Picker options: focus High Courts and focus-city forums first, then the Supreme Court, then other High Courts. */
-export function courtOptions(): { group: string; options: { id: string; label: string; hint?: string }[] }[] {
-  const focusHc = FOCUS_COURT_IDS.map((id) => courtById(id)!).filter((c) => c.level === "high");
-  return [
-    { group: "Karnataka", options: [...focusHc.filter((c) => c.territory.includes("KA")), ...SUBORDINATE_FORUMS.filter((f) => f.state === "KA")].map(opt) },
-    { group: "Telangana", options: [...focusHc.filter((c) => c.territory.includes("TS")), ...SUBORDINATE_FORUMS.filter((f) => f.state === "TS")].map(opt) },
-    { group: "Andhra Pradesh", options: focusHc.filter((c) => c.territory.includes("AP")).map(opt) },
-    { group: "Supreme Court", options: COURTS.filter((c) => c.level === "supreme").map(opt) },
-    { group: "Other High Courts", options: COURTS.filter((c) => c.level === "high" && !c.focus).map(opt) },
-  ].filter((g) => g.options.length);
+export interface CourtOptionGroup { group: string; options: { id: string; label: string; hint?: string }[] }
+
+/**
+ * Picker options. Without a city: focus High Courts and focus-city forums first, then the Supreme Court, the other
+ * High Courts and the other cities' forums. With a city: that city's High Court seat/bench and forums, then the
+ * Supreme Court. A current value outside the list is kept as its own group so an existing matter stays valid.
+ */
+export function courtOptions(cityId?: string | null, currentId?: string | null): CourtOptionGroup[] {
+  const city = cityById(cityId);
+  let groups: CourtOptionGroup[];
+  if (city) {
+    const own = forumsForCity(city.id);
+    const hc = courtById(city.highCourt.courtId);
+    const forumOpts = own.filter((f) => f.kind !== "high_court" && f.kind !== "bench").map((f) => opt(forumById(f.id)!));
+    groups = [
+      { group: city.name, options: [...(hc ? [opt(hc)] : []), ...forumOpts] },
+      { group: "Supreme Court", options: COURTS.filter((c) => c.level === "supreme").map(opt) },
+    ];
+  } else {
+    const focusHc = FOCUS_COURT_IDS.map((id) => courtById(id)!).filter((c) => c.level === "high");
+    const focusCities = new Set(["bengaluru", "hyderabad", "amaravati"]);
+    groups = [
+      { group: "Karnataka", options: [...focusHc.filter((c) => c.territory.includes("KA")), ...SUBORDINATE_FORUMS.filter((f) => f.state === "KA")].map(opt) },
+      { group: "Telangana", options: [...focusHc.filter((c) => c.territory.includes("TS")), ...SUBORDINATE_FORUMS.filter((f) => f.state === "TS")].map(opt) },
+      { group: "Andhra Pradesh", options: [...focusHc.filter((c) => c.territory.includes("AP")), ...SUBORDINATE_FORUMS.filter((f) => f.state === "AP")].map(opt) },
+      { group: "Supreme Court", options: COURTS.filter((c) => c.level === "supreme").map(opt) },
+      { group: "Other High Courts", options: COURTS.filter((c) => c.level === "high" && !c.focus).map(opt) },
+      ...CITIES.filter((c) => !focusCities.has(c.id)).map((c) => ({ group: c.name, options: SUBORDINATE_FORUMS.filter((f) => f.cityId === c.id).map(opt) })),
+    ];
+  }
+  groups = groups.filter((g) => g.options.length);
+  if (currentId && !groups.some((g) => g.options.some((o) => o.id === currentId))) {
+    const cur = resolveCourt(currentId);
+    if (cur) groups.unshift({ group: "Current", options: [opt(cur.kind === "court" ? cur.court : cur.forum)] });
+  }
+  return groups;
 }
 
-function opt(c: Court | Forum) {
+function opt(c: Court | SubordinateForum) {
   return { id: c.id, label: c.name, hint: "seat" in c ? c.seat : c.city };
+}
+
+/** City implied by a court id: the forum's city, or the city a High Court seat/bench heads (null when not unique). */
+export function cityForCourtId(courtId: string | null | undefined, benchId?: string | null): string | null {
+  const f = forumById(courtId);
+  if (f) return f.cityId;
+  const c = courtById(courtId);
+  if (!c || c.level !== "high") return null;
+  const hits = CITIES.filter((x) => x.highCourt.courtId === c.id && (benchId ? x.highCourt.benchId === benchId : true));
+  return hits.length === 1 ? hits[0].id : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +198,7 @@ export function validateCnr(raw: string, courtId?: string | null): { ok: true; c
   const prefix = courtId ? courtById(courtId)?.cnrPrefix : undefined;
   if (prefix && !cnr.startsWith(prefix)) return { ok: true, cnr, year, warning: `CNR prefix ${cnr.slice(0, 4)} does not match ${courtById(courtId)!.shortName} (${prefix}).` };
   const forum = forumById(courtId);
-  if (forum && !cnr.startsWith(forum.state === "TS" ? "T" : forum.state)) return { ok: true, cnr, year, warning: `CNR prefix ${cnr.slice(0, 4)} does not look like a ${forum.state === "TS" ? "Telangana" : "Karnataka"} establishment.` };
+  if (forum && DISTRICT_JUDICIARY_KINDS.includes(forum.kind) && !cnr.startsWith(forum.state === "TS" ? "T" : forum.state)) return { ok: true, cnr, year, warning: `CNR prefix ${cnr.slice(0, 4)} does not look like a ${stateName(forum.state)} establishment.` };
   return { ok: true, cnr, year };
 }
 
@@ -183,6 +227,8 @@ export const INDIA_STAGES: string[] = Array.from(new Set([...CIVIL_SUIT_STAGES.m
 
 /** Case particulars stored on a matter (`india` on the matter record). */
 export interface IndianCaseInfo {
+  /** City whose forums apply (`src/lib/india/forums.ts` id, e.g. "bengaluru"). */
+  cityId?: string;
   /** Registry court id ("hc-karnataka") or subordinate forum id ("ka-blr-commercial"). */
   courtId?: string;
   benchId?: string;

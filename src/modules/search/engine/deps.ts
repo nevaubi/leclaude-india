@@ -30,6 +30,8 @@ import { FEATURES } from "@/lib/features";
 import { currentPrincipal } from "@/lib/auth/context";
 import { listDocSets, readDocPassage, searchDocSets } from "@/modules/documents/server";
 import type { DocSearchHit } from "@/modules/documents/types";
+import { remoteStore } from "@/lib/db/remote";
+import { searchCorpus, type CorpusHit } from "@/modules/india/corpus/search";
 
 /** Model-derived plan: jurisdiction-aware sub-questions and extra retrieval queries per lane kind. */
 export interface ResearchPlan {
@@ -81,6 +83,52 @@ export interface EngineDeps {
 
 function toolCtx(signal?: AbortSignal): ToolContext {
   return { emit: () => {}, signal, state: {} };
+}
+
+/**
+ * Judgments from the Neon metadata corpus (SC 1950–, focus High Courts) for the case-law lane. Metadata and the
+ * dataset's snippet only — no full text — so the hit carries no readRef and is never treated as read; it links to its
+ * record page (/cases/<id>), which shows the official PDF and the dataset provenance. A record already returned by
+ * another provider (same neutral citation, or same court + case number) is not repeated.
+ */
+export async function corpusCaselawHits(query: string, o: { courts: string[]; yearFrom?: number; yearTo?: number; limit: number; existing: SearchHit[]; nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] } }): Promise<SearchHit[]> {
+  if (!remoteStore() || !query.trim()) return [];
+  const { hits } = await searchCorpus({ q: query, courts: o.courts.length ? o.courts : undefined, yearFrom: o.yearFrom, yearTo: o.yearTo, limit: o.limit });
+  const norm = (v?: string | null) => (v ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+  const seen = new Set<string>();
+  for (const h of o.existing) {
+    for (const c of h.citations ?? (h.cite ? [h.cite] : [])) seen.add(`cite:${norm(c)}`);
+    if (h.courtId && h.docketNumber) seen.add(`case:${h.courtId}:${norm(h.docketNumber)}`);
+  }
+  const out: SearchHit[] = [];
+  for (const h of hits) {
+    const keys = [h.neutral_citation ? `cite:${norm(h.neutral_citation)}` : "", h.court_id && h.case_number ? `case:${h.court_id}:${norm(h.case_number)}` : ""].filter(Boolean);
+    if (keys.some((k) => seen.has(k))) continue;
+    keys.forEach((k) => seen.add(k));
+    out.push(corpusHit(h, o.nctx));
+  }
+  return out;
+}
+
+function corpusHit(h: CorpusHit, nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] }): SearchHit {
+  const citations = [h.neutral_citation, h.reporter_citation].filter((x): x is string => Boolean(x));
+  return {
+    id: `corpus:${h.id}`,
+    source: "caselaw",
+    title: h.title || "Untitled judgment",
+    subtitle: [h.court ?? (h.court_code ? `Unmapped court code ${h.court_code}` : ""), h.case_number, "metadata record"].filter(Boolean).join(" · "),
+    cite: citations[0] ?? h.case_number ?? undefined,
+    citations,
+    court: h.court ?? undefined,
+    courtId: h.court_id ?? undefined,
+    date: h.decision_date ?? undefined,
+    snippet: (h.snippet ?? "").replace(/\s+/g, " ").trim().slice(0, 600),
+    url: `/cases/${encodeURIComponent(h.id)}`,
+    judge: h.judges.join(", ") || undefined,
+    docketNumber: h.case_number ?? undefined,
+    authority: classifyAuthority(h.court_id, nctx.jurisdiction, nctx.courts, h.decision_date ?? undefined),
+    india: { judgmentId: h.id, courtId: h.court_id, judges: h.judges, neutralCitation: h.neutral_citation ?? undefined, reporterCitations: h.reporter_citation ? [h.reporter_citation] : undefined, caseNumber: h.case_number ?? undefined, provider: "corpus" },
+  };
 }
 
 /**
@@ -248,6 +296,7 @@ export function defaultDeps(): EngineDeps {
             const allowed = visibleMatters({ state: { matterId: settings.matterId ?? undefined } });
             const local = await searchJudgments(query, { courts, yearFrom: year(range.from), yearTo: year(range.to) }, { limit, allowed });
             const hits = local.map((h) => normalizeJudgment(judgmentRow(h), nctx));
+            try { hits.push(...(await corpusCaselawHits(query, { courts, yearFrom: year(range.from), yearTo: year(range.to), limit: Math.min(limit, 8), existing: hits, nctx }))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment corpus search failed:", (e as Error).message); }
             try { hits.push(...(await indianKanoonHits(query, courts, settings, signal))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] Indian Kanoon search failed:", (e as Error).message); }
             return { hits, total: hits.length };
           }

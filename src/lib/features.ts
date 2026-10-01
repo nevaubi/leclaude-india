@@ -6,6 +6,8 @@
  */
 export const FEATURES = {
   ediscovery: process.env.NEXT_PUBLIC_ENABLE_EDISCOVERY === "1",
+  /** Office shows only Word (documents and the drafting agent); Excel, PowerPoint and PDF return with NEXT_PUBLIC_ENABLE_OFFICE_ALL=1. */
+  officeAll: process.env.NEXT_PUBLIC_ENABLE_OFFICE_ALL === "1",
 } as const;
 
 /** The matter's own page (Matters workspace). */

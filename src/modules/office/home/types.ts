@@ -1,3 +1,4 @@
+import { FEATURES } from "@/lib/features";
 import type { ID, ISODate, OfficeDocument, OfficeKind, PracticeArea } from "@/lib/types/domain";
 
 export interface OfficeDocSummary extends Omit<OfficeDocument, "content"> {
@@ -28,7 +29,8 @@ export interface OfficeHomeData {
   generatedAt: ISODate;
 }
 
-export const OFFICE_KINDS: OfficeKind[] = ["word", "sheet", "slides", "pdf"];
+/** Office kinds offered in this product (src/lib/features.ts): Word only unless the full suite is enabled. */
+export const OFFICE_KINDS: OfficeKind[] = FEATURES.officeAll ? ["word", "sheet", "slides", "pdf"] : ["word"];
 
 export const KIND_META: Record<OfficeKind, { label: string; plural: string; lower: string; lowerPlural: string; app: string; ext: string; blurb: string; accept: string }> = {
   word: { label: "Document", plural: "Documents", lower: "document", lowerPlural: "documents", app: "Word", ext: "docx", blurb: "Briefs, memos, letters and agreements with tracked changes and a drafting agent.", accept: ".docx,.doc,.rtf,.md,.txt,.html" },

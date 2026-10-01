@@ -13,6 +13,7 @@ vi.hoisted(() => {
   process.env.ANTHROPIC_API_KEY = "";
 });
 
+import { FEATURES } from "@/lib/features";
 import { rmSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { db, resetSqlite } from "@/lib/db";
@@ -80,7 +81,9 @@ describe("office on an empty workspace", () => {
     const body = (await ex.json()) as { model: { pageCount: number; sourceBlobId: string } };
     expect(body.model.pageCount).toBe(1);
     expect(body.model.sourceBlobId).toBeTruthy();
-    expect(officeHomeData().counts).toEqual({ word: 1, sheet: 1, slides: 1, pdf: 1 });
+    // The India product offers Word only (src/lib/features.ts); the other editors still work through the API but are not listed.
+    const shown = FEATURES.officeAll ? 1 : 0;
+    expect(officeHomeData().counts).toEqual({ word: 1, sheet: shown, slides: shown, pdf: shown });
   }, 60_000);
 
   it("exports each blank document to its format", async () => {

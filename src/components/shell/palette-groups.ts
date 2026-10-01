@@ -1,6 +1,7 @@
 /** Pure grouping for the command palette (unit-tested; no React). English labels are the source strings; the
  * component renders `labelKey`/`headingKey` through the i18n catalogue. */
 import type { MessageKey } from "@/lib/i18n/catalog";
+import { FEATURES } from "@/lib/features";
 
 export interface QuickSearchHit {
   id: string;
@@ -45,8 +46,10 @@ export function paletteSections(opts: { query: string; nav: NavLike[] }): Palett
     {
       id: "create", heading: "Create", headingKey: "palette.section.create", commands: [
         { id: "new-doc", label: "New document", labelKey: "palette.newDoc", href: "/office/word/new", shortcut: "Word", icon: "doc", keywords: "word docx draft" },
-        { id: "new-sheet", label: "New workbook", labelKey: "palette.newSheet", href: "/office/sheet/new", shortcut: "Excel", icon: "sheet", keywords: "excel xlsx" },
-        { id: "new-deck", label: "New deck", labelKey: "palette.newDeck", href: "/office/slides/new", shortcut: "PowerPoint", icon: "deck", keywords: "slides pptx" },
+        ...(FEATURES.officeAll ? [
+          { id: "new-sheet", label: "New workbook", labelKey: "palette.newSheet" as const, href: "/office/sheet/new", shortcut: "Excel", icon: "sheet" as PaletteIcon, keywords: "excel xlsx" },
+          { id: "new-deck", label: "New deck", labelKey: "palette.newDeck" as const, href: "/office/slides/new", shortcut: "PowerPoint", icon: "deck" as PaletteIcon, keywords: "slides pptx" },
+        ] : []),
       ],
     },
     { id: "go", heading: "Go to", headingKey: "palette.section.go", commands: opts.nav.map((n) => ({ id: `go:${n.href}`, label: n.label, labelKey: n.labelKey, href: n.href, shortcut: n.shortcut, icon: "search" as PaletteIcon })) },

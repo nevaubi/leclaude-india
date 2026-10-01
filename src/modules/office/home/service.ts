@@ -7,6 +7,7 @@ import { syncOfficeDocs } from "@/modules/library/service";
 import { currentPrincipal } from "@/lib/auth/context";
 import { hasMatterAccess } from "@/lib/auth/policy";
 import type { OfficeDocSummary, OfficeHomeData, OfficeTemplateSummary } from "./types";
+import { OFFICE_KINDS } from "./types";
 
 /** Matter filter for the signed-in principal: documents on a matter they cannot open are never listed. */
 function matterVisible(): (matterId: string | undefined | null) => boolean {
@@ -29,7 +30,7 @@ export function listOfficeDocSummaries(opts: { kind?: OfficeKind; matterId?: str
   const q = opts.q?.trim().toLowerCase();
   const visible = matterVisible();
   const docs = d.officeDocs.list({
-    where: (x) => visible(x.matterId) && (!opts.kind || x.kind === opts.kind) && (!opts.matterId || x.matterId === opts.matterId) && (!q || x.title.toLowerCase().includes(q) || (x.tags ?? []).some((t) => t.toLowerCase().includes(q))),
+    where: (x) => visible(x.matterId) && OFFICE_KINDS.includes(x.kind) && (!opts.kind || x.kind === opts.kind) && (!opts.matterId || x.matterId === opts.matterId) && (!q || x.title.toLowerCase().includes(q) || (x.tags ?? []).some((t) => t.toLowerCase().includes(q))),
     sortBy: "updatedAt",
     direction: "desc",
     limit: opts.limit,
@@ -50,7 +51,7 @@ export function listOfficeDocSummaries(opts: { kind?: OfficeKind; matterId?: str
 }
 
 export function listTemplateSummaries(kind?: OfficeKind): OfficeTemplateSummary[] {
-  return allTemplates().filter((t) => !kind || t.kind === kind).map(({ build: _b, ...rest }) => { void _b; return rest; });
+  return allTemplates().filter((t) => OFFICE_KINDS.includes(t.kind) && (!kind || t.kind === kind)).map(({ build: _b, ...rest }) => { void _b; return rest; });
 }
 
 export function officeHomeData(kind?: OfficeKind): OfficeHomeData {

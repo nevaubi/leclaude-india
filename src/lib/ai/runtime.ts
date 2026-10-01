@@ -43,7 +43,16 @@ export function routeRequest(req: InferenceRequest): RoutingDecision {
   const base = { taskType: req.taskType ?? "chat", role: req.role, privacy: req.privacy ?? "internal", explicitModel: req.model, explicitProvider: req.provider } as const;
   const needs = deriveNeeds(req);
   const opts = routerOptions();
-  if (req.evidence?.length) {
+  // The operator's provider choice (MODEL_PROVIDER) wins over the citation-native preference: when the preferred
+  // provider can serve the request but has no search_result blocks, the evidence goes to it as numbered text.
+  let preferredWithoutBlocks = false;
+  if (req.evidence?.length && opts.preferred) {
+    try {
+      const plain = routeModel({ ...base, needs }, opts);
+      preferredWithoutBlocks = plain.provider === opts.preferred && !plain.descriptor.capabilities.searchResultBlocks;
+    } catch { preferredWithoutBlocks = false; }
+  }
+  if (req.evidence?.length && !preferredWithoutBlocks) {
     try {
       return routeModel({ ...base, needs: { ...needs, searchResultBlocks: true, citations: true } }, opts);
     } catch (e) {

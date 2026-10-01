@@ -17,6 +17,7 @@ import {
 import { createIndianKanoon, courtForDocsource, type IndianKanoonClient } from "@/modules/india/sources/indian-kanoon";
 import { isCorpusScope, type RetrievalScope } from "../vector-store";
 import { mapCriminalSection } from "./india-criminal-map";
+import { JUDGMENT_TEXT_TOOLS } from "./india-judgment-text";
 
 /**
  * Indian legal research tools (LeClaude India; constitution §25, §52, §53.4, Appendix B), built on the India source
@@ -770,7 +771,7 @@ export const searchJudgmentIndexTool = defineTool<CorpusIndexArgs>({
 
 /** Tools that exist only with a capability (fail closed: absent from the toolset without it). */
 export const INDIAN_KANOON_TOOLS = [indianKanoonSearchTool, indianKanoonDocTool];
-export const CORPUS_INDEX_TOOLS = [searchJudgmentIndexTool];
+export const CORPUS_INDEX_TOOLS = [searchJudgmentIndexTool, ...JUDGMENT_TEXT_TOOLS];
 
 /** Always-available Indian research tools (local corpus, India Code, coded tables). */
 export const INDIA_CORE_TOOLS = [searchJudgmentsTool, readJudgmentTool, citingReferencesTool, searchStatutesIndiaTool, readSectionTool, mapCriminalSectionTool];

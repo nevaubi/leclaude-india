@@ -11,6 +11,7 @@ import { languageInfo } from "@/lib/india/languages";
 import { caseApiHref, caseHref, formatCaseDate, formatTimestamp, urlHost, type CaseRecord, type CaseRecordResponse, type SameCaseRecord } from "../shared";
 import { benchLabel, courtLabel } from "./case-directory";
 import { CaseApiError, fetchCaseJson } from "./fetch";
+import { JudgmentTextSection } from "./judgment-text";
 
 const DASH = <span className="text-muted-foreground/60">—</span>;
 const show = (v: React.ReactNode) => (v === null || v === undefined || v === "" ? DASH : v);
@@ -180,7 +181,7 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
           <Button asChild size="xs" variant="outline">
             <Link href={`/search?q=${encodeURIComponent(researchQuery(r))}`}><Search className="size-3.5" />Research this</Link>
           </Button>
-          <span className="text-[11.5px] text-muted-foreground">Metadata only — full text not ingested</span>
+          <span className="text-[11.5px] text-muted-foreground">{r.text_status === "full" ? "Full text below (from the official PDF; the PDF is the text of record)" : "Metadata only — full text not ingested"}</span>
         </div>
       </div>
 
@@ -220,6 +221,8 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
               <Field label="Author">{show(r.author)}</Field>
             </dl>
           </Section>
+
+          {r.text_status === "full" ? <JudgmentTextSection id={r.id} citation={r.neutral_citation} /> : null}
 
           <Section title="Source snippet (dataset)" aside={<span className="text-[11px] text-muted-foreground">as published in the dataset metadata; not the judgment text</span>}>
             {r.snippet ? <p className="whitespace-pre-wrap text-[13px] leading-relaxed">{r.snippet}</p> : <p className="text-[12.5px] text-muted-foreground">The dataset published no snippet for this record.</p>}
@@ -290,7 +293,7 @@ function Provenance({ r }: { r: CaseRecord }) {
         </Field>
         <Field label="Ingested">{show(formatTimestamp(r.ingested_at))}</Field>
         <Field label="Last changed">{show(formatTimestamp(r.updated_at))}</Field>
-        <Field label="Text">{r.text_status === "none" ? "Metadata only — full text not ingested" : r.text_status}</Field>
+        <Field label="Text">{r.text_status === "none" ? "Metadata only — full text not ingested" : r.text_status === "full" ? "Full text (Open India Law, from the official PDF)" : r.text_status}</Field>
       </dl>
     </Section>
   );

@@ -33,6 +33,7 @@ import type { DocSearchHit } from "@/modules/documents/types";
 import { remoteStore } from "@/lib/db/remote";
 import { searchCorpus, type CorpusHit } from "@/modules/india/corpus/search";
 import { caseHref } from "@/modules/caselaw/shared";
+import { chunksToText, readJudgmentText, searchJudgmentText, type TextSearchHit } from "@/modules/india/corpus/text";
 
 /** Model-derived plan: jurisdiction-aware sub-questions and extra retrieval queries per lane kind. */
 export interface ResearchPlan {
@@ -132,6 +133,53 @@ function corpusHit(h: CorpusHit, nctx: { jurisdiction: SearchSettings["jurisdict
     docketNumber: h.case_number ?? undefined,
     authority: classifyAuthority(h.court_id, nctx.jurisdiction, nctx.courts, h.decision_date ?? undefined),
     india: { judgmentId: h.id, courtId: h.court_id, judges: h.judges, neutralCitation: h.neutral_citation ?? undefined, reporterCitations: h.reporter_citation ? [h.reporter_citation] : undefined, caseNumber: h.case_number ?? undefined, provider: "corpus" },
+    // Full text exists (Supreme Court text corpus): the reader can read it. Metadata-only records stay unreadable.
+    ...(h.text_status === "full" ? { readRef: { kind: "url" as const, url: `${CORPUS_TEXT_PREFIX}${h.id}` } } : {}),
+  };
+}
+
+export const CORPUS_TEXT_PREFIX = "corpus-text://";
+
+/**
+ * Supreme Court full-text hits (best passage per judgment, with its page). Only when the Supreme Court is in scope;
+ * judgments already returned by another provider (same neutral citation) are skipped. Every hit is readable.
+ */
+export async function corpusTextHits(query: string, o: { courts: string[]; yearFrom?: number; yearTo?: number; limit: number; existing: SearchHit[]; nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] } }): Promise<SearchHit[]> {
+  if (!remoteStore() || !query.trim()) return [];
+  if (o.courts.length && !o.courts.includes("sci")) return [];
+  const { hits } = await searchJudgmentText(query, { yearFrom: o.yearFrom, yearTo: o.yearTo, limit: o.limit });
+  const norm = (v?: string | null) => (v ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+  const seen = new Set<string>();
+  for (const h of o.existing) for (const c of h.citations ?? (h.cite ? [h.cite] : [])) seen.add(norm(c));
+  const out: SearchHit[] = [];
+  for (const h of hits) {
+    if (seen.has(norm(h.neutralCitation))) continue;
+    seen.add(norm(h.neutralCitation));
+    out.push(textHit(h, o.nctx));
+  }
+  return out;
+}
+
+function textHit(h: TextSearchHit, nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] }): SearchHit {
+  const citations = [h.neutralCitation, h.reporterCitation].filter((x): x is string => Boolean(x));
+  const id = h.judgmentId ?? h.neutralCitation;
+  return {
+    id: `corpus:${id}`,
+    source: "caselaw",
+    title: h.title || h.neutralCitation,
+    subtitle: [h.court, h.pageStart != null ? `passage at p. ${h.pageStart}` : "", "full text"].filter(Boolean).join(" · "),
+    cite: h.neutralCitation,
+    citations,
+    court: h.court,
+    courtId: "sci",
+    date: h.decisionDate ?? undefined,
+    snippet: h.passage.slice(0, 600),
+    url: h.judgmentId ? `${caseHref(h.judgmentId)}${h.pageStart != null ? `#p${h.pageStart}` : ""}` : undefined,
+    judge: h.judges.join(", ") || undefined,
+    score: h.rank,
+    authority: classifyAuthority("sci", nctx.jurisdiction, nctx.courts, h.decisionDate ?? undefined),
+    india: { judgmentId: id, courtId: "sci", judges: h.judges, neutralCitation: h.neutralCitation, reporterCitations: h.reporterCitation ? [h.reporterCitation] : undefined, provider: "corpus" },
+    readRef: { kind: "url", url: `${CORPUS_TEXT_PREFIX}${id}` },
   };
 }
 
@@ -300,6 +348,7 @@ export function defaultDeps(): EngineDeps {
             const allowed = visibleMatters({ state: { matterId: settings.matterId ?? undefined } });
             const local = await searchJudgments(query, { courts, yearFrom: year(range.from), yearTo: year(range.to) }, { limit, allowed });
             const hits = local.map((h) => normalizeJudgment(judgmentRow(h), nctx));
+            try { hits.push(...(await corpusTextHits(query, { courts, yearFrom: year(range.from), yearTo: year(range.to), limit: Math.min(limit, 8), existing: hits, nctx }))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment text search failed:", (e as Error).message); }
             try { hits.push(...(await corpusCaselawHits(query, { courts, yearFrom: year(range.from), yearTo: year(range.to), limit: Math.min(limit, 8), existing: hits, nctx }))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment corpus search failed:", (e as Error).message); }
             try { hits.push(...(await indianKanoonHits(query, courts, settings, signal))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] Indian Kanoon search failed:", (e as Error).message); }
             return { hits, total: hits.length };
@@ -338,6 +387,12 @@ export function defaultDeps(): EngineDeps {
         const r = principal ? await readDocPassage(principal, ref.url) : null;
         if (!r) throw new Error("Document passage not found or not accessible");
         return { text: r.context || r.hit.text, title: `${r.hit.fileName}${r.hit.page != null ? `, p. ${r.hit.page}` : ""}`, url: docHit(r.hit).url, cached: true };
+      }
+      if (ref.kind === "url" && ref.url.startsWith(CORPUS_TEXT_PREFIX)) {
+        const id = ref.url.slice(CORPUS_TEXT_PREFIX.length);
+        const r = await withTimeout(readJudgmentText(id, { maxChars: 400_000 }), 30_000, opts.signal);
+        if (!r || !r.chunks.length) throw new Error(`No full text for judgment ${id}`);
+        return { text: chunksToText(r.chunks), title: r.title ? `${r.title}, ${r.neutralCitation}` : r.neutralCitation, cite: r.neutralCitation, url: r.judgmentId ? caseHref(r.judgmentId) : undefined, cached: true };
       }
       if (ref.kind === "url" && ref.url.startsWith(IK_READ_PREFIX)) {
         const ik = indianKanoonClient();

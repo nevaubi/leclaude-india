@@ -141,7 +141,7 @@ function InstrumentHeader({ i }: { i: LawInstrument }) {
       <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
         <span className="text-foreground/85">{jurisdictionLabel(i)}</span>
         <span aria-hidden>·</span>
-        <span>{i.kind === "regulation" ? "Regulation" : "Act"}</span>
+        <span>{i.kind === "regulation" ? "Regulation" : i.kind === "report" ? "Report" : "Act"}</span>
         {i.year ? <><span aria-hidden>·</span><span className="tabular">{i.year}</span></> : null}
         <span aria-hidden>·</span>
         <StatusText status={i.status} />

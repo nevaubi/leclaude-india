@@ -202,7 +202,7 @@ export function actTitleKey(title: string): string {
 export async function lawStatuteHits(query: string, o: { limit: number; existing: SearchHit[] }): Promise<SearchHit[]> {
   if (!remoteStore() || !query.trim()) return [];
   const { searchProvisions } = await import("@/modules/india/law/search");
-  const { hits } = await searchProvisions({ q: query, limit: o.limit });
+  const { hits } = await searchProvisions({ q: query, limit: o.limit, excludeReports: true });
   const seen = new Set<string>();
   for (const h of o.existing) if (h.india?.enactment && h.india.section) seen.add(`${actTitleKey(h.india.enactment)}|${h.india.section.toUpperCase()}`);
   const out: SearchHit[] = [];

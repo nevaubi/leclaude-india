@@ -253,6 +253,9 @@ def main():
                                 (str(e)[:2000], f"in_{name}_%"))
                 conn.commit()
                 print(f"{name}: ERROR {e}", flush=True)
+        with conn.cursor() as cur:
+            cur.execute(open(os.path.join(HERE, "normalize_law_commission.sql")).read())
+        conn.commit()
         print(f"database size: {db_mb(conn):.0f} MB")
 
 

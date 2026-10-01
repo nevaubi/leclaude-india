@@ -139,6 +139,8 @@ export interface InstrumentFilterInput {
   yearFrom?: number;
   yearTo?: number;
   actId?: string | null;
+  /** Leave out reports (Law Commission reports are context, not law); ignored when a kind is requested. */
+  excludeReports?: boolean;
 }
 
 /** " AND …" clauses over the instrument alias; values are pushed to `params`. Invalid values are dropped, never guessed. */
@@ -150,7 +152,8 @@ export function instrumentFilters(f: InstrumentFilterInput, params: SqlValue[], 
   if (state) out.push(`${alias}.state_code = ${p(state)}`);
   const reg = normRegulator(f.regulator);
   if (reg) out.push(`${alias}.regulator = ${p(reg)}`);
-  if (f.kind === "act" || f.kind === "regulation") out.push(`${alias}.kind = ${p(f.kind)}`);
+  if (f.kind === "act" || f.kind === "regulation" || f.kind === "report") out.push(`${alias}.kind = ${p(f.kind)}`);
+  else if (f.excludeReports) out.push(`${alias}.kind <> 'report'`);
   const status = f.inForceOnly ? "in_force" : f.status ?? "all";
   if (status === "in_force") out.push(`${alias}.status = 'in_force'`);
   else if (status === "not_in_force") out.push(`${alias}.status IS DISTINCT FROM 'in_force'`);

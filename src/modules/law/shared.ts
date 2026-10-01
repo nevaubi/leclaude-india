@@ -12,7 +12,8 @@
  */
 
 export type LawJurisdiction = "central" | "state" | "regulator";
-export type LawKind = "act" | "regulation";
+/** "report": Law Commission reports and similar material in the dataset; context, not law. */
+export type LawKind = "act" | "regulation" | "report";
 export type LawStatusFilter = "in_force" | "not_in_force" | "all";
 export type LawSearchMode = "acts" | "sections";
 export type LawSort = "relevance" | "title" | "newest" | "oldest";
@@ -249,7 +250,7 @@ export function parseLawFilters(sp: URLSearchParams): LawFilters {
   const st = sp.get("status");
   const status: LawStatusFilter = st === "all" || st === "not_in_force" ? st : "in_force";
   const k = sp.get("kind");
-  const kind = k === "act" || k === "regulation" ? k : "";
+  const kind = k === "act" || k === "regulation" || k === "report" ? k : "";
   let yearFrom = intIn(sp.get("from"), LAW_MIN_YEAR, LAW_MAX_YEAR);
   let yearTo = intIn(sp.get("to"), LAW_MIN_YEAR, LAW_MAX_YEAR);
   if (yearFrom && yearTo && yearFrom > yearTo) [yearFrom, yearTo] = [yearTo, yearFrom];
@@ -355,7 +356,7 @@ export function jurisdictionLabel(i: Pick<LawInstrument, "jurisdiction" | "state
 
 export const STATUS_LABEL: Record<string, string> = {
   in_force: "In force", repealed: "Repealed", spent: "Spent", superseded: "Superseded", omitted: "Omitted", expired: "Expired",
-  lapsed: "Lapsed", not_in_force: "Not in force", partially_in_force: "Partly in force", amended: "Amended", rescinded: "Rescinded",
+  lapsed: "Lapsed", not_in_force: "Not in force", report: "Report (not law)", partially_in_force: "Partly in force", amended: "Amended", rescinded: "Rescinded",
 };
 
 export function statusLabel(s: string | null | undefined): string {

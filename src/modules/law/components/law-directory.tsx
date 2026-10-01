@@ -149,7 +149,7 @@ export function LawDirectory() {
       render: (h) => <Link href={lawHref(h.id)} className="min-w-0 truncate font-medium text-foreground hover:underline" onClick={(e) => e.stopPropagation()} title={h.title}>{h.title}</Link>,
     },
     { id: "jurisdiction", header: "Jurisdiction", width: 170, accessor: (h) => jurisdictionLabel(h), render: (h) => <span className="truncate" title={h.publisher ?? undefined}>{jurisdictionLabel(h)}</span> },
-    { id: "kind", header: "Type", width: 96, accessor: (h) => h.kind, render: (h) => <span className="text-muted-foreground">{h.kind === "regulation" ? "Regulation" : "Act"}</span> },
+    { id: "kind", header: "Type", width: 96, accessor: (h) => h.kind, render: (h) => <span className="text-muted-foreground">{h.kind === "regulation" ? "Regulation" : h.kind === "report" ? "Report" : "Act"}</span> },
     { id: "year", header: "Year", width: 70, accessor: (h) => h.year ?? 0, render: (h) => <span className="tabular">{h.year ?? DASH}</span> },
     { id: "status", header: "Status", width: 160, accessor: (h) => h.status ?? "", render: (h) => <StatusText status={h.status} /> },
     { id: "sections", header: "Sections", width: 86, align: "right", accessor: (h) => h.sections, render: (h) => <span className="tabular">{h.sections ? fmt(h.sections) : DASH}</span> },

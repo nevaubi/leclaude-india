@@ -103,6 +103,9 @@ export async function corpusCaselawHits(query: string, o: { courts: string[]; ye
   }
   const out: SearchHit[] = [];
   for (const h of hits) {
+    // Records that match only some of the query words (titles and snippets, not full text) are noise as research
+    // sources, e.g. a party named "Bail" for "anticipatory bail". The directory still offers them to a person.
+    if (h.match === "partial") continue;
     const keys = [h.neutral_citation ? `cite:${norm(h.neutral_citation)}` : "", h.court_id && h.case_number ? `case:${h.court_id}:${norm(h.case_number)}` : ""].filter(Boolean);
     if (keys.some((k) => seen.has(k))) continue;
     keys.forEach((k) => seen.add(k));

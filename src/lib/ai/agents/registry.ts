@@ -5,6 +5,9 @@ import { aiConfig } from "../config";
 import { FIRM_NAME, LEGAL_STYLE_RULES, todayLine } from "../prompts";
 import { defineTool, type ToolDef } from "../tools";
 import { fetchUrlTool, INDIA_TOOLS, INTERNAL_TOOLS, LEGAL_TOOLS, webSearchTool } from "../toolkit";
+import { CORPUS_INDEX_TOOLS, INDIAN_KANOON_TOOLS, indiaCapabilities, LAW_CORPUS_TOOLS, type IndiaCapabilities } from "../toolkit/india";
+import { getForumInfoTool } from "../toolkit/india-forums";
+import { indiaRoutingFor } from "../india-guidance";
 import type { VerifySource } from "../verify";
 import { audit } from "@/lib/integrity/audit";
 import { searchIntel } from "@/modules/intel/store";
@@ -81,24 +84,35 @@ export function handoffTool(from: AgentId): ToolDef<{ to: string; brief: string;
   });
 }
 
-const NAMED_TOOLS: Record<string, ToolDef<never, unknown>> = Object.fromEntries([...LEGAL_TOOLS, ...INTERNAL_TOOLS, ...INDIA_TOOLS, fetchUrlTool, searchIntelTool].map((t) => [t.name, t as ToolDef<never, unknown>]));
+const NAMED_TOOLS: Record<string, ToolDef<never, unknown>> = Object.fromEntries([...LEGAL_TOOLS, ...INTERNAL_TOOLS, ...INDIA_TOOLS, getForumInfoTool, fetchUrlTool, searchIntelTool].map((t) => [t.name, t as ToolDef<never, unknown>]));
 
-/** Resolve tool names into runAgent tools (function tools + OpenAI built-ins). Unknown names are ignored. */
-export function toolsFor(names: Iterable<AgentToolName | string>, opts: { from?: AgentId; webContextSize?: "low" | "medium" | "high" } = {}): { tools: ToolDef<never, unknown>[]; builtinTools: Tool[]; unknown: string[] } {
+/** Tools that exist only with a capability (constitution §53.5: coded, fail closed). */
+const CORPUS_TOOL_NAMES = new Set<string>([...CORPUS_INDEX_TOOLS, ...LAW_CORPUS_TOOLS].map((t) => t.name));
+const IK_TOOL_NAMES = new Set<string>(INDIAN_KANOON_TOOLS.map((t) => t.name));
+
+/**
+ * Resolve tool names into runAgent tools (function tools + OpenAI built-ins). Unknown names are ignored; tools whose
+ * capability is absent on this deployment (the Postgres corpus, Indian Kanoon) are left out and listed as unavailable.
+ */
+export function toolsFor(names: Iterable<AgentToolName | string>, opts: { from?: AgentId; webContextSize?: "low" | "medium" | "high"; caps?: IndiaCapabilities } = {}): { tools: ToolDef<never, unknown>[]; builtinTools: Tool[]; unknown: string[]; unavailable: string[] } {
   const tools: ToolDef<never, unknown>[] = [];
   const builtinTools: Tool[] = [];
   const unknown: string[] = [];
+  const unavailable: string[] = [];
   const seen = new Set<string>();
+  let caps: IndiaCapabilities | null = opts.caps ?? null;
+  const capsNow = () => (caps ??= indiaCapabilities());
   for (const raw of names) {
     const name = String(raw);
     if (seen.has(name)) continue;
     seen.add(name);
+    if ((CORPUS_TOOL_NAMES.has(name) && !capsNow().corpus) || (IK_TOOL_NAMES.has(name) && !capsNow().indianKanoon)) { unavailable.push(name); continue; }
     if (name === "web_search") { builtinTools.push(webSearchTool({ contextSize: opts.webContextSize ?? "medium" })); continue; }
     if (name === "handoff") { if (opts.from && AGENT_PERSONAS[opts.from]?.handoffs.length) tools.push(handoffTool(opts.from) as ToolDef<never, unknown>); continue; }
     const t = NAMED_TOOLS[name];
     if (t) tools.push(t); else unknown.push(name);
   }
-  return { tools, builtinTools, unknown };
+  return { tools, builtinTools, unknown, unavailable };
 }
 
 export interface RunPersonaContext {
@@ -145,13 +159,16 @@ export interface RunPersonaResult {
 }
 
 /** Assemble the system instructions for a persona run. */
-export function personaInstructions(persona: AgentPersona, context: RunPersonaContext = {}): string {
+export function personaInstructions(persona: AgentPersona, context: RunPersonaContext = {}, opts: { toolNames?: string[]; coverage?: string } = {}): string {
   const m = context.matter as Record<string, unknown> | null | undefined;
+  const routing = indiaRoutingFor(opts.toolNames ?? persona.tools);
   const parts = [
     `You are the ${persona.name} agent of ${FIRM_NAME}'s legal AI platform. ${persona.purpose} ${todayLine()}`,
     persona.instructions,
     `Output contract: ${persona.outputContract}`,
     LEGAL_STYLE_RULES,
+    routing,
+    routing ? opts.coverage ?? "" : "",
     m ? `Matter context: ${m.name} (${m.caption ?? m.shortName ?? ""}); client ${m.client ?? "n/a"} (${m.clientSide ?? "n/a"}); ${m.court ?? "no court"}; stage: ${m.stage ?? "n/a"}.${matterForumLine(m)}` : "No matter is attached to this request.",
     context.user && typeof context.user === "object" && "name" in context.user ? `Requested by ${(context.user as { name: string }).name}.` : "",
     context.workflowName ? `This run is a step of the workflow "${context.workflowName}"${context.nodeId ? ` (step ${context.nodeId})` : ""}; later steps consume your output verbatim.` : "",
@@ -169,7 +186,13 @@ export async function runPersona(personaOrId: AgentPersona | AgentId, input: str
   const tier = opts.model ?? persona.model;
   const model = tier === "fast" ? cfg.fastModel : cfg.model;
   const { tools, builtinTools } = toolsFor([...persona.tools, ...(opts.tools ?? [])], { from: persona.id });
-  const instructions = personaInstructions(persona, opts.context);
+  const toolNames = tools.map((t) => t.name);
+  // Indian law routing for the tools this run actually has, plus the corpus coverage block (cached; bounded wait).
+  let coverage = "";
+  if (indiaRoutingFor(toolNames)) {
+    try { coverage = await (await import("@/modules/india/corpus/coverage")).coveragePromptBlock({ waitMs: 1_500 }); } catch { coverage = ""; }
+  }
+  const instructions = personaInstructions(persona, opts.context, { toolNames, coverage });
   const citations: RunPersonaResult["citations"] = [];
   const evidence: VerifySource[] = [];
   let toolCalls = 0;

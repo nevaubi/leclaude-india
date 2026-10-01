@@ -51,6 +51,8 @@ export interface TextSearchHit {
   caseNumber: string | null;
   judges: string[];
   pdfUrl: string | null;
+  /** The judgment record's own neutral citation when the text is keyed by CNR (High Courts: "2024:KHC-D:7336"). */
+  recordNeutralCitation?: string | null;
   chunkIndex: number;
   pageStart: number | null;
   pageEnd: number | null;
@@ -244,9 +246,9 @@ export async function searchJudgmentText(
       )
       SELECT b.neutral_citation, b.cnr, b.t_date, b.court_id, b.t_title, b.t_case_number, b.chunk_index, b.page_start, b.page_end, b.rank,
              ts_headline('english', left(b.text, 20000), websearch_to_tsquery('english', $1), 'MaxFragments=2, MaxWords=40, MinWords=15, StartSel="", StopSel="", FragmentDelimiter=" … "') AS passage,
-             j.id, j.title, j.decision_date::text AS decision_date, j.reporter_citation, j.case_number, j.judges, j.pdf_url
+             j.id, j.title, j.decision_date::text AS decision_date, j.reporter_citation, j.case_number, j.judges, j.pdf_url, j.neutral_citation AS j_neutral
       FROM best b LEFT JOIN LATERAL (
-        SELECT id, title, decision_date, reporter_citation, case_number, judges, pdf_url FROM corpus_judgments cj
+        SELECT id, title, decision_date, reporter_citation, case_number, judges, pdf_url, neutral_citation FROM corpus_judgments cj
         WHERE ${join} ORDER BY id LIMIT 1
       ) j ON true
       ORDER BY b.rank DESC LIMIT ${limit}`,
@@ -271,6 +273,7 @@ export async function searchJudgmentText(
         caseNumber: r.case_number ?? r.t_case_number ?? null,
         judges: parseArray(r.judges),
         pdfUrl: r.pdf_url ?? null,
+        recordNeutralCitation: !neutral && r.j_neutral ? r.j_neutral : null,
         chunkIndex: Number(r.chunk_index),
         pageStart: r.page_start == null ? null : Number(r.page_start),
         pageEnd: r.page_end == null ? null : Number(r.page_end),
@@ -279,4 +282,157 @@ export async function searchJudgmentText(
       };
     }),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Mentions of a judgment's citation in later judgments' text (citing references for corpus records)
+// ---------------------------------------------------------------------------
+
+/** A judgment in the corpus index, resolved exactly (never by name). */
+export interface CorpusJudgmentRef {
+  id: string;
+  title: string;
+  courtId: string | null;
+  neutralCitation: string | null;
+  reporterCitation: string | null;
+  cnr: string | null;
+  decisionDate: string | null;
+  /** The key read_judgment_text accepts for it. */
+  textKey: string;
+}
+
+/** High Court neutral citation ("2024:KHC-D:7336", "2025:TSHC:12"). */
+const HC_NEUTRAL_RE = /^\s*(\d{4})\s*:\s*([A-Z][A-Z-]*)\s*:\s*(\d+)\s*$/i;
+
+/**
+ * Resolve a corpus id (sc:… / hc:…), a neutral citation (Supreme Court or High Court) or "CNR@YYYY-MM-DD" to the
+ * judgment record in corpus_judgments. Null when nothing matches exactly; several matches for one citation are
+ * refused (null) rather than one being chosen.
+ */
+export async function resolveCorpusJudgment(idOrCitation: string, store: RemoteStore | null = remoteStore()): Promise<CorpusJudgmentRef | null> {
+  if (!store) return null;
+  const key = idOrCitation.trim().replace(/^corpus:/, "");
+  if (!key || key.length > 200) return null;
+  const cols = `id, title, court_id, neutral_citation, reporter_citation, cnr, decision_date::text AS decision_date`;
+  let rows: Row[] = [];
+  const sc = canonicalNeutral(key);
+  const hc = HC_NEUTRAL_RE.exec(key);
+  const at = /^([A-Za-z]{4}\d{12})@(\d{4}-\d{2}-\d{2})$/.exec(key);
+  if (sc) rows = await store.query({ query: `SELECT ${cols} FROM corpus_judgments WHERE upper(neutral_citation) = $1 ORDER BY id LIMIT 2`, params: [sc.toUpperCase()] });
+  else if (hc) rows = await store.query({ query: `SELECT ${cols} FROM corpus_judgments WHERE upper(replace(neutral_citation, ' ', '')) = $1 ORDER BY id LIMIT 2`, params: [`${hc[1]}:${hc[2]}:${Number(hc[3])}`.toUpperCase()] });
+  else if (at) rows = await store.query({ query: `SELECT ${cols} FROM corpus_judgments WHERE cnr = $1 AND decision_date = $2::date ORDER BY id LIMIT 2`, params: [at[1].toUpperCase(), at[2]] });
+  else if (/^(sc|hc):\S+$/.test(key)) rows = await store.query({ query: `SELECT ${cols} FROM corpus_judgments WHERE id = $1`, params: [key] });
+  else return null;
+  if (rows.length !== 1) return null;
+  const r = rows[0];
+  const neutral = r.neutral_citation ? canonicalNeutral(r.neutral_citation) ?? r.neutral_citation : null;
+  const textKey = r.court_id === "sci" && neutral ? neutral : r.cnr && r.decision_date ? `${r.cnr}@${r.decision_date}` : r.id ?? key;
+  return { id: r.id ?? key, title: r.title ?? "", courtId: r.court_id, neutralCitation: neutral, reporterCitation: r.reporter_citation ?? null, cnr: r.cnr ?? null, decisionDate: r.decision_date ?? null, textKey };
+}
+
+/** A regex that finds a citation string in text with flexible spacing and punctuation ("(2024) 10 SCC 1" ≈ "[2024] 10 S.C.C. 1"). */
+export function citationPattern(citation: string): RegExp | null {
+  const tokens = citation.match(/[A-Za-z]+|\d+/g);
+  if (!tokens || tokens.length < 2) return null;
+  const sep = "[\\s.,:()\\[\\]-]*";
+  return new RegExp(`(?<![A-Za-z0-9])${tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(sep)}(?![0-9])`, "i");
+}
+
+export interface CitationMention {
+  /** read_judgment_text key of the mentioning judgment. */
+  key: string;
+  judgmentId: string | null;
+  citation: string;
+  title: string | null;
+  courtId: string;
+  court: string;
+  decisionDate: string | null;
+  page: number | null;
+  chunkIndex: number;
+  /** Which citation string matched. */
+  matched: string;
+  passage: string;
+}
+
+/** Candidate chunks examined per citation string (bounded). */
+const MENTION_CANDIDATES = 200;
+
+/**
+ * Judgments in corpus_texts whose text contains one of `citations` (exact phrase search, confirmed by a pattern match
+ * on the chunk text), excluding the judgment whose text key is `excludeKey`. One row per mentioning judgment (the first
+ * matching chunk), newest first. This is a text match: it says the citation is mentioned, not how it was treated.
+ */
+export async function findCitationMentions(
+  citations: string[],
+  opts: { excludeKey?: string; limit?: number } = {},
+  store: RemoteStore | null = remoteStore(),
+): Promise<{ available: boolean; mentions: CitationMention[]; checked: number }> {
+  if (!store) return { available: false, mentions: [], checked: 0 };
+  const info = await tableInfo(store);
+  if (!info.ok) return { available: false, mentions: [], checked: 0 };
+  const limit = Math.max(1, Math.min(opts.limit ?? 10, 25));
+  const phrases = Array.from(new Set(citations.map((c) => c.replace(/\s+/g, " ").trim()).filter((c) => c.length >= 6))).slice(0, 3);
+  const hcCols = info.hc ? `t.cnr, t.decision_date::text AS t_date, t.court_id, t.title AS t_title` : `NULL::text AS cnr, NULL::text AS t_date, 'sci' AS court_id, NULL::text AS t_title`;
+  const join = info.hc
+    ? `CASE WHEN t.neutral_citation IS NOT NULL THEN upper(cj.neutral_citation) = upper(t.neutral_citation) ELSE cj.cnr = t.cnr AND cj.decision_date = t.decision_date END`
+    : `upper(cj.neutral_citation) = upper(t.neutral_citation)`;
+  const perPhrase = await Promise.all(phrases.map(async (phrase) => {
+    const rows = await store.query({
+      query: `WITH c AS (
+          SELECT id FROM corpus_texts WHERE search @@ phraseto_tsquery('english', $1) LIMIT ${MENTION_CANDIDATES}
+        )
+        SELECT t.neutral_citation, ${hcCols}, t.chunk_index, t.page_start, left(t.text, 20000) AS text,
+               j.id, j.title, j.decision_date::text AS decision_date
+        FROM corpus_texts t JOIN c ON c.id = t.id
+        LEFT JOIN LATERAL (SELECT id, title, decision_date FROM corpus_judgments cj WHERE ${join} ORDER BY id LIMIT 1) j ON true`,
+      params: [phrase],
+    });
+    return { phrase, rows };
+  }));
+  const byKey = new Map<string, CitationMention>();
+  let checked = 0;
+  for (const { phrase, rows } of perPhrase) {
+    const re = citationPattern(phrase);
+    for (const r of rows) {
+      checked++;
+      const neutral = r.neutral_citation ? canonicalNeutral(r.neutral_citation) ?? r.neutral_citation : null;
+      const date = r.decision_date ?? r.t_date ?? null;
+      const key = neutral ?? (r.cnr && r.t_date ? `${r.cnr}@${r.t_date}` : null);
+      if (!key || key === opts.excludeKey || byKey.has(key)) continue;
+      const text = cleanJudgmentText(r.text ?? "");
+      const m = re ? re.exec(text) : null;
+      if (!m) continue;
+      const s = Math.max(0, m.index - 350), e = Math.min(text.length, m.index + m[0].length + 350);
+      const courtId = r.court_id ?? "sci";
+      byKey.set(key, {
+        key, judgmentId: r.id ?? null, citation: citeOf(neutral, r.cnr ?? null, date), title: r.title ?? r.t_title ?? null, courtId, court: courtName(courtId),
+        decisionDate: date, page: r.page_start == null ? null : Number(r.page_start), chunkIndex: Number(r.chunk_index), matched: phrase,
+        passage: `${s > 0 ? "…" : ""}${text.slice(s, e).replace(/\s+/g, " ").trim()}${e < text.length ? "…" : ""}`,
+      });
+    }
+  }
+  const mentions = [...byKey.values()].sort((a, b) => (b.decisionDate ?? "").localeCompare(a.decisionDate ?? "") || a.key.localeCompare(b.key)).slice(0, limit);
+  return { available: true, mentions, checked };
+}
+
+/**
+ * Which of `citations` the judgment index carries as a judgment's own neutral or reporter citation (exact match after
+ * whitespace/case normalisation). Returns the input strings that match. Found is not read: callers keep such
+ * citations at "requires review".
+ */
+export async function corpusCitationsKnown(citations: string[], store: RemoteStore | null = remoteStore()): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!store || !citations.length) return out;
+  const key = (c: string) => (canonicalNeutral(c) ?? c).replace(/\s+/g, " ").trim().toUpperCase();
+  const want = new Map<string, string[]>();
+  for (const c of citations.slice(0, 40)) { const k = key(c); want.set(k, [...(want.get(k) ?? []), c]); }
+  const keys = [...want.keys()];
+  const arr = `{${keys.map((k) => `"${k.replace(/["\\{}]/g, "")}"`).join(",")}}`;
+  const rows = await store.query({
+    query: `SELECT upper(neutral_citation) AS n, upper(reporter_citation) AS r FROM corpus_judgments
+      WHERE upper(neutral_citation) = ANY($1::text[]) OR upper(reporter_citation) = ANY($1::text[]) LIMIT 200`,
+    params: [arr],
+  });
+  for (const r of rows) for (const v of [r.n, r.r]) for (const c of (v ? want.get(v.replace(/\s+/g, " ").trim()) ?? [] : [])) out.add(c);
+  return out;
 }

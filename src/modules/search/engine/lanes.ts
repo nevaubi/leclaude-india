@@ -57,6 +57,8 @@ export interface LaneContext {
   board?: LaneBoard<ResearchSource[]>;
   /** The fast-model plan, resolving while the first retrieval wave runs (null when unavailable). */
   plan?: Promise<ResearchPlan | null>;
+  /** Indian law corpus coverage block (courts/years with full text vs metadata, statutes breadth); user turn only. */
+  coverage?: string;
 }
 
 export interface LaneFailure {
@@ -85,8 +87,8 @@ const SEARCH_TOOL_FOR: Partial<Record<string, SearchSource>> = {
 };
 
 const SEARCH_TOOL_DESC: Record<string, string> = {
-  search_judgments: "Search the Supreme Court and High Court judgment corpus (plus Indian Kanoon when the firm has configured it). Keyword queries with Indian terms of art and section numbers work best; results respect this lane's courts and the run's date filters and carry court, bench strength, date, citations and binding/persuasive for the forum. Returns source ids usable with read_source and read_judgment.",
-  search_statutes: "Search India Code enactments and sections (central and state Acts, including BNS/BNSS/BSA and the old IPC/CrPC/Evidence Act). Returns source ids usable with read_section.",
+  search_judgments: "Search every judgment source at once: full-text passages with pages (Supreme Court; Karnataka, Andhra Pradesh and Telangana High Courts where loaded), the judgment metadata index (Supreme Court and High Courts), the local store and Indian Kanoon when configured. Keyword queries with Indian terms of art and section numbers work best; results respect this lane's courts and the run's date filters and carry court, bench strength, date, citations, binding/persuasive for the forum and `text`: \"full text\" (readable with read_source / read_judgment) or \"metadata only\" (no text: cite only per the snippet). Returns source ids for read_source, read_judgment and citing_references.",
+  search_statutes: "Search the statutes: the full corpus of Central, State and UT Acts and regulator instruments (with in force / repealed status) and the curated India Code store (BNS/BNSS/BSA and the old IPC/CrPC/Evidence Act with successor links). Returns source ids usable with read_section and read_source.",
   search_library: "Search the firm's knowledge library: memos, opinions, pleadings, clause bank, templates.",
   search_ediscovery: "Search this matter's documents and deposition transcripts. Limited to the selected matter.",
 };
@@ -192,11 +194,18 @@ export async function runLane(lane: ResearchLane, ctx: LaneContext, slot: { queu
     // 3. Reading. Fast lanes (and the no-key path) read the best hits deterministically and in parallel;
     //    deep lanes hand the found list to a bounded fast-model agent.
     const readOne = async (s: ResearchSource, ref: ReadRef) => {
-      if (reads >= lane.maxReads) throw new Error("Read cap reached for this lane; write the lane note from what you have already read.");
+      if (reads >= lane.maxReads) throw new Error(`Read cap (${lane.maxReads}) reached for this lane; write the lane note from what you have already read.`);
+      // A read counts against the cap only when it succeeds (a failed or unknown read never costs the lane a read).
       reads++;
       const started = Date.now();
       emit({ type: "source.read_started", laneId: lane.id, sourceId: s.id, title: s.cite ?? s.title });
-      const r = await ctx.reads.read(s.id, () => withRetry(() => deps.read(ref, { title: s.title, signal }), retry), signal);
+      let r: Awaited<ReturnType<EngineDeps["read"]>> & { shared: boolean };
+      try {
+        r = await ctx.reads.read(s.id, () => withRetry(() => deps.read(ref, { title: s.title, signal }), retry), signal);
+      } catch (e) {
+        reads--;
+        throw e;
+      }
       const text = r.text ?? "";
       const durationMs = Date.now() - started;
       if (!r.shared) ctx.metrics?.addToolTime(durationMs);
@@ -220,16 +229,16 @@ export async function runLane(lane: ResearchLane, ctx: LaneContext, slot: { queu
       }));
     } else {
       agentRan = true;
-      const tools = buildLaneTools(lane, ctx, { found, record, readOne });
+      const tools = buildLaneTools(lane, ctx, { found, record, readOne, peers: () => [...ctx.priors.flatMap((p) => p.sources), ...afterSources] });
       const j = jurisdictionByKey(ctx.settings.jurisdiction);
       const matterLine = ctx.matter ? `Matter: ${ctx.matter.name} (${ctx.matter.caption ?? ctx.matter.shortName}); client ${ctx.matter.client} (${ctx.matter.clientSide}); ${ctx.matter.court ?? ""}; stage ${ctx.matter.stage ?? "n/a"}; matter id ${ctx.matter.id}.${matterForumSuffix(ctx.matter)}` : "No matter selected.";
       const forumLine = `Forum: ${j.label}. Binding courts: ${bindingCourtIds(j.key).join(", ")}.${lane.courtFilter?.length ? ` This lane searches: ${lane.courtFilter.join(", ")}.` : ""}`;
       // Byte-stable per lane kind (cacheable prefix); everything volatile is in the user turn below.
       const instructions = laneInstructions(lane.kind, lane.name, lane.brief, firmLabel(), lane.maxReads, LEGAL_STYLE_RULES);
-      const list = Array.from(found.values()).slice(0, 25).map((s) => `${s.id} · ${formatBluebook(s.hit)}${s.authority && s.authority !== "n/a" ? ` (${s.authority})` : ""}${s.snippet ? ` — ${s.snippet.slice(0, 200)}` : ""}`).join("\n");
+      const list = Array.from(found.values()).slice(0, 25).map((s) => `${s.id} · ${formatBluebook(s.hit)}${s.authority && s.authority !== "n/a" ? ` (${s.authority})` : ""}${textTag(s)}${s.snippet ? ` — ${s.snippet.slice(0, 200)}` : ""}`).join("\n");
       const leading = [...ctx.priors.flatMap((p) => p.sources), ...afterSources].filter((s) => s.kind === "caselaw" && CASE_TITLE_RE.test(s.title)).sort((a, b) => Number(b.read) - Number(a.read) || Number(b.authority === "binding") - Number(a.authority === "binding"));
       const priorNote = lane.kind === "contrary" && leading.length ? `\n\nLeading authority the binding lane found (look for judgments that distinguish, doubt, overrule or limit these):\n${Array.from(new Map(leading.map((s) => [s.id, s])).values()).slice(0, 4).map((s) => `- ${s.id} · ${formatBluebook(s.hit)}`).join("\n")}` : "";
-      const input = `${todayLine()}\n${matterLine}\n${forumLine}\n\nStructured results already found (${found.size}):\n${list || "(none — search first)"}${priorNote}\n\nResearch question: ${ctx.question}`;
+      const input = `${todayLine()}\n${matterLine}\n${forumLine}${ctx.coverage ? `\n\n${ctx.coverage}` : ""}\n\nStructured results already found (${found.size}):\n${list || "(none — search first)"}${priorNote}\n\nResearch question: ${ctx.question}`;
       let webSearchId: string | null = null;
       const onEvent = (e: AgentEvent) => {
         if (e.type === "tool.call") emit({ type: "tool.started", laneId: lane.id, toolId: e.id, name: e.name, label: e.label });
@@ -288,6 +297,49 @@ interface LaneToolHooks {
   found: Map<string, ResearchSource>;
   record: (incoming: ResearchSource[]) => void;
   readOne: (s: ResearchSource, ref: ReadRef) => Promise<string>;
+  /** Sources other lanes handed this lane (hard and soft dependencies), so ids shown in the prompt always resolve. */
+  peers?: () => ResearchSource[];
+}
+
+/** " [full text]" / " [metadata only]" for judgments (whether read_source can read it). */
+export function textTag(s: Pick<ResearchSource, "kind" | "hit">): string {
+  if (s.kind !== "caselaw") return "";
+  return s.hit.readRef ? " [full text]" : " [metadata only]";
+}
+
+/** Candidate spellings of a source id a model may pass ("sc:X" for "corpus:sc:X", quoted ids). */
+function idVariants(id: string): string[] {
+  const t = id.trim().replace(/^["'`]|["'`]$/g, "");
+  const out = [t];
+  if (t.startsWith("corpus:")) out.push(t.slice(7));
+  else out.push(`corpus:${t}`);
+  return Array.from(new Set(out));
+}
+
+/**
+ * Resolve a model-supplied source id against the sources this lane may use (its own finds, the run's known sources,
+ * and its dependencies' sources): exact id first, then the "corpus:" spelling, then an exact citation that only one
+ * source carries. Never a closest match: an unknown id stays unknown.
+ */
+export function resolveLaneSource(id: string, pools: Iterable<ResearchSource>[]): ResearchSource | undefined {
+  const all: ResearchSource[] = [];
+  for (const p of pools) for (const s of p) all.push(s);
+  for (const v of idVariants(id)) { const hit = all.find((s) => s.id === v); if (hit) return hit; }
+  const norm = (c: string) => c.replace(/\s+/g, " ").trim().toUpperCase();
+  const want = norm(id);
+  if (want.length < 6) return undefined;
+  const byCite = all.filter((s) => [s.cite, ...(s.hit.citations ?? []), s.hit.india?.neutralCitation].some((c) => c && norm(c) === want));
+  const ids = new Set(byCite.map((s) => s.id));
+  return ids.size === 1 ? byCite[0] : undefined;
+}
+
+/** The error for an unknown id: lists ids the lane can use (readable first), so the model can retry correctly. */
+export function unknownSourceError(id: string, pools: Iterable<ResearchSource>[], want: "any" | "statutes" = "any"): Error {
+  const seen = new Map<string, ResearchSource>();
+  for (const p of pools) for (const s of p) if (!seen.has(s.id)) seen.set(s.id, s);
+  const list = [...seen.values()].filter((s) => (want === "statutes" ? s.kind === "statutes" : true)).sort((a, b) => Number(Boolean(b.hit.readRef)) - Number(Boolean(a.hit.readRef)));
+  const shown = list.slice(0, 12).map((s) => `${s.id}${s.hit.readRef ? "" : " (metadata only, not readable)"}`);
+  return new Error(`Unknown source id ${id}. Use an id exactly as a search result listed it${shown.length ? `; valid ids include: ${shown.join(", ")}` : "; search first"}.`);
 }
 
 type AnyTool = ToolDef<never, unknown>;
@@ -300,12 +352,20 @@ type AnyTool = ToolDef<never, unknown>;
 export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: LaneToolHooks): AnyTool[] {
   const tools: AnyTool[] = [];
   const has = (name: string) => lane.tools.includes(name);
-  const compact = (s: ResearchSource) => ({ id: s.id, cite: formatBluebook(s.hit), court: s.hit.court ?? s.court, bench_strength: s.hit.india?.benchStrength, date: s.date, authority: s.authority, language: s.hit.india?.language, snippet: s.snippet?.slice(0, 240), read: s.read });
+  const compact = (s: ResearchSource) => ({ id: s.id, cite: formatBluebook(s.hit), court: s.hit.court ?? s.court, bench_strength: s.hit.india?.benchStrength, date: s.date, authority: s.authority, language: s.hit.india?.language, ...(s.kind === "caselaw" ? { text: s.hit.readRef ? "full text" : "metadata only" } : {}), snippet: s.snippet?.slice(0, 240), read: s.read });
   const retryOpts = { retries: ctx.policy.retrievalRetries, baseMs: ctx.policy.retryBaseMs, maxMs: ctx.policy.retryMaxMs, signal: ctx.signal };
-  const lookup = (id: string) => hooks.found.get(id) ?? ctx.known.find((k) => k.id === id);
+  const pools = (): Iterable<ResearchSource>[] => [Array.from(hooks.found.values()), ctx.known, hooks.peers?.() ?? []];
+  const lookup = (id: string) => resolveLaneSource(id, pools());
+  /** Resolve and adopt: a source handed over by another lane is recorded in this lane when used. */
+  const adopt = (id: string): ResearchSource => {
+    const s = lookup(id);
+    if (!s) throw unknownSourceError(id, pools());
+    if (!hooks.found.has(s.id)) hooks.record([{ ...s, laneIds: [lane.id] }]);
+    return hooks.found.get(s.id) ?? s;
+  };
   const textFor = async (s: ResearchSource): Promise<string> => {
     const ref = s.hit.readRef;
-    if (!ref) throw new Error("This source has no readable full text; rely on the snippet and mark characterizations [VERIFY].");
+    if (!ref) throw new Error("This source is metadata only (no readable full text): cite it only for what its snippet shows, say the text was not read, and mark any characterization [VERIFY]. Search for the same judgment with words from its subject to find a full-text copy.");
     return ctx.texts.get(s.id) ?? (await hooks.readOne(s, ref));
   };
 
@@ -328,20 +388,22 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
     }) as AnyTool);
   }
 
-  tools.push(defineTool<{ source_id: string; max_chars?: number }>({
+  tools.push(defineTool<{ source_id: string; page?: number; max_chars?: number }>({
     name: "read_source",
-    description: `Read the full text of a source by its id (from search results). Required before quoting or characterizing a holding. At most ${lane.maxReads} reads in this lane.`,
-    parameters: { type: "object", properties: { source_id: { type: "string" }, max_chars: { type: "integer", description: "Default 30000" } }, required: ["source_id"] },
-    examples: [{ source_id: "judgment:ijdg_8f2a61c0d9e4b7a35c10" }],
+    description: `Read the full text of a source by its id, exactly as a search result listed it (e.g. corpus:sc:…, corpus:2024 INSC 735, judgment:…, law:…). Judgment text carries page markers ([p. 6]); pass \`page\` to start at the page of a search passage, and cite the page. Required before quoting or characterizing a holding. Sources marked "metadata only" cannot be read. At most ${lane.maxReads} successful reads in this lane (re-reading a source already read is free).`,
+    parameters: { type: "object", properties: { source_id: { type: "string" }, page: { type: "integer", description: "Start at this page (judgment text with [p. N] markers)" }, max_chars: { type: "integer", description: "Default 30000" } }, required: ["source_id"] },
+    examples: [{ source_id: "corpus:sc:2024_10_108_125", page: 6 }, { source_id: "judgment:ijdg_8f2a61c0d9e4b7a35c10" }],
     timeoutMs: 45_000,
     maxResultChars: 32_000,
-    label: (a) => { const s = hooks.found.get(a.source_id); return `Reading ${s?.cite ?? s?.title ?? a.source_id}`; },
+    label: (a) => { const s = lookup(a.source_id); return `Reading ${s?.cite ?? s?.title ?? a.source_id}${a.page ? `, p. ${a.page}` : ""}`; },
     async execute(args) {
-      const s = lookup(args.source_id);
-      if (!s) throw new Error(`Unknown source id ${args.source_id}; use an id returned by a search tool.`);
-      const text = await textFor(s);
+      const s = adopt(args.source_id);
+      const full = await textFor(s);
+      const at = args.page != null ? pageOffset(full, args.page) : 0;
+      if (at < 0) throw new Error(`No page ${args.page} marker in ${s.cite ?? s.id}; read without \`page\` to see the pages it has.`);
+      const text = full.slice(at);
       const max = args.max_chars ?? 30_000;
-      return { id: s.id, cite: formatBluebook(s.hit), url: s.url, length: text.length, text: text.length > max ? text.slice(0, max) + "\n…[truncated]" : text };
+      return { id: s.id, cite: formatBluebook(s.hit), url: s.url, length: full.length, ...(at ? { from_char: at } : {}), text: text.length > max ? text.slice(0, max) + "\n…[truncated]" : text };
     },
   }) as AnyTool);
 
@@ -356,8 +418,7 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
       maxResultChars: 36_000,
       label: (a) => { const s = hooks.found.get(a.source_id); return `Reading ${s?.cite ?? s?.title ?? a.source_id}${a.start_paragraph ? ` from ¶${a.start_paragraph}` : ""}`; },
       async execute(args) {
-        const s = lookup(args.source_id);
-        if (!s) throw new Error(`Unknown source id ${args.source_id}; use an id returned by a search tool.`);
+        const s = adopt(args.source_id);
         const paras = splitParagraphs(await textFor(s));
         const start = Math.max(1, Math.floor(args.start_paragraph ?? 1));
         const n = Math.min(Math.max(1, Math.floor(args.count ?? 40)), 100);
@@ -377,7 +438,8 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
       label: (a) => { const s = hooks.found.get(a.source_id); return `Reading ${s?.cite ?? s?.title ?? a.source_id}`; },
       async execute(args) {
         const s = lookup(args.source_id);
-        if (!s || s.kind !== "statutes") throw new Error(`Unknown statute source id ${args.source_id}; use an id returned by search_statutes.`);
+        if (!s || s.kind !== "statutes") throw unknownSourceError(args.source_id, pools(), "statutes");
+        if (!hooks.found.has(s.id)) hooks.record([{ ...s, laneIds: [lane.id] }]);
         const text = await textFor(s);
         return { id: s.id, cite: formatBluebook(s.hit), replaced_by: s.hit.india?.replacedBy, currentness: s.currentness?.label, text: text.length > 20_000 ? text.slice(0, 20_000) + "\n…[truncated]" : text };
       },
@@ -390,15 +452,16 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
     const citing = ctx.deps.citing.bind(ctx.deps);
     tools.push(defineTool<{ source_id: string }>({
       name: "citing_references",
-      description: "For a judgment among the sources, find later judgments in the corpus that cite it and whether any use negative-treatment language (overruled, per incuriam, doubted, referred to a larger bench, not good law). Returns a treatment signal to REVIEW; it is not a citator and never establishes good law.",
+      description: "For a judgment among the sources (its source id), find later judgments that cite it: for corpus judgments (corpus:…), judgments in the full-text corpus whose text MENTIONS its neutral or reporter citation (text match, with passage and page); for the local store, parsed citations. Flags negative-treatment language near the citation (overruled, per incuriam, doubted, referred to a larger bench, not good law). A treatment signal to REVIEW: a mention is not 'followed' or 'overruled', it is not a citator and never establishes good law.",
       parameters: { type: "object", properties: { source_id: { type: "string" } }, required: ["source_id"] },
       examples: [{ source_id: "judgment:ijdg_8f2a61c0d9e4b7a35c10" }],
       timeoutMs: 20_000,
       label: (a) => { const s = hooks.found.get(a.source_id); return `Checking citing judgments for ${s?.cite ?? s?.title ?? a.source_id}`; },
       async execute(args) {
         const s = lookup(args.source_id);
-        const judgmentId = s?.hit.readRef?.kind === "judgment" ? s.hit.readRef.id : s?.hit.india?.judgmentId;
-        if (!s || s.kind !== "caselaw" || !judgmentId) throw new Error("citing_references needs a judgment source id from the corpus (search_judgments).");
+        if (!s) throw unknownSourceError(args.source_id, pools());
+        const judgmentId = s.hit.readRef?.kind === "judgment" ? s.hit.readRef.id : s.hit.india?.judgmentId;
+        if (s.kind !== "caselaw" || !judgmentId) throw new Error("citing_references needs a judgment source id (from search_judgments); this source is not a judgment in the corpus.");
         const treatment = await citing({ judgmentId, signal: ctx.signal });
         hooks.record([{ ...s, laneIds: [lane.id], treatment }]);
         return { id: s.id, cite: formatBluebook(s.hit), ...treatment };
@@ -567,6 +630,12 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
   }
 
   return tools;
+}
+
+/** Offset of the "[p. N]" marker in judgment text (-1 when the text has no such page). */
+export function pageOffset(text: string, page: number): number {
+  const m = new RegExp(`(^|\\n)\\[p\\. ${Math.floor(page)}\\]`).exec(text);
+  return m ? m.index + m[1].length : -1;
 }
 
 function safeHost(url: string) { try { return new URL(url).host; } catch { return "page"; } }

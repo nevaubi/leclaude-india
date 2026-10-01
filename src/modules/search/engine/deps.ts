@@ -34,6 +34,7 @@ import { remoteStore } from "@/lib/db/remote";
 import { searchCorpus, type CorpusHit } from "@/modules/india/corpus/search";
 import { caseHref } from "@/modules/caselaw/shared";
 import { chunksToText, readJudgmentText, searchJudgmentText, type TextSearchHit } from "@/modules/india/corpus/text";
+import { textKey } from "@/lib/ai/toolkit/india-judgment-text";
 
 /** Model-derived plan: jurisdiction-aware sub-questions and extra retrieval queries per lane kind. */
 export interface ResearchPlan {
@@ -141,20 +142,23 @@ function corpusHit(h: CorpusHit, nctx: { jurisdiction: SearchSettings["jurisdict
 export const CORPUS_TEXT_PREFIX = "corpus-text://";
 
 /**
- * Supreme Court full-text hits (best passage per judgment, with its page). Only when the Supreme Court is in scope;
- * judgments already returned by another provider (same neutral citation) are skipped. Every hit is readable.
+ * Judgment full-text hits (best passage per judgment, with its page), restricted to the courts in scope; judgments
+ * already returned by another provider (same neutral citation or record) are skipped. Every hit is readable.
  */
 export async function corpusTextHits(query: string, o: { courts: string[]; yearFrom?: number; yearTo?: number; limit: number; existing: SearchHit[]; nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] } }): Promise<SearchHit[]> {
   if (!remoteStore() || !query.trim()) return [];
-  if (o.courts.length && !o.courts.includes("sci")) return [];
-  const { hits } = await searchJudgmentText(query, { yearFrom: o.yearFrom, yearTo: o.yearTo, limit: o.limit });
+  const { hits } = await searchJudgmentText(query, { courts: o.courts, yearFrom: o.yearFrom, yearTo: o.yearTo, limit: o.limit });
   const norm = (v?: string | null) => (v ?? "").replace(/\s+/g, " ").trim().toUpperCase();
   const seen = new Set<string>();
-  for (const h of o.existing) for (const c of h.citations ?? (h.cite ? [h.cite] : [])) seen.add(norm(c));
+  for (const h of o.existing) {
+    for (const c of h.citations ?? (h.cite ? [h.cite] : [])) seen.add(norm(c));
+    if (h.india?.judgmentId) seen.add(`id:${h.india.judgmentId}`);
+  }
   const out: SearchHit[] = [];
   for (const h of hits) {
-    if (seen.has(norm(h.neutralCitation))) continue;
-    seen.add(norm(h.neutralCitation));
+    const keys = [h.neutralCitation ? norm(h.neutralCitation) : "", h.judgmentId ? `id:${h.judgmentId}` : ""].filter(Boolean);
+    if (keys.some((k) => seen.has(k))) continue;
+    keys.forEach((k) => seen.add(k));
     out.push(textHit(h, o.nctx));
   }
   return out;
@@ -162,23 +166,24 @@ export async function corpusTextHits(query: string, o: { courts: string[]; yearF
 
 function textHit(h: TextSearchHit, nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] }): SearchHit {
   const citations = [h.neutralCitation, h.reporterCitation].filter((x): x is string => Boolean(x));
-  const id = h.judgmentId ?? h.neutralCitation;
+  const id = textKey(h);
   return {
     id: `corpus:${id}`,
     source: "caselaw",
-    title: h.title || h.neutralCitation,
-    subtitle: [h.court, h.pageStart != null ? `passage at p. ${h.pageStart}` : "", "full text"].filter(Boolean).join(" · "),
-    cite: h.neutralCitation,
+    title: h.title || h.citation,
+    subtitle: [h.court, h.caseNumber, h.pageStart != null ? `passage at p. ${h.pageStart}` : "", "full text"].filter(Boolean).join(" · "),
+    cite: h.neutralCitation ?? h.citation,
     citations,
     court: h.court,
-    courtId: "sci",
+    courtId: h.courtId,
     date: h.decisionDate ?? undefined,
     snippet: h.passage.slice(0, 600),
     url: h.judgmentId ? `${caseHref(h.judgmentId)}${h.pageStart != null ? `#p${h.pageStart}` : ""}` : undefined,
     judge: h.judges.join(", ") || undefined,
+    docketNumber: h.caseNumber ?? undefined,
     score: h.rank,
-    authority: classifyAuthority("sci", nctx.jurisdiction, nctx.courts, h.decisionDate ?? undefined),
-    india: { judgmentId: id, courtId: "sci", judges: h.judges, neutralCitation: h.neutralCitation, reporterCitations: h.reporterCitation ? [h.reporterCitation] : undefined, provider: "corpus" },
+    authority: classifyAuthority(h.courtId, nctx.jurisdiction, nctx.courts, h.decisionDate ?? undefined),
+    india: { judgmentId: id, courtId: h.courtId, judges: h.judges, neutralCitation: h.neutralCitation ?? undefined, reporterCitations: h.reporterCitation ? [h.reporterCitation] : undefined, caseNumber: h.caseNumber ?? undefined, provider: "corpus" },
     readRef: { kind: "url", url: `${CORPUS_TEXT_PREFIX}${id}` },
   };
 }
@@ -392,7 +397,7 @@ export function defaultDeps(): EngineDeps {
         const id = ref.url.slice(CORPUS_TEXT_PREFIX.length);
         const r = await withTimeout(readJudgmentText(id, { maxChars: 400_000 }), 30_000, opts.signal);
         if (!r || !r.chunks.length) throw new Error(`No full text for judgment ${id}`);
-        return { text: chunksToText(r.chunks), title: r.title ? `${r.title}, ${r.neutralCitation}` : r.neutralCitation, cite: r.neutralCitation, url: r.judgmentId ? caseHref(r.judgmentId) : undefined, cached: true };
+        return { text: chunksToText(r.chunks), title: r.title ? `${r.title}, ${r.citation}` : r.citation, cite: r.neutralCitation ?? r.citation, url: r.judgmentId ? caseHref(r.judgmentId) : undefined, cached: true };
       }
       if (ref.kind === "url" && ref.url.startsWith(IK_READ_PREFIX)) {
         const ik = indianKanoonClient();

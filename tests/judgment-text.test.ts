@@ -15,7 +15,7 @@ const fake: RemoteStore = {
     const sql = q.query;
     if (sql.includes("to_regclass")) return [{ ok: "t" }];
     if (sql.includes("FROM corpus_judgments WHERE upper(neutral_citation)")) return q.params?.[0] === "2024 INSC 735" ? [{ id: "sc:2024_10_108_125", title: "Vijay Singh v. State of Bihar" }] : [];
-    if (sql.includes("FROM corpus_judgments WHERE id = $1")) return q.params?.[0] === "sc:2024_10_108_125" ? [{ id: "sc:2024_10_108_125", title: "Vijay Singh v. State of Bihar", neutral_citation: "2024 INSC 735" }] : q.params?.[0] === "hc:x" ? [{ id: "hc:x", title: "HC", neutral_citation: "2024:KHC:1" }] : [];
+    if (sql.includes("FROM corpus_judgments WHERE id = $1")) return q.params?.[0] === "sc:2024_10_108_125" ? [{ id: "sc:2024_10_108_125", title: "Vijay Singh v. State of Bihar", neutral_citation: "2024 INSC 735", court_id: "sci", cnr: null, decision_date: "2024-09-25" }] : q.params?.[0] === "hc:x" ? [{ id: "hc:x", title: "HC", neutral_citation: "2024:KHC:1", court_id: "hc-karnataka", cnr: "KAHC010219082014", decision_date: "2014-09-09" }] : [];
     if (sql.includes("min(chunk_index)")) return [{ i: q.params?.[1] === 4 ? "2" : null }];
     if (sql.includes("FROM corpus_texts") && sql.includes("chunk_index >=")) return q.params?.[0] !== "2024 INSC 735" ? [] : CHUNKS.filter((c) => Number(c.chunk_index) >= Number(q.params?.[1]));
     if (sql.includes("websearch_to_tsquery")) return [

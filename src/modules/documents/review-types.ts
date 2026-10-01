@@ -102,7 +102,10 @@ export interface DocReview {
 
 export interface ReviewCounts {
   files: number;
+  /** Fully read and reviewed. */
   done: number;
+  /** Reviewed, but only part of the file was read (status "partial"); not included in `done`. */
+  partial: number;
   pending: number;
   failed: number;
   /** Rows with a reviewer decision bound to the current row hash. */
@@ -132,13 +135,17 @@ export interface ReviewEvidence {
 }
 
 export type CellStatus =
-  | "found" // a value with a quote found verbatim in the file
-  | "unverified" // a value whose quote was not found in the file text (shown, flagged, never re-bound)
-  | "not_stated"; // the document does not state it
+  | "found" // a value whose quote is found verbatim in the file and (for date/amount/party columns) contains the value
+  | "unverified" // a value whose quote was not found, is too short to support it, or does not contain the value
+  | "conflict" // different parts of the file give different supported values; see `alternatives` — requires review
+  | "not_read" // nothing found in the part that was read, but part of the file was not read (scanned pages, length cap)
+  | "not_stated"; // every page was read and the document does not state it
 
 export interface ReviewCell extends ReviewEvidence {
   value: string | null;
   status: CellStatus;
+  /** Other supported values found later in the file (status "conflict"); first value stays in `value`. */
+  alternatives?: (ReviewEvidence & { value: string })[];
 }
 
 export type Relevance = "high" | "medium" | "low" | "none";
@@ -175,6 +182,11 @@ export interface CodingDecision {
   rowHash: string;
 }
 
+/**
+ * pending: not yet reviewed under the current review version and file text (rows never expose results from an older
+ * version or text: cells, issues and privilege are empty until re-run); done: every page read; partial: reviewed but
+ * part of the file could not be read (see coverage); failed: the review of this file failed (reason in `error`).
+ */
 export type RowStatus = "pending" | "done" | "partial" | "failed";
 
 export interface DocReviewRow {
@@ -198,8 +210,11 @@ export interface DocReviewRow {
   decision: CodingDecision | null;
   /** True when `decision.rowHash !== rowHash`. */
   decisionStale: boolean;
-  /** Characters of the file the review read vs its total; read < total means the row covers only part of the file. */
-  coverage: { read: number; total: number };
+  /**
+   * Characters of the file the review read vs its total; read < total means the row covers only part of the file.
+   * `unreadPages`: pages with no text (scanned, awaiting OCR) that the review therefore could not read.
+   */
+  coverage: { read: number; total: number; unreadPages: number[] };
   error: string | null;
   updatedAt: string | null;
 }
@@ -252,7 +267,10 @@ export interface ReportAnswer {
 
 export interface ReviewReport {
   reviewId: string;
+  /** "partial" when any question failed; failed questions are listed, never silently dropped. */
+  status: "complete" | "partial";
   answers: ReportAnswer[];
+  failed: { index: number; question: string; error: string }[];
   generatedAt: string;
   generatedBy: string;
   /** Files in the set when the report ran. */

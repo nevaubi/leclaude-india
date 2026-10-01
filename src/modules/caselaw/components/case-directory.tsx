@@ -2,12 +2,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Database, Lock, RotateCcw, Scale, Search, SearchX, X } from "lucide-react";
+import { ArrowRight, Database, FileText, Gavel, LayoutList, Lock, RotateCcw, Scale, Search, SearchX, X } from "lucide-react";
+import { CorpusHeader } from "@/components/corpus/corpus-header";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
-import { EmptyState, Spinner } from "@/components/ui/misc";
+import { Chip, EmptyState, Kbd, Spinner } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { courtById } from "@/lib/india/courts";
 import {
@@ -15,7 +17,7 @@ import {
   type CaseFacets, type CaseFilters, type CaseHit, type CaseListResponse, type CaseSort,
 } from "../shared";
 import { CourtFilter, courtShortName } from "./court-filter";
-import { CoverageStrip } from "./coverage-strip";
+import { CaseCoverageLine, CourtCoverageCards } from "./coverage-strip";
 import { CaseApiError, fetchCaseJson } from "./fetch";
 
 type ListState = { hits: CaseHit[]; mode: "search" | "browse"; hasMore: boolean; nextCursor: string | null; tookMs: number | null };
@@ -33,6 +35,9 @@ export function benchLabel(h: Pick<CaseHit, "court_id" | "bench_id" | "bench_cod
 }
 
 const dash = <span className="text-muted-foreground/60">—</span>;
+const fmt = (n: number) => n.toLocaleString("en-IN");
+const asCaseError = (e: unknown) => (e instanceof CaseApiError ? e : new CaseApiError(String((e as Error)?.message ?? e), 0, null));
+const EXAMPLE_SEARCHES = ["2023 INSC 1066", "arbitration agreement stamp", "Union of India", "anticipatory bail"];
 
 /** /cases: the case law directory (browse and search the judgment metadata index). All filters live in the URL. */
 export function CaseDirectory() {
@@ -42,10 +47,15 @@ export function CaseDirectory() {
   const paramString = sp.toString();
   const filters = React.useMemo(() => parseCaseFilters(new URLSearchParams(paramString)), [paramString]);
   const apiQuery = caseFiltersToParams(filters).toString();
+  const browseAll = sp.get("view") === "all";
+  const active = hasActiveFilters(filters);
+  const landing = !active && !browseAll;
 
   // Latest requested filters: two quick edits before the URL settles must not overwrite each other.
   const latest = React.useRef(filters);
   React.useEffect(() => { latest.current = filters; }, [filters]);
+  const keepAll = React.useRef(browseAll);
+  React.useEffect(() => { keepAll.current = browseAll; }, [browseAll]);
   const setFilters = React.useCallback((patch: Partial<CaseFilters>) => {
     const prev = latest.current;
     const next = { ...prev, ...patch };
@@ -53,13 +63,21 @@ export function CaseDirectory() {
     if (patch.q !== undefined && !patch.sort && !next.q && next.sort === "relevance") next.sort = "newest";
     if (patch.q !== undefined && !patch.sort && next.q && !prev.q) next.sort = "relevance";
     latest.current = next;
-    const qs = caseFiltersToParams(next).toString();
+    const params = caseFiltersToParams(next);
+    if (keepAll.current) params.set("view", "all");
+    const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }, [pathname, router]);
+  const [qDraft, setQDraft] = React.useState(filters.q);
   const clearAll = React.useCallback(() => {
+    keepAll.current = false;
     latest.current = parseCaseFilters(new URLSearchParams());
     setQDraft("");
     router.replace(pathname, { scroll: false });
+  }, [pathname, router]);
+  const showAll = React.useCallback(() => {
+    keepAll.current = true;
+    router.replace(`${pathname}?view=all`, { scroll: false });
   }, [pathname, router]);
 
   // Facets (coverage, court counts, disposals).
@@ -72,12 +90,12 @@ export function CaseDirectory() {
     setFacetsLoading(true);
     fetchCaseJson<CaseFacets>("/api/cases/facets", ac.signal)
       .then((f) => { setFacets(f); setFacetsError(null); })
-      .catch((e) => { if ((e as Error).name !== "AbortError") setFacetsError(e instanceof CaseApiError ? e : new CaseApiError(String(e), 0, null)); })
+      .catch((e) => { if ((e as Error).name !== "AbortError") setFacetsError(asCaseError(e)); })
       .finally(() => { if (!ac.signal.aborted) setFacetsLoading(false); });
     return () => ac.abort();
   }, [facetsNonce]);
 
-  // Results.
+  // Results (on the start page: the newest decisions, first page only).
   const [list, setList] = React.useState<ListState | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
@@ -91,7 +109,7 @@ export function CaseDirectory() {
     setError(null);
     fetchCaseJson<CaseListResponse>(`/api/cases${apiQuery ? `?${apiQuery}` : ""}`, ac.signal)
       .then((r) => setList({ hits: r.hits, mode: r.mode, hasMore: r.hasMore, nextCursor: r.nextCursor, tookMs: r.tookMs }))
-      .catch((e) => { if ((e as Error).name !== "AbortError") { setList(null); setError(e instanceof CaseApiError ? e : new CaseApiError(String(e), 0, null)); } })
+      .catch((e) => { if ((e as Error).name !== "AbortError") { setList(null); setError(asCaseError(e)); } })
       .finally(() => { if (!ac.signal.aborted) setLoading(false); });
     return () => ac.abort();
   }, [apiQuery, nonce]);
@@ -109,12 +127,11 @@ export function CaseDirectory() {
         const seen = new Set(prev.hits.map((h) => h.id));
         return { ...prev, hits: [...prev.hits, ...r.hits.filter((h) => !seen.has(h.id))], hasMore: r.hasMore, nextCursor: r.nextCursor };
       }))
-      .catch((e) => { if ((e as Error).name !== "AbortError") setError(e instanceof CaseApiError ? e : new CaseApiError(String(e), 0, null)); })
+      .catch((e) => { if ((e as Error).name !== "AbortError") setError(asCaseError(e)); })
       .finally(() => { if (!ac.signal.aborted) setLoadingMore(false); });
   }, [apiQuery, list, loading, loadingMore]);
 
   // Query box: committed on Enter or after a pause.
-  const [qDraft, setQDraft] = React.useState(filters.q);
   React.useEffect(() => { setQDraft(filters.q); }, [filters.q]);
   React.useEffect(() => {
     if (qDraft.trim() === filters.q) return;
@@ -131,16 +148,16 @@ export function CaseDirectory() {
   }, []);
 
   const notConfigured = (error?.notConfigured || facetsError?.notConfigured) ?? false;
-  const forbidden = (error?.forbidden || error?.unauthenticated) ?? false;
+  const forbidden = (error?.forbidden || error?.unauthenticated || facetsError?.forbidden || facetsError?.unauthenticated) ?? false;
+  const unauthenticated = (error?.unauthenticated || facetsError?.unauthenticated) ?? false;
 
   const columns = React.useMemo<DataTableColumn<CaseHit>[]>(() => [
     {
-      id: "title", header: "Title", width: 340, minWidth: 220, locked: true, accessor: (h) => h.title,
+      id: "title", header: "Title", width: 360, minWidth: 220, locked: true, accessor: (h) => h.title,
       render: (h) => (
         <span className="flex min-w-0 items-center gap-1.5">
           <Link href={caseHref(h.id)} className="min-w-0 truncate font-medium text-foreground hover:underline" onClick={(e) => e.stopPropagation()} title={h.title}>{h.title}</Link>
-          {h.match === "exact" ? <span className="shrink-0 rounded-[var(--radius-chip)] bg-primary/8 px-1 text-[10.5px] font-medium text-primary" title="Matched an identifier exactly (CNR, neutral citation or case number)">exact</span> : null}
-          {h.match === "partial" ? <span className="shrink-0 text-[10.5px] text-muted-foreground" title="Matched some of the query words">partial</span> : null}
+          {h.match === "exact" ? <MatchChip match="exact" /> : null}
         </span>
       ),
     },
@@ -155,12 +172,13 @@ export function CaseDirectory() {
       },
     },
     { id: "decided", header: "Decided", width: 104, accessor: (h) => h.decision_date ?? "", render: (h) => <span className="tabular">{formatCaseDate(h.decision_date) ?? dash}</span> },
+    { id: "text", header: "Text", width: 76, accessor: (h) => h.text_status, render: (h) => (h.text_status === "full" ? <FullTextChip /> : <span className="text-[11.5px] text-muted-foreground">PDF only</span>) },
+    { id: "neutral", header: "Neutral citation", width: 140, accessor: (h) => h.neutral_citation ?? "", render: (h) => <span className="truncate tabular" title={h.neutral_citation ?? undefined}>{h.neutral_citation ?? dash}</span> },
     { id: "case", header: "Case no.", width: 170, accessor: (h) => h.case_number ?? "", render: (h) => <span className="truncate tabular" title={h.case_number ?? undefined}>{h.case_number ?? dash}</span> },
-    { id: "neutral", header: "Neutral citation", width: 150, accessor: (h) => h.neutral_citation ?? "", render: (h) => <span className="truncate tabular" title={h.neutral_citation ?? undefined}>{h.neutral_citation ?? dash}</span> },
     { id: "reporter", header: "Reporter", width: 150, defaultHidden: true, label: "Reporter citation", accessor: (h) => h.reporter_citation ?? "", render: (h) => <span className="truncate tabular">{h.reporter_citation ?? dash}</span> },
     { id: "cnr", header: "CNR", width: 150, defaultHidden: true, accessor: (h) => h.cnr ?? "", render: (h) => <span className="truncate tabular">{h.cnr ?? dash}</span> },
-    { id: "judges", header: "Judges", width: 240, accessor: (h) => h.judges.join(", "), render: (h) => <span className="truncate" title={h.judges.join(", ")}>{h.judges.length ? h.judges.join(", ") : dash}</span> },
-    { id: "disposal", header: "Disposal", width: 130, accessor: (h) => h.disposal ?? "", render: (h) => <span className="truncate" title={h.disposal ?? undefined}>{h.disposal ?? dash}</span> },
+    { id: "judges", header: "Coram", width: 220, accessor: (h) => h.judges.join(", "), render: (h) => <span className="truncate" title={h.judges.join(", ")}>{h.judges.length ? h.judges.join(", ") : dash}</span> },
+    { id: "disposal", header: "Disposal", width: 130, defaultHidden: true, accessor: (h) => h.disposal ?? "", render: (h) => <span className="truncate" title={h.disposal ?? undefined}>{h.disposal ?? dash}</span> },
   ], []);
 
   const sortOptions: { value: CaseSort; label: string }[] = filters.q
@@ -169,24 +187,27 @@ export function CaseDirectory() {
 
   const hits = list?.hits ?? [];
   const exactCount = hits.filter((h) => h.match === "exact").length;
-  const active = hasActiveFilters(filters);
 
-  if (notConfigured) {
+  const header = (
+    <CorpusHeader
+      icon={Gavel}
+      title="Case law"
+      description="Supreme Court and High Court judgments from the court-published open datasets, with citations and official PDFs."
+      coverage={notConfigured || forbidden ? undefined : <CaseCoverageLine facets={facets} loading={facetsLoading} error={facetsError?.message ?? null} onRetry={() => setFacetsNonce((n) => n + 1)} />}
+      actions={notConfigured || forbidden ? undefined : landing
+        ? <Button size="xs" variant="outline" onClick={showAll}><LayoutList className="size-3.5" />Browse all records</Button>
+        : <Button size="xs" variant="ghost" onClick={clearAll}>Start page</Button>}
+    />
+  );
+
+  if (notConfigured || forbidden) {
     return (
       <div className="flex h-full flex-col">
-        <Header />
-        <div className="flex flex-1 items-center justify-center p-6">
-          <EmptyState icon={Database} title="The case law index is not configured" description="This deployment has no judgment corpus database (DATABASE_URL is not set). The directory reads the corpus from Postgres; nothing is shown from any other source in its place." />
-        </div>
-      </div>
-    );
-  }
-  if (forbidden) {
-    return (
-      <div className="flex h-full flex-col">
-        <Header />
-        <div className="flex flex-1 items-center justify-center p-6">
-          <EmptyState icon={Lock} title={error?.unauthenticated ? "Sign in to view case law" : "You do not have access to the case law index"} description={error?.unauthenticated ? "Your session has ended." : "Ask an administrator for research access."} />
+        {header}
+        <div className="flex flex-1 items-center justify-center border-t p-6">
+          {notConfigured
+            ? <EmptyState icon={Database} title="The case law index is not configured" description="This deployment has no judgment corpus database (DATABASE_URL is not set). The directory reads the corpus from Postgres; nothing is shown from any other source in its place." />
+            : <EmptyState icon={Lock} title={unauthenticated ? "Sign in to view case law" : "You do not have access to the case law index"} description={unauthenticated ? "Your session has ended." : "Ask an administrator for research access."} />}
         </div>
       </div>
     );
@@ -194,120 +215,195 @@ export function CaseDirectory() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Header />
-      <CoverageStrip facets={facets} loading={facetsLoading} error={facetsError?.message ?? null} selected={filters.courts} onRetry={() => setFacetsNonce((n) => n + 1)} onToggle={(key) => setFilters({ courts: filters.courts.includes(key) ? filters.courts.filter((c) => c !== key) : [...filters.courts, key] })} />
+      {header}
 
-      {/* Toolbar */}
-      <form
-        className="flex flex-wrap items-center gap-1.5 border-b px-4 py-1.5"
-        role="search"
-        onSubmit={(e) => { e.preventDefault(); setFilters({ q: qDraft.trim() }); }}
-      >
-        <div className="relative w-full min-w-[220px] sm:w-[320px] md:w-[380px]">
-          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+      <form className={cn("shrink-0 border-b px-4 sm:px-6", landing ? "pb-4" : "pb-2")} role="search" onSubmit={(e) => { e.preventDefault(); setFilters({ q: qDraft.trim() }); }}>
+        <div className={cn("relative", landing ? "max-w-[760px]" : "sm:max-w-[480px]")}>
+          <Search className={cn("pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted-foreground", landing ? "left-3 size-4" : "left-2.5 size-3.5")} aria-hidden />
           <Input
             ref={inputRef}
-            size="xs"
+            size={landing ? "default" : "sm"}
             value={qDraft}
             onChange={(e) => setQDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Escape" && qDraft) { e.preventDefault(); setQDraft(""); setFilters({ q: "" }); } }}
-            placeholder="Title, party, citation, CNR or case no."
+            placeholder="Title, party, neutral citation, CNR or case number"
             aria-label="Search case law"
-            className="pl-7 pr-7"
+            className={landing ? "pl-9 pr-9" : "pl-8 pr-8"}
             maxLength={200}
           />
           {qDraft ? (
-            <button type="button" className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground" aria-label="Clear search" onClick={() => { setQDraft(""); setFilters({ q: "" }); }}>
+            <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" aria-label="Clear search" onClick={() => { setQDraft(""); setFilters({ q: "" }); }}>
               <X className="size-3.5" />
             </button>
-          ) : null}
+          ) : <Kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border px-1 text-[10.5px] text-muted-foreground sm:inline-flex">/</Kbd>}
         </div>
-        <CourtFilter courts={facets?.courts ?? null} loading={facetsLoading} value={filters.courts} onChange={(courts) => setFilters({ courts })} />
-        <YearRange from={filters.yearFrom} to={filters.yearTo} onChange={(yearFrom, yearTo) => setFilters({ yearFrom, yearTo })} />
-        <TextFilter value={filters.judge} placeholder="Judge" ariaLabel="Filter by judge" onCommit={(judge) => setFilters({ judge })} width="w-[130px]" />
-        <Select value={filters.disposal || "__any"} onValueChange={(v) => setFilters({ disposal: v === "__any" ? "" : v })}>
-          <SelectTrigger size="xs" className="w-[150px]" aria-label="Disposal"><SelectValue placeholder="Any disposal" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__any">Any disposal</SelectItem>
-            {filters.disposal && !facets?.disposals.some((d) => d.value === filters.disposal) ? <SelectItem value={filters.disposal}>{filters.disposal}</SelectItem> : null}
-            {(facets?.disposals ?? []).map((d) => <SelectItem key={d.value} value={d.value}>{d.value} <span className="text-muted-foreground tabular">({d.records.toLocaleString("en-IN")})</span></SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={filters.sort} onValueChange={(v) => setFilters({ sort: v as CaseSort })}>
-          <SelectTrigger size="xs" className="w-[128px]" aria-label="Sort"><SelectValue /></SelectTrigger>
-          <SelectContent>{sortOptions.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
-        </Select>
-        {active ? <Button type="button" variant="ghost" size="xs" onClick={() => clearAll}>Clear</Button> : null}
-      </form>
-
-      {/* Status line */}
-      <div className="flex min-h-7 shrink-0 items-center gap-x-2 px-4 py-1 text-[11.5px] text-muted-foreground" aria-live="polite">
-        {loading && !list ? <><Spinner size={12} /> Loading records…</> : error && !list ? <span className="text-destructive">Could not load records</span> : list ? (
-          <>
-            <span className="shrink-0 whitespace-nowrap tabular">{hits.length.toLocaleString("en-IN")} record{hits.length === 1 ? "" : "s"} shown{list.hasMore ? ", more available" : ""}</span>
-            {list.mode === "search" ? <span className="min-w-0 truncate">· {exactCount ? `${exactCount} exact identifier match${exactCount === 1 ? "" : "es"} first, then ` : ""}{filters.sort === "relevance" ? "best match" : filters.sort === "newest" ? "newest first" : "oldest first"} over title, parties, citations, coram and source snippet</span> : <span>· {filters.sort === "oldest" ? "oldest" : "newest"} decisions first</span>}
-            {loading ? <Spinner size={12} /> : null}
-          </>
-        ) : null}
-      </div>
-
-      <div className="min-h-0 flex-1 border-t">
-        {error && !list ? (
-          <div className="flex h-full items-center justify-center p-6">
-            <EmptyState icon={SearchX} title="Records could not be loaded" description={error.message} action={<Button size="xs" variant="outline" onClick={() => setNonce((n) => n + 1)}><RotateCcw className="size-3.5" />Retry</Button>} />
-          </div>
-        ) : !loading && list && !hits.length ? (
-          <div className="flex h-full items-center justify-center p-6">
-            <EmptyState
-              icon={Scale}
-              title={filters.q ? "No records match this search" : "No records match these filters"}
-              description={<>The index covers the courts and years listed above, and it searches metadata (title, parties, citations, coram, snippet), not judgment text.{active ? " Try fewer filters." : ""}</>}
-              action={active ? <Button size="xs" variant="outline" onClick={() => clearAll}>Clear filters</Button> : undefined}
-            />
+        {landing ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground">
+            <span>Try</span>
+            {EXAMPLE_SEARCHES.map((q) => (
+              <button key={q} type="button" onClick={() => { setQDraft(q); setFilters({ q }); }} className="rounded border bg-background px-1.5 py-0.5 text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{q}</button>
+            ))}
           </div>
         ) : (
-          <DataTable<CaseHit>
-            rows={hits}
-            columns={columns}
-            rowId={(h) => h.id}
-            serverSort
-            loading={loading}
-            noun="record"
-            onRowActivate={(h) => router.push(caseHref(h.id))}
-            onRowClick={(h, e) => { if (!(e.metaKey || e.ctrlKey || e.shiftKey)) router.push(caseHref(h.id)); }}
-            onEndReached={list?.hasMore ? loadMore : undefined}
-            ariaLabel="Case law records"
-            stripActions={list?.hasMore ? <Button variant="ghost" size="xs" disabled={loadingMore} onClick={loadMore}>{loadingMore ? <Spinner size={12} /> : null}Load more</Button> : undefined}
-          />
+          <div className="mt-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="Filters">
+            <CourtFilter courts={facets?.courts ?? null} loading={facetsLoading} value={filters.courts} onChange={(courts) => setFilters({ courts })} />
+            <YearRange from={filters.yearFrom} to={filters.yearTo} onChange={(yearFrom, yearTo) => setFilters({ yearFrom, yearTo })} />
+            <TextFilter value={filters.judge} placeholder="Judge" ariaLabel="Filter by judge" onCommit={(judge) => setFilters({ judge })} width="w-[130px]" />
+            <Select value={filters.disposal || "__any"} onValueChange={(v) => setFilters({ disposal: v === "__any" ? "" : v })}>
+              <SelectTrigger size="xs" className="w-[150px]" aria-label="Disposal"><SelectValue placeholder="Any disposal" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__any">Any disposal</SelectItem>
+                {filters.disposal && !facets?.disposals.some((d) => d.value === filters.disposal) ? <SelectItem value={filters.disposal}>{filters.disposal}</SelectItem> : null}
+                {(facets?.disposals ?? []).map((d) => <SelectItem key={d.value} value={d.value}>{d.value} <span className="text-muted-foreground tabular">({fmt(d.records)})</span></SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filters.sort} onValueChange={(v) => setFilters({ sort: v as CaseSort })}>
+              <SelectTrigger size="xs" className="w-[128px]" aria-label="Sort"><SelectValue /></SelectTrigger>
+              <SelectContent>{sortOptions.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+            </Select>
+            {active ? <Button type="button" variant="ghost" size="xs" onClick={clearAll}><X className="size-3.5" />Clear filters</Button> : null}
+          </div>
         )}
-      </div>
-      {error && list ? (
-        <div className="flex h-8 shrink-0 items-center gap-2 border-t px-4 text-[11.5px] text-destructive">
-          Could not load more records: {error.message}
-          <Button variant="ghost" size="xs" onClick={() => { setError(null); loadMore(); }}>Retry</Button>
+      </form>
+
+      {landing ? (
+        <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
+          <div className="mx-auto w-full max-w-[1180px] space-y-7 px-4 pb-10 pt-4 sm:px-6">
+            <section aria-labelledby="cases-courts">
+              <div className="flex items-baseline gap-2"><h2 id="cases-courts" className="text-[13px] font-semibold tracking-[-0.005em]">Courts in the index</h2><span className="truncate text-[11.5px] text-muted-foreground">Records per year; select a court to browse it</span></div>
+              <div className="mt-2.5"><CourtCoverageCards facets={facets} loading={facetsLoading} error={facetsError?.message ?? null} onRetry={() => setFacetsNonce((n) => n + 1)} onPick={(key) => setFilters({ courts: [key] })} /></div>
+            </section>
+            <section aria-labelledby="cases-latest">
+              <div className="flex items-baseline gap-2">
+                <h2 id="cases-latest" className="text-[13px] font-semibold tracking-[-0.005em]">Latest decisions</h2>
+                <span className="truncate text-[11.5px] text-muted-foreground">Newest decision dates across the index</span>
+                <Button size="xs" variant="ghost" className="ml-auto" onClick={showAll}>Browse all<ArrowRight className="size-3.5" /></Button>
+              </div>
+              {error && !list ? (
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">Records could not be loaded: {error.message}<Button size="xs" variant="outline" onClick={() => setNonce((n) => n + 1)}><RotateCcw className="size-3.5" />Retry</Button></div>
+              ) : loading && !list ? <ResultSkeleton rows={6} className="mt-2 rounded-lg border" /> : hits.length ? (
+                <ol className="mt-2 divide-y rounded-lg border">{hits.slice(0, 8).map((h) => <ResultRow key={h.id} h={h} compact />)}</ol>
+              ) : <p className="mt-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">No records are in the index yet.</p>}
+            </section>
+          </div>
         </div>
-      ) : null}
-      <MatchLegend show={list?.mode === "search"} />
+      ) : (
+        <>
+          <div className="flex min-h-8 shrink-0 items-center gap-x-2 px-4 py-1 text-[11.5px] text-muted-foreground sm:px-6" aria-live="polite">
+            {loading && !list ? <><Spinner size={12} /> {filters.q ? "Searching records…" : "Loading records…"}</> : error && !list ? <span className="text-destructive">Could not load records</span> : list ? (
+              <>
+                <span className="shrink-0 whitespace-nowrap tabular"><span className="font-medium text-foreground/85">{fmt(hits.length)}</span> record{hits.length === 1 ? "" : "s"} shown{list.hasMore ? ", more available" : ""}</span>
+                {list.mode === "search" ? <span className="min-w-0 truncate">· {exactCount ? `${exactCount} exact identifier match${exactCount === 1 ? "" : "es"} first, then ` : ""}{filters.sort === "relevance" ? "best match" : filters.sort === "newest" ? "newest first" : "oldest first"} over title, parties, citations, coram and source snippet</span> : <span>· {filters.sort === "oldest" ? "oldest" : "newest"} decisions first</span>}
+                {loading ? <Spinner size={12} /> : null}
+              </>
+            ) : null}
+          </div>
+
+          <div className="min-h-0 flex-1 border-t">
+            {error && !list ? (
+              <div className="flex h-full items-center justify-center p-6">
+                <EmptyState icon={SearchX} title="Records could not be loaded" description={error.message} action={<Button size="xs" variant="outline" onClick={() => setNonce((n) => n + 1)}><RotateCcw className="size-3.5" />Retry</Button>} />
+              </div>
+            ) : !loading && list && !hits.length ? (
+              <div className="flex h-full items-center justify-center p-6">
+                <EmptyState
+                  icon={Scale}
+                  title={filters.q ? "No records match this search" : "No records match these filters"}
+                  description={<>The index covers the courts and years counted above, and the directory searches metadata (title, parties, citations, coram, snippet), not the judgment text.{active ? " Try fewer filters." : ""}</>}
+                  action={active ? <Button size="xs" variant="outline" onClick={clearAll}>Clear filters</Button> : undefined}
+                />
+              </div>
+            ) : filters.q ? (
+              <ResultList hits={hits} loading={loading} hasMore={Boolean(list?.hasMore)} loadingMore={loadingMore} onMore={loadMore} />
+            ) : (
+              <DataTable<CaseHit>
+                rows={hits}
+                columns={columns}
+                rowId={(h) => h.id}
+                serverSort
+                loading={loading}
+                noun="record"
+                onRowActivate={(h) => router.push(caseHref(h.id))}
+                onRowClick={(h, e) => { if (!(e.metaKey || e.ctrlKey || e.shiftKey)) router.push(caseHref(h.id)); }}
+                onEndReached={list?.hasMore ? loadMore : undefined}
+                ariaLabel="Case law records"
+                stripActions={list?.hasMore ? <Button variant="ghost" size="xs" disabled={loadingMore} onClick={loadMore}>{loadingMore ? <Spinner size={12} /> : null}Load more</Button> : undefined}
+              />
+            )}
+          </div>
+          {error && list ? (
+            <div className="flex h-8 shrink-0 items-center gap-2 border-t px-4 text-[11.5px] text-destructive">
+              Could not load more records: {error.message}
+              <Button variant="ghost" size="xs" onClick={() => { setError(null); loadMore(); }}>Retry</Button>
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
 
-function Header() {
+function FullTextChip() {
+  return <Chip tone="muted" icon={FileText} title="The judgment text is stored and readable on the record page" className="text-foreground/75">Full text</Chip>;
+}
+
+function MatchChip({ match }: { match: CaseHit["match"] }) {
+  if (match === "exact") return <Chip tone="accent" title="Matched an identifier exactly (CNR, neutral citation or case number)">{MATCH_LABEL.exact}</Chip>;
+  if (match === "partial") return <Chip tone="warning" title="Matched some of the query words, not all">{MATCH_LABEL.partial}</Chip>;
+  if (match === "text") return <span className="text-[11px] text-muted-foreground" title="Every query word matched the metadata">{MATCH_LABEL.text}</span>;
+  return null;
+}
+
+function ResultRow({ h, compact }: { h: CaseHit; compact?: boolean }) {
+  const bench = benchLabel(h);
+  const date = formatCaseDate(h.decision_date);
   return (
-    <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 pb-2 pt-3">
-      <h1 className="text-[17px] font-semibold tracking-[-0.01em]">Case law</h1>
-      <p className="text-[12.5px] text-muted-foreground">Indian judgments from the court-published open datasets: metadata, citations and the official PDF.</p>
+    <li>
+      <Link href={caseHref(h.id)} className={cn("block transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50", compact ? "px-3 py-2" : "px-4 py-3 sm:px-6")}>
+        <div className="flex items-start gap-2">
+          <span className={cn("min-w-0 flex-1 font-medium leading-snug text-foreground", compact ? "truncate text-[12.5px]" : "line-clamp-2 text-[13.5px]")} title={h.title}>{h.title}</span>
+          {!compact ? <span className="shrink-0 pt-px"><MatchChip match={h.match} /></span> : null}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11.5px] text-muted-foreground">
+          <span className={cn("text-foreground/80", !h.court && "text-warning-foreground dark:text-warning")}>{courtLabel(h)}</span>
+          {bench ? <><span aria-hidden>·</span><span>{bench}</span></> : null}
+          {date ? <><span aria-hidden>·</span><span className="tabular">{date}</span></> : null}
+          {h.neutral_citation ? <Chip tone="muted" className="ml-1 tabular text-foreground/75" title="Neutral citation">{h.neutral_citation}</Chip> : null}
+          {h.reporter_citation ? <Chip tone="muted" className="tabular" title="Reporter citation">{h.reporter_citation}</Chip> : null}
+          {!compact && h.case_number ? <Chip tone="outline" className="tabular" title="Case number">{h.case_number}</Chip> : null}
+          {h.text_status === "full" ? <FullTextChip /> : null}
+        </div>
+        {!compact && h.snippet ? <p className="mt-1 line-clamp-2 max-w-[100ch] text-[12.5px] leading-relaxed text-foreground/70">{h.snippet}</p> : null}
+        {!compact && (h.judges.length || h.disposal) ? (
+          <div className="mt-1 truncate text-[11.5px] text-muted-foreground">
+            {h.judges.length ? <>Coram: {h.judges.join(", ")}</> : null}{h.judges.length && h.disposal ? " · " : ""}{h.disposal ? <>Disposal: {h.disposal}</> : null}
+          </div>
+        ) : null}
+      </Link>
+    </li>
+  );
+}
+
+function ResultSkeleton({ rows, className }: { rows: number; className?: string }) {
+  return (
+    <div className={cn("divide-y", className)} aria-busy>
+      {Array.from({ length: rows }, (_, k) => (
+        <div key={k} className="space-y-1.5 px-3 py-2.5"><Skeleton className="h-3.5" style={{ width: `${50 + ((k * 13) % 40)}%` }} /><Skeleton className="h-3 w-[min(360px,60%)]" /></div>
+      ))}
     </div>
   );
 }
 
-function MatchLegend({ show }: { show: boolean }) {
-  if (!show) return null;
+function ResultList({ hits, loading, hasMore, loadingMore, onMore }: { hits: CaseHit[]; loading: boolean; hasMore: boolean; loadingMore: boolean; onMore: () => void }) {
+  if (loading && !hits.length) return <ResultSkeleton rows={8} />;
   return (
-    <div className="hidden h-7 shrink-0 items-center gap-3 border-t px-4 text-[11px] text-muted-foreground md:flex">
-      <span><span className="rounded-[var(--radius-chip)] bg-primary/8 px-1 font-medium text-primary">exact</span> {MATCH_LABEL.exact}: CNR, neutral citation or case number</span>
-      <span>Unmarked: every query word matched</span>
-      <span>partial: some query words matched</span>
+    <div className={cn("h-full overflow-auto scrollbar-thin", loading && "opacity-70")} aria-busy={loading}>
+      <ol className="divide-y" aria-label="Matching case law records">{hits.map((h) => <ResultRow key={h.id} h={h} />)}</ol>
+      {hasMore ? (
+        <div className="flex justify-center border-t py-2">
+          <Button variant="ghost" size="xs" disabled={loadingMore} onClick={onMore}>{loadingMore ? <Spinner size={12} /> : null}Load more records</Button>
+        </div>
+      ) : hits.length ? <div className="border-t px-4 py-2 text-[11px] text-muted-foreground sm:px-6">End of results.</div> : null}
     </div>
   );
 }

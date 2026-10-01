@@ -19,7 +19,7 @@ export default async function Page({ params }: Props) {
     return <div className="flex h-full items-center justify-center p-6"><EmptyState title="Not an instrument id" description="Open the statutes directory to find an Act or regulation." /></div>;
   }
   return (
-    <Suspense fallback={<div className="space-y-3 p-6"><Skeleton className="h-6 w-2/3" /><Skeleton className="h-80 w-full" /></div>}>
+    <Suspense fallback={<div className="flex h-full flex-col" aria-busy><div className="space-y-2 px-4 pb-3 pt-3 sm:px-6"><Skeleton className="h-3 w-28" /><Skeleton className="h-6 w-[min(560px,80%)]" /><Skeleton className="h-3.5 w-[min(420px,60%)]" /></div><div className="grid flex-1 border-t md:grid-cols-[296px_1fr]"><div className="hidden border-r md:block" /><div className="mx-auto w-full max-w-[76ch] space-y-3 px-6 py-6"><Skeleton className="h-6 w-2/3" /><Skeleton className="h-64 w-full" /></div></div></div>}>
       <LawInstrumentView id={id} />
     </Suspense>
   );

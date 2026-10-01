@@ -36,6 +36,28 @@ export function createFirecrawl(opts: ProviderFactoryOptions = {}) {
       p.markdown = clip(p.markdown, o.maxChars ?? 200_000);
       return p;
     },
+    /**
+     * One scrape asking for several formats at once: markdown, links, branding (site logo) and/or JSON extraction
+     * against a schema. Returns the raw pieces; callers validate them (extraction output is untrusted).
+     */
+    async scrapeRich(url: string, o: { markdown?: boolean; links?: boolean; branding?: boolean; json?: { schema: Record<string, unknown>; prompt?: string }; onlyMainContent?: boolean; waitFor?: number; signal?: AbortSignal; ttlMs?: number; timeoutMs?: number } = {}): Promise<FirecrawlPage & { links: string[]; json: unknown; logo: string | null }> {
+      require();
+      const formats: string[] = [];
+      if (o.markdown !== false) formats.push("markdown");
+      if (o.links) formats.push("links");
+      if (o.branding) formats.push("branding");
+      if (o.json) formats.push("json");
+      const body: Record<string, unknown> = { url, formats, onlyMainContent: o.onlyMainContent ?? true, waitFor: o.waitFor, timeout: o.timeoutMs ?? 55_000 };
+      if (o.json) body.jsonOptions = { schema: o.json.schema, ...(o.json.prompt ? { prompt: o.json.prompt } : {}) };
+      const data = await client.postJSON<{ success?: boolean; data?: Record<string, unknown>; error?: string }>(`${BASE}/scrape`, body, { headers: headers(), signal: o.signal, ttlMs: o.ttlMs ?? 0, timeoutMs: (o.timeoutMs ?? 55_000) + 5_000 });
+      if (!data?.success || !data.data) throw new ProviderError("firecrawl", "parse", `firecrawl: scrape failed (${data?.error ?? "no data"})`, false, undefined, url);
+      const d = data.data;
+      const p = page(d, url);
+      const branding = (d.branding ?? {}) as Record<string, unknown>;
+      const images = (branding.images ?? {}) as Record<string, unknown>;
+      const links = Array.isArray(d.links) ? d.links.filter((l): l is string => typeof l === "string") : [];
+      return { ...p, links, json: d.json ?? null, logo: str(images.logo) ?? str(branding.logo) ?? null };
+    },
     async search(query: string, o: { limit?: number; tbs?: string; lang?: string; country?: string; scrape?: boolean; signal?: AbortSignal; ttlMs?: number } = {}): Promise<FirecrawlPage[]> {
       require();
       const body: Record<string, unknown> = { query, limit: Math.min(o.limit ?? 10, 50), lang: o.lang ?? "en", country: o.country ?? "us" };

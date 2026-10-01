@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { courtById } from "@/lib/india/courts";
 import { CITIES, FORUM_CHECKED_AT, FORUM_KIND_ORDER, cityById, forumsForCity, stateName, type City, type Forum, type ForumKind } from "@/lib/india/forums";
 import { LocalLawList, useLocalLaw } from "./local-law-list";
+import { CourtEmblem } from "@/modules/judges/components/court-emblem";
 
 const NONE = "__none__";
 
@@ -47,7 +48,8 @@ function ForumRow({ forum, cityId }: { forum: Forum; cityId: string }) {
   const links = Object.entries(forum.links ?? {}).filter(([, v]) => !!v) as [string, string][];
   return (
     <li className="border-b border-line-quiet px-3 py-2.5 last:border-b-0" id={`forum-${forum.id}`}>
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        {forum.kind === "high_court" && forum.courtId ? <CourtEmblem courtId={forum.courtId} size={22} /> : null}
         <span className="text-[13px] font-medium">{forum.name}</span>
         {elsewhere && <span className="text-[11px] text-muted-foreground">sits at {bench?.city ?? elsewhere.name}</span>}
       </div>

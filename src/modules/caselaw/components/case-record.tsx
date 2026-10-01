@@ -12,6 +12,8 @@ import { caseApiHref, caseHref, formatCaseDate, formatTimestamp, urlHost, type C
 import { benchLabel, courtLabel } from "./case-directory";
 import { CaseApiError, fetchCaseJson } from "./fetch";
 import { JudgmentTextSection } from "./judgment-text";
+import { CoramJudges } from "@/modules/judges/components/coram-judges";
+import { CourtEmblem } from "@/modules/judges/components/court-emblem";
 
 const DASH = <span className="text-muted-foreground/60">—</span>;
 const show = (v: React.ReactNode) => (v === null || v === undefined || v === "" ? DASH : v);
@@ -159,7 +161,10 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
       <div className="border-b pb-3">
         <h1 className="max-w-[900px] text-[18px] font-semibold leading-snug tracking-[-0.01em]">{r.title}</h1>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
-          <span className={cn("text-foreground/85", !r.court && "text-warning-foreground dark:text-warning")}>{r.court ?? courtLabel(r)}</span>
+          <span className={cn("inline-flex items-center gap-1.5 text-foreground/85", !r.court && "text-warning-foreground dark:text-warning")}>
+            {r.court_id ? <CourtEmblem courtId={r.court_id} size={18} /> : null}
+            {r.court ?? courtLabel(r)}
+          </span>
           {bench ? <><span aria-hidden>·</span><span>{bench}</span></> : null}
           <span aria-hidden>·</span>
           <span className="tabular">{date ? `Decided ${date}` : "Decision date not in the source metadata"}</span>
@@ -219,7 +224,7 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
 
           <Section title="Coram">
             <dl>
-              <Field label="Judges">{r.judges.length ? <ul className="space-y-0.5">{r.judges.map((j) => <li key={j}>{j}{r.author && j === r.author ? <span className="ml-1.5 text-[11px] text-muted-foreground">author</span> : null}</li>)}</ul> : DASH}</Field>
+              <Field label="Judges">{r.judges.length ? <CoramJudges courtId={r.court_id} judges={r.judges} author={r.author} /> : DASH}</Field>
               <Field label="Author">{show(r.author)}</Field>
             </dl>
           </Section>

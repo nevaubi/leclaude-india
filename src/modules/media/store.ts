@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { fromBytea, remoteStore, type RemoteStore, type SqlQuery } from "@/lib/db/remote";
 import { safeFetch, type EgressPolicy, type SafeFetchInit } from "@/lib/net/safe-fetch";
+import { isLegacyTlsError, legacyTlsAllowed, legacyTlsFetch } from "./legacy-tls";
 import { isMediaId, MAX_IMAGE_BYTES, mediaUrl, validateImage, type ImageMime } from "./validate";
 
 /**
@@ -117,13 +118,21 @@ export async function storeImageBytes(bytes: Uint8Array, declaredType: string | 
 
 /** Download an image from an official page (SSRF-safe) and store it. Throws SafeFetchError / MediaValidationError. */
 export async function storeImageFromUrl(url: string, meta: MediaMeta = {}, deps: MediaDeps = {}): Promise<StoredMedia> {
-  const res = await safeFetch(url, { headers: { accept: "image/png,image/jpeg,image/gif,image/webp;q=0.9,*/*;q=0.1", "user-agent": "LeClaude-Enrichment/1.0 (+court and judge identity; attribution kept)" }, signal: deps.signal, fetchImpl: deps.fetchImpl }, {
+  const get = (fetchImpl?: typeof fetch) => safeFetch(url, { headers: { accept: "image/png,image/jpeg,image/gif,image/webp;q=0.9,*/*;q=0.1", "user-agent": "LeClaude-Enrichment/1.0 (+court and judge identity; attribution kept)" }, signal: deps.signal, fetchImpl }, {
     name: "media",
     maxBytes: MAX_IMAGE_BYTES,
     timeoutMs: 20_000,
     maxRedirects: 3,
     ...deps.egress,
   });
+  let res;
+  try {
+    res = await get(deps.fetchImpl);
+  } catch (e) {
+    // Older government servers need TLS legacy renegotiation; retry once for those hosts only (see legacy-tls.ts).
+    if (deps.fetchImpl || !isLegacyTlsError(e) || !legacyTlsAllowed(url)) throw e;
+    res = await get(legacyTlsFetch);
+  }
   if (!res.ok) throw new Error(`Image request failed with HTTP ${res.status}`);
   return storeImageBytes(res.body, res.contentType || null, res.finalUrl || url, meta, deps);
 }

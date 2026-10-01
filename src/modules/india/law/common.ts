@@ -139,6 +139,11 @@ export interface InstrumentFilterInput {
   yearFrom?: number;
   yearTo?: number;
   actId?: string | null;
+  /**
+   * Territorial scope for State legislation: State Acts only from these State codes (central law and regulator
+   * instruments are unaffected). An empty list leaves out every State Act; undefined applies no scope.
+   */
+  scopeStates?: string[];
   /** Leave out reports (Law Commission reports are context, not law); ignored when a kind is requested. */
   excludeReports?: boolean;
 }
@@ -159,6 +164,10 @@ export function instrumentFilters(f: InstrumentFilterInput, params: SqlValue[], 
   else if (status === "not_in_force") out.push(`${alias}.status IS DISTINCT FROM 'in_force'`);
   if (Number.isInteger(f.yearFrom)) out.push(`${alias}.year >= ${p(f.yearFrom as number)}`);
   if (Number.isInteger(f.yearTo)) out.push(`${alias}.year <= ${p(f.yearTo as number)}`);
+  if (f.scopeStates) {
+    const codes = f.scopeStates.map((c) => normStateCode(c)).filter(Boolean);
+    out.push(codes.length ? `(${alias}.jurisdiction <> 'state' OR ${alias}.state_code = ANY(${p(`{${codes.join(",")}}`)}::text[]))` : `${alias}.jurisdiction <> 'state'`);
+  }
   if (f.actId && isLawActId(f.actId)) out.push(`${alias}.id = ${p(f.actId)}`);
   return out.map((c) => ` AND ${c}`).join("");
 }

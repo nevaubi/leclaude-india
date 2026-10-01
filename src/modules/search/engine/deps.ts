@@ -33,6 +33,7 @@ import type { DocSearchHit } from "@/modules/documents/types";
 import { remoteStore } from "@/lib/db/remote";
 import { searchCorpus, type CorpusHit } from "@/modules/india/corpus/search";
 import { caseHref } from "@/modules/caselaw/shared";
+import { courtById } from "@/lib/india/courts";
 import { chunksToText, readJudgmentText, searchJudgmentText, type TextSearchHit } from "@/modules/india/corpus/text";
 import { textKey } from "@/lib/ai/toolkit/india-judgment-text";
 
@@ -199,10 +200,20 @@ export function actTitleKey(title: string): string {
  * its status (in force / repealed) is carried, and a section another provider already returned (same Act title and
  * section number) is not repeated. Nothing when no database is configured.
  */
-export async function lawStatuteHits(query: string, o: { limit: number; existing: SearchHit[] }): Promise<SearchHit[]> {
+/**
+ * State legislation in scope for the selected courts: the territories of the High Courts (and subordinate forums) in
+ * scope. Supreme Court only → no State Acts (central law and regulators still apply).
+ */
+export function statuteStates(courtIds: string[]): string[] {
+  const out = new Set<string>();
+  for (const id of courtIds) for (const t of courtById(id)?.territory ?? []) out.add(t);
+  return [...out];
+}
+
+export async function lawStatuteHits(query: string, o: { limit: number; existing: SearchHit[]; scopeStates?: string[] }): Promise<SearchHit[]> {
   if (!remoteStore() || !query.trim()) return [];
   const { searchProvisions } = await import("@/modules/india/law/search");
-  const { hits } = await searchProvisions({ q: query, limit: o.limit, excludeReports: true });
+  const { hits } = await searchProvisions({ q: query, limit: o.limit, excludeReports: true, scopeStates: o.scopeStates });
   const seen = new Set<string>();
   for (const h of o.existing) if (h.india?.enactment && h.india.section) seen.add(`${actTitleKey(h.india.enactment)}|${h.india.section.toUpperCase()}`);
   const out: SearchHit[] = [];
@@ -399,7 +410,7 @@ export function defaultDeps(): EngineDeps {
           case "statutes": {
             const rows = await searchStatuteSections(query, { limit });
             const hits = rows.map((r) => normalizeIndiaSection(statuteRow(r)));
-            try { hits.push(...(await lawStatuteHits(query, { limit: Math.min(limit, 8), existing: hits }))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] statutes corpus search failed:", (e as Error).message); }
+            try { hits.push(...(await lawStatuteHits(query, { limit: Math.min(limit, 8), existing: hits, scopeStates: statuteStates(resolveCourts(settings.jurisdiction, settings.courts).split(" ").filter(Boolean)) }))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] statutes corpus search failed:", (e as Error).message); }
             return { hits, total: hits.length };
           }
           case "library": return normalizeToolResult(source, await Promise.resolve(searchLibraryTool.execute({ query, matter_id: settings.matterId ?? undefined, limit }, ctx)), nctx);

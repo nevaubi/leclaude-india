@@ -29,7 +29,7 @@ const INSTRUCTIONS = [
   "Use web search for anything current, factual or checkable, and cite what you rely on with the links from your search results. Say plainly when something could not be verified. Never invent citations, quotes, case names or numbers.",
   "Use the code interpreter for calculations, data files, charts, and to produce files the user asks for (spreadsheets, Word documents, PDFs, CSVs); mention the file you produced. Use create_file for simple text, Markdown, CSV, HTML or JSON documents.",
   "Use fetch_url to read a specific page the user links to or that you need to read in full.",
-  "When the Indian law tools are available (search_judgments, read_judgment, search_statutes, read_section, map_criminal_section, citing_references), prefer them over web search for Indian legal questions: find the judgment or section, read it before characterizing it, and cite judgments with the neutral or SCR/reporter citation exactly as the tool returned it and sections as Act and section number. Never invent a citation, paragraph or holding; if the tools do not find an authority, say so. Use map_criminal_section for IPC/BNS, CrPC/BNSS and Evidence Act/BSA correspondence and report its status as returned.",
+  "When the Indian law tools are available (search_judgments, read_judgment, search_statutes, read_section, map_criminal_section, citing_references), prefer them over web search for Indian legal questions: find the judgment or section, read it before characterizing it, and cite judgments with the neutral or SCR/reporter citation exactly as the tool returned it and sections as Act and section number. Never invent a citation, paragraph or holding; if the tools do not find an authority, say so. Use map_criminal_section for IPC/BNS, CrPC/BNSS and Evidence Act/BSA correspondence and report its status as returned. When search_law / read_law_section / list_law_instruments are available they cover every Central, State and regulator instrument: read the exact section before relying on it, state its status (in force / repealed) as returned, and note that the text is a third-party parse to be checked against the official source.",
   "When search_documents is available, the user has selected their own document sets: use it for questions about their documents, read passages with read_document_passage when you need more context, and cite the file name and page for every statement drawn from them (e.g. \"Lease deed.pdf, p. 4\"). If the documents do not contain the answer, say the documents do not establish it.",
   "When the firm library tools are available (search_library, get_library_item), use them for the firm's templates, precedents, clauses and notes, and name the item you relied on.",
   "This chat is for quick tasks. For exhaustive legal research with verified citations, suggest the Research page.",
@@ -336,6 +336,9 @@ export function knowledgeLabel(def: ToolDef<never, unknown>, a: Record<string, u
     citing_references: "Checking later judgments that cite it",
     search_statutes: `Searching India Code: ${q}`,
     read_section: section ? `Reading section ${clip(section, 20)}` : "Reading a section",
+    search_law: `Searching statutes: ${q}`,
+    read_law_section: a.section ? `Reading section ${clip(a.section, 20)}` : "Reading a section",
+    list_law_instruments: `Finding statutes: ${q}`,
     map_criminal_section: `Mapping ${clip(a.code, 8)} s. ${clip(a.section, 12)}`,
     indian_kanoon_search: `Searching Indian Kanoon: ${q}`,
     indian_kanoon_doc: "Reading an Indian Kanoon judgment",
@@ -351,9 +354,11 @@ export function knowledgeLabel(def: ToolDef<never, unknown>, a: Record<string, u
   }
   if (phase === "running") return base;
   const title = resultTitle(r);
-  if (/^(read_judgment|read_section|get_library_item|read_document_passage|indian_kanoon_doc)$/.test(def.name) && title) return `Read ${title}`;
+  if (/^(read_judgment|read_section|read_law_section|get_library_item|read_document_passage|indian_kanoon_doc)$/.test(def.name) && title) return `Read ${title}`;
   if (def.name === "search_judgments") return `Searched judgments: ${q}${found}`;
   if (def.name === "search_statutes") return `Searched India Code: ${q}${found}`;
+  if (def.name === "search_law") return `Searched statutes: ${q}${found}`;
+  if (def.name === "list_law_instruments") return `Found statutes: ${q}${found}`;
   if (def.name === "search_library") return `Searched the firm library: ${q}${found}`;
   if (def.name === "search_documents") return `Searched your documents: ${q}${found}`;
   return base;

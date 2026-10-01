@@ -7,6 +7,7 @@ import type { CodingDecision } from "@/lib/types/domain";
 import { classifyAuthority, courtAbbreviation } from "./jurisdictions";
 import { formatJudgmentCitation, formatStatuteHit, indianDate, shortJudgmentCite } from "./india-citations";
 import type { SearchHit, SearchSource } from "./types";
+import { citationTitle, jurisdictionLabel, lawCitation, lawHref, NO_SECTION, statusLabel, type LawProvisionHit } from "@/modules/law/shared";
 
 // ---- raw shapes as returned by the toolkit execute() functions ---------------
 
@@ -246,6 +247,29 @@ export function normalizeIndiaSection(raw: RawIndiaSection): SearchHit {
     authority: "n/a",
     readRef: { kind: "section", id: raw.id },
     india: { enactment: raw.enactment, section: raw.section, replacedBy: raw.replaced_by, provider: "india-code" },
+  };
+}
+
+/**
+ * A section of the statutes corpus (Open India Law parse) as a statutes-lane hit: cited as the instrument numbers it,
+ * linked to /law/<actId>?s=<section>, readable in full through the `law` read reference (exact section only).
+ */
+export function normalizeLawSection(h: LawProvisionHit): SearchHit {
+  const cite = lawCitation({ kind: h.kind, title: h.actTitle, year: h.year }, h.section, h.variant);
+  const section = h.section === NO_SECTION ? undefined : h.section;
+  return {
+    id: `law:${h.actId}:${h.section}:${h.variant}`,
+    source: "statutes",
+    title: `${cite}${h.heading ? ` — ${h.heading}` : ""}`,
+    subtitle: [jurisdictionLabel(h), statusLabel(h.instrumentStatus), h.in_force === false ? "provision marked not in force" : "", "Open India Law parse"].filter(Boolean).join(" · "),
+    cite,
+    status: statusLabel(h.instrumentStatus),
+    snippet: clean(h.snippet.replace(/[«»]/g, "")).slice(0, 600),
+    url: lawHref(h.actId, h.section, h.variant),
+    score: h.rank,
+    authority: "n/a",
+    readRef: { kind: "law", actId: h.actId, section: h.section, variant: h.variant },
+    india: { enactment: citationTitle({ title: h.actTitle, year: h.year }), section, provider: "open-india-law" },
   };
 }
 

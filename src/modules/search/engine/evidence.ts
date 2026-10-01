@@ -12,6 +12,7 @@ import type { SearchResultBlock } from "@/lib/ai/providers/types";
 import { languageInfo } from "@/lib/india/languages";
 import { benchLabel, hitCourtLabel, indianDate, judgmentCitations } from "../india-citations";
 import { formatBluebook } from "../normalize";
+import { lawSourceId } from "@/modules/law/shared";
 import { focusParagraphs } from "./paragraphs";
 import { TREATMENT_LABEL } from "./treatment";
 import type { ResearchSource } from "./types";
@@ -25,6 +26,7 @@ export function evidenceSourceId(s: Pick<ResearchSource, "id" | "kind" | "url" |
   if (s.id.startsWith("intel:")) return `intel://${enc(ctx.tenantId ?? "firm")}/document/${enc(s.id.slice(6))}`;
   if (ref?.kind === "judgment") return `judgment://${enc(h.india?.courtId || "unresolved")}/${enc(ref.id)}`;
   if (ref?.kind === "section") return h.india?.enactment && h.india.section ? `statute://${enc(ref.id.split(/[:#]/)[0])}/s/${enc(h.india.section)}` : `statute://${enc(ref.id)}`;
+  if (ref?.kind === "law") return lawSourceId(ref.actId, ref.section, ref.variant);
   if (ref?.kind === "url" && ref.url.startsWith("ik://")) return `authority://indiankanoon/doc/${enc(ref.url.slice(5))}`;
   switch (s.kind) {
     case "caselaw":

@@ -86,6 +86,8 @@ export function formatStatuteCitation(input: { enactment: string; year?: number 
 }
 
 export function formatStatuteHit(hit: SearchHit): string {
+  // Statutes-corpus hits carry their own citation (Section / Rule / Regulation as the instrument numbers them).
+  if (hit.india?.provider === "open-india-law" && hit.cite) return hit.cite;
   if (hit.india?.enactment) return formatStatuteCitation({ enactment: hit.india.enactment, sections: hit.india.section ? [hit.india.section] : [] });
   return hit.cite ?? hit.title;
 }

@@ -17,6 +17,7 @@ import {
 import { createIndianKanoon, courtForDocsource, type IndianKanoonClient } from "@/modules/india/sources/indian-kanoon";
 import { isCorpusScope, type RetrievalScope } from "../vector-store";
 import { mapCriminalSection } from "./india-criminal-map";
+import { jurisdictionLabel, lawCitation, lawSourceId, publisherLabel, statusLabel } from "@/modules/law/shared";
 
 /**
  * Indian legal research tools (LeClaude India; constitution §25, §52, §53.4, Appendix B), built on the India source
@@ -29,6 +30,9 @@ import { mapCriminalSection } from "./india-criminal-map";
  *   (firm token set, network on) — `indiaConnectorStatuses()`; fail closed otherwise.
  * - `search_statutes` / `read_section`: India Code enactments and sections in the store (exact section numbers; an
  *   absent section is reported absent, never the nearest one).
+ * - `search_law` / `read_law_section` / `list_law_instruments`: the full statutes corpus in Postgres (Open India Law
+ *   parse of India Code and regulator publications, CC BY 4.0; `law://<actId>/s/<section>[~<variant>]`), offered only
+ *   with a database (same gating as the judgment index). Exact section reads; the parse is labelled third-party.
  * - `map_criminal_section`: IPC↔BNS, CrPC↔BNSS, IEA↔BSA from the coded correspondence table.
  * - `citing_references`: judgments in the corpus that cite a judgment (its neutral/reporter citations parsed out of
  *   their text by the citation engine) and what it cites — a signal to review, not a citator.
@@ -603,7 +607,7 @@ export const readJudgmentTool = defineTool<{ id: string; start_paragraph?: numbe
 
 export const searchStatutesIndiaTool = defineTool<{ query: string; enactment?: string; limit?: number }>({
   name: "search_statutes",
-  description: "Search India Code enactments and sections in the store (central and state Acts: BNS, BNSS, BSA, IPC, CrPC, Evidence Act, CPC, Specific Relief Act, Karnataka / Telangana / Andhra Pradesh Acts…). Returns sections with stable sources (statute://<enactmentId>/s/<n>) and ids for read_section. The old criminal codes still govern offences committed before 1 July 2024; use map_criminal_section for the correspondence.",
+  description: "Search India Code enactments and sections in the store (central and state Acts: BNS, BNSS, BSA, IPC, CrPC, Evidence Act, CPC, Specific Relief Act, Karnataka / Telangana / Andhra Pradesh Acts…). Returns sections with stable sources (statute://<enactmentId>/s/<n>) and ids for read_section. The old criminal codes still govern offences committed before 1 July 2024; use map_criminal_section for the correspondence. This store holds a curated set of Acts; for any other Central, State or regulator instrument use search_law / list_law_instruments (the full statutes corpus) when available.",
   parameters: { type: "object", properties: { query: { type: "string" }, enactment: { type: "string", description: "Restrict to an Act (title words), e.g. 'Bharatiya Nagarik Suraksha Sanhita'" }, limit: { type: "integer", description: "Default 8, max 25" } }, required: ["query"] },
   examples: [{ query: "anticipatory bail", enactment: "Bharatiya Nagarik Suraksha Sanhita" }, { query: "section 138 dishonour of cheque" }],
   timeoutMs: 15_000,
@@ -625,7 +629,7 @@ export function statuteRow(r: StatuteSectionView) {
 
 export const readSectionTool = defineTool<{ id: string }>({
   name: "read_section",
-  description: "Read one India Code section in full by id (from search_statutes, '<enactmentId>:<section>'), with its stable source and, where recorded, the corresponding section in the successor code. An absent section is reported absent, never the nearest one.",
+  description: "Read one India Code section in full by id (from search_statutes, '<enactmentId>:<section>'), with its stable source and, where recorded, the corresponding section in the successor code. An absent section is reported absent, never the nearest one. For sections found by search_law use read_law_section.",
   parameters: { type: "object", properties: { id: { type: "string", description: "Section id from search_statutes: '<enactmentId>:<section>'" } }, required: ["id"] },
   examples: [{ id: "ienact_5d0c2e7a9b41f3c8a6e1:482" }],
   timeoutMs: 10_000,
@@ -768,20 +772,118 @@ export const searchJudgmentIndexTool = defineTool<CorpusIndexArgs>({
   },
 });
 
+// ---------------------------------------------------------------------------
+// Indian law corpus (Postgres: Open India Law parse of India Code and regulator publications)
+// ---------------------------------------------------------------------------
+
+const LAW_FILTER_PROPS = {
+  jurisdiction: { type: "string", enum: ["central", "state", "regulator"], description: "central (Parliament), state (State / UT legislation) or regulator (SEBI, RBI, MCA, CBIC, IRDAI, TRAI…)" },
+  state: { type: "string", description: "Two-letter State / UT code for State legislation: KA, TS, AP, MH, DL, TN, KL, WB, UP, GJ…" },
+  regulator: { type: "string", description: "Regulator id: sebi, rbi, mca, cbic, irdai, trai, dgft, cpcb, dfs, moefcc, law-commission, state-gst" },
+  act_id: { type: "string", description: "Restrict to one instrument id from list_law_instruments or an earlier result (e.g. IND_central_20062)" },
+  in_force: { type: "boolean", description: "Only instruments recorded as in force (default false: repealed and superseded instruments are included and labelled)" },
+};
+
+const LAW_NOTE = "Open India Law (Vaquill) parse, CC BY 4.0 — third-party; verify against the official text at source_url before relying on it.";
+
+type LawSearchArgs = { query: string; jurisdiction?: string; state?: string; regulator?: string; act_id?: string; in_force?: boolean; limit?: number };
+
+/** Model-facing row for a law-corpus section hit (also the research lane's shape). */
+export function lawSectionRow(h: import("@/modules/law/shared").LawProvisionHit) {
+  const cite = lawCitation({ kind: h.kind, title: h.actTitle, year: h.year }, h.section, h.variant);
+  return {
+    type: "search_result" as const,
+    source: lawSourceId(h.actId, h.section, h.variant),
+    title: `${cite}${h.heading ? ` — ${h.heading}` : ""}`,
+    content: [h.snippet.replace(/[«»]/g, "").slice(0, 900) || "(no text excerpt)"],
+    act_id: h.actId, section: h.section, variant: h.variant, act: h.actTitle, jurisdiction: jurisdictionLabel(h), year: h.year,
+    status: statusLabel(h.instrumentStatus), provision_in_force: h.in_force, source_url: h.source_url, dataset_version: h.dataset_version,
+  };
+}
+
+export const searchLawTool = defineTool<LawSearchArgs>({
+  name: "search_law",
+  description: "Search the full Indian statutes and regulations corpus (about 20,000 instruments: every Central Act incl. repealed ones, State and UT Acts, and SEBI / RBI / MCA / CBIC / IRDAI / TRAI and other regulator regulations), section by section. Returns sections as search_result blocks with stable sources (law://<actId>/s/<section>[~<variant>]), the instrument's status (in force / repealed / superseded) and its official publisher URL. A hit shows words in a provision; read it with read_law_section before characterising it. The text is a third-party parse, not the official text.",
+  parameters: { type: "object", properties: { query: { type: "string", description: "Words or a quoted phrase, e.g. \"anticipatory bail\" or eviction of tenant arrears of rent" }, ...LAW_FILTER_PROPS, limit: { type: "integer", description: "Default 10, max 25" } }, required: ["query"] },
+  examples: [{ query: "eviction arrears of rent", jurisdiction: "state", state: "KA", in_force: true, limit: 10 }, { query: "\"related party transaction\" approval", jurisdiction: "regulator", regulator: "sebi" }],
+  timeoutMs: 20_000,
+  maxResultChars: 24_000,
+  access: "read",
+  label: (a) => `Searching statutes: ${a.query}`,
+  async execute(args, ctx) {
+    const { searchProvisions } = await import("@/modules/india/law/search");
+    const { hits } = await searchProvisions({ q: args.query, jurisdiction: args.jurisdiction, state: args.state, regulator: args.regulator, actId: args.act_id, inForceOnly: Boolean(args.in_force), limit: Math.min(Math.max(1, args.limit ?? 10), 25) });
+    const retrievedAt = new Date().toISOString();
+    emit(ctx, hits.map((h, i) => ({ source: lawSourceId(h.actId, h.section, h.variant), kind: "statute", provider: "open-india-law", tool: "search_law", query: args.query, rank: i + 1, score: h.rank, documentId: h.actId, authorityId: lawCitation({ kind: h.kind, title: h.actTitle, year: h.year }, h.section, h.variant), url: h.source_url ?? undefined, hash: contentHash(`${h.actId}|${h.section}|${h.variant}|${h.snippet}`), retrievedAt })));
+    return { count: hits.length, results: hits.map(lawSectionRow), note: hits.length ? LAW_NOTE : "No provision in the statutes corpus matched. Broaden the words or filters; do not cite a provision that was not found." };
+  },
+});
+
+export const readLawSectionTool = defineTool<{ act_id: string; section: string; variant?: number; max_chars?: number }>({
+  name: "read_law_section",
+  description: "Read one section of an Act or regulation from the statutes corpus, exactly by instrument id and section number as printed (\"303\", \"10A\"; \"_\" for the preamble and unnumbered text). Returns the full section text, its chapter, the instrument's status, the official publisher URL and the citation. An absent section is an error — never the nearest section. variant > 0 reads a second provision printed with the same number (search results say when one exists).",
+  parameters: { type: "object", properties: { act_id: { type: "string", description: "Instrument id, e.g. IND_central_20062" }, section: { type: "string", description: "Section number as printed, e.g. 303, 10A" }, variant: { type: "integer", description: "Default 0" }, max_chars: { type: "integer", description: "Default 20000, max 60000" } }, required: ["act_id", "section"] },
+  examples: [{ act_id: "IND_central_20062", section: "303" }],
+  timeoutMs: 15_000,
+  maxResultChars: 64_000,
+  access: "read",
+  label: (a) => `Reading section ${a.section}`,
+  async execute(args, ctx) {
+    const { readProvisionText } = await import("@/modules/india/law/directory");
+    const r = await readProvisionText(args.act_id, args.section, args.variant ?? 0, Math.min(Math.max(1000, args.max_chars ?? 20_000), 60_000));
+    if (!r) throw new Error(`No section ${args.section}${args.variant ? ` (variant ${args.variant})` : ""} in instrument ${args.act_id} in the statutes corpus. It is not substituted with another section; check the id and number with search_law or list_law_instruments.`);
+    const source = lawSourceId(r.instrument.id, r.section.section, r.section.variant);
+    emit(ctx, [{ source, kind: "statute", provider: "open-india-law", tool: "read_law_section", rank: 1, documentId: r.instrument.id, authorityId: r.citation, url: r.section.source_url ?? r.instrument.source_url ?? undefined, hash: contentHash(r.section.text), retrievedAt: new Date().toISOString() }]);
+    return {
+      type: "search_result" as const,
+      source,
+      title: `${r.citation}${r.section.heading ? ` — ${r.section.heading}` : ""}`,
+      content: r.text.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean),
+      citation: r.citation,
+      act_id: r.instrument.id, act: r.instrument.title, section: r.section.section, variant: r.section.variant, chapter: r.section.chapter_title,
+      status: statusLabel(r.instrument.status), provision_in_force: r.section.in_force, other_variants: r.variants,
+      official_source: r.section.source_url ?? r.instrument.source_url, publisher: publisherLabel(r.instrument), dataset_version: r.instrument.dataset_version,
+      truncated: r.section.truncated, note: LAW_NOTE,
+    };
+  },
+});
+
+export const listLawInstrumentsTool = defineTool<{ query: string; jurisdiction?: string; state?: string; regulator?: string; kind?: string; in_force?: boolean; limit?: number }>({
+  name: "list_law_instruments",
+  description: "Find Acts and regulations in the statutes corpus by title (e.g. \"Karnataka Rent Act\", \"SEBI Listing Obligations\"), State or regulator. Returns instrument ids for read_law_section and search_law (act_id), with jurisdiction, year, status (in force / repealed / superseded), section count and the official publisher URL.",
+  parameters: { type: "object", properties: { query: { type: "string" }, jurisdiction: LAW_FILTER_PROPS.jurisdiction, state: LAW_FILTER_PROPS.state, regulator: LAW_FILTER_PROPS.regulator, kind: { type: "string", enum: ["act", "regulation"] }, in_force: LAW_FILTER_PROPS.in_force, limit: { type: "integer", description: "Default 10, max 25" } }, required: ["query"] },
+  examples: [{ query: "Karnataka Rent Act", jurisdiction: "state", state: "KA" }, { query: "Bharatiya Nyaya Sanhita" }],
+  timeoutMs: 15_000,
+  maxResultChars: 16_000,
+  access: "read",
+  label: (a) => `Finding statutes: ${a.query}`,
+  async execute(args) {
+    const { searchInstruments } = await import("@/modules/india/law/search");
+    const r = await searchInstruments({ q: args.query, jurisdiction: args.jurisdiction, state: args.state, regulator: args.regulator, kind: args.kind, inForceOnly: Boolean(args.in_force), limit: Math.min(Math.max(1, args.limit ?? 10), 25) });
+    return {
+      count: r.hits.length,
+      results: r.hits.map((i) => ({ act_id: i.id, source: lawSourceId(i.id), title: i.title, kind: i.kind, jurisdiction: jurisdictionLabel(i), year: i.year, status: statusLabel(i.status), sections: i.sections, official_source: i.source_url, publisher: publisherLabel(i) })),
+      ...(r.hits.length ? {} : { note: "No instrument in the statutes corpus matched this title. Try fewer words or another filter; do not assume the instrument does not exist." }),
+    };
+  },
+});
+
 /** Tools that exist only with a capability (fail closed: absent from the toolset without it). */
 export const INDIAN_KANOON_TOOLS = [indianKanoonSearchTool, indianKanoonDocTool];
 export const CORPUS_INDEX_TOOLS = [searchJudgmentIndexTool];
+/** The statutes corpus (law_* tables in the same Postgres); errors explicitly when the tables are not loaded yet. */
+export const LAW_CORPUS_TOOLS = [searchLawTool, readLawSectionTool, listLawInstrumentsTool];
 
 /** Always-available Indian research tools (local corpus, India Code, coded tables). */
 export const INDIA_CORE_TOOLS = [searchJudgmentsTool, readJudgmentTool, citingReferencesTool, searchStatutesIndiaTool, readSectionTool, mapCriminalSectionTool];
 
 /** Indian research toolset for the current capabilities. */
 export function indiaResearchTools(caps: IndiaCapabilities = indiaCapabilities()) {
-  return [...INDIA_CORE_TOOLS, ...(caps.corpus ? CORPUS_INDEX_TOOLS : []), ...(caps.indianKanoon ? INDIAN_KANOON_TOOLS : [])];
+  return [...INDIA_CORE_TOOLS, ...(caps.corpus ? [...CORPUS_INDEX_TOOLS, ...LAW_CORPUS_TOOLS] : []), ...(caps.indianKanoon ? INDIAN_KANOON_TOOLS : [])];
 }
 
 /** Every Indian tool (for contract tests); runtime toolsets use indiaResearchTools(). */
-export const INDIA_TOOLS = [...INDIA_CORE_TOOLS, ...CORPUS_INDEX_TOOLS, ...INDIAN_KANOON_TOOLS];
+export const INDIA_TOOLS = [...INDIA_CORE_TOOLS, ...CORPUS_INDEX_TOOLS, ...LAW_CORPUS_TOOLS, ...INDIAN_KANOON_TOOLS];
 
 /** Intel documents that belong to the India source layer (judgments and India Code Acts); other feeds must not duplicate them. */
 export function isIndiaSourceDoc(doc: { meta?: Record<string, unknown> } | null | undefined): boolean {

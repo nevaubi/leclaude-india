@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { decodeEntities, type RawFeedItem } from "./parse";
 import { labelsFor } from "./labels";
+import { absoluteImageUrl, type NewsImageCandidate } from "./images";
 import type { NewsArticle } from "./types";
 import type { NewsSource } from "./sources";
 
@@ -124,7 +125,11 @@ export function normalizeItem(raw: RawFeedItem, source: NewsSource, now: Date): 
   const categories = raw.categories.map((c) => stripHtml(c)).filter(Boolean).slice(0, 20);
   const tags = raw.tags.map((c) => stripHtml(c)).filter(Boolean).slice(0, 30);
   const { labels, courtIds } = labelsFor({ title, categories, tags });
-  const image = canonicalUrl(raw.imageUrl, source.homepage);
+  const candidates = (raw.imageCandidates ?? [])
+    .map((c) => ({ ...c, url: absoluteImageUrl(c.url, source.homepage) }))
+    .filter((c): c is NewsImageCandidate => c.url !== null);
+  const image = absoluteImageUrl(raw.imageUrl, source.homepage);
+  const chosen = image ? candidates.find((c) => c.url === image) : undefined;
   return {
     id: articleIdFor(url),
     url,
@@ -140,6 +145,10 @@ export function normalizeItem(raw: RawFeedItem, source: NewsSource, now: Date): 
     firstSeenAt: ts,
     lastSeenAt: ts,
     imageUrl: image,
+    imageSource: image ? "feed" : null,
+    imageWidth: chosen?.width ?? null,
+    imageHeight: chosen?.height ?? null,
+    imageCandidates: candidates,
     guid: raw.guid,
     labels,
     courtIds,

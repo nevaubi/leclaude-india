@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { isSafeFetchError, safeFetch } from "@/lib/net/safe-fetch";
 import { parseFeed } from "./parse";
 import { normalizeItem } from "./normalize";
+import { displayImageFor } from "./images";
 import { EXCLUDED_FEEDS, NEWS_SOURCES, enabledNewsSources, type NewsSource } from "./sources";
 import { articleSortKey, type FeedRunResult, type FeedStatus, type NewsArticle, type NewsListResponse, type NewsRunSummary, type NewsSourcesResponse, type RefreshResult } from "./types";
 
@@ -31,7 +32,7 @@ export const STALE_AFTER_MS = 3 * 60 * 60_000;
 
 export const NEWS_USER_AGENT = "LeClaude-India-LegalNews/1.0 (headline reader; links every item to its publisher)";
 
-function articles() { return db().collection<NewsArticle>(COLLECTION); }
+export function articles() { return db().collection<NewsArticle>(COLLECTION); }
 
 export function feedStatuses(): Record<string, FeedStatus> {
   return db().kv.get<Record<string, FeedStatus>>(KV_FEEDS) ?? {};
@@ -119,6 +120,21 @@ function describeError(e: unknown): { code: string; message: string } {
 // Ingest
 // ---------------------------------------------------------------------------
 
+/**
+ * Image fields after a re-listing. A page-derived image (og/Firecrawl) is kept unless the feed now names one that is
+ * different from the feed image it replaced; a changed feed image replaces the old one (its review is then void
+ * because reviews are keyed by URL).
+ */
+function mergeImage(existing: NewsArticle, a: NewsArticle): Partial<NewsArticle> {
+  const candidates = a.imageCandidates?.length ? a.imageCandidates : existing.imageCandidates ?? [];
+  if (!a.imageUrl) return { imageCandidates: candidates };
+  const pageImage = existing.imageSource === "og" || existing.imageSource === "firecrawl";
+  const sameFeedImage = (existing.imageCandidates ?? []).some((c) => c.url === a.imageUrl);
+  if (pageImage && sameFeedImage) return { imageCandidates: candidates };
+  if (a.imageUrl === existing.imageUrl) return { imageCandidates: candidates, imageWidth: existing.imageWidth ?? a.imageWidth, imageHeight: existing.imageHeight ?? a.imageHeight };
+  return { imageUrl: a.imageUrl, imageSource: "feed", imageWidth: a.imageWidth ?? null, imageHeight: a.imageHeight ?? null, imageCandidates: candidates };
+}
+
 /** Merge freshly normalised items into the store. Returns the number of new headlines. Exported for tests. */
 export function mergeArticles(incoming: NewsArticle[], now: Date): number {
   const col = articles();
@@ -146,7 +162,7 @@ export function mergeArticles(incoming: NewsArticle[], now: Date): number {
       courtIds: a.courtIds,
       publishedAt: a.publishedAt ?? existing.publishedAt,
       publishedRaw: a.publishedRaw ?? existing.publishedRaw,
-      imageUrl: a.imageUrl ?? existing.imageUrl,
+      ...mergeImage(existing, a),
       lastSeenAt: ts,
     });
   }
@@ -290,6 +306,13 @@ function matchesQuery(a: NewsArticle, q: string): boolean {
   return q.split(/\s+/).filter(Boolean).every((t) => hay.includes(t));
 }
 
+/** How many stored headlines share each image URL (a publisher's default image repeats across items). */
+export function imageRepeatCounts(items: NewsArticle[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const a of items) if (a.imageUrl) m.set(a.imageUrl, (m.get(a.imageUrl) ?? 0) + 1);
+  return m;
+}
+
 export function lastSuccessAt(statuses = feedStatuses()): string | null {
   let best: string | null = null;
   for (const s of Object.values(statuses)) if (s.lastSuccessAt && (!best || s.lastSuccessAt > best)) best = s.lastSuccessAt;
@@ -315,8 +338,9 @@ export function listLegalNews(query: NewsQuery = {}, now: Date = new Date()): Ne
   const more = start >= 0 && start + limit < filtered.length;
   const statuses = feedStatuses();
   const success = lastSuccessAt(statuses);
+  const repeats = imageRepeatCounts(all);
   return {
-    items: page,
+    items: page.map((a) => ({ ...a, image: displayImageFor(a, repeats.get(a.imageUrl ?? "") ?? 1) })),
     nextBefore: more && page.length ? cursorOf(page[page.length - 1]) : null,
     total: filtered.length,
     lastRun: lastRun(),

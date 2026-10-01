@@ -12,6 +12,8 @@ export interface FirecrawlPage {
   statusCode?: number;
   language?: string;
   publishedAt?: string;
+  /** The page's og:image (Firecrawl metadata `ogImage` / `og:image`), when it declares one. */
+  image?: string;
 }
 
 export function createFirecrawl(opts: ProviderFactoryOptions = {}) {
@@ -22,7 +24,7 @@ export function createFirecrawl(opts: ProviderFactoryOptions = {}) {
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const page = (d: Record<string, unknown>, fallbackUrl?: string): FirecrawlPage => {
     const meta = (d.metadata ?? {}) as Record<string, unknown>;
-    return { url: str(meta.sourceURL) ?? str(d.url) ?? fallbackUrl ?? "", title: str(meta.title) ?? str(d.title), description: str(meta.description) ?? str(d.description), markdown: str(d.markdown) ?? str(d.content) ?? "", statusCode: typeof meta.statusCode === "number" ? meta.statusCode : undefined, language: str(meta.language), publishedAt: str(meta.publishedTime) ?? str(meta["article:published_time"]) };
+    return { url: str(meta.sourceURL) ?? str(d.url) ?? fallbackUrl ?? "", title: str(meta.title) ?? str(d.title), description: str(meta.description) ?? str(d.description), markdown: str(d.markdown) ?? str(d.content) ?? "", statusCode: typeof meta.statusCode === "number" ? meta.statusCode : undefined, language: str(meta.language), publishedAt: str(meta.publishedTime) ?? str(meta["article:published_time"]), image: str(meta.ogImage) ?? str(meta["og:image"]) };
   };
   return {
     name: "firecrawl" as const,

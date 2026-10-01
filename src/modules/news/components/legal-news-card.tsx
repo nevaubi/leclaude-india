@@ -8,7 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tip } from "@/components/ui/tooltip";
 import { EmptyRow, Section } from "@/modules/home/components/shared";
 import type { NewsListResponse } from "../types";
-import { HeadlineRow, NewsApiError, TimeAgo, newsApi, newsQueryString, requestRefresh, useNow } from "./news-ui";
+import { StoryRow } from "./news-cards";
+import { NewsApiError, TimeAgo, newsApi, newsQueryString, requestRefresh, useNow } from "./news-ui";
 
 const AUTO_REFRESH_AFTER_MS = 15 * 60_000;
 
@@ -22,7 +23,7 @@ type State =
  * when the last check is older than 15 minutes, asks the server to refresh (the server throttles independently).
  */
 export function LegalNewsCard({ expanded, onExpand }: { expanded?: boolean; onExpand?: () => void }) {
-  const limit = expanded ? 60 : 8;
+  const limit = expanded ? 60 : 4;
   const [state, setState] = React.useState<State>({ kind: "loading" });
   const [refreshing, setRefreshing] = React.useState(false);
   const now = useNow();
@@ -89,8 +90,8 @@ export function LegalNewsCard({ expanded, onExpand }: { expanded?: boolean; onEx
     >
       {state.kind === "loading" && (
         <ul className="divide-y border-t" aria-busy="true" aria-label="Loading headlines">
-          {Array.from({ length: expanded ? 8 : 5 }, (_, i) => (
-            <li key={i} className="space-y-1.5 px-3 py-2.5"><Skeleton className="h-3 w-40" /><Skeleton className="h-3.5 w-[85%]" /></li>
+          {Array.from({ length: expanded ? 8 : 4 }, (_, i) => (
+            <li key={i} className="flex gap-3 px-3 py-2"><div className="flex-1 space-y-1.5"><Skeleton className="h-3 w-40" /><Skeleton className="h-3.5 w-[85%]" /></div><Skeleton className="aspect-[3/2] w-[72px]" /></li>
           ))}
         </ul>
       )}
@@ -116,7 +117,7 @@ export function LegalNewsCard({ expanded, onExpand }: { expanded?: boolean; onEx
             </div>
           )}
           <ul className={cn("divide-y border-t", expanded && "mx-auto w-full max-w-4xl")}>
-            {items.map((n) => <HeadlineRow key={n.id} item={n} now={now} compact={!expanded} summary={expanded} />)}
+            {items.map((n) => <StoryRow key={n.id} item={n} now={now} dense={!expanded} summary={expanded} />)}
           </ul>
           <div className="flex items-center justify-between gap-2 border-t px-3 py-1.5 text-[11px] text-muted-foreground">
             <span className="min-w-0 truncate">Headlines link to the publisher; summaries are the publisher&apos;s own.</span>

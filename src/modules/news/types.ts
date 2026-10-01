@@ -1,4 +1,7 @@
 /** Legal news contracts (client-safe). */
+import type { NewsImageAttempts, NewsImageCandidate, NewsImageLookup, NewsImageReview, NewsImageSource, NewsImageView } from "./images";
+
+export type { NewsImageAttempts, NewsImageCandidate, NewsImageLookup, NewsImageReview, NewsImageSource, NewsImageView } from "./images";
 
 /** Where a label came from. Labels are never inferred from body text. */
 export type NewsLabelSource = "feed category" | "feed tag" | "title";
@@ -42,7 +45,19 @@ export interface NewsArticle {
   publishedRaw: string | null;
   firstSeenAt: string;
   lastSeenAt: string;
+  /** Current image candidate (feed, else the article page's og:image, else Firecrawl metadata); not necessarily shown. */
   imageUrl: string | null;
+  imageSource?: NewsImageSource | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
+  /** Images the feed item named (at most 8), in preference order. */
+  imageCandidates?: NewsImageCandidate[];
+  /** Article-page lookup (og:image / Firecrawl) state; absent until the image job looks. */
+  imageLookup?: NewsImageLookup | null;
+  /** Review verdict for `imageUrl` (void when the URL changes). */
+  imageReview?: NewsImageReview | null;
+  /** Failed review attempts for `imageUrl` (bounded by MAX_REVIEW_ATTEMPTS). */
+  imageAttempts?: NewsImageAttempts | null;
   guid: string | null;
   labels: NewsLabel[];
   courtIds: string[];
@@ -98,8 +113,13 @@ export interface RefreshResult {
   run?: NewsRunSummary;
 }
 
+/** A listed headline with the image the UI may show (computed at read time by the display policy in images.ts). */
+export interface NewsListItem extends NewsArticle {
+  image: NewsImageView | null;
+}
+
 export interface NewsListResponse {
-  items: NewsArticle[];
+  items: NewsListItem[];
   /** Cursor for the next page (`before=`), null at the end. */
   nextBefore: string | null;
   total: number;

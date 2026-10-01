@@ -8,6 +8,8 @@
  * the caller (`decodeEntities`).
  */
 
+import { htmlImageCandidates, pickImageCandidate, type NewsImageCandidate } from "./images";
+
 export interface RawFeedItem {
   title: string;
   link: string | null;
@@ -23,7 +25,10 @@ export interface RawFeedItem {
   description: string | null;
   /** content:encoded / Atom content as given (never stored; used only when there is no description). */
   content: string | null;
+  /** First usable image (see `imageCandidates`), null when the item names none. */
   imageUrl: string | null;
+  /** Every image the item names, in feed order: media:content, enclosure, media:thumbnail, then <img> in content/description. */
+  imageCandidates: NewsImageCandidate[];
 }
 
 export interface ParsedFeed {
@@ -122,12 +127,31 @@ function splitList(values: string[]): string[] {
   return out;
 }
 
-function imageFrom(xml: string): string | null {
-  for (const el of elements(xml, "enclosure")) if (el.attrs.url && (!el.attrs.type || /^image\//i.test(el.attrs.type))) return el.attrs.url;
-  for (const name of ["media:content", "media:thumbnail"]) {
-    for (const el of elements(xml, name)) if (el.attrs.url && (!el.attrs.medium || el.attrs.medium === "image") && (!el.attrs.type || /^image\//i.test(el.attrs.type))) return el.attrs.url;
-  }
-  return null;
+const posInt = (v: string | undefined) => { const n = v ? Number.parseInt(v, 10) : NaN; return Number.isFinite(n) && n > 0 ? n : undefined; };
+
+/**
+ * Image candidates named by the item markup (media:content incl. inside media:group, enclosure, media:thumbnail) plus
+ * <img> elements in content:encoded and description. Non-image media (video/audio) is ignored.
+ */
+function imageCandidatesFrom(xml: string, content: string | null, description: string | null, base?: string): NewsImageCandidate[] {
+  const out: NewsImageCandidate[] = [];
+  const add = (c: NewsImageCandidate) => { if (!out.some((x) => x.url === c.url)) out.push(c); };
+  const isImage = (a: Record<string, string>) => (!a.medium || a.medium === "image") && (!a.type || /^image\//i.test(a.type));
+  const media = elements(xml, "media:content").filter((e) => e.attrs.url && isImage(e.attrs))
+    .sort((a, b) => (posInt(b.attrs.width) ?? 0) - (posInt(a.attrs.width) ?? 0));
+  for (const el of media) add({ url: el.attrs.url.trim(), origin: "media:content", width: posInt(el.attrs.width), height: posInt(el.attrs.height), type: el.attrs.type || undefined });
+  for (const el of elements(xml, "enclosure")) if (el.attrs.url && (!el.attrs.type || /^image\//i.test(el.attrs.type))) add({ url: el.attrs.url.trim(), origin: "enclosure", type: el.attrs.type || undefined });
+  for (const el of elements(xml, "media:thumbnail")) if (el.attrs.url) add({ url: el.attrs.url.trim(), origin: "media:thumbnail", width: posInt(el.attrs.width), height: posInt(el.attrs.height) });
+  for (const c of htmlImageCandidates(content, "content-img", base)) add(c);
+  for (const c of htmlImageCandidates(description, "description-img", base)) add(c);
+  return out.slice(0, 8);
+}
+
+/** The feed's preferred image: the first candidate passing the cheap heuristic, else the first markup-declared one. */
+function preferredImage(cands: NewsImageCandidate[]): string | null {
+  const picked = pickImageCandidate(cands);
+  if (picked) return picked.url;
+  return cands.find((c) => c.origin === "media:content" || c.origin === "enclosure" || c.origin === "media:thumbnail")?.url ?? null;
 }
 
 /** Region matcher for repeated blocks (`item`, `entry`), tolerant of attributes. */
@@ -150,6 +174,9 @@ function rssItem(x: string, p: Prepared): RawFeedItem {
   }
   if (!link && guid && guidIsPermaLink && /^https?:\/\//i.test(guid)) link = guid;
   const authors = splitList([...elements(x, "dc:creator"), ...elements(x, "author")].map((e) => textOf(e.inner, p)));
+  const description = first(x, ["description"], p);
+  const content = first(x, ["content:encoded"], p);
+  const imageCandidates = imageCandidatesFrom(x, content, description, link && /^https?:\/\//i.test(link) ? link : undefined);
   return {
     title: first(x, ["title"], p) ?? "",
     link,
@@ -159,9 +186,10 @@ function rssItem(x: string, p: Prepared): RawFeedItem {
     authors,
     categories: splitList(elements(x, "category").map((e) => textOf(e.inner, p))),
     tags: splitList(elements(x, "tags").map((e) => textOf(e.inner, p))),
-    description: first(x, ["description"], p),
-    content: first(x, ["content:encoded"], p),
-    imageUrl: imageFrom(x),
+    description,
+    content,
+    imageUrl: preferredImage(imageCandidates),
+    imageCandidates,
   };
 }
 
@@ -171,6 +199,12 @@ function atomEntry(x: string, p: Prepared): RawFeedItem {
   const authors = splitList(elements(x, "author").map((a) => first(a.inner, ["name"], p) ?? textOf(a.inner, p)));
   const cats = elements(x, "category").map((e) => e.attrs.term || e.attrs.label || textOf(e.inner, p));
   const enclosure = links.find((e) => e.attrs.rel === "enclosure" && /^image\//i.test(e.attrs.type ?? "") && e.attrs.href);
+  const description = first(x, ["summary"], p);
+  const content = first(x, ["content"], p);
+  const imageCandidates = [
+    ...(enclosure ? [{ url: enclosure.attrs.href.trim(), origin: "enclosure" as const, type: enclosure.attrs.type }] : []),
+    ...imageCandidatesFrom(x, content, description, alt?.attrs.href).filter((c) => c.url !== enclosure?.attrs.href.trim()),
+  ];
   return {
     title: first(x, ["title"], p) ?? "",
     link: alt?.attrs.href ?? null,
@@ -180,9 +214,10 @@ function atomEntry(x: string, p: Prepared): RawFeedItem {
     authors,
     categories: splitList(cats),
     tags: [],
-    description: first(x, ["summary"], p),
-    content: first(x, ["content"], p),
-    imageUrl: enclosure?.attrs.href ?? imageFrom(x),
+    description,
+    content,
+    imageUrl: preferredImage(imageCandidates),
+    imageCandidates,
   };
 }
 

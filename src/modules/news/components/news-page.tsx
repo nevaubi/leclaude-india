@@ -10,17 +10,19 @@ import { EmptyState } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NEWS_SOURCES } from "../sources";
-import { articleSortKey, type NewsArticle, type NewsListResponse, type NewsSourcesResponse } from "../types";
-import { HeadlineRow, TimeAgo, courtShort, istDayKey, istDayLabel, newsApi, newsQueryString, requestRefresh, useNow } from "./news-ui";
+import { articleSortKey, type NewsListItem, type NewsListResponse, type NewsSourcesResponse } from "../types";
+import { TimeAgo, courtShort, istDayKey, istDayLabel, newsApi, newsQueryString, requestRefresh, useNow } from "./news-ui";
 import { SourcesPanel } from "./sources-panel";
+import { LeadStory, SideStory, StoryCard, StoryRow } from "./news-cards";
+import { pickFeatured } from "../featured";
 
 const ALL = "__all__";
 const PAGE = 50;
 
 export interface NewsFilters { source: string | null; court: string | null; q: string }
 
-function groupByDay(items: NewsArticle[]): Array<{ key: string; items: NewsArticle[] }> {
-  const groups: Array<{ key: string; items: NewsArticle[] }> = [];
+function groupByDay(items: NewsListItem[]): Array<{ key: string; items: NewsListItem[] }> {
+  const groups: Array<{ key: string; items: NewsListItem[] }> = [];
   for (const it of items) {
     const key = istDayKey(articleSortKey(it));
     const last = groups[groups.length - 1];
@@ -30,7 +32,10 @@ function groupByDay(items: NewsArticle[]): Array<{ key: string; items: NewsArtic
   return groups;
 }
 
-/** /news: every stored headline, filterable by source, court label and text, grouped by day (IST), with the sources. */
+/**
+ * /news: a reading surface for Indian legal headlines. Front page (lead story with a large image, side stories, a card
+ * row) then every other headline grouped by day (IST); publisher chips, court and text filters; the feed sources panel.
+ */
 export function NewsBrowser({ initial, initialSources, initialFilters }: { initial: NewsListResponse; initialSources: NewsSourcesResponse; initialFilters: NewsFilters }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -112,47 +117,56 @@ export function NewsBrowser({ initial, initialSources, initialFilters }: { initi
     } finally { setLoadingMore(false); }
   };
 
-  const groups = React.useMemo(() => groupByDay(data.items), [data.items]);
+  const featured = React.useMemo(() => pickFeatured(data.items, !filters.q), [data.items, filters.q]);
+  const groups = React.useMemo(() => groupByDay(featured.rest), [featured.rest]);
   const courtOptions = React.useMemo(() => Object.entries(data.facets.courts).sort((a, b) => b[1] - a[1] || courtShort(a[0]).localeCompare(courtShort(b[0]))), [data.facets.courts]);
   const filtered = !!(filters.source || filters.court || filters.q);
   const allFailed = !!data.lastRun && data.lastRun.feeds.length > 0 && data.lastRun.feeds.every((f) => !f.ok);
   const clear = () => { setQuery(""); setFilters({ source: null, court: null, q: "" }); };
+  const totalAll = Object.values(data.facets.sources).reduce((n, x) => n + x, 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageTopbar icon={<Newspaper />} title="News" context={data.lastSuccessAt ? <>Indian legal headlines · updated <TimeAgo iso={data.lastSuccessAt} now={now} /></> : "Indian legal headlines"}>
+      <PageTopbar
+        icon={<Newspaper />}
+        title="News"
+        context={<span suppressHydrationWarning>Indian legal headlines{data.lastSuccessAt ? <> · updated <TimeAgo iso={data.lastSuccessAt} now={now} /></> : null}{refreshing ? " · checking feeds…" : null}</span>}
+      >
         <div className="flex-1" />
-        <Button variant="ghost" size="xs" className="lg:hidden" onClick={() => setMobileView((v) => (v === "list" ? "sources" : "list"))} aria-pressed={mobileView === "sources"}>
+        <Button variant="ghost" size="xs" className="xl:hidden" onClick={() => setMobileView((v) => (v === "list" ? "sources" : "list"))} aria-pressed={mobileView === "sources"}>
           <Rss className="size-3.5" />{mobileView === "sources" ? "Headlines" : "Sources"}
         </Button>
         <Button variant="outline" size="xs" onClick={() => void refresh()} disabled={refreshing} aria-label="Refresh legal news">
-          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} /><span className="hidden sm:inline">Refresh</span>
+          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} /><span className="hidden sm:inline">{refreshing ? "Refreshing…" : "Refresh"}</span>
         </Button>
       </PageTopbar>
       <div className="flex min-h-0 flex-1">
-        <main className={cn("flex min-w-0 flex-1 flex-col", mobileView === "sources" && "hidden lg:flex")}>
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
-            <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
-              <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input size="xs" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search headlines…" className="w-full pl-7" aria-label="Search headlines" />
+        <main className={cn("@container flex min-w-0 flex-1 flex-col", mobileView === "sources" && "hidden xl:flex")}>
+          <div className="shrink-0 space-y-2 border-b px-3 py-2 @3xl:px-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-0 flex-1 basis-48 @2xl:max-w-xs">
+                <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input size="xs" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search headlines…" className="w-full pl-7" aria-label="Search headlines" />
+              </div>
+              <Select value={filters.court ?? ALL} onValueChange={(v) => setFilters((f) => ({ ...f, court: v === ALL ? null : v }))}>
+                <SelectTrigger size="xs" className="w-[10.5rem] text-[11.5px]" aria-label="Court"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>All courts</SelectItem>
+                  {courtOptions.map(([id, n]) => <SelectItem key={id} value={id}>{courtShort(id)}<span className="ml-1 tabular text-muted-foreground">{n}</span></SelectItem>)}
+                  {filters.court && !data.facets.courts[filters.court] && <SelectItem value={filters.court}>{courtShort(filters.court)}</SelectItem>}
+                </SelectContent>
+              </Select>
+              {filtered && <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={clear}><X className="size-3" />Clear</Button>}
+              <span className="ml-auto text-[11px] tabular text-muted-foreground" aria-live="polite">{loading ? "Loading…" : `${data.total.toLocaleString("en-IN")} headline${data.total === 1 ? "" : "s"}`}</span>
             </div>
-            <Select value={filters.source ?? ALL} onValueChange={(v) => setFilters((f) => ({ ...f, source: v === ALL ? null : v }))}>
-              <SelectTrigger size="xs" className="w-[9.5rem] text-[11.5px]" aria-label="Source"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All sources</SelectItem>
-                {NEWS_SOURCES.map((s) => <SelectItem key={s.id} value={s.id}>{s.publisher}<span className="ml-1 tabular text-muted-foreground">{data.facets.sources[s.id] ?? 0}</span></SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filters.court ?? ALL} onValueChange={(v) => setFilters((f) => ({ ...f, court: v === ALL ? null : v }))}>
-              <SelectTrigger size="xs" className="w-[10.5rem] text-[11.5px]" aria-label="Court"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All courts</SelectItem>
-                {courtOptions.map(([id, n]) => <SelectItem key={id} value={id}>{courtShort(id)}<span className="ml-1 tabular text-muted-foreground">{n}</span></SelectItem>)}
-                {filters.court && !data.facets.courts[filters.court] && <SelectItem value={filters.court}>{courtShort(filters.court)}</SelectItem>}
-              </SelectContent>
-            </Select>
-            {filtered && <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={clear}><X className="size-3" />Clear</Button>}
-            <span className="ml-auto text-[11px] tabular text-muted-foreground" aria-live="polite">{loading ? "Loading…" : `${data.total.toLocaleString("en-IN")} headline${data.total === 1 ? "" : "s"}`}</span>
+            <div className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 pb-0.5 scrollbar-thin" role="group" aria-label="Publisher">
+              <Chip active={!filters.source} onClick={() => setFilters((f) => ({ ...f, source: null }))} count={totalAll}>All publishers</Chip>
+              {NEWS_SOURCES.map((s) => (
+                <Chip key={s.id} active={filters.source === s.id} onClick={() => setFilters((f) => ({ ...f, source: f.source === s.id ? null : s.id }))} count={data.facets.sources[s.id] ?? 0}>
+                  {s.publisher.replace(/\s*\(.*\)$/, "")}
+                </Chip>
+              ))}
+            </div>
           </div>
           {(data.stale || allFailed) && data.items.length > 0 && (
             <div className="flex shrink-0 items-center gap-1.5 border-b bg-warning/10 px-3 py-1.5 text-[11px]" role="status">
@@ -169,20 +183,31 @@ export function NewsBrowser({ initial, initialSources, initialFilters }: { initi
           <div className={cn("min-h-0 flex-1 overflow-y-auto scrollbar-thin", loading && "opacity-60 transition-opacity")}>
             {data.items.length === 0 ? (
               loading || (refreshing && !filtered) ? (
-                <ul className="mx-auto max-w-4xl divide-y" aria-busy="true">{Array.from({ length: 8 }, (_, i) => <li key={i} className="space-y-1.5 px-3 py-3"><Skeleton className="h-3 w-44" /><Skeleton className="h-3.5 w-[80%]" /></li>)}</ul>
+                <NewsSkeleton />
               ) : filtered ? (
-                <EmptyState icon={Search} title="No headlines match" description="Try another source, court or search term." action={<Button size="xs" variant="outline" onClick={clear}>Clear filters</Button>} />
+                <EmptyState icon={Search} title="No headlines match" description="Try another publisher, court or search term." action={<Button size="xs" variant="outline" onClick={clear}>Clear filters</Button>} />
               ) : allFailed ? (
                 <EmptyState icon={AlertTriangle} title="The news feeds could not be reached" description={<>{data.lastRun?.feeds[0]?.error ?? "Every feed failed."} See Sources for each feed&apos;s status.</>} action={<Button size="xs" variant="outline" onClick={() => void refresh()}>Try again</Button>} />
               ) : (
                 <EmptyState icon={Newspaper} title="No headlines yet" description="Headlines from Indian legal publishers appear here after the first check of their feeds." action={<Button size="xs" variant="outline" onClick={() => void refresh()}>Check now</Button>} />
               )
             ) : (
-              <div className="mx-auto w-full max-w-4xl pb-6">
+              <div className="mx-auto w-full max-w-[76rem] px-3 pb-8 @3xl:px-6">
+                {featured.lead && (
+                  <section aria-label="Top stories" className="grid gap-x-7 gap-y-5 border-b pb-6 pt-4 @2xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+                    <LeadStory item={featured.lead} now={now} />
+                    {featured.side.length > 0 && <div className="divide-y @2xl:border-l @2xl:pl-6">{featured.side.map((n) => <SideStory key={n.id} item={n} now={now} />)}</div>}
+                  </section>
+                )}
+                {featured.grid.length > 0 && (
+                  <section aria-label="More stories" className="border-b py-5">
+                    <div className="grid grid-cols-1 gap-x-5 gap-y-6 @lg:grid-cols-2 @4xl:grid-cols-4">{featured.grid.map((n) => <StoryCard key={n.id} item={n} now={now} />)}</div>
+                  </section>
+                )}
                 {groups.map((g) => (
                   <section key={g.key} aria-label={istDayLabel(g.key, null)}>
-                    <h2 className="sticky top-0 z-10 border-b bg-background/95 px-3 py-1.5 text-[11px] font-semibold text-muted-foreground backdrop-blur" suppressHydrationWarning>{istDayLabel(g.key, now)}</h2>
-                    <ul className="divide-y">{g.items.map((n) => <HeadlineRow key={n.id} item={n} now={now} summary />)}</ul>
+                    <h2 className="sticky top-0 z-10 -mx-3 border-b bg-background/95 px-3 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground backdrop-blur @3xl:-mx-6 @3xl:px-6" suppressHydrationWarning>{istDayLabel(g.key, now)}</h2>
+                    <ul className="-mx-3 divide-y">{g.items.map((n) => <StoryRow key={n.id} item={n} now={now} />)}</ul>
                   </section>
                 ))}
                 {data.nextBefore && (
@@ -190,12 +215,42 @@ export function NewsBrowser({ initial, initialSources, initialFilters }: { initi
                     <Button size="xs" variant="outline" onClick={() => void more()} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load older headlines"}</Button>
                   </div>
                 )}
+                <p className="pt-4 text-center text-[11px] text-muted-foreground">Headlines and images link to and belong to their publishers; summaries are the publisher&apos;s own.</p>
               </div>
             )}
           </div>
         </main>
-        <SourcesPanel data={sources} now={now} className={cn("w-full border-l lg:w-80 xl:w-[22rem]", mobileView === "list" ? "hidden lg:flex" : "flex")} />
+        <SourcesPanel data={sources} now={now} className={cn("w-full border-l xl:w-72 2xl:w-80", mobileView === "list" ? "hidden xl:flex" : "flex")} />
       </div>
+    </div>
+  );
+}
+
+function Chip({ active, onClick, count, children }: { active: boolean; onClick: () => void; count: number; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-[var(--radius-chip)] border px-2 text-[11.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        active ? "border-primary/40 bg-primary/10 font-medium text-primary" : "border-border text-foreground/80 hover:bg-accent hover:text-foreground",
+      )}
+    >
+      {children}
+      <span className={cn("tabular text-[10.5px]", active ? "text-primary/80" : "text-muted-foreground")}>{count}</span>
+    </button>
+  );
+}
+
+function NewsSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-[76rem] px-3 pt-4 @3xl:px-6" aria-busy="true" aria-label="Loading headlines">
+      <div className="grid gap-x-7 gap-y-5 border-b pb-6 @2xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="space-y-2.5"><Skeleton className="aspect-[16/9] w-full" /><Skeleton className="h-3 w-40" /><Skeleton className="h-5 w-[90%]" /><Skeleton className="h-5 w-[70%]" /></div>
+        <div className="space-y-5">{Array.from({ length: 3 }, (_, i) => <div key={i} className="flex gap-3"><div className="flex-1 space-y-2"><Skeleton className="h-3 w-32" /><Skeleton className="h-4 w-[90%]" /><Skeleton className="h-4 w-[60%]" /></div><Skeleton className="aspect-[4/3] w-[104px]" /></div>)}</div>
+      </div>
+      <ul className="divide-y">{Array.from({ length: 5 }, (_, i) => <li key={i} className="flex gap-3 py-3"><div className="flex-1 space-y-1.5"><Skeleton className="h-3 w-44" /><Skeleton className="h-3.5 w-[80%]" /></div><Skeleton className="hidden aspect-[3/2] w-[120px] @md:block" /></li>)}</ul>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { ensureIntelSeeded } from "@/modules/intel/seed";
 import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 import { refreshLegalNews } from "@/modules/news/service";
+import { runNewsImageJobs } from "@/modules/news/image-jobs";
 
 export const runtime = "nodejs";
 /** The tick runs due intel jobs (up to ~50s), then continues the judgment corpus backfill when it is enabled, and returns before 300s. */
@@ -42,8 +43,10 @@ async function tick(req: NextRequest) {
     : refreshLegalNews({ deadlineMs: 20_000 })
       .then((r) => ({ status: r.status, reason: r.reason, added: r.run?.added ?? 0, failed: r.run?.feeds.filter((f) => !f.ok).map((f) => f.sourceId) ?? [] }))
       .catch((e: unknown) => ({ status: "failed" as const, error: e instanceof Error ? e.message : String(e) }));
+  // News images (og:image lookups, then capped vision review) after the refresh, on their own 25 s budget.
+  const newsImages = url.searchParams.get("news") === "0" ? Promise.resolve(null) : news.then(() => runNewsImageJobs({ deadlineMs: 25_000, maxReviews: 8 }));
   const result = await runDue({ limit, deadlineMs, housekeeping });
-  const legalNews = await news;
+  const legalNews = { ...(await news), images: await newsImages };
   // Judgment corpus backfill (durable queue in Postgres): uses the rest of the invocation when enabled.
   let corpus: Awaited<ReturnType<typeof runBackfill>> | { stop: "skipped" } = { stop: "skipped" };
   if (url.searchParams.get("corpus") !== "0" && (await backfillEnabled())) {

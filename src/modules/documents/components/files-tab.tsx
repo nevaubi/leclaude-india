@@ -2,7 +2,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import {
-  AlertCircle, Ban, Check, CheckCircle2, Copy, FileText, FolderUp, Loader2, RotateCcw, ScanLine, Search, Trash2, Upload, X,
+  AlertCircle, Ban, Check, CheckCircle2, FileText, FolderUp, Loader2, RotateCcw, ScanLine, Search, Trash2, Upload, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
@@ -14,7 +14,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { cn } from "@/lib/utils";
 import { DOCS_LIMITS, type DocFile, type DocFileStatus } from "../types";
 import { docsApi, errorKind, errorMessage, isAbort, setUrl, type ApiErrorKind } from "./api";
-import { formatBytes, formatPreciseDate, methodLabel, shortHash } from "./format";
+import { formatBytes, formatPreciseDate, methodLabel } from "./format";
 import { FileStatus, Notice, SurfaceState } from "./notice";
 import { openForOcr, rasterisePage } from "./pdf-read";
 import { DOCS_ACCEPT_ATTR, filesFromDrop, type DocUploads, type UploadItem, type UploadState } from "./use-doc-uploads";
@@ -89,7 +89,7 @@ export function FilesTab({ setId, uploads, aiReady, storageFull, onView, onChang
     let opened: Awaited<ReturnType<typeof openForOcr>> | null = null;
     try {
       opened = await openForOcr(original);
-      if (opened.sha256 !== doc.sha256) throw new Error("The selected PDF is not the file that was uploaded (its SHA-256 differs).");
+      if (opened.sha256 !== doc.sha256) throw new Error("The selected PDF is not the file that was uploaded.");
       for (const p of pages) {
         if (ctrl.signal.aborted) break;
         try {
@@ -130,7 +130,7 @@ export function FilesTab({ setId, uploads, aiReady, storageFull, onView, onChang
     const file = list?.[0];
     if (!doc || !file) return;
     const ok = await uploads.adoptOriginal(doc, file);
-    if (!ok) { toast.error("That PDF is not the file that was uploaded (its SHA-256 differs). Choose the original file."); return; }
+    if (!ok) { toast.error("That PDF is not the file that was uploaded. Choose the original file."); return; }
     void runOcr(doc, file);
   };
 
@@ -160,12 +160,6 @@ export function FilesTab({ setId, uploads, aiReady, storageFull, onView, onChang
     { id: "pages", header: "Pages", width: 70, align: "right", sortable: true, accessor: (f) => f.pages, render: (f) => <span className="tabular text-muted-foreground">{f.pages || "—"}</span> },
     { id: "size", header: "Size", width: 80, align: "right", sortable: true, accessor: (f) => f.size, render: (f) => <span className="tabular text-muted-foreground">{formatBytes(f.size)}</span> },
     { id: "docDate", header: "Doc date", width: 110, sortable: true, accessor: (f) => f.docDate ?? "", render: (f) => <span className="tabular text-muted-foreground">{f.docDate ? formatPreciseDate(f.docDate, "day") : "—"}</span> },
-    { id: "hash", header: "SHA-256", width: 110, accessor: (f) => f.sha256, render: (f) => (
-      <button type="button" className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground hover:text-foreground" title={`${f.sha256} (${f.hashOrigin === "browser" ? "browser" : "server"}) — click to copy`}
-        onClick={(e) => { e.stopPropagation(); void navigator.clipboard?.writeText(f.sha256).then(() => toast.success("Hash copied")); }}>
-        {shortHash(f.sha256)} <Copy className="size-3 opacity-60" />
-      </button>
-    ) },
     { id: "uploaded", header: "Added", width: 120, sortable: true, defaultHidden: true, accessor: (f) => f.uploadedAt, render: (f) => <RelativeTime value={f.uploadedAt} className="text-muted-foreground" /> },
   ], []);
 
@@ -254,7 +248,7 @@ export function FilesTab({ setId, uploads, aiReady, storageFull, onView, onChang
           </div>
         </div>
       ) : uploads.total === 0 ? (
-        <p className="px-1 text-[12px] text-muted-foreground">Files are read into text with page numbers so answers, facts and events can point to the page they come from. Original files are not stored; each file&apos;s SHA-256 is recorded.</p>
+        <p className="px-1 text-[12px] text-muted-foreground">Files are read into text with page numbers so answers, facts and events can point to the page they come from. Original files are not stored.</p>
       ) : null}
 
       <Dialog open={!!toDelete} onOpenChange={(o) => { if (!o) setToDelete(null); }}>
@@ -377,7 +371,7 @@ function OcrPanel({ job, onCancel, onClose }: { job: OcrJob; onCancel: () => voi
       </div>
       <Progress value={pct} className="mt-1.5 h-1" aria-label="OCR progress" />
       {job.errors.length > 0 && <ul className="mt-1.5 space-y-0.5 text-[11.5px] text-destructive">{job.errors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}{job.errors.length > 5 && <li>…and {job.errors.length - 5} more</li>}</ul>}
-      <p className="mt-1 text-[11px] text-muted-foreground">Page images are sent to the vision model one at a time; the text is stored as “AI OCR” and should be checked against the original.</p>
+      <p className="mt-1 text-[11px] text-muted-foreground">Scanned pages are read by AI one page at a time. Check the text against the original.</p>
     </section>
   );
 }

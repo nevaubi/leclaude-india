@@ -4,13 +4,13 @@ import { ArrowUpRight, Info, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tip } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { courtDisplayName } from "./court-filter";
 import { formatCaseDate, formatTimestamp, yearSpan, type CaseFacets, type CourtFacet } from "../shared";
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 const Sep = () => <span aria-hidden className="text-muted-foreground/50">·</span>;
 
-const INDEX_NOTE = "The index holds the court-published metadata (title, parties, citations, coram, dates, disposal, source snippet) and a link to the official PDF. Directory search looks at that metadata; records marked Full text also have the judgment text stored.";
+const INDEX_NOTE = "Each decision links to the official PDF published by the court. Search covers titles, parties, citations and coram; decisions marked Full text can also be read here.";
 
 /** The header's coverage line: totals, courts and freshness. */
 export function CaseCoverageLine({ facets, loading, error, onRetry }: { facets: CaseFacets | null; loading: boolean; error: string | null; onRetry?: () => void }) {
@@ -27,16 +27,16 @@ export function CaseCoverageLine({ facets, loading, error, onRetry }: { facets: 
   const partial = facets.courts.filter((c) => c.archives && c.archives.done < c.archives.total).length;
   return (
     <>
-      <span className="tabular"><span className="font-medium text-foreground/85">{fmt(facets.total)}</span> records</span>
+      <span className="tabular"><span className="font-medium text-foreground/85">{fmt(facets.total)}</span> decisions</span>
       <Sep />
       <span className="tabular">{mapped.length} court{mapped.length === 1 ? "" : "s"}</span>
       <Sep />
       <Tip label={INDEX_NOTE}>
-        <span tabIndex={0} className="inline-flex items-center gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"><Info className="size-3" aria-hidden />Court-published open datasets</span>
+        <span tabIndex={0} className="inline-flex items-center gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"><Info className="size-3" aria-hidden />Official court publications</span>
       </Tip>
       {facets.lastIngestedAt ? <><Sep /><span>updated {formatTimestamp(facets.lastIngestedAt)}</span></> : null}
-      {partial ? <><Sep /><span className="text-warning-foreground dark:text-warning">{partial} court{partial === 1 ? "" : "s"} still loading</span></> : null}
-      {facets.stale ? <><Sep /><span className="text-warning-foreground dark:text-warning">counts may be out of date</span></> : null}
+      {partial ? <><Sep /><span>loading more decisions</span></> : null}
+      {facets.stale ? <><Sep /><span>counts may be out of date</span></> : null}
     </>
   );
 }
@@ -53,18 +53,18 @@ function YearBars({ years }: { years: CourtFacet["years"] }) {
   );
 }
 
-/** Landing: one card per court in the index with its records, years and load progress. Clicking filters to it. */
+/** Landing: one card per court with its decisions and years. Clicking filters to it. */
 export function CourtCoverageCards({ facets, loading, error, onRetry, onPick }: { facets: CaseFacets | null; loading: boolean; error: string | null; onRetry: () => void; onPick: (key: string) => void }) {
   if (loading && !facets) return <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((k) => <Skeleton key={k} className="h-[132px] rounded-lg" />)}</div>;
   if (!facets) {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">
-        Court coverage could not be loaded{error ? `: ${error}` : "."}
+        Courts could not be loaded{error ? `: ${error}` : "."}
         <Button size="xs" variant="outline" onClick={onRetry}><RotateCcw className="size-3.5" />Retry</Button>
       </div>
     );
   }
-  if (!facets.courts.length) return <p className="rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">No court has records in the index yet.</p>;
+  if (!facets.courts.length) return <p className="rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">No decisions are available yet.</p>;
   return (
     <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
       {facets.courts.map((c) => {
@@ -78,17 +78,17 @@ export function CourtCoverageCards({ facets, loading, error, onRetry, onPick }: 
             className="group flex min-w-0 flex-col rounded-lg border bg-card px-3.5 py-3 text-left transition-colors hover:border-foreground/20 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <span className="flex w-full items-start gap-1.5">
-              <span className={cn("min-w-0 flex-1 text-[12.5px] font-medium leading-snug", c.level === "unmapped" ? "text-warning-foreground dark:text-warning" : "text-foreground/90")}>{c.name}</span>
+              <span className="min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-foreground/90">{courtDisplayName(c)}</span>
               <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
             </span>
             <span className="mt-1.5 text-[20px] font-semibold leading-none tracking-[-0.02em] tabular">{fmt(c.records)}</span>
             <span className="mt-1 text-[11.5px] text-muted-foreground tabular">
-              records{span ? ` · ${span}` : ""}{c.level === "supreme" ? " · Supreme Court" : c.level === "high" ? " · High Court" : " · code not in the registry"}
+              decisions{span ? ` · ${span}` : ""}
             </span>
             <YearBars years={c.years} />
             <span className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground tabular">
-              {c.maxDate ? <span className="truncate">Latest {formatCaseDate(c.maxDate)}</span> : <span>No dated records</span>}
-              {c.archives ? <span className={cn("ml-auto shrink-0", partial && "text-warning-foreground dark:text-warning")}>{partial ? `${c.archives.done}/${c.archives.total} archives` : "archives complete"}</span> : null}
+              {c.maxDate ? <span className="truncate">Latest {formatCaseDate(c.maxDate)}</span> : <span>No dated decisions</span>}
+              {partial ? <span className="ml-auto shrink-0">Loading more</span> : null}
             </span>
           </button>
         );

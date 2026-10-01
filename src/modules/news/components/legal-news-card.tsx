@@ -67,7 +67,7 @@ export function LegalNewsCard({ expanded, onExpand }: { expanded?: boolean; onEx
       {data && (data.lastSuccessAt
         ? <span className="hidden @md:inline">Updated <TimeAgo iso={data.lastSuccessAt} now={now} /></span>
         : <span className="hidden @md:inline">Not updated yet</span>)}
-      <Tip label="Check the publishers' feeds now (at most once every 15 minutes)">
+      <Tip label="Check for new headlines">
         <Button variant="ghost" size="xs" className="h-6 px-1.5 text-[11px] text-muted-foreground" onClick={() => void refresh(true)} disabled={refreshing} aria-label="Refresh legal news">
           <RefreshCw className={cn("size-3", refreshing && "animate-spin")} />Refresh
         </Button>
@@ -97,14 +97,14 @@ export function LegalNewsCard({ expanded, onExpand }: { expanded?: boolean; onEx
       )}
       {state.kind === "error" && (
         state.denied
-          ? <EmptyRow icon={Lock} title="No access to news" hint="Your role does not include the news feed. Ask an administrator if you need it." />
+          ? <EmptyRow icon={Lock} title="No access to news" hint="Your role does not include legal news. Ask an administrator if you need it." />
           : <EmptyRow icon={AlertTriangle} title="Headlines could not be loaded" hint={state.message} action={<Button size="xs" variant="outline" onClick={() => { setState({ kind: "loading" }); void load(); }}>Try again</Button>} />
       )}
       {data && items.length === 0 && (
         refreshing
-          ? <EmptyRow icon={RefreshCw} title="Checking the feeds…" hint="Fetching the latest headlines from the publishers." />
+          ? <EmptyRow icon={RefreshCw} title="Checking for headlines…" hint="Fetching the latest headlines from the publishers." />
           : allFailed
-            ? <EmptyRow icon={AlertTriangle} title="The news feeds could not be reached" hint={`${data.lastRun!.feeds[0]?.error ?? "Every feed failed."} Headlines appear here after the next successful check.`} action={<Link href="/news#sources" className="text-[11.5px] text-primary hover:underline">See source status</Link>} />
+            ? <EmptyRow icon={AlertTriangle} title="News is unavailable right now" hint="Headlines will appear here after the next successful update." action={<Link href="/news#sources" className="text-[11.5px] text-primary hover:underline">See sources</Link>} />
             : <EmptyRow icon={Newspaper} title="No headlines yet" hint="Headlines from Indian legal publishers appear here after the first check." action={<Button size="xs" variant="outline" onClick={() => void refresh(true)}>Check now</Button>} />
       )}
       {data && items.length > 0 && (
@@ -112,7 +112,7 @@ export function LegalNewsCard({ expanded, onExpand }: { expanded?: boolean; onEx
           {(data.stale || allFailed) && (
             <div className="flex items-center gap-1.5 border-t bg-warning/10 px-3 py-1.5 text-[11px] text-foreground/80" role="status">
               <AlertTriangle className="size-3 shrink-0 text-warning" />
-              <span className="min-w-0 truncate">{data.lastSuccessAt ? <>Feeds last reached <TimeAgo iso={data.lastSuccessAt} now={now} />; showing stored headlines.</> : "Feeds have not been reached; showing stored headlines."}</span>
+              <span className="min-w-0 truncate">{data.lastSuccessAt ? <>Could not update; showing headlines from <TimeAgo iso={data.lastSuccessAt} now={now} />.</> : "Could not update; showing earlier headlines."}</span>
               <Link href="/news#sources" className="ml-auto shrink-0 text-primary hover:underline">Status</Link>
             </div>
           )}

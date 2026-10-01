@@ -130,13 +130,13 @@ export async function requestRefresh(opts: { notify: boolean; force?: boolean })
     if (opts.notify) {
       if (r.status === "ran" && r.run) {
         const failed = r.run.feeds.filter((f) => !f.ok);
-        const names = failed.map((f) => newsSourceById(f.sourceId)?.publisher ?? f.sourceId).join(", ");
-        if (failed.length === r.run.feeds.length) toast.error("Could not reach the news feeds", { description: failed[0]?.error ?? "Every feed failed; the last stored headlines are shown." });
-        else toast.success(r.run.added ? `${r.run.added} new headline${r.run.added === 1 ? "" : "s"}` : "Headlines are up to date", { description: failed.length ? `Not reachable: ${names}.` : `Checked ${r.run.feeds.length} feeds.` });
+        const names = failed.map((f) => newsSourceById(f.sourceId)?.publisher ?? "a publisher").join(", ");
+        if (failed.length === r.run.feeds.length) toast.error("Could not update the news", { description: "The publishers could not be reached; earlier headlines are shown." });
+        else toast.success(r.run.added ? `${r.run.added} new headline${r.run.added === 1 ? "" : "s"}` : "Headlines are up to date", { description: failed.length ? `Not reachable: ${names}.` : undefined });
       } else if (r.status === "skipped") {
         const next = r.nextAllowedAt ? new Date(r.nextAllowedAt) : null;
         const mins = next ? Math.max(1, Math.ceil((next.getTime() - Date.now()) / 60_000)) : null;
-        toast.message("Feeds were checked recently", { description: mins ? `To spare the publishers, the next check runs in about ${mins} min.` : "A refresh is already running." });
+        toast.message("Headlines were updated recently", { description: mins ? `The next update is available in about ${mins} min.` : "An update is already running." });
       }
     }
     return r;

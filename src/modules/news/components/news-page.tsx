@@ -130,7 +130,7 @@ export function NewsBrowser({ initial, initialSources, initialFilters }: { initi
       <PageTopbar
         icon={<Newspaper />}
         title="News"
-        context={<span suppressHydrationWarning>Indian legal headlines{data.lastSuccessAt ? <> · updated <TimeAgo iso={data.lastSuccessAt} now={now} /></> : null}{refreshing ? " · checking feeds…" : null}</span>}
+        context={<span suppressHydrationWarning>Indian legal headlines{data.lastSuccessAt ? <> · updated <TimeAgo iso={data.lastSuccessAt} now={now} /></> : null}{refreshing ? " · checking for new headlines…" : null}</span>}
       >
         <div className="flex-1" />
         <Button variant="ghost" size="xs" className="xl:hidden" onClick={() => setMobileView((v) => (v === "list" ? "sources" : "list"))} aria-pressed={mobileView === "sources"}>
@@ -171,7 +171,7 @@ export function NewsBrowser({ initial, initialSources, initialFilters }: { initi
           {(data.stale || allFailed) && data.items.length > 0 && (
             <div className="flex shrink-0 items-center gap-1.5 border-b bg-warning/10 px-3 py-1.5 text-[11px]" role="status">
               <AlertTriangle className="size-3 shrink-0 text-warning" />
-              <span className="min-w-0 truncate">{data.lastSuccessAt ? <>Feeds last reached <TimeAgo iso={data.lastSuccessAt} now={now} />; these are the stored headlines.</> : "The feeds have not been reached yet."}</span>
+              <span className="min-w-0 truncate">{data.lastSuccessAt ? <>Could not update; showing headlines from <TimeAgo iso={data.lastSuccessAt} now={now} />.</> : "News has not been updated yet."}</span>
             </div>
           )}
           {error && (
@@ -187,9 +187,9 @@ export function NewsBrowser({ initial, initialSources, initialFilters }: { initi
               ) : filtered ? (
                 <EmptyState icon={Search} title="No headlines match" description="Try another publisher, court or search term." action={<Button size="xs" variant="outline" onClick={clear}>Clear filters</Button>} />
               ) : allFailed ? (
-                <EmptyState icon={AlertTriangle} title="The news feeds could not be reached" description={<>{data.lastRun?.feeds[0]?.error ?? "Every feed failed."} See Sources for each feed&apos;s status.</>} action={<Button size="xs" variant="outline" onClick={() => void refresh()}>Try again</Button>} />
+                <EmptyState icon={AlertTriangle} title="News is unavailable right now" description="The publishers could not be reached. Try again in a few minutes." action={<Button size="xs" variant="outline" onClick={() => void refresh()}>Try again</Button>} />
               ) : (
-                <EmptyState icon={Newspaper} title="No headlines yet" description="Headlines from Indian legal publishers appear here after the first check of their feeds." action={<Button size="xs" variant="outline" onClick={() => void refresh()}>Check now</Button>} />
+                <EmptyState icon={Newspaper} title="No headlines yet" description="Headlines from Indian legal publishers appear here after the first update." action={<Button size="xs" variant="outline" onClick={() => void refresh()}>Check now</Button>} />
               )
             ) : (
               <div className="mx-auto w-full max-w-[76rem] px-3 pb-8 @3xl:px-6">

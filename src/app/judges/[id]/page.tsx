@@ -11,7 +11,7 @@ type Props = { params: Promise<{ id: string }> };
 export default async function Page({ params }: Props) {
   const id = decodeURIComponent((await params).id);
   if (!isJudgeId(id)) {
-    return <div className="flex h-full items-center justify-center p-6"><EmptyState title="Not a judge id" description="Open the judges directory to find a judge." /></div>;
+    return <div className="flex h-full items-center justify-center p-6"><EmptyState title="Judge not found" description="This link does not point to a judge. Open the judges directory to find one." /></div>;
   }
   return <JudgeProfileView id={id} />;
 }

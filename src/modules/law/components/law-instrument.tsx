@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, FileText, Hash, Info, ListTree, Search, SearchX, TextSearch, X,
+  ArrowLeft, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Hash, Info, ListTree, Search, SearchX, TextSearch, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { displayChapterTitle, displayHeading, groupToc, lawBlocks, type LawBlock } from "../reader";
 import {
-  citationTitle, jurisdictionLabel, LAW_DATASET, lawApiHref, lawCitation, lawHref, NO_SECTION, normSectionKey, normVariant, provisionUnit, publisherLabel, safeHttpUrl, snippetParts, urlHostOf,
+  citationTitle, displayLawCitation, jurisdictionLabel, LAW_ATTRIBUTION_LINE, LAW_DATASET, lawApiHref, lawHref, repeatedProvisionLabel, NO_SECTION, normSectionKey, normVariant, provisionUnit, publisherLabel, safeHttpUrl, snippetParts,
   type LawInstrument, type LawInstrumentResponse, type LawProvisionHit, type LawSearchResponse, type LawSectionRef, type LawSectionResponse, type LawTocEntry,
 } from "../shared";
 import { asLawApiError, fetchLawJson, type LawApiError } from "./fetch";
@@ -72,7 +72,7 @@ export function LawInstrumentView({ id }: { id: string }) {
           <div className="shrink-0 px-4 pt-3 sm:px-6"><BackLink /></div>
           <div className="flex flex-1 items-center justify-center p-6">
             {isUnavailable(error) ? <LawUnavailable error={error} /> : error.notFound || error.status === 400 ? (
-              <EmptyState icon={SearchX} title="No instrument with this id in the statutes corpus" description={<>The id <code className="break-all text-[11px]">{id}</code> does not match any Act or regulation. It may have been mistyped; no other instrument is shown in its place.</>} action={<Button asChild size="xs" variant="outline"><Link href="/law">Open the directory</Link></Button>} />
+              <EmptyState icon={SearchX} title="Act or regulation not found" description="This link does not match an Act or regulation. It may have been mistyped." action={<Button asChild size="xs" variant="outline"><Link href="/law">Open the directory</Link></Button>} />
             ) : <LawErrorState title="The instrument could not be loaded" error={error} onRetry={() => setNonce((n) => n + 1)} />}
           </div>
         </>
@@ -159,41 +159,36 @@ function useCopy() {
 
 function OfficialLink({ i, url, size = "xs", variant = "outline", label }: { i: LawInstrument; url: string | null; size?: "xs"; variant?: "outline" | "ghost"; label?: React.ReactNode }) {
   const href = safeHttpUrl(url);
-  if (!href) return <span className="text-[12px] text-muted-foreground">No publisher link in the dataset</span>;
+  if (!href) return <span className="text-[12px] text-muted-foreground">Official text link not available</span>;
   const publisher = publisherLabel({ ...i, source_url: href });
   return (
     <Button asChild size={size} variant={variant} className="max-w-full">
-      <a href={href} target="_blank" rel="noopener noreferrer" title={`${publisher}: ${href}`}>
+      <a href={href} target="_blank" rel="noopener noreferrer" title={publisher}>
         <ExternalLink className="size-3.5" /><span className="truncate">{label ?? `Official text · ${publisher}`}</span>
       </a>
     </Button>
   );
 }
 
-function ProvenancePopover({ i }: { i: LawInstrument }) {
-  const mirror = safeHttpUrl(i.mirror_url);
+function SourcePopover({ i }: { i: LawInstrument }) {
   const official = safeHttpUrl(i.source_url);
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button size="xs" variant="ghost" aria-label="Source and provenance"><Info className="size-3.5" />Source</Button>
+        <Button size="xs" variant="ghost" aria-label="Source"><Info className="size-3.5" />Source</Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[360px] p-0">
-        <div className="border-b px-3.5 py-2.5">
-          <div className="text-[12.5px] font-medium">Source and provenance</div>
-          <p className="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">A third-party, section-level parse. It can lag amendments or mis-split provisions; the publisher&apos;s page is authoritative.</p>
-        </div>
-        <dl className="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 gap-y-1.5 px-3.5 py-3 text-[12px]">
+      <PopoverContent align="end" className="w-[320px] p-0">
+        <dl className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-1.5 px-3.5 py-3 text-[12px]">
+          <dt className="text-muted-foreground">Published by</dt>
+          <dd className="min-w-0 break-words">{i.publisher ?? publisherLabel(i)}</dd>
           <dt className="text-muted-foreground">Official text</dt>
-          <dd className="min-w-0">{official ? <a className="break-words text-primary hover:underline" href={official} target="_blank" rel="noopener noreferrer">{publisherLabel(i)}</a> : "Not recorded"}</dd>
-          {i.publisher ? <><dt className="text-muted-foreground">Publisher</dt><dd className="min-w-0 break-words">{i.publisher}</dd></> : null}
-          {mirror ? <><dt className="text-muted-foreground">Dataset PDF</dt><dd className="min-w-0"><a className="inline-flex items-center gap-1 text-primary hover:underline" href={mirror} target="_blank" rel="noopener noreferrer" title={`Mirror of the publisher's PDF (${urlHostOf(mirror)}); not the official source`}><FileText className="size-3" aria-hidden />Mirror ({urlHostOf(mirror)})</a></dd></> : null}
-          <dt className="text-muted-foreground">Amendments</dt><dd className="tabular">{i.amendment_count != null ? `${i.amendment_count} recorded in the dataset` : "Not recorded"}</dd>
+          <dd className="min-w-0">{official ? <a className="inline-flex items-center gap-1 break-words text-primary hover:underline" href={official} target="_blank" rel="noopener noreferrer">{publisherLabel(i)}<ExternalLink className="size-3" aria-hidden /></a> : <span className="text-muted-foreground">Not available</span>}</dd>
+          {i.amendment_count ? <><dt className="text-muted-foreground">Amendments</dt><dd className="tabular">{i.amendment_count}</dd></> : null}
           {i.subjects.length ? <><dt className="text-muted-foreground">Subjects</dt><dd className="min-w-0">{i.subjects.join(", ")}</dd></> : null}
-          <dt className="text-muted-foreground">Dataset</dt><dd className="min-w-0 break-words">{LAW_DATASET.name} {i.dataset_version}<span className="block text-[11px] text-muted-foreground">{i.dataset_file}</span></dd>
-          <dt className="text-muted-foreground">Licence</dt><dd><a className="text-primary hover:underline" href={LAW_DATASET.licenceUrl} target="_blank" rel="noopener noreferrer">{LAW_DATASET.publisher}, {LAW_DATASET.licence}</a></dd>
-          <dt className="text-muted-foreground">Instrument id</dt><dd className="break-all font-mono text-[11px]">{i.id}</dd>
         </dl>
+        <p className="border-t px-3.5 py-2 text-[11px] leading-snug text-muted-foreground">
+          Text from Open India Law (<a className="hover:text-foreground hover:underline" href={LAW_DATASET.licenceUrl} target="_blank" rel="noopener noreferrer">{LAW_DATASET.publisher}, {LAW_DATASET.licence}</a>). It can lag recent amendments; the publisher&apos;s official text is authoritative.
+        </p>
       </PopoverContent>
     </Popover>
   );
@@ -219,7 +214,7 @@ function InstrumentHeader({ i, total }: { i: LawInstrument; total: number }) {
         <div className="flex min-w-0 flex-wrap items-center gap-1">
           <OfficialLink i={i} url={i.source_url} label={<>Official text<span className="hidden sm:inline"> · {publisherLabel(i)}</span></>} />
           <Button asChild size="xs" variant="ghost"><Link href={`/search?q=${encodeURIComponent(citationTitle(i))}`}><Search className="size-3.5" />Research</Link></Button>
-          <ProvenancePopover i={i} />
+          <SourcePopover i={i} />
         </div>
       </div>
     </header>
@@ -269,7 +264,7 @@ function Toc({ instrument, toc, selected, onMore, moreLoading, moreError }: { in
                   <div className="flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                     {g.chapter ? <span className="tabular">Chapter {g.chapter}</span> : null}
                     {g.outOfSequence ? (
-                      <Tip label="The dataset places these entries under this chapter out of statutory order (often mis-parsed preamble or objects text). They are shown where the dataset puts them; check the official text.">
+                      <Tip label="These entries appear out of statutory order under this chapter (often preamble or objects text). Check the official text for their placement.">
                         <span tabIndex={0} className="ml-auto rounded px-1 normal-case tracking-normal text-warning-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-warning">out of order</span>
                       </Tip>
                     ) : null}
@@ -297,7 +292,7 @@ function Toc({ instrument, toc, selected, onMore, moreLoading, moreError }: { in
                         <span className={cn("truncate text-right tabular", sel ? "font-semibold text-primary" : "text-muted-foreground")}>{e.section === NO_SECTION ? "—" : e.section}</span>
                         <span className="truncate">
                           {e.section === NO_SECTION ? heading ?? "Preamble and unnumbered text" : heading ?? <span className="text-muted-foreground">Untitled</span>}
-                          {e.variant ? <span className="text-muted-foreground"> · variant {e.variant + 1}</span> : null}
+                          {e.variant ? <span className="text-muted-foreground"> · {repeatedProvisionLabel(instrument, e.section, e.variant)}</span> : null}
                         </span>
                       </Link>
                     </li>
@@ -405,7 +400,7 @@ function Overview({ i, toc, onOpenToc }: { i: LawInstrument; toc: LawInstrumentR
             {toc.hasMore ? <p className="mt-1.5 text-[11.5px] text-muted-foreground">Arrangement of the first {fmt(toc.entries.length)} of {fmt(toc.total)} sections.</p> : null}
           </section>
         ) : null}
-        <p className="mt-6 text-[11.5px] leading-relaxed text-muted-foreground">The text shown here is a third-party, section-level parse ({LAW_DATASET.attribution}). It can lag amendments or mis-split provisions; rely on the official text at the publisher&apos;s page.</p>
+        <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground">{LAW_ATTRIBUTION_LINE}</p>
       </div>
     </div>
   );
@@ -465,7 +460,7 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
     void copy(sectionUrl(anchor), "Link to paragraph");
   };
   const headingOf = (ref: LawSectionRef | null | undefined) => (ref ? displayHeading(toc.find((e) => sameRef(e, ref))?.heading) : null);
-  const cite = lawCitation(instrument, section, variant);
+  const cite = displayLawCitation(instrument, section, variant);
   const shortCite = cite.split(",")[0];
 
   const toolbar = (
@@ -480,7 +475,7 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
           <Button size="icon-xs" variant="ghost" aria-label="Next section" disabled={!data?.next} onClick={() => go(data?.next)}><ChevronRight className="size-4" /></Button>
         </Tip>
         <span aria-hidden className="mx-1 h-4 w-px bg-border" />
-        <Button size="xs" variant="ghost" disabled={!data} onClick={() => data && copy(data.citation, "Citation")} aria-label="Copy citation">{done === "Citation" ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}<span className="hidden sm:inline">Cite</span></Button>
+        <Button size="xs" variant="ghost" disabled={!data} onClick={() => data && copy(cite, "Citation")} aria-label="Copy citation">{done === "Citation" ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}<span className="hidden sm:inline">Cite</span></Button>
         <Button size="xs" variant="ghost" onClick={() => copy(sectionUrl(), "Link")} aria-label="Copy link to this section">{done === "Link" ? <Check className="size-3.5" /> : <Hash className="size-3.5" />}<span className="hidden sm:inline">Link</span></Button>
         <Button asChild size="xs" variant="ghost"><Link href={`/search?q=${encodeURIComponent(data?.citation ?? cite)}`} aria-label="Research this section"><Search className="size-3.5" /><span className="hidden lg:inline">Research this section</span></Link></Button>
       </div>
@@ -492,7 +487,7 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
     body = <div className="mx-auto w-full max-w-[76ch] space-y-3 px-5 py-7 sm:px-8" aria-busy><Skeleton className="h-3 w-48" /><Skeleton className="h-6 w-1/2" />{Array.from({ length: 8 }, (_, k) => <Skeleton key={k} className="h-3.5" style={{ width: `${78 + ((k * 9) % 22)}%` }} />)}</div>;
   } else if (error) {
     body = error.notFound || error.status === 400
-      ? <EmptyState className="mt-10" icon={SearchX} title={`No ${section === NO_SECTION ? "unnumbered provisions" : `section ${section}`} in this instrument`} description={<>The corpus has no provision {section === NO_SECTION ? "without a number" : <>numbered <strong>{section}</strong>{variant ? ` (variant ${variant + 1})` : ""}</>} in {instrument.title}. No other section is shown in its place; pick one from the contents.</>} />
+      ? <EmptyState className="mt-10" icon={SearchX} title={`No ${section === NO_SECTION ? "unnumbered provisions" : `section ${section}`} in this instrument`} description={<>{instrument.title} has no provision {section === NO_SECTION ? "without a number" : <>numbered <strong>{section}</strong></>} here. Pick one from the contents.</>} />
       : isUnavailable(error) ? <div className="mt-10"><LawUnavailable error={error} /></div>
       : <LawErrorState className="mt-10" title="The section could not be loaded" error={error} onRetry={() => setNonce((n) => n + 1)} />;
   } else if (data) {
@@ -501,25 +496,25 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
     const blocks = lawBlocks(s.text, s.section);
     const chapter = displayChapterTitle(s.chapter_title);
     body = (
-      <article className={cn("mx-auto w-full max-w-[76ch] px-5 pb-12 pt-6 sm:px-8", loading && "opacity-70")} aria-label={data.citation}>
+      <article className={cn("mx-auto w-full max-w-[76ch] px-5 pb-12 pt-6 sm:px-8", loading && "opacity-70")} aria-label={cite}>
         {chapter || s.chapter ? <div className="text-[11px] font-medium uppercase tracking-[0.07em] text-muted-foreground">{s.chapter ? `Chapter ${s.chapter}` : ""}{s.chapter && chapter ? " · " : ""}{chapter}</div> : null}
         <h2 className="mt-1.5 text-[21px] font-semibold leading-snug tracking-[-0.015em]">
           {section === NO_SECTION ? heading ?? "Preamble and unnumbered text" : <><span className="tabular">{shortCite}</span>{heading ? <span className="font-normal text-foreground/80"> — {heading}</span> : null}</>}
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {s.in_force === false ? <Chip tone="warning">Marked not in force in the dataset</Chip> : null}
+          {s.in_force === false ? <Chip tone="warning">Not in force</Chip> : null}
           {s.has_proviso ? <Chip tone="muted">Proviso</Chip> : null}
           {s.has_non_obstante ? <Chip tone="muted">Non obstante clause</Chip> : null}
           {s.provision_type ? <Chip tone="muted">{s.provision_type.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())}</Chip> : null}
           <OfficialLink i={instrument} url={s.source_url ?? instrument.source_url} variant="ghost" label="Official text" />
         </div>
         {data.variants.length ? (
-          <p className="mt-3 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-[12px] text-foreground/85">The dataset holds {data.variants.length === 1 ? "another provision" : `${data.variants.length} other provisions`} numbered {section} in this instrument:{" "}
-            {data.variants.map((v, k) => <React.Fragment key={v}>{k ? ", " : ""}<Link className="text-primary underline-offset-2 hover:underline" href={lawHref(instrument.id, section, v)} scroll={false}>variant {v + 1}</Link></React.Fragment>)}. They are kept separate; check the official text.
+          <p className="mt-3 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-[12px] text-foreground/85">This {unitOf(instrument)} number appears more than once in this instrument. Also see the{" "}
+            {data.variants.map((v, k) => <React.Fragment key={v}>{k ? ", " : ""}<Link className="text-primary underline-offset-2 hover:underline" href={lawHref(instrument.id, section, v)} scroll={false}>{repeatedProvisionLabel(instrument, section, v)}</Link></React.Fragment>)}. Check the official text.
           </p>
         ) : null}
         <div className="mt-5">
-          {blocks.length ? <StatuteText blocks={blocks} flash={flash} onAnchor={copyAnchor} /> : <p className="text-[13px] text-muted-foreground">This provision has no text in the dataset.</p>}
+          {blocks.length ? <StatuteText blocks={blocks} flash={flash} onAnchor={copyAnchor} /> : <p className="text-[13px] text-muted-foreground">No text is available for this provision. Read it in the official text.</p>}
         </div>
         {s.truncated ? <p className="mt-4 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-[12px] text-foreground/85">Shown in part: the section has {fmt(s.chars)} characters. Read the rest in the official text.</p> : null}
         {s.defined_terms.length || s.acts_referenced.length ? (
@@ -532,8 +527,8 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
           {data.prev ? <AdjacentLink dir="prev" href={lawHref(instrument.id, data.prev.section, data.prev.variant)} label={data.prev.section === NO_SECTION ? "Unnumbered text" : `${instrument.kind === "regulation" ? "" : "Section "}${data.prev.section}`} heading={headingOf(data.prev)} /> : <span />}
           {data.next ? <AdjacentLink dir="next" href={lawHref(instrument.id, data.next.section, data.next.variant)} label={data.next.section === NO_SECTION ? "Unnumbered text" : `${instrument.kind === "regulation" ? "" : "Section "}${data.next.section}`} heading={headingOf(data.next)} /> : null}
         </nav>
-        <p className="mt-6 text-[11.5px] leading-relaxed text-muted-foreground">
-          Text: {LAW_DATASET.attribution}. Dataset {instrument.dataset_version}. Not the official text; the authoritative version is published by {publisherLabel(instrument)}.
+        <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground">
+          {LAW_ATTRIBUTION_LINE} The authoritative version is published by {publisherLabel(instrument)}.
         </p>
       </article>
     );

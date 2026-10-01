@@ -64,7 +64,7 @@ export function NewsMeta({ item, now, className }: { item: NewsListItem; now: Da
       <span aria-hidden>·</span>
       {item.publishedAt
         ? <TimeAgo iso={item.publishedAt} now={now} />
-        : <Tip label={`The feed gave no publish date${item.publishedRaw ? ` (it said "${item.publishedRaw}")` : ""}; sorted by when LeClaude first saw it.`}><span className="whitespace-nowrap"><TimeAgo iso={item.firstSeenAt} now={now} prefix="first seen" /></span></Tip>}
+        : <Tip label="The publisher gave no publish date; shown by when it first appeared."><span className="whitespace-nowrap"><TimeAgo iso={item.firstSeenAt} now={now} prefix="first seen" /></span></Tip>}
       {syndicated.length > 0 && <Tip label={`Also carried by ${syndicated.join(", ")}`}><span className="hidden truncate @md:inline">· also {syndicated[0]}{syndicated.length > 1 ? ` +${syndicated.length - 1}` : ""}</span></Tip>}
     </div>
   );

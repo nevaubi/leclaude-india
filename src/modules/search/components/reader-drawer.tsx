@@ -22,6 +22,7 @@ import { NoKeyCard } from "./no-key-card";
 import { CiteCheckTable, runCiteCheck, type CiteCheckResponse } from "./citecheck";
 import { paragraphOfQuote, splitParagraphs } from "../engine/paragraphs";
 import type { ReaderFocus } from "./research-context";
+import { humanizeCitation } from "@/modules/law/shared";
 
 export interface ReaderDrawerProps {
   hit: SearchHit | null;
@@ -157,7 +158,7 @@ export function ReaderDrawer(p: ReaderDrawerProps) {
                   <SheetTitle className="text-base leading-snug">{result?.title ?? hit.title}</SheetTitle>
                   <SheetDescription className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
                     {[
-                      hit.cite ? <span key="cite" className="font-mono text-foreground/80">{hit.cite}</span> : null,
+                      hit.cite ? <span key="cite" className="font-mono text-foreground/80">{humanizeCitation(hit.cite)}</span> : null,
                       hit.courtId || hit.court ? <span key="court">{courtAbbreviation(hit.courtId, hit.court)}</span> : null,
                       hit.date ? <span key="date">{formatDate(hit.date)}</span> : null,
                       <span key="source">{SOURCE_LABEL[hit.source]}</span>,

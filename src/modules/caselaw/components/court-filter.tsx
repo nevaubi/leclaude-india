@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { yearSpan, type CourtFacet } from "../shared";
 
 /**
- * Court filter grouped as Supreme Court / High Courts / unmapped court codes, with the record count and the years
+ * Court filter grouped as Supreme Court / High Courts / other courts, with the record count and the years
  * covered for each. Only courts that have records in the index are offered; the coverage strip says what is not in.
  */
 export function CourtFilter({ courts, value, onChange, loading }: { courts: CourtFacet[] | null; value: string[]; onChange: (v: string[]) => void; loading?: boolean }) {
@@ -16,7 +16,7 @@ export function CourtFilter({ courts, value, onChange, loading }: { courts: Cour
   const groups: { label: string; items: CourtFacet[] }[] = [
     { label: "Supreme Court", items: (courts ?? []).filter((c) => c.level === "supreme") },
     { label: "High Courts", items: (courts ?? []).filter((c) => c.level === "high") },
-    { label: "Unmapped court codes", items: (courts ?? []).filter((c) => c.level === "unmapped") },
+    { label: "Other courts", items: (courts ?? []).filter((c) => c.level === "unmapped") },
   ].filter((g) => g.items.length);
   const byKey = new Map((courts ?? []).map((c) => [c.key, c]));
   const label = value.length === 0 ? "All courts" : value.length === 1 ? shortName(byKey.get(value[0])) ?? value[0] : `${value.length} courts`;
@@ -40,12 +40,11 @@ export function CourtFilter({ courts, value, onChange, loading }: { courts: Cour
               <div className="px-3 pb-0.5 pt-1 text-[11px] font-medium text-muted-foreground">{g.label}</div>
               {g.items.map((c) => (
                 <label key={c.key} className="flex cursor-pointer items-start gap-2 px-3 py-1 hover:bg-accent">
-                  <Checkbox size="sm" className="mt-0.5" checked={selected.has(c.key)} onCheckedChange={() => toggle(c.key)} aria-label={c.name} />
+                  <Checkbox size="sm" className="mt-0.5" checked={selected.has(c.key)} onCheckedChange={() => toggle(c.key)} aria-label={courtDisplayName(c)} />
                   <span className="min-w-0 flex-1 leading-tight">
-                    <span className="block truncate text-[12.5px]">{c.name}</span>
+                    <span className="block truncate text-[12.5px]">{courtDisplayName(c)}</span>
                     <span className="block text-[11px] text-muted-foreground tabular">
-                      {yearSpan(c.minYear, c.maxYear) ?? "no dated records"}
-                      {c.level === "unmapped" ? " · code not in the court registry" : ""}
+                      {yearSpan(c.minYear, c.maxYear) ?? "no dated decisions"}
                     </span>
                   </span>
                   <span className="shrink-0 text-[11px] text-muted-foreground tabular">{c.records.toLocaleString("en-IN")}</span>
@@ -55,7 +54,7 @@ export function CourtFilter({ courts, value, onChange, loading }: { courts: Cour
           ))}
         </div>
         <div className="flex items-center justify-between border-t px-3 py-1.5">
-          <span className="text-[11px] text-muted-foreground">Counts are index records</span>
+          <span className="text-[11px] text-muted-foreground">Counts are decisions</span>
           <Button variant="ghost" size="xs" disabled={!value.length} onClick={() => onChange([])}>Clear</Button>
         </div>
       </PopoverContent>
@@ -66,7 +65,7 @@ export function CourtFilter({ courts, value, onChange, loading }: { courts: Cour
 export function shortName(c: CourtFacet | undefined): string | null {
   if (!c) return null;
   if (c.level === "supreme") return "Supreme Court";
-  if (c.level === "unmapped") return `Court code ${c.courtCode ?? "?"}`;
+  if (c.level === "unmapped") return "Other court";
   return courtShortName(c.name);
 }
 
@@ -74,4 +73,9 @@ export function shortName(c: CourtFacet | undefined): string | null {
 export function courtShortName(name: string): string {
   const m = /^High Court (?:of Judicature at|for the State of|of|at) (.+)$/.exec(name);
   return m ? `${m[1]} HC` : name;
+}
+
+/** User-facing court name; courts not identified by the source are shown without their internal code. */
+export function courtDisplayName(c: CourtFacet): string {
+  return c.level === "unmapped" ? "Court not identified" : c.name;
 }

@@ -6,7 +6,7 @@ import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTit
 import { cn } from "@/lib/utils";
 import type { DocFile } from "../types";
 import { docsApi, errorKind, errorMessage, setUrl } from "./api";
-import { formatBytes, formatPreciseDate, methodLabel, shortHash } from "./format";
+import { formatBytes, formatPreciseDate, methodLabel } from "./format";
 import { FileStatus, Notice } from "./notice";
 
 export interface ViewerTarget { fileId: string; page?: number | null; /** Text to highlight (citation snippet or fact quote). */ highlight?: string | null; name?: string }
@@ -76,7 +76,6 @@ export function TextViewer({ setId, target, onClose }: { setId: string; target: 
                   {file.pages > 0 && <span className="tabular">{file.pages.toLocaleString("en-IN")} page{file.pages === 1 ? "" : "s"}</span>}
                   <span className="tabular">{formatBytes(file.size)}</span>
                   {file.docDate && <span>Dated {formatPreciseDate(file.docDate, "day")}</span>}
-                  <span className="font-mono text-[11px]" title={`SHA-256 (${file.hashOrigin === "browser" ? "computed in the browser" : "computed on the server"}): ${file.sha256}`}>{shortHash(file.sha256)}</span>
                 </>
               ) : <span>Loading…</span>}
             </div>

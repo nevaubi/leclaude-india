@@ -258,7 +258,7 @@ export function HomeProvider({ initial, children }: { initial: HomeInitialData; 
         if (fresh.length) setNewNewsIds(new Set(fresh));
         return { ...d, news: r.items };
       });
-      if (r.refresh?.ok) toast.success(r.refresh.added ? `${r.refresh.added} new Federal Register item${r.refresh.added === 1 ? "" : "s"}` : "News is up to date", { description: r.refresh.added ? "Merged into the feed, deduplicated by URL." : `Checked ${r.refresh.checked} Federal Register documents from the last 7 days.` });
+      if (r.refresh?.ok) toast.success(r.refresh.added ? `${r.refresh.added} new Federal Register item${r.refresh.added === 1 ? "" : "s"}` : "News is up to date", { description: r.refresh.added ? "Added to your feed." : undefined });
       else toast.message("Live sources unavailable", { description: r.refresh?.error ? `Federal Register: ${r.refresh.error}` : "Showing the curated feed." });
     } catch (e) { toast.error("Refresh failed", { description: errMessage(e) }); }
     finally { setNewsRefreshing(false); }

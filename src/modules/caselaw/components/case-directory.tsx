@@ -24,12 +24,12 @@ type ListState = { hits: CaseHit[]; mode: "search" | "browse"; hasMore: boolean;
 
 export function courtLabel(h: Pick<CaseHit, "court" | "court_id" | "court_code">): string {
   if (h.court) return h.court_id === "sci" ? "Supreme Court" : courtShortName(h.court);
-  return h.court_code ? `Unmapped court ${h.court_code}` : "Court not recorded";
+  return "Court not recorded";
 }
 
 export function benchLabel(h: Pick<CaseHit, "court_id" | "bench_id" | "bench_code" | "bench_strength">): string | null {
   const bench = courtById(h.court_id)?.benches.find((b) => b.id === h.bench_id);
-  const where = h.court_id === "sci" ? null : bench ? bench.city : h.bench_code ? `bench ${h.bench_code}` : null;
+  const where = h.court_id === "sci" ? null : bench ? bench.city : null;
   const strength = h.bench_strength ? `${h.bench_strength}-judge` : null;
   return [where, strength].filter(Boolean).join(" · ") || null;
 }
@@ -165,7 +165,7 @@ export function CaseDirectory() {
       id: "court", header: "Court", width: 190, accessor: (h) => courtLabel(h),
       render: (h) => {
         const bench = benchLabel(h);
-        return <span className="min-w-0 truncate" title={[h.court ?? (h.court_code ? `Unmapped court code ${h.court_code}` : ""), bench].filter(Boolean).join(" · ")}>
+        return <span className="min-w-0 truncate" title={[h.court ?? "", bench].filter(Boolean).join(" · ")}>
           <span className={cn(!h.court && "text-warning-foreground dark:text-warning")}>{courtLabel(h)}</span>
           {bench ? <span className="text-muted-foreground"> · {bench}</span> : null}
         </span>;
@@ -192,7 +192,7 @@ export function CaseDirectory() {
     <CorpusHeader
       icon={Gavel}
       title="Case law"
-      description="Supreme Court and High Court judgments from the court-published open datasets, with citations and official PDFs."
+      description="Supreme Court and High Court judgments with citations and official PDFs."
       coverage={notConfigured || forbidden ? undefined : <CaseCoverageLine facets={facets} loading={facetsLoading} error={facetsError?.message ?? null} onRetry={() => setFacetsNonce((n) => n + 1)} />}
       actions={notConfigured || forbidden ? undefined : landing
         ? <Button size="xs" variant="outline" onClick={showAll}><LayoutList className="size-3.5" />Browse all records</Button>
@@ -206,8 +206,8 @@ export function CaseDirectory() {
         {header}
         <div className="flex flex-1 items-center justify-center border-t p-6">
           {notConfigured
-            ? <EmptyState icon={Database} title="The case law index is not configured" description="This deployment has no judgment corpus database (DATABASE_URL is not set). The directory reads the corpus from Postgres; nothing is shown from any other source in its place." />
-            : <EmptyState icon={Lock} title={unauthenticated ? "Sign in to view case law" : "You do not have access to the case law index"} description={unauthenticated ? "Your session has ended." : "Ask an administrator for research access."} />}
+            ? <EmptyState icon={Database} title="Case law is not available" description="Case law has not been set up for this workspace yet." />
+            : <EmptyState icon={Lock} title={unauthenticated ? "Sign in to view case law" : "You do not have access to case law"} description={unauthenticated ? "Your session has ended." : "Ask an administrator for research access."} />}
         </div>
       </div>
     );
@@ -270,20 +270,20 @@ export function CaseDirectory() {
         <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
           <div className="mx-auto w-full max-w-[1180px] space-y-7 px-4 pb-10 pt-4 sm:px-6">
             <section aria-labelledby="cases-courts">
-              <div className="flex items-baseline gap-2"><h2 id="cases-courts" className="text-[13px] font-semibold tracking-[-0.005em]">Courts in the index</h2><span className="truncate text-[11.5px] text-muted-foreground">Records per year; select a court to browse it</span></div>
+              <div className="flex items-baseline gap-2"><h2 id="cases-courts" className="text-[13px] font-semibold tracking-[-0.005em]">Courts</h2><span className="truncate text-[11.5px] text-muted-foreground">Select a court to browse its decisions</span></div>
               <div className="mt-2.5"><CourtCoverageCards facets={facets} loading={facetsLoading} error={facetsError?.message ?? null} onRetry={() => setFacetsNonce((n) => n + 1)} onPick={(key) => setFilters({ courts: [key] })} /></div>
             </section>
             <section aria-labelledby="cases-latest">
               <div className="flex items-baseline gap-2">
                 <h2 id="cases-latest" className="text-[13px] font-semibold tracking-[-0.005em]">Latest decisions</h2>
-                <span className="truncate text-[11.5px] text-muted-foreground">Newest decision dates across the index</span>
+                <span className="truncate text-[11.5px] text-muted-foreground">Most recent decisions</span>
                 <Button size="xs" variant="ghost" className="ml-auto" onClick={showAll}>Browse all<ArrowRight className="size-3.5" /></Button>
               </div>
               {error && !list ? (
                 <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">Records could not be loaded: {error.message}<Button size="xs" variant="outline" onClick={() => setNonce((n) => n + 1)}><RotateCcw className="size-3.5" />Retry</Button></div>
               ) : loading && !list ? <ResultSkeleton rows={6} className="mt-2 rounded-lg border" /> : hits.length ? (
                 <ol className="mt-2 divide-y rounded-lg border">{hits.slice(0, 8).map((h) => <ResultRow key={h.id} h={h} compact />)}</ol>
-              ) : <p className="mt-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">No records are in the index yet.</p>}
+              ) : <p className="mt-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">No decisions are available yet.</p>}
             </section>
           </div>
         </div>
@@ -293,7 +293,7 @@ export function CaseDirectory() {
             {loading && !list ? <><Spinner size={12} /> {filters.q ? "Searching records…" : "Loading records…"}</> : error && !list ? <span className="text-destructive">Could not load records</span> : list ? (
               <>
                 <span className="shrink-0 whitespace-nowrap tabular"><span className="font-medium text-foreground/85">{fmt(hits.length)}</span> record{hits.length === 1 ? "" : "s"} shown{list.hasMore ? ", more available" : ""}</span>
-                {list.mode === "search" ? <span className="min-w-0 truncate">· {exactCount ? `${exactCount} exact identifier match${exactCount === 1 ? "" : "es"} first, then ` : ""}{filters.sort === "relevance" ? "best match" : filters.sort === "newest" ? "newest first" : "oldest first"} over title, parties, citations, coram and source snippet</span> : <span>· {filters.sort === "oldest" ? "oldest" : "newest"} decisions first</span>}
+                {list.mode === "search" ? <span className="min-w-0 truncate">· {exactCount ? `${exactCount} exact identifier match${exactCount === 1 ? "" : "es"} first, then ` : ""}{filters.sort === "relevance" ? "best match" : filters.sort === "newest" ? "newest first" : "oldest first"}</span> : <span>· {filters.sort === "oldest" ? "oldest" : "newest"} decisions first</span>}
                 {loading ? <Spinner size={12} /> : null}
               </>
             ) : null}
@@ -309,7 +309,7 @@ export function CaseDirectory() {
                 <EmptyState
                   icon={Scale}
                   title={filters.q ? "No records match this search" : "No records match these filters"}
-                  description={<>The index covers the courts and years counted above, and the directory searches metadata (title, parties, citations, coram, snippet), not the judgment text.{active ? " Try fewer filters." : ""}</>}
+                  description={<>Search covers case titles, parties, citations and coram, not the full judgment text.{active ? " Try fewer filters." : ""}</>}
                   action={active ? <Button size="xs" variant="outline" onClick={clearAll}>Clear filters</Button> : undefined}
                 />
               </div>
@@ -344,13 +344,13 @@ export function CaseDirectory() {
 }
 
 function FullTextChip() {
-  return <Chip tone="muted" icon={FileText} title="The judgment text is stored and readable on the record page" className="text-foreground/75">Full text</Chip>;
+  return <Chip tone="muted" icon={FileText} title="The judgment text can be read on the case page" className="text-foreground/75">Full text</Chip>;
 }
 
 function MatchChip({ match }: { match: CaseHit["match"] }) {
   if (match === "exact") return <Chip tone="accent" title="Matched an identifier exactly (CNR, neutral citation or case number)">{MATCH_LABEL.exact}</Chip>;
   if (match === "partial") return <Chip tone="warning" title="Matched some of the query words, not all">{MATCH_LABEL.partial}</Chip>;
-  if (match === "text") return <span className="text-[11px] text-muted-foreground" title="Every query word matched the metadata">{MATCH_LABEL.text}</span>;
+  if (match === "text") return <span className="text-[11px] text-muted-foreground" title="Every search word matched">{MATCH_LABEL.text}</span>;
   return null;
 }
 

@@ -169,14 +169,14 @@ function KeyActs() {
 
   return (
     <section aria-labelledby="law-key-acts">
-      <SectionTitle id="law-key-acts" title="Key Central Acts" note="Resolved by exact title in the corpus" />
+      <SectionTitle id="law-key-acts" title="Key Central Acts" note="Frequently cited Central legislation" />
       {error && !state ? (
         <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">
           The key Acts could not be looked up: {error.message}
           <Button size="xs" variant="outline" onClick={() => setNonce((n) => n + 1)}><RotateCcw className="size-3.5" />Retry</Button>
         </div>
       ) : !state ? <ListSkeleton rows={10} /> : !state.found.length ? (
-        <p className="mt-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">None of the key Central Acts were found by exact title in this corpus. Search by title above or browse Central legislation.</p>
+        <p className="mt-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">None of the key Central Acts are available yet. Search by title above or browse Central legislation.</p>
       ) : (
         <>
           <ul className="mt-2 divide-y rounded-lg border">
@@ -196,7 +196,7 @@ function KeyActs() {
               <button type="button" className="text-primary hover:underline" onClick={() => setNonce((n) => n + 1)}>Retry</button>
             </p>
           ) : state.found.length < KEY_CENTRAL_ACTS.length ? (
-            <p className="mt-1.5 text-[11.5px] text-muted-foreground">{KEY_CENTRAL_ACTS.length - state.found.length} of the {KEY_CENTRAL_ACTS.length} listed Acts are not in the corpus under their exact title and are not shown.</p>
+            <p className="mt-1.5 text-[11.5px] text-muted-foreground">{KEY_CENTRAL_ACTS.length - state.found.length} of the {KEY_CENTRAL_ACTS.length} listed Acts are not available yet.</p>
           ) : null}
         </>
       )}

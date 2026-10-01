@@ -813,10 +813,10 @@ export const searchLawTool = defineTool<LawSearchArgs>({
   label: (a) => `Searching statutes: ${a.query}`,
   async execute(args, ctx) {
     const { searchProvisions } = await import("@/modules/india/law/search");
-    const { hits } = await searchProvisions({ q: args.query, jurisdiction: args.jurisdiction, state: args.state, regulator: args.regulator, actId: args.act_id, inForceOnly: Boolean(args.in_force), excludeReports: args.regulator !== "law-commission", limit: Math.min(Math.max(1, args.limit ?? 10), 25) });
+    const { hits, broadened } = await searchProvisions({ q: args.query, jurisdiction: args.jurisdiction, state: args.state, regulator: args.regulator, actId: args.act_id, inForceOnly: Boolean(args.in_force), excludeReports: args.regulator !== "law-commission", limit: Math.min(Math.max(1, args.limit ?? 10), 25) });
     const retrievedAt = new Date().toISOString();
     emit(ctx, hits.map((h, i) => ({ source: lawSourceId(h.actId, h.section, h.variant), kind: "statute", provider: "open-india-law", tool: "search_law", query: args.query, rank: i + 1, score: h.rank, documentId: h.actId, authorityId: lawCitation({ kind: h.kind, title: h.actTitle, year: h.year }, h.section, h.variant), url: h.source_url ?? undefined, hash: contentHash(`${h.actId}|${h.section}|${h.variant}|${h.snippet}`), retrievedAt })));
-    return { count: hits.length, results: hits.map(lawSectionRow), note: hits.length ? LAW_NOTE : "No provision in the statutes corpus matched. Broaden the words or filters; do not cite a provision that was not found." };
+    return { count: hits.length, results: hits.map(lawSectionRow), note: hits.length ? (broadened ? `No provision contained every word; these match some of the words. ${LAW_NOTE}` : LAW_NOTE) : "No provision in the statutes corpus matched. Broaden the words or filters; do not cite a provision that was not found." };
   },
 });
 

@@ -151,6 +151,8 @@ export interface LawSearchResponse {
   hasMore: boolean;
   nextOffset: number | null;
   tookMs: number;
+  /** True when no provision matched every word and the results match any of the significant words instead. */
+  broadened?: boolean;
 }
 
 export interface LawDatasetRow {

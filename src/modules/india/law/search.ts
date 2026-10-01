@@ -144,6 +144,26 @@ function cleanSnippet(s: string | null): string {
  * highlighted snippet. Requires a query; an empty query returns nothing (provisions are never browsed unfiltered).
  */
 export async function searchProvisions(input: ProvisionQuery, storeArg?: RemoteStore | null): Promise<LawSearchResponse> {
+  const first = await searchProvisionsOnce(input, storeArg);
+  // A question in plain words rarely has every word in one provision. When nothing matched all of them (and the
+  // query uses no search syntax), retry with any of the significant words, ranked; the response says so.
+  const words = anyWordsQuery(input.q);
+  if (first.hits.length || (input.offset ?? 0) > 0 || !words) return first;
+  const second = await searchProvisionsOnce({ ...input, q: words }, storeArg);
+  return { ...second, tookMs: first.tookMs + second.tookMs, broadened: second.hits.length > 0 };
+}
+
+const STOP = new Set(["the", "and", "for", "with", "under", "from", "that", "this", "into", "upon", "what", "when", "which", "where", "whether", "act", "section", "law", "rule", "rules"]);
+
+/** "w1 or w2 …" over the significant words of a plain query; null for short queries or queries with search syntax. */
+export function anyWordsQuery(q: string | undefined): string | null {
+  const s = (q ?? "").trim();
+  if (!s || /["()]|\bor\b|(^|\s)-\w/i.test(s)) return null;
+  const words = [...new Set(s.toLowerCase().split(/[^\p{L}\p{M}\p{N}]+/u).filter((w) => w.length > 2 && !STOP.has(w)))];
+  return words.length > 1 ? words.slice(0, 12).join(" or ") : null;
+}
+
+async function searchProvisionsOnce(input: ProvisionQuery, storeArg?: RemoteStore | null): Promise<LawSearchResponse> {
   const started = Date.now();
   if (!input.q || !input.q.trim()) {
     await lawStore(storeArg);

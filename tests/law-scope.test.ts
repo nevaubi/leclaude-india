@@ -25,3 +25,14 @@ describe("statute research scope", () => {
     expect(p).toEqual(["report"]);
   });
 });
+
+describe("plain-language statute queries", () => {
+  it("broadens to significant words only for plain queries", async () => {
+    const { anyWordsQuery } = await import("@/modules/india/law/search");
+    expect(anyWordsQuery("eviction of tenant for bona fide personal use under the Karnataka Rent Act")).toBe("eviction or tenant or bona or fide or personal or use or karnataka or rent");
+    expect(anyWordsQuery("\"anticipatory bail\"")).toBeNull();
+    expect(anyWordsQuery("bail or bond")).toBeNull();
+    expect(anyWordsQuery("theft")).toBeNull();
+    expect(anyWordsQuery("किराया अधिनियम बेदखली")).toBe("किराया or अधिनियम or बेदखली");
+  });
+});

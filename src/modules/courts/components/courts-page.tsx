@@ -61,15 +61,17 @@ function ForumRow({ forum, cityId }: { forum: Forum; cityId: string }) {
           {links.map(([k, v]) => <ExtLink key={k} href={v}>{LINK_LABEL[k] ?? k}</ExtLink>)}
         </div>
       )}
-      <ol className="mt-1 space-y-0.5" aria-label="Sources">
-        {forum.sources.map((s, i) => (
-          <li key={`${s.url}-${i}`} className="flex min-w-0 items-baseline gap-1 text-[10.5px] text-muted-foreground">
-            <span className="tabular shrink-0">[{i + 1}]</span>
-            <a href={s.url} target="_blank" rel="noopener noreferrer" className="min-w-0 truncate hover:text-foreground hover:underline" title={s.url}>{s.title}</a>
-            <span className="shrink-0">· checked {fmtChecked(s.checkedAt)}</span>
-          </li>
-        ))}
-      </ol>
+      {forum.sources.length ? (
+        <ul className="mt-1 space-y-0.5" aria-label="Sources">
+          {forum.sources.map((s, i) => (
+            <li key={`${s.url}-${i}`} className="flex min-w-0 items-baseline gap-1 text-[10.5px] text-muted-foreground">
+              <span className="shrink-0">Source:</span>
+              <a href={s.url} target="_blank" rel="noopener noreferrer" className="min-w-0 truncate hover:text-foreground hover:underline">{s.title}</a>
+              <span className="shrink-0">· {fmtChecked(s.checkedAt)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </li>
   );
 }
@@ -175,7 +177,7 @@ export function CourtsBrowser({ initialCity, unknownCity }: { initialCity: strin
             <div className="mx-auto grid max-w-6xl gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
               <div className="min-w-0">
                 <CityForums city={city} />
-                <p className="mt-3 text-[10.5px] text-muted-foreground">Each record lists only what its official source showed when checked on {fmtChecked(FORUM_CHECKED_AT)}. Designations, benches and links change by notification; confirm on the official page before filing.</p>
+                <p className="mt-3 text-[10.5px] text-muted-foreground">Details are as shown on the official sources on {fmtChecked(FORUM_CHECKED_AT)}. Designations, benches and links change by notification; confirm on the official page before filing.</p>
               </div>
               <div className="min-w-0 lg:sticky lg:top-0 lg:self-start">
                 <LocalLawPanel city={city} />

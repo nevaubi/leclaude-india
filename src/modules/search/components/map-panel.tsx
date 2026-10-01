@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import type { ClaimVerdictView, ResearchSource } from "../engine/types";
 import type { LaneView } from "./use-research";
 import { useResearchActions } from "./research-context";
+import { humanizeCitation } from "@/modules/law/shared";
 
 /**
  * Research map: question → lanes → sources → claims they support. Pure SVG
@@ -75,7 +76,7 @@ export function MapPanel({ question, lanes, sources, verdicts }: { question: str
             <g key={s.id} transform={`translate(${cols.src},${srcY.get(s.id)! - 9})`} className="cursor-pointer" onMouseEnter={() => { a.setHoverN(s.n ?? null); a.setHoverSourceId(s.id); }} onMouseLeave={() => { a.setHoverN(null); a.setHoverSourceId(null); }} onClick={() => a.openSource(s)}>
               <rect width={84} height={18} rx={4} className={cn(hot ? "fill-primary" : "fill-card", hot ? "stroke-primary" : s.read ? "stroke-border" : "stroke-warning/60")} strokeWidth={1} />
               <text x={5} y={12.5} className={cn(hot ? "fill-primary-foreground" : "fill-foreground")} fontSize={9.5}>{s.n != null ? `[${s.n}] ` : ""}{truncate(s.cite ?? s.title, s.n != null ? 11 : 14)}</text>
-              <title>{s.title}{s.cite ? ` — ${s.cite}` : ""}{s.read ? "" : " (not read)"}</title>
+              <title>{s.title}{s.cite ? ` — ${humanizeCitation(s.cite)}` : ""}{s.read ? "" : " (not read)"}</title>
             </g>
           );
         })}

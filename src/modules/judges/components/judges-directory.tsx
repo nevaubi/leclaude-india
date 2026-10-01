@@ -123,7 +123,7 @@ export function JudgesDirectory() {
           {loading && !data ? <DirectorySkeleton /> : error ? <DirectoryError error={error} onRetry={() => setNonce((n) => n + 1)} /> : !data ? null
             : totalLoaded === 0 ? <NotLoaded sources={data.sources} />
             : !data.judges.length ? (
-              <EmptyState icon={SearchX} title="No judges match these filters" description={filtered ? "Only judges listed on an official roster are shown; names are matched as printed, without guessing." : undefined}
+              <EmptyState icon={SearchX} title="No judges match these filters" description={filtered ? "Only judges listed on an official court roster are shown." : undefined}
                 action={filtered ? <Button size="xs" variant="outline" onClick={() => { setQDraft(""); router.replace(pathname, { scroll: false }); }}>Clear filters</Button> : null} />
             ) : (
               <div className={cn("space-y-6", loading && "opacity-60 transition-opacity")} aria-busy={loading || undefined}>
@@ -143,7 +143,7 @@ function CourtGroup({ courtId, judges, view, source }: { courtId: string; judges
     <section aria-labelledby={`court-${courtId}`}>
       <header className="mb-2 flex flex-wrap items-center gap-2">
         <CourtEmblem courtId={courtId} size={24} />
-        <h2 id={`court-${courtId}`} className="text-[13px] font-semibold">{court?.name ?? courtId}</h2>
+        <h2 id={`court-${courtId}`} className="text-[13px] font-semibold">{court?.name ?? "Other court"}</h2>
         <span className="text-[11.5px] text-muted-foreground tabular">{judges.length}</span>
         <span className="flex-1" />
         {source ? (
@@ -190,8 +190,8 @@ function CourtGroup({ courtId, judges, view, source }: { courtId: string; judges
 function NotLoaded({ sources }: { sources: RosterSourceInfo[] }) {
   return (
     <div className="mx-auto max-w-xl">
-      <EmptyState icon={UserRound} title="Judges are not loaded yet — run enrichment"
-        description={<>An administrator runs the enrichment job (<code className="text-[11px]">POST /api/india/enrichment/run</code> with <code className="text-[11px]">{`{"target":"all"}`}</code>). It reads each court&apos;s official roster, stores vision-checked photographs and links judges to judgments by name as printed.</>} />
+      <EmptyState icon={UserRound} title="Judges are not available yet"
+        description="Judge profiles appear here once the official court rosters have been read. The rosters are linked below." />
       {sources.length ? (
         <div className="rounded-md border">
           <div className="border-b px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Official roster pages</div>
@@ -199,7 +199,7 @@ function NotLoaded({ sources }: { sources: RosterSourceInfo[] }) {
             {sources.map((s) => (
               <li key={s.courtId} className="flex items-center gap-2 px-3 py-1.5 text-[12px]">
                 <CourtEmblem courtId={s.courtId} size={18} />
-                <span className="min-w-0 flex-1 truncate">{courtById(s.courtId)?.name ?? s.courtId}</span>
+                <span className="min-w-0 flex-1 truncate">{courtById(s.courtId)?.name ?? hostOf(s.url)}</span>
                 <a href={s.url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1 text-[11px] text-primary hover:underline">{hostOf(s.url)}<ExternalLink className="size-3" aria-hidden /></a>
               </li>
             ))}
@@ -212,7 +212,7 @@ function NotLoaded({ sources }: { sources: RosterSourceInfo[] }) {
 
 function DirectoryError({ error, onRetry }: { error: CaseApiError; onRetry: () => void }) {
   if (error.status === 503 && error.code === "judges_not_configured") {
-    return <EmptyState className="mt-6" icon={Database} title="The judges directory is not configured" description="This deployment has no database (DATABASE_URL is not set). Judges, photographs and court emblems are stored in Postgres." />;
+    return <EmptyState className="mt-6" icon={Database} title="The judges directory is not available" description="It has not been set up for this workspace yet." />;
   }
   if (error.forbidden || error.unauthenticated) {
     return <EmptyState className="mt-6" icon={Lock} title={error.unauthenticated ? "Sign in to view judges" : "You do not have access to the judges directory"} />;

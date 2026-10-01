@@ -208,7 +208,6 @@ function TurnView({ t, onView }: { t: Turn; onView: (v: ViewerTarget) => void })
         {t.status === "done" && t.text && (
           <div className="flex items-center gap-1 text-muted-foreground">
             <Button size="icon-xs" variant="ghost" aria-label="Copy answer" title="Copy answer" onClick={() => { void navigator.clipboard?.writeText(t.text).then(() => toast.success("Copied")); }}><Copy className="size-3.5" /></Button>
-            {t.answer?.model && <span className="text-[11px]">{t.answer.model}</span>}
           </div>
         )}
       </div>

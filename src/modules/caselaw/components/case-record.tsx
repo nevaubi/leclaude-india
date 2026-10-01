@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { languageInfo } from "@/lib/india/languages";
-import { caseApiHref, caseHref, formatCaseDate, formatTimestamp, urlHost, type CaseRecord, type CaseRecordResponse, type SameCaseRecord } from "../shared";
+import { caseApiHref, caseHref, formatCaseDate, urlHost, type CaseRecord, type CaseRecordResponse, type SameCaseRecord } from "../shared";
 import { benchLabel, courtLabel } from "./case-directory";
 import { CaseApiError, fetchCaseJson } from "./fetch";
 import { JudgmentTextSection } from "./judgment-text";
@@ -18,7 +18,7 @@ import { CourtEmblem } from "@/modules/judges/components/court-emblem";
 const DASH = <span className="text-muted-foreground/60">—</span>;
 const show = (v: React.ReactNode) => (v === null || v === undefined || v === "" ? DASH : v);
 
-/** /cases/<id>: one index record with every published field, the official PDF and its provenance. */
+/** /cases/<id>: one case record with its details, the official PDF and a compact source card. */
 export function CaseRecordView({ id }: { id: string }) {
   const [data, setData] = React.useState<CaseRecordResponse | null>(null);
   const [error, setError] = React.useState<CaseApiError | null>(null);
@@ -39,7 +39,7 @@ export function CaseRecordView({ id }: { id: string }) {
     <div className="h-full overflow-auto scrollbar-thin">
       <div className="mx-auto w-full max-w-[1180px] px-4 pb-10 pt-3 sm:px-6">
         <BackLink />
-        {loading && !data ? <RecordSkeleton /> : error ? <RecordError error={error} id={id} onRetry={() => setNonce((n) => n + 1)} /> : data ? <RecordBody data={data} /> : null}
+        {loading && !data ? <RecordSkeleton /> : error ? <RecordError error={error} onRetry={() => setNonce((n) => n + 1)} /> : data ? <RecordBody data={data} /> : null}
       </div>
     </div>
   );
@@ -66,17 +66,17 @@ function RecordSkeleton() {
   );
 }
 
-function RecordError({ error, id, onRetry }: { error: CaseApiError; id: string; onRetry: () => void }) {
+function RecordError({ error, onRetry }: { error: CaseApiError; onRetry: () => void }) {
   if (error.notFound || error.status === 400) {
-    return <EmptyState className="mt-10" icon={SearchX} title="No record with this id in the case law index" description={<>The id <code className="break-all text-[11px]">{id}</code> does not match any record. It may have been mistyped; no other record is shown in its place.</>} action={<Button asChild size="xs" variant="outline"><Link href="/cases">Open the directory</Link></Button>} />;
+    return <EmptyState className="mt-10" icon={SearchX} title="Case not found" description="This link does not match a case in the case law collection. It may have been mistyped." action={<Button asChild size="xs" variant="outline"><Link href="/cases">Open the directory</Link></Button>} />;
   }
   if (error.notConfigured) {
-    return <EmptyState className="mt-10" icon={Database} title="The case law index is not configured" description="This deployment has no judgment corpus database (DATABASE_URL is not set)." />;
+    return <EmptyState className="mt-10" icon={Database} title="Case law is not available" description="Case law has not been set up for this workspace yet." />;
   }
   if (error.forbidden || error.unauthenticated) {
-    return <EmptyState className="mt-10" icon={Lock} title={error.unauthenticated ? "Sign in to view this record" : "You do not have access to the case law index"} />;
+    return <EmptyState className="mt-10" icon={Lock} title={error.unauthenticated ? "Sign in to view this record" : "You do not have access to case law"} />;
   }
-  return <EmptyState className="mt-10" icon={TriangleAlert} title="The record could not be loaded" description={error.message} action={<Button size="xs" variant="outline" onClick={onRetry}><RotateCcw className="size-3.5" />Retry</Button>} />;
+  return <EmptyState className="mt-10" icon={TriangleAlert} title="This case could not be loaded" description={error.message} action={<Button size="xs" variant="outline" onClick={onRetry}><RotateCcw className="size-3.5" />Retry</Button>} />;
 }
 
 function CopyButton({ value, label }: { value: string; label: string }) {
@@ -167,7 +167,7 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
           </span>
           {bench ? <><span aria-hidden>·</span><span>{bench}</span></> : null}
           <span aria-hidden>·</span>
-          <span className="tabular">{date ? `Decided ${date}` : "Decision date not in the source metadata"}</span>
+          <span className="tabular">{date ? `Decided ${date}` : "Decision date not available"}</span>
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           <Citation label="Neutral" value={r.neutral_citation} />
@@ -178,15 +178,15 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           {r.pdf_url ? (
             <Button asChild size="xs" variant="outline" className="max-w-full">
-              <a href={r.pdf_url} target="_blank" rel="noopener noreferrer" title={r.pdf_url}>
+              <a href={r.pdf_url} target="_blank" rel="noopener noreferrer">
                 <FileText className="size-3.5" />Official PDF<span className="min-w-0 truncate text-muted-foreground">{pdfHost ? `· ${pdfHost}` : ""}</span><ExternalLink className="size-3 opacity-60" />
               </a>
             </Button>
-          ) : <span className="text-[12px] text-muted-foreground">No PDF link in the source metadata</span>}
+          ) : <span className="text-[12px] text-muted-foreground">Official PDF not available</span>}
           <Button asChild size="xs" variant="outline">
             <Link href={`/search?q=${encodeURIComponent(researchQuery(r))}`}><Search className="size-3.5" />Research this</Link>
           </Button>
-          <span className="text-[11.5px] text-muted-foreground">{r.text_status === "full" ? "Full text below (from the official PDF; the PDF is the text of record)" : "Metadata only — full text not ingested"}</span>
+          <span className="text-[11.5px] text-muted-foreground">{r.text_status === "full" ? "Full text below. The official PDF is the text of record." : "Full text not available here; open the official PDF."}</span>
         </div>
       </div>
 
@@ -194,13 +194,10 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
         <div className="min-w-0 space-y-4">
           {r.text_status === "full" ? <JudgmentTextSection id={r.id} citation={r.neutral_citation} /> : null}
 
-          <Section title="Record">
+          <Section title="Case details">
             <dl>
-              <Field label="Court">{r.court ? r.court : r.court_code ? <span className="text-warning-foreground dark:text-warning">Not in the court registry (dataset code {r.court_code})</span> : DASH}</Field>
-              <Field label="Registry court id">{show(r.court_id)}</Field>
-              <Field label="Dataset court code">{show(r.court_code)}</Field>
+              <Field label="Court">{r.court ?? DASH}</Field>
               <Field label="Bench">{show(r.bench)}</Field>
-              <Field label="Dataset bench code">{show(r.bench_code)}</Field>
               <Field label="Bench strength">{r.bench_strength ? `${r.bench_strength} judge${r.bench_strength === 1 ? "" : "s"}` : DASH}</Field>
               <Field label="Case number">{show(r.case_number)}</Field>
               <Field label="Case type">{show(r.case_type)}</Field>
@@ -209,7 +206,6 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
               <Field label="Reporter citation">{show(r.reporter_citation)}</Field>
               <Field label="Decision date">{show(date)}</Field>
               <Field label="Registration date">{show(formatCaseDate(r.registration_date))}</Field>
-              <Field label="Decision year">{show(r.year)}</Field>
               <Field label="Disposal">{show(r.disposal)}</Field>
               <Field label="Language">{show(languageName(r.language))}</Field>
             </dl>
@@ -229,9 +225,11 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
             </dl>
           </Section>
 
-          <Section title="Source snippet (dataset)" aside={<span className="text-[11px] text-muted-foreground">as published in the dataset metadata; not the judgment text</span>}>
-            {r.snippet ? <p className="whitespace-pre-wrap text-[13px] leading-relaxed">{r.snippet}</p> : <p className="text-[12.5px] text-muted-foreground">The dataset published no snippet for this record.</p>}
-          </Section>
+          {r.snippet ? (
+            <Section title="Summary" aside={<span className="text-[11px] text-muted-foreground">provided by the source; not the judgment text</span>}>
+              <p className="whitespace-pre-wrap text-[13px] leading-relaxed">{r.snippet}</p>
+            </Section>
+          ) : null}
 
           {r.translations.length ? (
             <Section title="Translations">
@@ -247,16 +245,11 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
             </Section>
           ) : null}
 
-          {r.issues?.length ? (
-            <Section title="Data issues flagged at ingest">
-              <ul className="list-disc space-y-0.5 pl-4 text-[12.5px] text-warning-foreground dark:text-warning">{r.issues.map((x) => <li key={x}>{x}</li>)}</ul>
-            </Section>
-          ) : null}
         </div>
 
         <aside className="min-w-0 space-y-4">
           <NarrowFields.Provider value>
-            <Provenance r={r} />
+            <SourceCard r={r} />
           </NarrowFields.Provider>
           <SameCase items={data.sameCase} r={r} />
         </aside>
@@ -265,41 +258,26 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
   );
 }
 
-function Provenance({ r }: { r: CaseRecord }) {
+/** "Supreme Court of India (judgments and metadata as published by the Court)" → "Supreme Court of India". */
+function plainPublisher(s: CaseRecord["sourceInfo"], r: CaseRecord): string {
+  if (!s.registered) return r.court ?? "Not recorded";
+  return s.publisher.replace(/\s*\(.*\)\s*$/, "") || s.publisher;
+}
+
+function SourceCard({ r }: { r: CaseRecord }) {
   const s = r.sourceInfo;
+  const date = formatCaseDate(r.decision_date);
   return (
-    <Section title="Source & provenance">
+    <Section title="Source">
       <dl>
-        <Field label="Dataset">{s.registryUrl ? <a href={s.registryUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{s.name}<ExternalLink className="ml-1 inline size-3" /></a> : <span className={cn(!s.registered && "text-warning-foreground dark:text-warning")}>{s.name}</span>}</Field>
-        <Field label="Dataset id">{show(s.dataset)}</Field>
-        <Field label="Publisher">{s.publisher}</Field>
-        <Field label="Hosted on">{show(s.host)}</Field>
-        <Field label="Licence">{s.licenceUrl ? <>{s.licence} <a href={s.licenceUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Dataset terms</a></> : s.licence}</Field>
-        <Field label="Source value" mono>{r.source}</Field>
-        <Field label="Record id" mono><span className="break-all">{r.id}</span></Field>
-        <Field label="Dataset key" mono><span className="break-all">{r.dataset_key}</span></Field>
-        <Field label="Source archive" mono>
-          {r.unit ? (
-            <span className="break-all">
-              {r.unit.archiveUrl ? <a href={r.unit.archiveUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{r.unit.objectKey}</a> : r.unit.objectKey ?? r.unit.id}
-            </span>
-          ) : <span className="font-sans text-warning-foreground dark:text-warning">Archive {r.unit_id} is not in the unit registry</span>}
-        </Field>
-        {r.unit ? (
-          <Field label="Archive status">
-            <span className="tabular">{r.unit.status ?? "unknown"}{r.unit.expected != null ? ` · ${r.unit.stored ?? 0} of ${r.unit.expected} declared records stored` : r.unit.stored != null ? ` · ${r.unit.stored} stored` : ""}{r.unit.rejected ? ` · ${r.unit.rejected} rejected` : ""}</span>
-            {r.unit.note ? <span className="block text-[11.5px] text-muted-foreground">{r.unit.note}</span> : null}
-          </Field>
-        ) : null}
-        <Field label="Official PDF">{r.pdf_url ? <a href={r.pdf_url} target="_blank" rel="noopener noreferrer" className="break-all text-primary hover:underline">{urlHost(r.pdf_url)}</a> : DASH}</Field>
-        <Field label="PDF key" mono><span className="break-all">{r.pdf_key ?? "—"}</span></Field>
-        <Field label="Record hash" mono>
-          <span className="flex items-start gap-1"><span className="break-all" title="SHA-256 of the dataset's metadata record as ingested">{r.record_sha256}</span><CopyButton value={r.record_sha256} label="Record hash" /></span>
-        </Field>
-        <Field label="Ingested">{show(formatTimestamp(r.ingested_at))}</Field>
-        <Field label="Last changed">{show(formatTimestamp(r.updated_at))}</Field>
-        <Field label="Text">{r.text_status === "none" ? "Metadata only — full text not ingested" : r.text_status === "full" ? "Full text (Open India Law, from the official PDF)" : r.text_status}</Field>
+        <Field label="Published by">{plainPublisher(s, r)}</Field>
+        <Field label="Official PDF">{r.pdf_url ? <a href={r.pdf_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 break-all text-primary hover:underline">{urlHost(r.pdf_url) ?? "Open PDF"}<ExternalLink className="size-3" /></a> : <span className="text-muted-foreground">Not available</span>}</Field>
+        <Field label="Decided">{show(date)}</Field>
       </dl>
+      <p className="mt-2 border-t pt-2 text-[11px] leading-snug text-muted-foreground">
+        {s.registered ? <>Collected from {s.registryUrl ? <a href={s.registryUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">{s.name.replace(/\s*\(open data\)\s*$/i, "")}</a> : s.name}{s.licenceUrl ? <> (<a href={s.licenceUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">terms</a>)</> : null}. </> : null}
+        The official PDF is the text of record.
+      </p>
     </Section>
   );
 }
@@ -307,14 +285,14 @@ function Provenance({ r }: { r: CaseRecord }) {
 function SameCase({ items, r }: { items: SameCaseRecord[]; r: CaseRecord }) {
   const keys = [r.cnr ? "CNR" : null, r.neutral_citation ? "neutral citation" : null].filter(Boolean).join(" or ");
   return (
-    <Section title="Same case in other records" aside={items.length ? <span className="text-[11px] text-muted-foreground tabular">{items.length}</span> : null}>
+    <Section title="Related orders and judgments" aside={items.length ? <span className="text-[11px] text-muted-foreground tabular">{items.length}</span> : null}>
       {!keys ? (
-        <p className="text-[12px] text-muted-foreground">This record has no CNR or neutral citation, so other records of the same case cannot be identified.</p>
+        <p className="text-[12px] text-muted-foreground">No CNR or neutral citation is available to find related orders.</p>
       ) : !items.length ? (
-        <p className="text-[12px] text-muted-foreground">No other record in the index has this {keys}.</p>
+        <p className="text-[12px] text-muted-foreground">No other orders or judgments found with this {keys}.</p>
       ) : (
         <>
-          <p className="mb-2 text-[11.5px] text-muted-foreground">Separate dataset records with the same {keys}. A shared CNR can be another order or judgment in the same case; records are listed, never merged.</p>
+          <p className="mb-2 text-[11.5px] text-muted-foreground">Other orders or judgments with the same {keys}.</p>
           <ul className="divide-y">
             {items.map((h) => (
               <li key={h.id} className="py-1.5">

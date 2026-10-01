@@ -13,6 +13,7 @@ import type { ResearchSource } from "../engine/types";
 import { sourceTrustState } from "../engine/trust";
 import { AuthorityBadge, SOURCE_ICON } from "./result-card";
 import { useResearchActions } from "./research-context";
+import { humanizeCitation } from "@/modules/law/shared";
 
 const ORDER: SearchSource[] = ["caselaw", "statutes", "regulations", "federal_register", "dockets", "ediscovery", "library", "web"];
 
@@ -72,7 +73,7 @@ export function SourceRow({ s, compact }: { s: ResearchSource; compact?: boolean
           <button onClick={() => a.openSource(s)} className="block w-full text-left text-[12.5px] font-medium leading-snug text-foreground hover:text-primary cursor-pointer">{s.title}</button>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10.5px] text-muted-foreground">
             <TrustStateBadge state={state} size="xs" />
-            {s.cite && <span className="font-mono text-foreground/80">{s.cite}</span>}
+            {s.cite && <span className="font-mono text-foreground/80">{humanizeCitation(s.cite)}</span>}
             {meta && <span>{meta}</span>}
             <AuthorityBadge authority={s.authority} />
             {s.treatment?.signal === "possibly_negative" && <Tip label={<span className="block max-w-xs">{s.treatment.note}{s.treatment.examples?.length ? <span className="mt-1 block opacity-80">{s.treatment.examples.map((e) => `${e.title}${e.phrase ? ` (“${e.phrase}”)` : ""}`).join("; ")}</span> : null}</span>}><Badge variant="warning" className="cursor-help py-0" data-treatment="possibly_negative">Treatment: review</Badge></Tip>}

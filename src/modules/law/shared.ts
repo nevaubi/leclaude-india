@@ -29,6 +29,9 @@ export const LAW_DATASET = {
   attribution: "Open India Law (Vaquill), CC BY 4.0 — third-party parse; verify against the official text",
 } as const;
 
+/** The one quiet attribution line shown on pages that display statute text. */
+export const LAW_ATTRIBUTION_LINE = "Text from Open India Law (Vaquill, CC BY 4.0), compiled from India Code and regulator publications. Verify against the official text.";
+
 export interface LawInstrument {
   id: string;
   kind: string;
@@ -431,6 +434,33 @@ export function lawCitation(i: Pick<LawInstrument, "kind" | "title" | "year">, s
   const name = citationTitle(i);
   if (section === NO_SECTION) return `Unnumbered provisions, ${name}`;
   return `${provisionUnit(i)} ${section}${variant ? ` (variant ${variant + 1} in the dataset)` : ""}, ${name}`;
+}
+
+const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
+
+/** Plain-English label for a repeated provision number: variant 1 → "second provision numbered 14". */
+export function repeatedProvisionLabel(i: Pick<LawInstrument, "kind" | "title">, section: string, variant: number): string {
+  const nth = ORDINALS[variant] ?? `${variant + 1}th`;
+  return `${nth} ${provisionUnit(i).toLowerCase()} numbered ${section}`;
+}
+
+/**
+ * User-facing citation: like lawCitation, but a repeated provision number reads "(second provision so numbered)"
+ * rather than exposing the internal variant index.
+ */
+export function displayLawCitation(i: Pick<LawInstrument, "kind" | "title" | "year">, section: string, variant = 0): string {
+  const name = citationTitle(i);
+  if (section === NO_SECTION) return `Unnumbered provisions, ${name}`;
+  const nth = variant ? ` (${ORDINALS[variant] ?? `${variant + 1}th`} so numbered)` : "";
+  return `${provisionUnit(i)} ${section}${nth}, ${name}`;
+}
+
+/** Display-only: rewrite a stored citation's "(variant N in the dataset)" as "(Nth so numbered)". */
+export function humanizeCitation(cite: string): string {
+  return cite.replace(/ \(variant (\d+) in the dataset\)/g, (_m, n: string) => {
+    const k = Number(n) - 1;
+    return ` (${ORDINALS[k] ?? `${n}th`} so numbered)`;
+  });
 }
 
 /** TOC label: "303. Organised crime" / "Preamble". */

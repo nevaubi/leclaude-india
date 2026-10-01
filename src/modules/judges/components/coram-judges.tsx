@@ -45,7 +45,7 @@ export function CoramJudges({ courtId, judges, author }: { courtId: string | nul
           );
         })}
       </ul>
-      {linked ? <p className="mt-1.5 text-[11px] text-muted-foreground">Linked profiles are matched by name as printed in the record, within the same court.</p> : null}
+      {linked ? <p className="mt-1.5 text-[11px] text-muted-foreground">Profiles are linked where the printed name matches a judge of this court.</p> : null}
     </div>
   );
 }

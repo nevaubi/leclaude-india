@@ -14,7 +14,7 @@ export default async function Page({ params }: Props) {
   await pageDb();
   const id = caseIdFromSegments((await params).id);
   if (!id) {
-    return <div className="flex h-full items-center justify-center p-6"><EmptyState title="Not a case law record id" description="Record ids start with sc: or hc:. Open the directory to find a record." /></div>;
+    return <div className="flex h-full items-center justify-center p-6"><EmptyState title="Case not found" description="This link does not point to a case. Open the case law directory to find one." /></div>;
   }
   return <CaseRecordView id={id} />;
 }

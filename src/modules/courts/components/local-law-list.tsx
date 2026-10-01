@@ -30,7 +30,7 @@ export function useLocalLaw(cityId: string | null): LocalLawState {
     fetch(`/api/courts/local-law?city=${encodeURIComponent(cityId)}`, { signal: ctl.signal, cache: "no-store" })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) setState({ phase: "error", status: res.status, message: res.status === 403 ? "You do not have access to the law corpus." : (body as { error?: string }).error ?? `Request failed (${res.status})` });
+        if (!res.ok) setState({ phase: "error", status: res.status, message: res.status === 403 ? "You do not have access to statutes." : (body as { error?: string }).error ?? `Request failed (${res.status})` });
         else setState({ phase: "ready", data: body as LocalLawView });
       })
       .catch((e: unknown) => { if ((e as Error).name !== "AbortError") setState({ phase: "error", message: (e as Error).message || "Network error" }); });
@@ -53,14 +53,14 @@ function ItemRow({ item }: { item: LocalLawItemView }) {
       {item.status === "ambiguous" && (
         <div>
           <div className="text-[12.5px]">{item.pointer.title}</div>
-          <div className="text-[11px] text-muted-foreground">{item.acts.length} corpus entries carry this exact title:</div>
+          <div className="text-[11px] text-muted-foreground">{item.acts.length} Acts carry this title:</div>
           <ul className="ml-3 list-disc">{item.acts.map((a) => <li key={a.id}><Link href={actHref(a.id)} className="text-[11.5px] text-primary hover:underline">{a.title}{a.year ? ` (${a.year})` : ""}</Link></li>)}</ul>
         </div>
       )}
       {(item.status === "not_found" || item.status === "unavailable") && (
         <div>
           <div className="text-[12.5px]">{item.pointer.title}</div>
-          <div className="text-[11px] text-muted-foreground">{item.status === "not_found" ? "Not found in corpus" : "Not checked: law corpus unavailable"}</div>
+          <div className="text-[11px] text-muted-foreground">{item.status === "not_found" ? "Not available in Statutes" : "Not checked: Statutes unavailable"}</div>
         </div>
       )}
       {item.pointer.jurisdiction === "central" && <div className="text-[10.5px] text-muted-foreground">Act of Parliament</div>}
@@ -82,7 +82,7 @@ export function LocalLawList({ state }: { state: LocalLawState }) {
       {(!data.configured || data.error) && (
         <div className="mb-1.5 flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-[11px]" role="status">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
-          <span>{!data.configured ? "The law corpus is not configured here, so the titles below have not been checked." : `The law corpus could not be queried: ${data.error}`}</span>
+          <span>{!data.configured ? "Statutes are not set up here, so the titles below have not been checked." : `Statutes could not be checked: ${data.error}`}</span>
         </div>
       )}
       <ul className="divide-y divide-line-quiet">{data.items.map((it) => <ItemRow key={it.pointer.title} item={it} />)}</ul>

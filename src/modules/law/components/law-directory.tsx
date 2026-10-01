@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
 import {
-  citationTitle, hasActiveLawFilters, jurisdictionLabel, lawCitation, lawFiltersToParams, lawHref, LAW_MAX_YEAR, LAW_MIN_YEAR, parseLawFilters, snippetParts,
+  citationTitle, hasActiveLawFilters, jurisdictionLabel, displayLawCitation, lawFiltersToParams, lawHref, LAW_MAX_YEAR, LAW_MIN_YEAR, parseLawFilters, snippetParts,
   type LawFacets, type LawFilters, type LawInstrumentHit, type LawListResponse, type LawProvisionHit, type LawSearchResponse, type LawSort,
 } from "../shared";
 import { asLawApiError, fetchLawJson, type LawApiError } from "./fetch";
@@ -187,7 +187,7 @@ export function LawDirectory() {
       description="Central and State Acts and regulator publications, section by section, each linked to its publisher's official page."
       coverage={unavailable ? undefined : <LawCoverageLine facets={facets} loading={facetsLoading} error={facetsError} onRetry={() => setFacetsNonce((n) => n + 1)} />}
       actions={unavailable ? undefined : landing
-        ? <Button size="xs" variant="outline" onClick={showAll}><LayoutList className="size-3.5" />Browse all instruments</Button>
+        ? <Button size="xs" variant="outline" onClick={showAll}><LayoutList className="size-3.5" />Browse all Acts</Button>
         : <Button size="xs" variant="ghost" onClick={clearAll}>Start page</Button>}
     />
   );
@@ -330,7 +330,7 @@ export function LawDirectory() {
                 <EmptyState
                   icon={sectionsMode ? SearchX : BookOpen}
                   title={sectionsMode ? "No provision matches this search" : filters.q ? "No instrument matches this search" : "No instrument matches these filters"}
-                  description={<>The corpus holds the instruments counted above.{filters.status === "in_force" ? " Only instruments recorded as in force are shown; try All statuses." : ""}{active ? " Try fewer filters." : ""}{!sectionsMode && filters.q ? " To look inside the text, switch to Sections." : ""}</>}
+                  description={<>{filters.status === "in_force" ? "Only instruments in force are shown; try All statuses." : ""}{active ? " Try fewer filters." : ""}{!sectionsMode && filters.q ? " To look inside the text, switch to Sections." : ""}</>}
                   action={<div className="flex gap-1.5">
                     {!sectionsMode && filters.q ? <Button size="xs" variant="outline" onClick={() => setFilters({ mode: "sections" })}>Search sections</Button> : null}
                     {filters.status === "in_force" ? <Button size="xs" variant="outline" onClick={() => setFilters({ status: "all" })}>All statuses</Button> : null}
@@ -408,7 +408,7 @@ function ProvisionResults({ hits, broadened, query, loading, hasMore, loadingMor
               </div>
               <ul className="mt-1.5 space-y-2 border-l border-line-quiet pl-3">
                 {g.hits.map((h) => {
-                  const cite = lawCitation({ kind: h.kind, title: h.actTitle, year: h.year }, h.section, h.variant).split(",")[0];
+                  const cite = displayLawCitation({ kind: h.kind, title: h.actTitle, year: h.year }, h.section, h.variant).split(",")[0];
                   const heading = displayHeading(h.heading);
                   const chapter = displayChapterTitle(h.chapter_title);
                   return (
@@ -417,7 +417,7 @@ function ProvisionResults({ hits, broadened, query, loading, hasMore, loadingMor
                         <Link href={lawHref(h.actId, h.section, h.variant)} className="text-[12.5px] font-medium text-primary hover:underline">{cite}</Link>
                         {heading ? <span className="text-[12.5px] text-foreground/90">{heading}</span> : null}
                         {chapter ? <span className="truncate text-[11px] uppercase tracking-wide text-muted-foreground">{chapter}</span> : null}
-                        {h.in_force === false ? <span className="text-[11.5px] text-warning-foreground dark:text-warning">provision marked not in force</span> : null}
+                        {h.in_force === false ? <span className="text-[11.5px] text-warning-foreground dark:text-warning">not in force</span> : null}
                       </div>
                       {h.snippet ? <p className="mt-0.5 max-w-[86ch] text-[12.5px] leading-relaxed text-foreground/75"><Snippet text={h.snippet} /></p> : null}
                     </li>

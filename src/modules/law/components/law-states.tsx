@@ -7,19 +7,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { formatTimestamp } from "@/modules/caselaw/shared";
-import { LAW_DATASET, statusLabel, statusTone, type LawFacets } from "../shared";
+import { LAW_ATTRIBUTION_LINE, LAW_DATASET, statusLabel, statusTone, type LawFacets } from "../shared";
 import type { LawApiError } from "./fetch";
 
 /** Not configured / not loaded / no access: the states where nothing is shown from any other source in its place. */
 export function LawUnavailable({ error, className }: { error: LawApiError; className?: string }) {
   if (error.notConfigured) {
-    return <EmptyState className={className} icon={Database} title="The statutes corpus is not configured" description="This deployment has no corpus database (DATABASE_URL is not set). Acts and regulations are read from Postgres; nothing is shown from any other source in their place." />;
+    return <EmptyState className={className} icon={Database} title="Statutes are not available" description="Statutes have not been set up for this workspace yet." />;
   }
   if (error.notLoaded) {
-    return <EmptyState className={className} icon={Database} title="The statutes corpus has not been loaded yet" description="The database is reachable, but the law tables have not been created by the loader. Once the Open India Law files are loaded, Acts and regulations appear here." />;
+    return <EmptyState className={className} icon={Database} title="Statutes are not available yet" description="Acts and regulations will appear here once they have been added." />;
   }
   if (error.forbidden || error.unauthenticated) {
-    return <EmptyState className={className} icon={Lock} title={error.unauthenticated ? "Sign in to view statutes" : "You do not have access to the statutes corpus"} description={error.unauthenticated ? "Your session has ended." : "Ask an administrator for research access."} />;
+    return <EmptyState className={className} icon={Lock} title={error.unauthenticated ? "Sign in to view statutes" : "You do not have access to statutes"} description={error.unauthenticated ? "Your session has ended." : "Ask an administrator for research access."} />;
   }
   return null;
 }
@@ -43,17 +43,17 @@ export function StatusText({ status, className }: { status: string | null | unde
   );
 }
 
-export function AttributionNote({ version, className }: { version?: string | null; className?: string }) {
+export function AttributionNote({ className }: { className?: string }) {
   return (
     <span className={cn("text-[11.5px] text-muted-foreground", className)}>
-      Source: <a href={LAW_DATASET.licenceUrl} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">{LAW_DATASET.attribution}</a>{version ? ` · dataset ${version}` : ""}
+      {LAW_ATTRIBUTION_LINE}
     </span>
   );
 }
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 
-/** The header's coverage line: totals, the dataset and its freshness. Never claims more than the facets say. */
+/** The header's coverage line: totals, a quiet source note and freshness. Never claims more than the facets say. */
 export function LawCoverageLine({ facets, loading, error, onRetry }: { facets: LawFacets | null; loading: boolean; error: LawApiError | null; onRetry?: () => void }) {
   if (loading && !facets) return <><Skeleton className="h-3 w-44" /><Skeleton className="h-3 w-28" /></>;
   if (!facets) {
@@ -64,30 +64,25 @@ export function LawCoverageLine({ facets, loading, error, onRetry }: { facets: L
       </>
     ) : null;
   }
-  const loadingFiles = facets.datasets.filter((d) => d.status !== "done");
-  const failed = facets.datasets.filter((d) => d.status === "error");
+  const loadingMore = facets.datasets.some((d) => d.status !== "done");
   const finished = facets.datasets.map((d) => d.finished_at).filter((x): x is string => Boolean(x)).sort().pop() ?? null;
   return (
     <>
-      <span className="tabular"><span className="font-medium text-foreground/85">{fmt(facets.total)}</span> instruments</span>
+      <span className="tabular"><span className="font-medium text-foreground/85">{fmt(facets.total)}</span> Acts and regulations</span>
       <span aria-hidden className="text-muted-foreground/50">·</span>
       <span className="tabular">{fmt(facets.sections)} sections</span>
       <span aria-hidden className="text-muted-foreground/50">·</span>
-      <Tip label={`${LAW_DATASET.attribution}. A section-level parse of India Code (Central, State and Union Territory legislation) and regulator publications. Each instrument links to its publisher's page; rely on the official text.`}>
-        <span tabIndex={0} className="inline-flex items-center gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"><Info className="size-3" aria-hidden />{LAW_DATASET.name}{facets.versions.length ? ` ${facets.versions.join(", ")}` : ""}</span>
+      <Tip label={LAW_ATTRIBUTION_LINE}>
+        <span tabIndex={0} className="inline-flex items-center gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"><Info className="size-3" aria-hidden />{LAW_DATASET.name} ({LAW_DATASET.licence})</span>
       </Tip>
-      {finished ? <><span aria-hidden className="text-muted-foreground/50">·</span><span>loaded {formatTimestamp(finished)}</span></> : null}
-      {loadingFiles.length ? (
-        <Tip label={loadingFiles.map((d) => `${d.label}: ${d.status}`).join("; ")}>
-          <span tabIndex={0} className="text-warning-foreground dark:text-warning">· loading {facets.datasets.length - loadingFiles.length} of {facets.datasets.length} files{failed.length ? `, ${failed.length} failed` : ""}</span>
-        </Tip>
-      ) : null}
-      {facets.stale ? <span className="text-warning-foreground dark:text-warning">· counts may be out of date</span> : null}
+      {finished ? <><span aria-hidden className="text-muted-foreground/50">·</span><span>updated {formatTimestamp(finished)}</span></> : null}
+      {loadingMore ? <><span aria-hidden className="text-muted-foreground/50">·</span><span>loading more</span></> : null}
+      {facets.stale ? <><span aria-hidden className="text-muted-foreground/50">·</span><span>counts may be out of date</span></> : null}
     </>
   );
 }
 
-/** One quiet line: what is in the corpus, per jurisdiction, with load progress and the dataset attribution. */
+/** One quiet line: what is available, per jurisdiction, with a quiet source attribution. */
 export function LawCoverageStrip({ facets, loading, error, onRetry, onPick, active }: { facets: LawFacets | null; loading: boolean; error: LawApiError | null; onRetry?: () => void; onPick?: (j: "central" | "state" | "regulator") => void; active?: string }) {
   if (loading && !facets) return <div className="flex h-8 items-center gap-3 border-b px-4" aria-busy><Skeleton className="h-3 w-40" /><Skeleton className="h-3 w-32" /><Skeleton className="h-3 w-28" /></div>;
   if (!facets) {
@@ -100,11 +95,10 @@ export function LawCoverageStrip({ facets, loading, error, onRetry, onPick, acti
   }
   const label: Record<string, string> = { central: "Central", state: "State", regulator: "Regulators" };
   const loadingFiles = facets.datasets.filter((d) => d.status !== "done");
-  const failed = facets.datasets.filter((d) => d.status === "error");
   const finished = facets.datasets.map((d) => d.finished_at).filter((x): x is string => Boolean(x)).sort().pop() ?? null;
   return (
     <div className="flex min-h-8 flex-wrap items-center gap-x-1 gap-y-0.5 border-b px-4 py-1 text-[11.5px] text-muted-foreground" aria-label="Corpus coverage">
-      <span className="mr-1 font-medium text-foreground">In the corpus</span>
+      <span className="mr-1 font-medium text-foreground">Coverage</span>
       {facets.jurisdictions.map((j, i) => (
         <React.Fragment key={j.value}>
           {i > 0 && <span aria-hidden className="text-muted-foreground/50">·</span>}
@@ -117,18 +111,14 @@ export function LawCoverageStrip({ facets, loading, error, onRetry, onPick, acti
       ))}
       <span aria-hidden className="text-muted-foreground/50">·</span>
       <span className="px-1 tabular">{fmt(facets.sections)} sections</span>
-      {loadingFiles.length ? (
-        <Tip label={loadingFiles.map((d) => `${d.label}: ${d.status}`).join("; ")}>
-          <span tabIndex={0} className="px-1 text-warning-foreground dark:text-warning">· loading {facets.datasets.length - loadingFiles.length} of {facets.datasets.length} files{failed.length ? `, ${failed.length} failed` : ""}</span>
-        </Tip>
-      ) : null}
+      {loadingFiles.length ? <span className="px-1">· loading more</span> : null}
       <span className="flex-1" />
       <span className="flex items-center gap-1">
-        <Tip label={`${LAW_DATASET.attribution}. A section-level parse of India Code (Central, State and Union Territory legislation) and regulator publications. Each instrument links to its publisher's page; rely on the official text.`}>
-          <span tabIndex={0} className="inline-flex items-center gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"><Info className="size-3" aria-hidden />{LAW_DATASET.name}{facets.versions.length ? ` ${facets.versions.join(", ")}` : ""}</span>
+        <Tip label={LAW_ATTRIBUTION_LINE}>
+          <span tabIndex={0} className="inline-flex items-center gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"><Info className="size-3" aria-hidden />{LAW_DATASET.name} ({LAW_DATASET.licence})</span>
         </Tip>
-        {finished ? <span>· loaded {formatTimestamp(finished)}</span> : null}
-        {facets.stale ? <span className="text-warning-foreground dark:text-warning">· counts may be out of date</span> : null}
+        {finished ? <span>· updated {formatTimestamp(finished)}</span> : null}
+        {facets.stale ? <span>· counts may be out of date</span> : null}
       </span>
     </div>
   );

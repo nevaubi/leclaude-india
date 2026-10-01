@@ -57,9 +57,8 @@ export function JudgmentTextSection({ id, citation }: { id: string; citation: st
     <section className="rounded-md border" aria-label="Judgment text">
       <header className="flex h-8 items-center gap-2 border-b px-3">
         <h2 className="text-[12.5px] font-medium">Judgment text</h2>
-        <span className="text-[11px] text-muted-foreground">{meta ? `${chunks.length} of ${meta.totalChunks} parts` : ""}</span>
         <span className="flex-1" />
-        {chunks.length ? <Button size="xs" variant="ghost" onClick={copyAll}>{copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}Copy loaded text</Button> : null}
+        {chunks.length ? <Button size="xs" variant="ghost" onClick={copyAll}>{copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}{meta?.nextChunk != null ? "Copy loaded text" : "Copy text"}</Button> : null}
       </header>
       <div className="max-h-[70vh] overflow-auto px-3 py-2.5 scrollbar-thin">
         {loading && !chunks.length ? (
@@ -79,7 +78,7 @@ export function JudgmentTextSection({ id, citation }: { id: string; citation: st
               );
             })}
             {meta?.nextChunk != null ? (
-              <Button size="xs" variant="outline" disabled={loading} onClick={() => void load(meta.nextChunk!)}>{loading ? "Loading…" : "Load more"}</Button>
+              <Button size="xs" variant="outline" disabled={loading} onClick={() => void load(meta.nextChunk!)}>{loading ? "Loading…" : "Continue reading"}</Button>
             ) : null}
             {error && chunks.length ? <p className="text-[12px] text-destructive">{error}</p> : null}
           </div>

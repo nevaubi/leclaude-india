@@ -4,6 +4,7 @@ import { indiaResearchTools } from "@/lib/ai/toolkit/india";
 import { getLibraryItemTool, searchLibraryTool } from "@/lib/ai/toolkit/internal";
 import type { Principal } from "@/lib/auth/types";
 import { listDocSets, readDocPassage, searchDocSets } from "@/modules/documents/server";
+import { reviewRowsForChat } from "@/modules/documents/server/review";
 import { parseDocSourceId, type DocSearchHit } from "@/modules/documents/types";
 import { DEFAULT_KNOWLEDGE, MAX_DOC_SETS, type ChatKnowledge, type ChatRequest } from "../types";
 
@@ -80,7 +81,7 @@ function emitHits(ctx: ToolContext, hits: DocSearchHit[], tool: string, query?: 
   for (const h of hits) ctx.emit({ type: "citation", citation: { title: docPassageTitle(h), url: docPassageUrl(h), source: h.source } });
 }
 
-/** search_documents / read_document_passage bound to the validated sets. */
+/** search_documents / read_document_passage / review_rows bound to the validated sets. */
 export function documentTools(sets: { id: string; name: string }[]): ToolDef<never, unknown>[] {
   const setIds = sets.map((s) => s.id);
   const allowed = new Set(setIds);
@@ -124,7 +125,35 @@ export function documentTools(sets: { id: string; name: string }[]): ToolDef<nev
       return { type: "search_result" as const, source: r.hit.source, title: docPassageTitle(r.hit), content: [r.hit.text, ...(r.context ? [r.context] : [])], file: r.hit.fileName, page: r.hit.page };
     },
   });
-  return [search, read] as ToolDef<never, unknown>[];
+  const reviewRows = defineTool<{ reviewId?: string; issue?: string; docType?: string; privilege?: string; coding?: string; q?: string; limit?: number }>({
+    name: "review_rows",
+    description: `Read the document-review table of the selected document sets (${names}): one row per file with its document type, importance, summary, issue relevance, privilege screen, extracted column values (each with page and quoteFound = the quote was found verbatim in the file) and the reviewer's coding. Without reviewId the most recent review is used; the result lists the available reviews. Filters: issue (issue id, at least low relevance), docType, privilege (possible|likely), coding (key|relevant|not_relevant|privileged|needs_review|uncoded|stale), q (words). Values with quoteFound false are unverified model output: say so. Privilege flags are suggestions, not decisions.`,
+    parameters: {
+      type: "object",
+      properties: {
+        reviewId: { type: "string", description: "Review id (from a previous result); omit for the most recent review" },
+        issue: { type: "string", description: "Only rows relevant to this issue id" },
+        docType: { type: "string", description: "Only this document type" },
+        privilege: { type: "string", enum: ["possible", "likely"], description: "Only rows with this privilege flag" },
+        coding: { type: "string", enum: ["key", "relevant", "not_relevant", "privileged", "needs_review", "uncoded", "stale"], description: "Only rows with this coding" },
+        q: { type: "string", description: "Words to match in file name, summary and values" },
+        limit: { type: "integer", description: "Default 15, max 40" },
+      },
+      required: [],
+    },
+    timeoutMs: 20_000,
+    maxResultChars: 24_000,
+    access: "read",
+    label: () => "Reading the document review",
+    async execute(args, ctx) {
+      const principal = principalOf(ctx);
+      const out = await reviewRowsForChat(principal, setIds, { reviewId: args.reviewId || undefined, issue: args.issue || undefined, docType: args.docType || undefined, privilege: args.privilege || undefined, coding: args.coding || undefined, q: args.q || undefined, limit: args.limit ?? undefined });
+      if (out.review && !allowed.has(out.review.setId)) throw new ToolExecutionError("unauthorized", "That review is not in the selected document sets");
+      if (args.reviewId && !out.review) throw new ToolExecutionError("not_found", "No such review in the selected document sets");
+      return out.review ? out : { ...out, note: "No review has been run on the selected document sets." };
+    },
+  });
+  return [search, read, reviewRows] as ToolDef<never, unknown>[];
 }
 
 /** Every function tool the knowledge switch adds for this turn. */

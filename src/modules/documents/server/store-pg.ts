@@ -1,10 +1,12 @@
 import "server-only";
 import type { RemoteStore, SqlQuery, SqlValue } from "@/lib/db/remote";
-import type { DocSet } from "../types";
+import type { CodingDecision, ReviewReport } from "../review-types";
+import { DOCS_LIMITS, type DocSet } from "../types";
 import {
   chunkFromRow, DuplicateFileError, EXTRACTOR_VERSION, extractionFromRow, FILE_COLS, fileFromRow, fileToRow, MAX_EXTRACTION_ATTEMPTS, queryTerms,
-  SET_COLS, setFromRow, setToRow, type ChunkRow, type DocStore, type ExtractionRow, type FileListFilter, type ScoredChunk, type SearchOptions,
-  type SetListFilter, type StoredFile,
+  reportFromJson, REVIEW_COLS, reviewFromRow, reviewRowFromRow, reviewRowToRow, reviewToRow, ROW_COLS, SET_COLS, setFromRow, setToRow, type ChunkRow,
+  type DocStore, type ExtractionRow, type FileListFilter, type ReviewRowRecord, type ScoredChunk, type SearchOptions, type SetListFilter, type StoredFile,
+  type StoredReview,
 } from "./store";
 
 /**
@@ -48,7 +50,28 @@ export const DOCS_PG_SCHEMA: SqlQuery[] = [
     )`,
   },
   { query: `CREATE INDEX IF NOT EXISTS docs_extractions_set ON docs_extractions (set_id)` },
+  {
+    query: `CREATE TABLE IF NOT EXISTS docs_reviews (
+      id text PRIMARY KEY, set_id text NOT NULL, name text NOT NULL, playbook_id text, area text NOT NULL, doc_types text NOT NULL DEFAULT '[]',
+      issues text NOT NULL DEFAULT '[]', columns text NOT NULL DEFAULT '[]', questions text NOT NULL DEFAULT '[]', version int NOT NULL DEFAULT 1,
+      created_by text NOT NULL, created_at text NOT NULL, updated_at text NOT NULL, report text
+    )`,
+  },
+  { query: `CREATE INDEX IF NOT EXISTS docs_reviews_set ON docs_reviews (set_id, updated_at DESC)` },
+  {
+    query: `CREATE TABLE IF NOT EXISTS docs_review_rows (
+      review_id text NOT NULL, file_id text NOT NULL, set_id text NOT NULL, state text NOT NULL, review_version int, text_hash text, file_stamp text,
+      windows_done int NOT NULL DEFAULT 0, result text, partials text NOT NULL DEFAULT '[]', row_hash text, decision text, error text,
+      attempts int NOT NULL DEFAULT 0, updated_at text NOT NULL,
+      PRIMARY KEY (review_id, file_id)
+    )`,
+  },
+  { query: `CREATE INDEX IF NOT EXISTS docs_review_rows_set ON docs_review_rows (set_id)` },
+  { query: `CREATE INDEX IF NOT EXISTS docs_review_rows_file ON docs_review_rows (file_id)` },
 ];
+
+const ROW_DEFS = `review_id text, file_id text, set_id text, state text, review_version int, text_hash text, file_stamp text, windows_done int, result text,
+  partials text, row_hash text, error text, attempts int, updated_at text`;
 
 const PENDING_WHERE = `set_id = $1 AND status IN ('ready','partial') AND chars > 0 AND pages_received >= pages AND (
   extraction = 'pending' OR (extraction = 'done' AND (extraction_version IS NULL OR extraction_version <> ${EXTRACTOR_VERSION}))
@@ -146,6 +169,8 @@ export class PgDocStore implements DocStore {
     await this.tx([
       { query: `DELETE FROM docs_chunks WHERE set_id = $1`, params: [id] },
       { query: `DELETE FROM docs_extractions WHERE set_id = $1`, params: [id] },
+      { query: `DELETE FROM docs_review_rows WHERE set_id = $1`, params: [id] },
+      { query: `DELETE FROM docs_reviews WHERE set_id = $1`, params: [id] },
       { query: `DELETE FROM docs_files WHERE set_id = $1`, params: [id] },
       { query: `DELETE FROM docs_sets WHERE id = $1`, params: [id] },
     ]);
@@ -224,6 +249,7 @@ export class PgDocStore implements DocStore {
     await this.tx([
       { query: `DELETE FROM docs_chunks WHERE file_id = $1 AND set_id = $2`, params: [fileId, setId] },
       { query: `DELETE FROM docs_extractions WHERE file_id = $1 AND set_id = $2`, params: [fileId, setId] },
+      { query: `DELETE FROM docs_review_rows WHERE file_id = $1 AND set_id = $2`, params: [fileId, setId] },
       { query: `DELETE FROM docs_files WHERE id = $1 AND set_id = $2`, params: [fileId, setId] },
     ]);
   }
@@ -341,6 +367,91 @@ export class PgDocStore implements DocStore {
       ? await this.q(`SELECT * FROM docs_extractions WHERE set_id = $1 AND file_id = $2 AND status = 'done' AND version = ${EXTRACTOR_VERSION} AND file_id IN (SELECT id FROM docs_files WHERE set_id = $1)`, [setId, fileId])
       : await this.q(`SELECT * FROM docs_extractions WHERE set_id = $1 AND status = 'done' AND version = ${EXTRACTOR_VERSION} AND file_id IN (SELECT id FROM docs_files WHERE set_id = $1)`, [setId]);
     return rows.map(extractionFromRow);
+  }
+
+  // ---- reviews
+
+  async allFiles(setId: string) {
+    const rows = await this.q(`SELECT * FROM docs_files WHERE set_id = $1 ORDER BY uploaded_at, id LIMIT ${DOCS_LIMITS.maxFilesPerSet + 100}`, [setId]);
+    return rows.map(fileFromRow);
+  }
+
+  async insertReview(review: StoredReview) {
+    const row = reviewToRow(review);
+    await this.q(`INSERT INTO docs_reviews (${REVIEW_COLS.join(", ")}) VALUES (${REVIEW_COLS.map((_, i) => `$${i + 1}`).join(", ")})`, REVIEW_COLS.map((c) => row[c]));
+  }
+
+  async getReview(setId: string, reviewId: string) {
+    const rows = await this.q(`SELECT ${REVIEW_COLS.join(", ")} FROM docs_reviews WHERE id = $1 AND set_id = $2`, [reviewId, setId]);
+    return rows[0] ? reviewFromRow(rows[0]) : null;
+  }
+
+  async listReviews(setId: string) {
+    const rows = await this.q(`SELECT ${REVIEW_COLS.join(", ")} FROM docs_reviews WHERE set_id = $1 ORDER BY updated_at DESC LIMIT 200`, [setId]);
+    return rows.map(reviewFromRow);
+  }
+
+  async updateReview(review: StoredReview) {
+    const row = reviewToRow(review);
+    const cols = REVIEW_COLS.filter((c) => c !== "id" && c !== "set_id");
+    await this.q(
+      `UPDATE docs_reviews SET ${cols.map((c, i) => `${c} = $${i + 1}`).join(", ")} WHERE id = $${cols.length + 1} AND set_id = $${cols.length + 2}`,
+      [...cols.map((c) => row[c]), review.id, review.setId],
+    );
+  }
+
+  async deleteReview(setId: string, reviewId: string) {
+    await this.tx([
+      { query: `DELETE FROM docs_review_rows WHERE review_id = $1 AND set_id = $2`, params: [reviewId, setId] },
+      { query: `DELETE FROM docs_reviews WHERE id = $1 AND set_id = $2`, params: [reviewId, setId] },
+    ]);
+  }
+
+  async listReviewRows(reviewId: string) {
+    const rows = await this.q(`SELECT * FROM docs_review_rows WHERE review_id = $1`, [reviewId]);
+    return rows.map(reviewRowFromRow);
+  }
+
+  async getReviewRow(reviewId: string, fileId: string) {
+    const rows = await this.q(`SELECT * FROM docs_review_rows WHERE review_id = $1 AND file_id = $2`, [reviewId, fileId]);
+    return rows[0] ? reviewRowFromRow(rows[0]) : null;
+  }
+
+  async putReviewRow(x: ReviewRowRecord) {
+    const row = reviewRowToRow(x);
+    const upd = ROW_COLS.filter((c) => c !== "review_id" && c !== "file_id");
+    await this.q(
+      `INSERT INTO docs_review_rows (${ROW_COLS.join(", ")}) SELECT ${ROW_COLS.join(", ")} FROM jsonb_to_recordset($1::jsonb) AS x(${ROW_DEFS})
+       ON CONFLICT (review_id, file_id) DO UPDATE SET ${upd.map((c) => `${c} = EXCLUDED.${c}`).join(", ")}`,
+      [JSON.stringify([row])],
+    );
+  }
+
+  async setReviewDecision(reviewId: string, setId: string, fileId: string, decision: CodingDecision | null, expectedRowHash: string) {
+    const d = decision ? JSON.stringify(decision) : null;
+    if (expectedRowHash) {
+      const rows = await this.q(
+        `UPDATE docs_review_rows SET decision = $1 WHERE review_id = $2 AND file_id = $3 AND set_id = $4 AND row_hash = $5 RETURNING file_id`,
+        [d, reviewId, fileId, setId, expectedRowHash],
+      );
+      return rows.length > 0;
+    }
+    const rows = await this.q(
+      `INSERT INTO docs_review_rows (review_id, file_id, set_id, state, decision, updated_at) VALUES ($1, $2, $3, 'pending', $4, $5)
+       ON CONFLICT (review_id, file_id) DO UPDATE SET decision = EXCLUDED.decision WHERE docs_review_rows.row_hash IS NULL OR docs_review_rows.row_hash = ''
+       RETURNING file_id`,
+      [reviewId, fileId, setId, d, new Date().toISOString()],
+    );
+    return rows.length > 0;
+  }
+
+  async putReviewReport(reviewId: string, report: ReviewReport) {
+    await this.q(`UPDATE docs_reviews SET report = $1 WHERE id = $2`, [JSON.stringify(report), reviewId]);
+  }
+
+  async getReviewReport(reviewId: string) {
+    const rows = await this.q(`SELECT report FROM docs_reviews WHERE id = $1`, [reviewId]);
+    return rows[0] ? reportFromJson(rows[0].report) : null;
   }
 
   async storage() {

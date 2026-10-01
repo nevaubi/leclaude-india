@@ -1,5 +1,6 @@
 import "server-only";
 import { remoteStore } from "@/lib/db/remote";
+import type { CodingDecision, DocReview, IssueAssessment, PrivilegeScreen, ReviewCell, ReviewReport } from "../review-types";
 import type { DocEvent, DocFact, DocFile, DocFileStatus, DocSet } from "../types";
 
 /**
@@ -42,6 +43,45 @@ export interface ExtractionRow {
   facts: DocFact[];
   events: DocEvent[];
   error: string | null;
+  updatedAt: string;
+}
+
+/** A review's definition as stored (counts are computed, never stored). */
+export type StoredReview = Omit<DocReview, "counts">;
+
+/** The checked result of reviewing one file (or one window of it). */
+export interface ReviewResult {
+  docType: string | null;
+  summary: string;
+  importance: number | null;
+  issues: IssueAssessment[];
+  privilege: PrivilegeScreen | null;
+  cells: Record<string, ReviewCell>;
+  coverage: { read: number; total: number };
+}
+
+/**
+ * One file's review row. `state` progress = some windows done (resumable, shown as pending); `pending` = a placeholder
+ * holding only a coding decision. The run never writes `decision`; coding never writes the model columns.
+ */
+export interface ReviewRowRecord {
+  reviewId: string;
+  setId: string;
+  fileId: string;
+  state: "pending" | "progress" | "done" | "failed";
+  /** Review version the row was produced under (null for a placeholder). */
+  reviewVersion: number | null;
+  textHash: string | null;
+  /** Cheap file fingerprint (chars, pages received, OCR pages): a different stamp means the text changed. */
+  fileStamp: string | null;
+  windowsDone: number;
+  result: ReviewResult | null;
+  /** Per-window results kept while a long file is part way through (state progress). */
+  partials: ReviewResult[];
+  rowHash: string | null;
+  decision: CodingDecision | null;
+  error: string | null;
+  attempts: number;
   updatedAt: string;
 }
 
@@ -105,6 +145,26 @@ export interface DocStore {
   putExtraction(row: ExtractionRow): Promise<void>;
   deleteExtraction(fileId: string): Promise<void>;
   listExtractions(setId: string, fileId?: string): Promise<ExtractionRow[]>;
+  // reviews
+  /** Every file of a set (no text), oldest first; bounded by DOCS_LIMITS.maxFilesPerSet. */
+  allFiles(setId: string): Promise<StoredFile[]>;
+  insertReview(review: StoredReview): Promise<void>;
+  getReview(setId: string, reviewId: string): Promise<StoredReview | null>;
+  listReviews(setId: string): Promise<StoredReview[]>;
+  updateReview(review: StoredReview): Promise<void>;
+  /** The review, its rows and its report. */
+  deleteReview(setId: string, reviewId: string): Promise<void>;
+  listReviewRows(reviewId: string): Promise<ReviewRowRecord[]>;
+  getReviewRow(reviewId: string, fileId: string): Promise<ReviewRowRecord | null>;
+  /** Upsert the model columns of a row; an existing decision is never touched. */
+  putReviewRow(row: ReviewRowRecord): Promise<void>;
+  /**
+   * Set (or clear) the decision only if the row's hash still equals `expectedRowHash` ("" = row not reviewed yet).
+   * Creates a placeholder row when none exists and "" is expected. Returns false on a hash mismatch.
+   */
+  setReviewDecision(reviewId: string, setId: string, fileId: string, decision: CodingDecision | null, expectedRowHash: string): Promise<boolean>;
+  putReviewReport(reviewId: string, report: ReviewReport): Promise<void>;
+  getReviewReport(reviewId: string): Promise<ReviewReport | null>;
   // storage
   storage(): Promise<{ usedMb: number | null }>;
 }
@@ -186,6 +246,55 @@ export function extractionFromRow(r: Raw): ExtractionRow {
     fileId: String(r.file_id), setId: String(r.set_id), textHash: String(r.text_hash), version: num(r.version), status: r.status === "failed" ? "failed" : r.status === "partial" ? "partial" : "done", windowsDone: num(r.windows_done),
     facts: jsonArr<DocFact>(r.facts), events: jsonArr<DocEvent>(r.events), error: strOrNull(r.error), updatedAt: String(r.updated_at),
   };
+}
+
+export const REVIEW_COLS = ["id", "set_id", "name", "playbook_id", "area", "doc_types", "issues", "columns", "questions", "version", "created_by", "created_at", "updated_at"] as const;
+
+function jsonOf<T>(v: unknown): T | null {
+  if (v == null || v === "") return null;
+  if (typeof v === "object") return v as T;
+  try { return JSON.parse(String(v)) as T; } catch { return null; }
+}
+
+export function reviewFromRow(r: Raw): StoredReview {
+  return {
+    id: String(r.id), setId: String(r.set_id), name: String(r.name), playbookId: strOrNull(r.playbook_id), area: String(r.area) as DocReview["area"],
+    docTypes: jsonArr<string>(r.doc_types), issues: jsonArr(r.issues), columns: jsonArr(r.columns), questions: jsonArr<string>(r.questions),
+    version: num(r.version, 1), createdBy: String(r.created_by), createdAt: String(r.created_at), updatedAt: String(r.updated_at),
+  };
+}
+
+export function reviewToRow(v: StoredReview): Record<(typeof REVIEW_COLS)[number], string | number | null> {
+  return {
+    id: v.id, set_id: v.setId, name: v.name, playbook_id: v.playbookId, area: v.area, doc_types: JSON.stringify(v.docTypes), issues: JSON.stringify(v.issues),
+    columns: JSON.stringify(v.columns), questions: JSON.stringify(v.questions), version: v.version, created_by: v.createdBy, created_at: v.createdAt, updated_at: v.updatedAt,
+  };
+}
+
+/** Columns the run writes (decision is written only by setReviewDecision). */
+export const ROW_COLS = ["review_id", "file_id", "set_id", "state", "review_version", "text_hash", "file_stamp", "windows_done", "result", "partials", "row_hash", "error", "attempts", "updated_at"] as const;
+
+export function reviewRowFromRow(r: Raw): ReviewRowRecord {
+  const state = String(r.state);
+  return {
+    reviewId: String(r.review_id), fileId: String(r.file_id), setId: String(r.set_id),
+    state: (["pending", "progress", "done", "failed"].includes(state) ? state : "pending") as ReviewRowRecord["state"],
+    reviewVersion: r.review_version == null ? null : num(r.review_version), textHash: strOrNull(r.text_hash), fileStamp: strOrNull(r.file_stamp),
+    windowsDone: num(r.windows_done), result: jsonOf<ReviewResult>(r.result), partials: jsonArr<ReviewResult>(r.partials), rowHash: strOrNull(r.row_hash),
+    decision: jsonOf<CodingDecision>(r.decision), error: strOrNull(r.error), attempts: num(r.attempts), updatedAt: String(r.updated_at),
+  };
+}
+
+export function reviewRowToRow(x: ReviewRowRecord): Record<(typeof ROW_COLS)[number], string | number | null> {
+  return {
+    review_id: x.reviewId, file_id: x.fileId, set_id: x.setId, state: x.state, review_version: x.reviewVersion, text_hash: x.textHash, file_stamp: x.fileStamp,
+    windows_done: x.windowsDone, result: x.result ? JSON.stringify(x.result) : null, partials: JSON.stringify(x.partials ?? []), row_hash: x.rowHash,
+    error: x.error, attempts: x.attempts, updated_at: x.updatedAt,
+  };
+}
+
+export function reportFromJson(v: unknown): ReviewReport | null {
+  return jsonOf<ReviewReport>(v);
 }
 
 // ---- query terms ------------------------------------------------------------------------------------------------

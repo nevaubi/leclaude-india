@@ -2,11 +2,13 @@ import "server-only";
 import fs from "node:fs";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { getSqlite } from "@/lib/db/sqlite";
-import type { DocSet } from "../types";
+import type { CodingDecision, ReviewReport } from "../review-types";
+import { DOCS_LIMITS, type DocSet } from "../types";
 import {
   chunkFromRow, DuplicateFileError, EXTRACTOR_VERSION, extractionFromRow, FILE_COLS, fileFromRow, fileToRow, MAX_EXTRACTION_ATTEMPTS, queryTerms,
-  SET_COLS, setFromRow, setToRow, type ChunkRow, type DocStore, type ExtractionRow, type FileListFilter, type ScoredChunk, type SearchOptions,
-  type SetListFilter, type StoredFile,
+  reportFromJson, REVIEW_COLS, reviewFromRow, reviewRowFromRow, reviewRowToRow, reviewToRow, ROW_COLS, SET_COLS, setFromRow, setToRow, type ChunkRow,
+  type DocStore, type ExtractionRow, type FileListFilter, type ReviewRowRecord, type ScoredChunk, type SearchOptions, type SetListFilter, type StoredFile,
+  type StoredReview,
 } from "./store";
 
 /** Development / test backend: the local SQLite file, with an FTS5 index over chunk text (bm25 ranking). */
@@ -37,6 +39,20 @@ CREATE TABLE IF NOT EXISTS docs_extractions (
   facts TEXT NOT NULL DEFAULT '[]', events TEXT NOT NULL DEFAULT '[]', error TEXT, windows_done INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS docs_extractions_set ON docs_extractions(set_id);
+CREATE TABLE IF NOT EXISTS docs_reviews (
+  id TEXT PRIMARY KEY, set_id TEXT NOT NULL, name TEXT NOT NULL, playbook_id TEXT, area TEXT NOT NULL, doc_types TEXT NOT NULL DEFAULT '[]',
+  issues TEXT NOT NULL DEFAULT '[]', columns TEXT NOT NULL DEFAULT '[]', questions TEXT NOT NULL DEFAULT '[]', version INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, report TEXT
+);
+CREATE INDEX IF NOT EXISTS docs_reviews_set ON docs_reviews(set_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS docs_review_rows (
+  review_id TEXT NOT NULL, file_id TEXT NOT NULL, set_id TEXT NOT NULL, state TEXT NOT NULL, review_version INTEGER, text_hash TEXT, file_stamp TEXT,
+  windows_done INTEGER NOT NULL DEFAULT 0, result TEXT, partials TEXT NOT NULL DEFAULT '[]', row_hash TEXT, decision TEXT, error TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
+  PRIMARY KEY (review_id, file_id)
+);
+CREATE INDEX IF NOT EXISTS docs_review_rows_set ON docs_review_rows(set_id);
+CREATE INDEX IF NOT EXISTS docs_review_rows_file ON docs_review_rows(file_id);
 `;
 
 const ready = new WeakSet<DatabaseSync>();
@@ -139,6 +155,8 @@ export class SqliteDocStore implements DocStore {
     this.tx(() => {
       this.deleteChunksWhere("set_id = ?", [id]);
       this.run(`DELETE FROM docs_extractions WHERE set_id = ?`, [id]);
+      this.run(`DELETE FROM docs_review_rows WHERE set_id = ?`, [id]);
+      this.run(`DELETE FROM docs_reviews WHERE set_id = ?`, [id]);
       this.run(`DELETE FROM docs_files WHERE set_id = ?`, [id]);
       this.run(`DELETE FROM docs_sets WHERE id = ?`, [id]);
     });
@@ -211,6 +229,7 @@ export class SqliteDocStore implements DocStore {
     this.tx(() => {
       this.deleteChunksWhere("file_id = ? AND set_id = ?", [fileId, setId]);
       this.run(`DELETE FROM docs_extractions WHERE file_id = ? AND set_id = ?`, [fileId, setId]);
+      this.run(`DELETE FROM docs_review_rows WHERE file_id = ? AND set_id = ?`, [fileId, setId]);
       this.run(`DELETE FROM docs_files WHERE id = ? AND set_id = ?`, [fileId, setId]);
     });
   }
@@ -323,6 +342,82 @@ export class SqliteDocStore implements DocStore {
       ? this.all(`SELECT * FROM docs_extractions WHERE set_id = ? AND file_id = ? AND status = 'done' AND version = ${EXTRACTOR_VERSION} AND file_id IN (SELECT id FROM docs_files WHERE set_id = ?)`, [setId, fileId, setId])
       : this.all(`SELECT * FROM docs_extractions WHERE set_id = ? AND status = 'done' AND version = ${EXTRACTOR_VERSION} AND file_id IN (SELECT id FROM docs_files WHERE set_id = ?)`, [setId, setId]);
     return rows.map(extractionFromRow);
+  }
+
+  // ---- reviews
+
+  async allFiles(setId: string) {
+    return this.all(`SELECT * FROM docs_files WHERE set_id = ? ORDER BY uploaded_at, id LIMIT ?`, [setId, DOCS_LIMITS.maxFilesPerSet + 100]).map(fileFromRow);
+  }
+
+  async insertReview(review: StoredReview) {
+    const row = reviewToRow(review);
+    this.run(`INSERT INTO docs_reviews (${REVIEW_COLS.join(", ")}) VALUES (${ph(REVIEW_COLS.length)})`, REVIEW_COLS.map((c) => row[c]));
+  }
+
+  async getReview(setId: string, reviewId: string) {
+    const r = this.get(`SELECT * FROM docs_reviews WHERE id = ? AND set_id = ?`, [reviewId, setId]);
+    return r ? reviewFromRow(r) : null;
+  }
+
+  async listReviews(setId: string) {
+    return this.all(`SELECT * FROM docs_reviews WHERE set_id = ? ORDER BY updated_at DESC LIMIT 200`, [setId]).map(reviewFromRow);
+  }
+
+  async updateReview(review: StoredReview) {
+    const row = reviewToRow(review);
+    const cols = REVIEW_COLS.filter((c) => c !== "id" && c !== "set_id");
+    this.run(`UPDATE docs_reviews SET ${cols.map((c) => `${c} = ?`).join(", ")} WHERE id = ? AND set_id = ?`, [...cols.map((c) => row[c]), review.id, review.setId]);
+  }
+
+  async deleteReview(setId: string, reviewId: string) {
+    this.tx(() => {
+      this.run(`DELETE FROM docs_review_rows WHERE review_id = ? AND set_id = ?`, [reviewId, setId]);
+      this.run(`DELETE FROM docs_reviews WHERE id = ? AND set_id = ?`, [reviewId, setId]);
+    });
+  }
+
+  async listReviewRows(reviewId: string) {
+    return this.all(`SELECT * FROM docs_review_rows WHERE review_id = ?`, [reviewId]).map(reviewRowFromRow);
+  }
+
+  async getReviewRow(reviewId: string, fileId: string) {
+    const r = this.get(`SELECT * FROM docs_review_rows WHERE review_id = ? AND file_id = ?`, [reviewId, fileId]);
+    return r ? reviewRowFromRow(r) : null;
+  }
+
+  async putReviewRow(x: ReviewRowRecord) {
+    const row = reviewRowToRow(x);
+    const upd = ROW_COLS.filter((c) => c !== "review_id" && c !== "file_id");
+    this.run(
+      `INSERT INTO docs_review_rows (${ROW_COLS.join(", ")}) VALUES (${ph(ROW_COLS.length)})
+       ON CONFLICT (review_id, file_id) DO UPDATE SET ${upd.map((c) => `${c} = excluded.${c}`).join(", ")}`,
+      ROW_COLS.map((c) => row[c]),
+    );
+  }
+
+  async setReviewDecision(reviewId: string, setId: string, fileId: string, decision: CodingDecision | null, expectedRowHash: string) {
+    const d = decision ? JSON.stringify(decision) : null;
+    if (expectedRowHash) {
+      const r = this.run(`UPDATE docs_review_rows SET decision = ? WHERE review_id = ? AND file_id = ? AND set_id = ? AND row_hash = ?`, [d, reviewId, fileId, setId, expectedRowHash]);
+      return Number(r.changes) > 0;
+    }
+    // Not reviewed yet: create a placeholder, or update a row that still has no hash.
+    const r = this.run(
+      `INSERT INTO docs_review_rows (review_id, file_id, set_id, state, decision, updated_at) VALUES (?, ?, ?, 'pending', ?, ?)
+       ON CONFLICT (review_id, file_id) DO UPDATE SET decision = excluded.decision WHERE docs_review_rows.row_hash IS NULL OR docs_review_rows.row_hash = ''`,
+      [reviewId, fileId, setId, d, new Date().toISOString()],
+    );
+    return Number(r.changes) > 0;
+  }
+
+  async putReviewReport(reviewId: string, report: ReviewReport) {
+    this.run(`UPDATE docs_reviews SET report = ? WHERE id = ?`, [JSON.stringify(report), reviewId]);
+  }
+
+  async getReviewReport(reviewId: string) {
+    const r = this.get(`SELECT report FROM docs_reviews WHERE id = ?`, [reviewId]);
+    return r ? reportFromJson(r.report) : null;
   }
 
   async storage() {

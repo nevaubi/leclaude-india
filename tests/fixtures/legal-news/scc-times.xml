@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+	xmlns:slash="http://purl.org/rss/1.0/modules/slash/"
+	>
+<channel>
+	<title>SCC Times</title>
+	<atom:link href="https://www.scconline.com/blog/feed/" rel="self" type="application/rss+xml" />
+	<link>https://www.scconline.com/blog</link>
+	<description>Legal News, Case Briefs &#38; Analysis</description>
+	<lastBuildDate>Thu, 01 Oct 2026 05:10:00 +0000</lastBuildDate>
+	<language>en-US</language>
+	<sy:updatePeriod>hourly</sy:updatePeriod>
+	<item>
+		<title>Madras High Court sets aside detention order; &#8216;non-application of mind&#8217; evident</title>
+		<link>https://www.scconline.com/blog/post/2026/10/01/madras-high-court-detention-order-set-aside/</link>
+		<comments>https://www.scconline.com/blog/post/2026/10/01/madras-high-court-detention-order-set-aside/#respond</comments>
+		<dc:creator><![CDATA[Editor]]></dc:creator>
+		<pubDate>Thu, 01 Oct 2026 04:30:00 +0000</pubDate>
+		<category><![CDATA[Case Briefs]]></category>
+		<category><![CDATA[High Courts]]></category>
+		<category><![CDATA[Madras High Court]]></category>
+		<guid isPermaLink="false">https://www.scconline.com/blog/?p=412345</guid>
+		<description><![CDATA[Madras High Court: In a habeas corpus petition, the Division Bench held that the detaining authority failed to consider the bail order &#38; the representation [&#8230;]<p>The post <a href="https://www.scconline.com/blog/post/2026/10/01/madras-high-court-detention-order-set-aside/">Madras High Court sets aside detention order</a> appeared first on <a href="https://www.scconline.com/blog">SCC Times</a>.</p>
+]]></description>
+		<content:encoded><![CDATA[<p>Full post body.</p>]]></content:encoded>
+		<wfw:commentRss>https://www.scconline.com/blog/post/2026/10/01/madras-high-court-detention-order-set-aside/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+	</item>
+	<item>
+		<title>Legislation Update: Bharatiya Sakshya Adhiniyam amendment notified</title>
+		<link>https://www.scconline.com/blog/post/2026/09/30/bsa-amendment-notified/</link>
+		<dc:creator><![CDATA[Editor]]></dc:creator>
+		<pubDate>Wed, 30 Sep 2026 13:00:00 +0000</pubDate>
+		<category><![CDATA[Legislation Updates]]></category>
+		<guid isPermaLink="false">https://www.scconline.com/blog/?p=412300</guid>
+		<description><![CDATA[The Ministry of Law and Justice notified the amendment on 29-9-2026.]]></description>
+	</item>
+</channel>
+</rss>

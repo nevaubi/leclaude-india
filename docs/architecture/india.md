@@ -61,7 +61,24 @@ The corpus of judgments lives in Postgres tables (`corpus_units`, `corpus_judgme
 - Retrieval: `GET /api/india/corpus/search` and the `search_judgment_index` research tool (exact CNR, neutral citation or
   case number first; weighted full-text over citations, title, coram and the published snippet).
 - Duplicates: the Supreme Court dataset lists 5,181 judgments under two adjacent years with identical metadata (verified field by field); they are stored once, and a row's `year` is its decision year. Records present in an archive but not declared in its index are stored and noted on the unit (`note`).
-- Not yet: full judgment text (PDF extraction) in the corpus. Acts and regulations: see "Law corpus (Postgres)" below.
+- Full judgment text: see "Judgment text (Postgres)" below. Acts and regulations: see "Law corpus (Postgres)" below.
+
+## Judgment text (Postgres)
+`corpus_texts`: page-numbered text chunks of judgments, from Open India Law (CC BY 4.0; text extracted from the courts'
+published PDFs). Loaded by `scripts/law-corpus/load_sc_judgment_text.py` (Supreme Court, English, ~35,600 judgments)
+and `load_hc_judgment_text.py <court>…` (High Courts; Karnataka, Andhra Pradesh and Telangana first).
+
+- Identity, never by name: Supreme Court text belongs to a record by exact neutral citation; High Court text by CNR
+  and decision date together (a CNR carries several orders). `corpus_judgments.text_status = 'full'` only on a match.
+  Text without a matching index record is still searchable and readable by `CNR@YYYY-MM-DD`.
+- The dataset's synthetic header and structure markers are removed; words are not changed. The official PDF stays the
+  text of record; the reader and every tool result say so.
+- Reads: `src/modules/india/corpus/text.ts` (`readJudgmentText`, `searchJudgmentText`), `/api/cases/text`, the case
+  record's "Judgment text" panel, the `search_judgment_text` / `read_judgment_text` tools, and the research case-law
+  lane (passages with page numbers, readable through `corpus-text://<id>`).
+- Search is bounded: a tsquery is required, at most 3,000 matching chunks are ranked, best passage per judgment.
+  In research the text search runs in parallel with the metadata search under its own 15 s budget.
+- Storage: about 6 GB per million chunks including the full-text index (Karnataka High Court: ~1.47M chunks).
 
 ## Law corpus (Postgres)
 Indian statutes and regulations live in Postgres tables created and filled by the loader

@@ -90,6 +90,9 @@ export function canonicalNeutral(v: string | null | undefined): string | null {
 
 const CNR_RE = /^[A-Z]{4}\d{12}$/;
 
+/** Matching chunks considered for ranking per search. */
+const CANDIDATES = 3000;
+
 function toChunk(r: Row): JudgmentTextChunk {
   const n = (v: string | null) => (v == null ? null : Number(v));
   return { index: Number(r.chunk_index), pageStart: n(r.page_start), pageEnd: n(r.page_end), section: r.section_type, text: r.text ?? "" };
@@ -225,11 +228,16 @@ export async function searchJudgmentText(
     ? `CASE WHEN b.neutral_citation IS NOT NULL THEN upper(cj.neutral_citation) = b.neutral_citation ELSE cj.cnr = b.cnr AND cj.decision_date = b.t_date::date END`
     : `upper(cj.neutral_citation) = b.neutral_citation`;
   const rows = await store.query({
-    query: `WITH m AS (
+    // Bounded: at most CANDIDATES matching chunks are ranked (common phrases match hundreds of thousands); the text is
+    // read only for the ranked page.
+    query: `WITH c AS (
+        SELECT t.id FROM corpus_texts t
+        WHERE t.search @@ websearch_to_tsquery('english', $1)${extra}
+        LIMIT ${CANDIDATES}
+      ), m AS (
         SELECT t.neutral_citation, ${hcCols}, t.chunk_index, t.page_start, t.page_end, t.text,
                ts_rank_cd(t.search, websearch_to_tsquery('english', $1)) AS rank
-        FROM corpus_texts t
-        WHERE t.search @@ websearch_to_tsquery('english', $1)${extra}
+        FROM corpus_texts t JOIN c ON c.id = t.id
         ORDER BY rank DESC LIMIT ${limit * 20}
       ), best AS (
         SELECT DISTINCT ON (${groupKey}) * FROM m ORDER BY ${groupKey}, rank DESC

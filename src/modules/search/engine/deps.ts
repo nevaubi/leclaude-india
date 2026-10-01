@@ -381,8 +381,18 @@ export function defaultDeps(): EngineDeps {
             const allowed = visibleMatters({ state: { matterId: settings.matterId ?? undefined } });
             const local = await searchJudgments(query, { courts, yearFrom: year(range.from), yearTo: year(range.to) }, { limit, allowed });
             const hits = local.map((h) => normalizeJudgment(judgmentRow(h), nctx));
-            try { hits.push(...(await corpusTextHits(query, { courts, yearFrom: year(range.from), yearTo: year(range.to), limit: Math.min(limit, 8), existing: hits, nctx }))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment text search failed:", (e as Error).message); }
-            try { hits.push(...(await corpusCaselawHits(query, { courts, yearFrom: year(range.from), yearTo: year(range.to), limit: Math.min(limit, 8), existing: hits, nctx }))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment corpus search failed:", (e as Error).message); }
+            // Full-text passages and metadata records are searched in parallel; the text search has its own budget so a
+            // slow text search never costs the lane its other results. A record already found with text is not repeated.
+            const yf = year(range.from), yt = year(range.to);
+            const [textHits, metaHits] = await Promise.all([
+              withTimeout(corpusTextHits(query, { courts, yearFrom: yf, yearTo: yt, limit: Math.min(limit, 8), existing: hits, nctx }), 15_000, signal)
+                .catch((e) => { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment text search failed:", (e as Error).message); return [] as SearchHit[]; }),
+              corpusCaselawHits(query, { courts, yearFrom: yf, yearTo: yt, limit: Math.min(limit, 8), existing: hits, nctx })
+                .catch((e) => { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment corpus search failed:", (e as Error).message); return [] as SearchHit[]; }),
+            ]);
+            hits.push(...textHits);
+            const withText = new Set(textHits.flatMap((h) => [h.india?.judgmentId, h.cite].filter((x): x is string => Boolean(x)).map((x) => x.toUpperCase())));
+            hits.push(...metaHits.filter((h) => ![h.india?.judgmentId, h.cite].some((x) => x && withText.has(x.toUpperCase()))));
             try { hits.push(...(await indianKanoonHits(query, courts, settings, signal))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] Indian Kanoon search failed:", (e as Error).message); }
             return { hits, total: hits.length };
           }

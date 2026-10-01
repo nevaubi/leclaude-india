@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	>
+<channel>
+	<title>Law Trend</title>
+	<atom:link href="https://lawtrend.in/feed/" rel="self" type="application/rss+xml" />
+	<link>https://lawtrend.in</link>
+	<description>Legal News Website</description>
+	<item>
+		<title>Gujarat High Court Directs Fresh Inquiry Into Custodial Death &#8211; Says Earlier Probe &#8220;Perfunctory&#8221;</title>
+		<link>https://lawtrend.in/gujarat-high-court-fresh-inquiry-custodial-death/</link>
+		<dc:creator><![CDATA[Law Trend]]></dc:creator>
+		<pubDate>Thu, 01 Oct 2026 03:45:10 +0000</pubDate>
+		<category><![CDATA[High Court Updates]]></category>
+		<category><![CDATA[Gujarat High Court]]></category>
+		<guid isPermaLink="false">https://lawtrend.in/?p=98765</guid>
+		<description><![CDATA[The Gujarat High Court has directed a fresh inquiry, holding that the earlier probe was perfunctory and ignored medical evidence. The Bench observed that the State owes a heightened duty of care to persons in its custody, and that a magisterial inquiry under the BNSS must examine the medical record, the custody register and the statements of independent witnesses before any conclusion is reached; it set a time limit of three months for the fresh inquiry and directed that the family be heard. The matter will be listed again after the report is filed.]]></description>
+	</item>
+</channel>
+</rss>

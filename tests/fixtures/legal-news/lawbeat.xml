@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/">
+<channel>
+<title>LawBeat</title>
+<link>https://www.lawbeat.in</link>
+<description>LawBeat - Legal News</description>
+<item>
+<title>Allahabad High Court seeks State&apos;s reply on encroachment of ponds</title>
+<link>https://www.lawbeat.in/news-updates/allahabad-high-court-ponds-encroachment-reply</link>
+<guid>https://www.lawbeat.in/news-updates/allahabad-high-court-ponds-encroachment-reply</guid>
+<description>The Court asked the State to file a compliance affidavit within four weeks.</description>
+<category>Allahabad High Court</category>
+<dc:creator>Sakshi Banga</dc:creator>
+<pubDate>Thu, 01 Oct 2026 10:02:00 +0530</pubDate>
+<media:content url="https://www.lawbeat.in/sites/default/files/ponds.jpg" medium="image"/>
+</item>
+<item>
+<title>Pakistan Supreme Court stays election tribunal order</title>
+<link>https://www.lawbeat.in/news-updates/pakistan-supreme-court-election-tribunal</link>
+<guid>https://www.lawbeat.in/news-updates/pakistan-supreme-court-election-tribunal</guid>
+<description>An international roundup item.</description>
+<category>International</category>
+<pubDate>Wed, 30 Sep 2026 20:00:00 +0530</pubDate>
+</item>
+<item>
+<title>Explainer: How bail works under the BNSS</title>
+<link>https://www.lawbeat.in/explainers/bail-under-bnss</link>
+<guid>https://www.lawbeat.in/explainers/bail-under-bnss</guid>
+<description>A short explainer.</description>
+<category>Explainers</category>
+</item>
+</channel>
+</rss>

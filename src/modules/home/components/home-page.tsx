@@ -19,7 +19,7 @@ import { HomeProvider, useHome } from "./home-provider";
 import { DailyBriefCard } from "./daily-brief";
 import { CalendarFocus, EventDialog, EventSheet } from "./calendar";
 import { TaskDialog, TasksFocus } from "./tasks";
-import { NewsFocus, NewsOverview } from "./news-feed";
+import { LegalNewsCard } from "@/modules/news/components/legal-news-card";
 import { UpdatesFocus, UpdatesOverview } from "./team-updates";
 import { MattersFocus, MattersOverview } from "./matters-overview";
 import { AssistantDock } from "./assistant-dock";
@@ -126,10 +126,13 @@ function HomeLayout() {
  * first matter exists the page is the greeting plus a first-run checklist.
  */
 function Overview() {
-  const { setup, news, updates } = useHome();
+  const { setup, updates } = useHome();
   const composerNonce = useHomeUI((s) => s.composerNonce);
+  const setFocus = useHomeUI((s) => s.setFocus);
   const firstRun = setup.matters === 0;
-  const showNews = news.length > 0;
+  // Indian legal headlines come from the publishers' feeds (/api/news), not the seeded `news` collection; the card
+  // always renders so its loading, empty and feed-failure states are visible.
+  const showNews = true;
   const showUpdates = updates.length > 0 || composerNonce > 0;
   return (
     <div className="@container mx-auto w-full max-w-[1480px] space-y-4 p-4 pb-8">
@@ -146,7 +149,7 @@ function Overview() {
       )}
       {(showNews || showUpdates) && (
         <div className={cn("grid gap-4", showNews && showUpdates && "@3xl:grid-cols-2")}>
-          {showNews && <NewsOverview />}
+          {showNews && <LegalNewsCard onExpand={() => setFocus("news")} />}
           {showUpdates && <UpdatesOverview />}
         </div>
       )}
@@ -163,7 +166,7 @@ function FocusedSection({ section, onClose }: { section: HomeSection; onClose: (
   switch (section) {
     case "calendar": return <CalendarFocus />;
     case "tasks": return <TasksFocus />;
-    case "news": return <NewsFocus />;
+    case "news": return <LegalNewsCard expanded onExpand={onClose} />;
     case "updates": return <UpdatesFocus />;
     case "matters": return <MattersFocus />;
   }

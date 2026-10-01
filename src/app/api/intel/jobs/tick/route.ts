@@ -8,6 +8,7 @@ import { backfillEnabled, runBackfill } from "@/modules/india/corpus/backfill";
 import { ensureIntelSeeded } from "@/modules/intel/seed";
 import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
+import { refreshLegalNews } from "@/modules/news/service";
 
 export const runtime = "nodejs";
 /** The tick runs due intel jobs (up to ~50s), then continues the judgment corpus backfill when it is enabled, and returns before 300s. */
@@ -34,14 +35,22 @@ async function tick(req: NextRequest) {
   const deadlineMs = Math.max(1000, Math.min(Number(url.searchParams.get("deadlineMs") ?? 50_000) || 50_000, 55_000));
   const housekeeping = url.searchParams.get("housekeeping") !== "0";
   const started = Date.now();
+  // Indian legal news feeds (throttled to one run per 15 minutes, 20 s budget) run alongside the intel jobs; a
+  // failure is reported in the response and never fails the tick.
+  const news = url.searchParams.get("news") === "0"
+    ? Promise.resolve({ status: "skipped" as const, reason: "disabled" })
+    : refreshLegalNews({ deadlineMs: 20_000 })
+      .then((r) => ({ status: r.status, reason: r.reason, added: r.run?.added ?? 0, failed: r.run?.feeds.filter((f) => !f.ok).map((f) => f.sourceId) ?? [] }))
+      .catch((e: unknown) => ({ status: "failed" as const, error: e instanceof Error ? e.message : String(e) }));
   const result = await runDue({ limit, deadlineMs, housekeeping });
+  const legalNews = await news;
   // Judgment corpus backfill (durable queue in Postgres): uses the rest of the invocation when enabled.
   let corpus: Awaited<ReturnType<typeof runBackfill>> | { stop: "skipped" } = { stop: "skipped" };
   if (url.searchParams.get("corpus") !== "0" && (await backfillEnabled())) {
     const left = 270_000 - (Date.now() - started);
     if (left > 30_000) corpus = await runBackfill({ deadlineMs: left });
   }
-  return Response.json({ ...result, corpus, health: intelHealth() });
+  return Response.json({ ...result, corpus, legalNews, health: intelHealth() });
 }
 
 async function handlePOST(req: NextRequest) { return tick(req); }

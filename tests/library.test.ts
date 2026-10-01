@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { FEATURES } from "@/lib/features";
 import { db, resetSqlite } from "@/lib/db";
 import type { LibraryItem, OfficeDocument } from "@/lib/types/domain";
 import { MATTERS, PEOPLE } from "@/lib/seed/ids";
@@ -173,11 +174,18 @@ describe("office document merge", () => {
     const list = listItems({ folder: matterFolderId(MATTERS.sterling) });
     expect(list.items.some((i) => i.officeDocId === created.id && i.officeKind === "sheet")).toBe(true);
     const summaries = listOfficeDocSummaries({ kind: "sheet" });
+    const home = officeHomeData("sheet");
+    if (!FEATURES.officeAll) {
+      // LeClaude India offers Word only: workbooks stay in the library but are not listed on the Office home.
+      expect(summaries.find((x) => x.id === created.id)).toBeUndefined();
+      expect(home.counts.sheet).toBe(0);
+      expect(home.templates.every((t) => t.kind === "word")).toBe(true);
+      return;
+    }
     const s = summaries.find((x) => x.id === created.id)!;
     expect(s.versionCount).toBe(1);
     expect(s.matterShortName).toBe("Sterling Medical");
     expect(s.libraryItemId).toBe(row.id);
-    const home = officeHomeData("sheet");
     expect(home.docs.every((x) => x.kind === "sheet")).toBe(true);
     expect(home.counts.sheet).toBeGreaterThanOrEqual(1);
     expect(home.templates.length).toBeGreaterThan(0);

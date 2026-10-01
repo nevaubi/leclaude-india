@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { CORPUS_SCHEMA_VERSION } from "@/modules/india/corpus/schema";
 import type { RemoteStore, Row, SqlQuery } from "@/lib/db/remote";
 import { resetCorpusSchemaCacheForTests } from "@/modules/india/corpus/backfill";
 import {
@@ -12,7 +13,7 @@ class FakeStore implements RemoteStore {
   constructor(private readonly reply: (q: SqlQuery) => Row[] | Promise<Row[]> = () => []) {}
   async query(q: SqlQuery): Promise<Row[]> {
     if (q.query.includes("to_regclass")) return [{ t: "corpus_state" }];
-    if (q.query.includes("FROM corpus_state WHERE key = 'schema_version'")) return [{ value: "2" }];
+    if (q.query.includes("FROM corpus_state WHERE key = 'schema_version'")) return [{ value: String(CORPUS_SCHEMA_VERSION) }];
     this.calls.push(q);
     return this.reply(q);
   }

@@ -32,6 +32,7 @@ import { listDocSets, readDocPassage, searchDocSets } from "@/modules/documents/
 import type { DocSearchHit } from "@/modules/documents/types";
 import { remoteStore } from "@/lib/db/remote";
 import { searchCorpus, type CorpusHit } from "@/modules/india/corpus/search";
+import { caseHref } from "@/modules/caselaw/shared";
 
 /** Model-derived plan: jurisdiction-aware sub-questions and extra retrieval queries per lane kind. */
 export interface ResearchPlan {
@@ -123,7 +124,7 @@ function corpusHit(h: CorpusHit, nctx: { jurisdiction: SearchSettings["jurisdict
     courtId: h.court_id ?? undefined,
     date: h.decision_date ?? undefined,
     snippet: (h.snippet ?? "").replace(/\s+/g, " ").trim().slice(0, 600),
-    url: `/cases/${encodeURIComponent(h.id)}`,
+    url: caseHref(h.id),
     judge: h.judges.join(", ") || undefined,
     docketNumber: h.case_number ?? undefined,
     authority: classifyAuthority(h.court_id, nctx.jurisdiction, nctx.courts, h.decision_date ?? undefined),

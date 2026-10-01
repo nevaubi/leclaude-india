@@ -15,7 +15,7 @@ import type { SqlQuery } from "@/lib/db/remote";
  * - `corpus_rejects`: records that could not be parsed, with the reason (never silently dropped).
  * - `corpus_state`: small key/value state (budget stop reason, discovery progress).
  */
-export const CORPUS_SCHEMA_VERSION = 2;
+export const CORPUS_SCHEMA_VERSION = 3;
 
 export const CORPUS_SCHEMA: SqlQuery[] = [
   { query: `CREATE TABLE IF NOT EXISTS corpus_state (key text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())` },
@@ -106,4 +106,6 @@ export const CORPUS_SCHEMA: SqlQuery[] = [
   { query: `ALTER TABLE corpus_units ADD COLUMN IF NOT EXISTS note text` },
   // v2: a judgment's year is its decision year (rows written by v1 took the dataset folder's year).
   { query: `UPDATE corpus_judgments SET year = extract(year FROM decision_date)::int WHERE decision_date IS NOT NULL AND year IS DISTINCT FROM extract(year FROM decision_date)::int` },
+  // v3: keyset browsing by date for the case-law directory (all courts).
+  { query: `CREATE INDEX IF NOT EXISTS corpus_judgments_date_id ON corpus_judgments (decision_date DESC, id DESC)` },
 ];

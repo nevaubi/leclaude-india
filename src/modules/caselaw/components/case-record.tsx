@@ -187,6 +187,8 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-4">
+          {r.text_status === "full" ? <JudgmentTextSection id={r.id} citation={r.neutral_citation} /> : null}
+
           <Section title="Record">
             <dl>
               <Field label="Court">{r.court ? r.court : r.court_code ? <span className="text-warning-foreground dark:text-warning">Not in the court registry (dataset code {r.court_code})</span> : DASH}</Field>
@@ -221,8 +223,6 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
               <Field label="Author">{show(r.author)}</Field>
             </dl>
           </Section>
-
-          {r.text_status === "full" ? <JudgmentTextSection id={r.id} citation={r.neutral_citation} /> : null}
 
           <Section title="Source snippet (dataset)" aside={<span className="text-[11px] text-muted-foreground">as published in the dataset metadata; not the judgment text</span>}>
             {r.snippet ? <p className="whitespace-pre-wrap text-[13px] leading-relaxed">{r.snippet}</p> : <p className="text-[12.5px] text-muted-foreground">The dataset published no snippet for this record.</p>}

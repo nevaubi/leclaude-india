@@ -4,17 +4,22 @@
  * Pure and client-safe; the network resolution step lives in the server run.
  */
 import type { Citation, CitationCheck as EvidenceCitationCheck, CitationState } from "@/lib/evidence/types";
+import { normalizeCitation } from "@/lib/india/citations";
 import { extractCitations, type ExtractedCitation } from "../citations";
 import { citedNumbers } from "./markers";
 import type { CitationCrossCheck, ResearchSource } from "./types";
 
 /** Normalise "550 U.S. 544, 555" → "550u.s.544" (pin cite dropped, whitespace removed) so cites compare reliably. */
 export function normCite(c: string): string {
-  return c.replace(/,\s*\d{1,5}(?:[-–]\d{1,5})?\s*$/, "").replace(/\s+/g, "").trim().toLowerCase();
+  const bare = c.replace(/,\s*(?:(?:p|pp|para|paras|page)\.?\s*)?\d{1,5}(?:[-–]\d{1,5})?\s*$/i, "").trim();
+  // Indian citations through the shared parser, so "(2024) 10 SCR 108" and "[2024] 10 S.C.R. 108" compare equal.
+  let indian: string | null = null;
+  try { indian = normalizeCitation(bare); } catch { indian = null; }
+  return (indian ?? bare).replace(/\s+/g, "").trim().toLowerCase();
 }
 
 function citesOf(s: ResearchSource): string[] {
-  const list = [s.cite, ...(s.hit.citations ?? [])].filter((x): x is string => Boolean(x));
+  const list = [s.cite, ...(s.hit.citations ?? []), s.hit.india?.neutralCitation, ...(s.hit.india?.reporterCitations ?? [])].filter((x): x is string => Boolean(x));
   return list.map(normCite);
 }
 
@@ -71,7 +76,7 @@ export function annotateCitations(answer: string, checks: CitationCrossCheck[], 
   if (/^> \*\*Citation check\.\*\*/m.test(out)) return out;
   const notes: string[] = [];
   if (unmatched.length) {
-    const items = unmatched.map((c) => `${c.citation}${c.sourceN ? ` (source [${c.sourceN}] was found but not read)` : c.resolvedRemotely ? " (resolves on CourtListener; not read in this run)" : " (not among the sources read in this run)"}`);
+    const items = unmatched.map((c) => `${c.citation}${c.sourceN ? ` (source [${c.sourceN}] was found but not read)` : c.resolvedRemotely ? " (found in the judgment corpus; not read in this run)" : " (not among the sources read in this run)"}`);
     notes.push(`${unmatched.length} case citation${unmatched.length === 1 ? "" : "s"} could not be matched to a source read in this run and ${unmatched.length === 1 ? "is" : "are"} marked [VERIFY]: ${items.join("; ")}.`);
   }
   if (unread.length) notes.push(`Sources ${unread.map((n) => `[${n}]`).join(", ")} were cited from search snippets only; open them before relying on a characterization.`);
@@ -104,7 +109,7 @@ export function withCitationStates(checks: CitationCrossCheck[], remotelyResolve
 export function buildCitationCheck(artifactHash: string, checks: CitationCrossCheck[], checkedAt = new Date().toISOString()): EvidenceCitationCheck {
   const citations: Citation[] = checks.map((c) => {
     const state = c.state ?? citationStateOf(c);
-    const reason = state === "resolved" ? undefined : c.sourceN != null ? `source [${c.sourceN}] was found but not read` : c.resolvedRemotely ? "resolves on CourtListener; not read in this run" : "not among the sources read in this run";
+    const reason = state === "resolved" ? undefined : c.sourceN != null ? `source [${c.sourceN}] was found but not read` : c.resolvedRemotely ? "found in the judgment corpus; not read in this run" : "not among the sources read in this run";
     return { raw: c.citation, state, reason };
   });
   return {

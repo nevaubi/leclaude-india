@@ -82,22 +82,44 @@ export const TRANSLATE_QUERY_INSTRUCTIONS = `You convert a legal research questi
 
 /** Byte-stable lane-agent instructions per lane kind (dynamic context goes in the user turn). */
 export const LANE_METHOD: Record<string, string> = {
-  controlling: "Your job is binding authority for the forum: Supreme Court judgments and the forum High Court's judgments, larger benches first. Read the leading judgments (get_opinion / read_source) and note the ¶ of the ratio and the bench strength; use citing_references to see whether a later judgment in the corpus doubted or overruled them.",
+  controlling: "Your job is binding authority for the forum: Supreme Court judgments and the forum High Court's judgments, larger benches first. Read the leading judgments (read_source with the page of the passage, or read_judgment) and note the page or ¶ of the ratio and the bench strength; use citing_references on them to see which later judgments mention them and whether any doubted or overruled them.",
   persuasive: "Your job is persuasive authority: other High Courts and the erstwhile common High Court at Hyderabad (before 2019). Note where they agree or conflict with each other and with the binding authority.",
   contrary: "Your job is adverse authority: judgments that distinguish, doubt, overrule or decline to follow the proposition, decisions held per incuriam, references to larger benches, and conflicts between High Courts. Use citing_references on the leading judgments.",
-  statute: "Your job is the governing provisions in India Code. Read the sections. For criminal law use map_criminal_section to give both the old and the new section and which code governs on the dates given; report requires_review, split and unmapped results as they are, never renumber from memory.",
+  statute: "Your job is the governing provisions: Central, State and regulator instruments. Read the sections (read_section / read_source) and note each instrument's status (in force / repealed) as labelled. For criminal law use map_criminal_section to give both the old and the new section and which code governs on the dates given; report requires_review, split and unmapped results as they are, never renumber from memory.",
   regulatory: "Read the governing provisions and rules and note which version is in force on the relevant date.",
   record: "Cite the record by document and page (exhibit marks such as Ex.P1 / Ex.D1 and witness numbers PW/DW where the record uses them); separate what the record shows from outside authority. Matter documents are limited to the selected matter.",
   secondary: "Prefer official sources (court websites, India Code, gazette notifications) and the firm library over commentary; never rely on a snippet for a holding.",
   fast: "Read the most relevant sources and note their holdings.",
 };
 
+/** Tool routing for judgment lanes (byte-stable; the lane tools wrap the corpus tools). */
+export const LANE_JUDGMENT_ROUTING = `Indian law tool routing in this lane:
+- search_judgments searches every judgment source at once: full-text passages with pages (Supreme Court; Karnataka, Andhra Pradesh and Telangana High Courts where loaded), the metadata index of Supreme Court and High Court judgments, and the local store. Each result is tagged "full text" (readable) or "metadata only" (title, citation, date and snippet; no text to read or quote).
+- Read before you characterise: read_source (pass the page of the passage; cite judgments as "Title, 2024 INSC 735, p. 6", High Courts as "Title, CNR KAHC010219082014, decided 9 September 2014, p. 6") or read_judgment for ¶ windows. A metadata-only judgment may be named only for what its snippet shows, with "text not read".
+- Pass ids exactly as listed (corpus:sc:…, corpus:2024 INSC 735, judgment:…). Never construct an id or reuse an id from memory; a failed read does not count against the cap.
+- citing_references (judgment ids) returns later judgments that MENTION the citation (text match) and any negative-treatment words near it: a cue to read, not a treatment finding.
+- Never cite or note a source you did not read in this run.`;
+
+/** Tool routing for statute lanes (byte-stable). */
+export const LANE_STATUTE_ROUTING = `Indian law tool routing in this lane:
+- search_statutes searches the full statutes corpus (Central, State and UT Acts and regulator instruments, each with its status) and the curated India Code store; read the exact section (read_section or read_source) before relying on it, and cite it as "Section 303, Bharatiya Nyaya Sanhita, 2023".
+- For IPC↔BNS, CrPC↔BNSS and Evidence Act↔BSA use map_criminal_section and report its status as returned; never renumber from memory.
+- State Acts apply only in their State; a repealed or superseded instrument is reported as such. Never cite a provision you did not read.`;
+
+/** The routing block for a lane kind ("" for lanes without Indian law tools). */
+export function laneRouting(kind: string): string {
+  if (kind === "controlling" || kind === "persuasive" || kind === "contrary" || kind === "fast") return LANE_JUDGMENT_ROUTING;
+  if (kind === "statute" || kind === "regulatory") return LANE_STATUTE_ROUTING;
+  return "";
+}
+
 export function laneInstructions(kind: string, laneName: string, brief: string, firm: string, maxReads: number, style: string = DEFAULT_STYLE): string {
   return [
     `You are the "${laneName}" research lane for ${firm}, an Indian law firm: ${brief}.`,
-    `Method: the structured search already ran (results in the user turn). Run at most two more targeted searches if the results miss the point, then READ up to ${maxReads} of the most relevant sources (read_source or get_opinion; fetch_url for official web pages) before writing anything. ${LANE_METHOD[kind] ?? ""}`,
+    `Method: the structured search already ran (results in the user turn). Run at most two more targeted searches if the results miss the point, then READ up to ${maxReads} of the most relevant sources (read_source or read_judgment; fetch_url for official web pages) before writing anything. ${LANE_METHOD[kind] ?? ""}`,
+    laneRouting(kind),
     style,
     "Binding or persuasive and bench strength are given with each result (computed from the court registry); restate them, never re-decide them. Never state a holding you did not read; never call an authority good law. Quote only in the source's own language.",
-    "OUTPUT: a lane note in markdown, in English. One bullet per source you READ, in the form: `- <source id> — <citation> — court, bench strength, date, binding/persuasive — ratio or relevance in one or two sentences, with the ¶ of the key passage`. Then one line `Gaps:` naming what you could not find. Do not include sources you did not read. Keep it under 250 words.",
-  ].join("\n\n");
+    "OUTPUT: a lane note in markdown, in English. One bullet per source you READ, in the form: `- <source id> — <citation> — court, bench strength, date, binding/persuasive — ratio or relevance in one or two sentences, with the page or ¶ of the key passage`. Then one line `Gaps:` naming what you could not find. Do not include sources you did not read. Keep it under 250 words.",
+  ].filter(Boolean).join("\n\n");
 }

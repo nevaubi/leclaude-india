@@ -17,6 +17,8 @@ export interface RunPolicy {
   treatmentWaitMs: number;
   /** How long a regional-language question waits for its English search terms before lanes start on its own words. */
   translateWaitMs: number;
+  /** How long the run waits for the (cached) Indian law corpus coverage summary before planning without it. */
+  coverageWaitMs?: number;
   /** Lanes running at once. */
   laneConcurrency: number;
   /** Default per-lane wall-clock budget when the planner sets none. */
@@ -36,6 +38,7 @@ export const DEFAULT_POLICY: Readonly<RunPolicy> = {
   softDepWaitMs: 30_000,
   treatmentWaitMs: 2_500,
   translateWaitMs: 6_000,
+  coverageWaitMs: 2_500,
   laneConcurrency: 6,
   laneTimeoutMs: 120_000,
   runTimeMs: 8 * 60_000,

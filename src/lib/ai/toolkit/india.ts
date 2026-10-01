@@ -503,7 +503,7 @@ export interface CitingRef { id: string; source: string; title: string; court?: 
 export async function citingReferences(targetId: string, allowed: "*" | string[], opts: { limit?: number } = {}): Promise<{ target: JudgmentView; citing: CitingRef[]; cited: { raw: string; resolvedId?: string; state: string }[]; checked: number }> {
   const limit = Math.max(1, Math.min(opts.limit ?? 10, 25));
   const tj = getJudgment(targetId);
-  if (!tj) throw new Error(`No judgment with id ${targetId} in the corpus.`);
+  if (!tj) throw new Error(`No judgment with id ${targetId} in the local judgment store (ijdg_… ids from search_judgments). For an sc:/hc: id or a neutral citation, citing_references searches the full-text corpus instead.`);
   const target = judgmentView(tj);
   const keys = new Set(ownCitationKeys(tj));
   const candidates = new Map<string, StoredJudgment>();
@@ -556,7 +556,7 @@ type JudgmentArgs = { query: string; courts?: string[]; bench?: string; year_fro
 
 export const searchJudgmentsTool = defineTool<JudgmentArgs>({
   name: "search_judgments",
-  description: "Search the ingested corpus of Supreme Court of India and High Court judgments. Filters: court, bench, year range, judge, case type, statute, language, minimum bench strength. Returns focused search_result blocks with stable sources (judgment://<courtId>/<judgmentId>), neutral and reporter citations, bench strength and decision date. A hit proves the judgment exists, not that it supports a proposition — read it (read_judgment) before characterizing it.",
+  description: "LOCAL STORE of ingested judgments (ids ijdg_…; Supreme Court and High Court documents ingested into this workspace, plus Indian Kanoon documents when ingested). Use it for judgments the firm ingested or linked to a matter, and when the Postgres corpus tools are absent. For doctrine or holdings across the Supreme Court and High Courts prefer search_judgment_text (full text with pages); to identify a case by citation, CNR or party prefer search_judgment_index. Filters: court, bench, year range, judge, case type, statute, language, minimum bench strength. Returns search_result blocks (judgment://<courtId>/<ijdg id>) with citations, bench strength and date. A hit proves the judgment exists, not that it supports a proposition: read it with read_judgment (ijdg_ ids only) before characterising it.",
   parameters: { type: "object", properties: { query: { type: "string" }, ...JUDGMENT_FILTER_PROPS, limit: { type: "integer", description: "Default 8, max 25" } }, required: ["query"] },
   examples: [{ query: "anticipatory bail economic offences parity", courts: ["sci", "hc-karnataka"], year_from: 2015, limit: 8 }, { query: "Order XXXIX Rule 1 temporary injunction prima facie", courts: ["hc-telangana"], min_bench: 2 }],
   timeoutMs: 20_000,
@@ -575,7 +575,7 @@ export const searchJudgmentsTool = defineTool<JudgmentArgs>({
 
 export const readJudgmentTool = defineTool<{ id: string; start_paragraph?: number; count?: number }>({
   name: "read_judgment",
-  description: "Read a judgment from the corpus by id, in numbered paragraph windows (¶1, ¶2 … — the numbering pinpoint cites use), each with its stable source (judgment://<courtId>/<id>/para/<n>), the judgment's own paragraph number where printed and the PDF page where the page map is known. The original-language text is the text of record.",
+  description: "Read a judgment from the LOCAL STORE by its ijdg_… id (from search_judgments), in numbered paragraph windows (¶1, ¶2 … — the numbering pinpoint cites use), each with its stable source (judgment://<courtId>/<id>/para/<n>), the judgment's own paragraph number where printed and the PDF page where known. It does not accept sc:/hc: ids or neutral citations: use read_judgment_text for those. The original-language text is the text of record.",
   parameters: { type: "object", properties: { id: { type: "string" }, start_paragraph: { type: "integer", description: "1-based, default 1" }, count: { type: "integer", description: "Default 40, max 100" } }, required: ["id"] },
   examples: [{ id: "ijdg_8f2a61c0d9e4b7a35c10", start_paragraph: 1, count: 40 }],
   timeoutMs: 20_000,
@@ -608,7 +608,7 @@ export const readJudgmentTool = defineTool<{ id: string; start_paragraph?: numbe
 
 export const searchStatutesIndiaTool = defineTool<{ query: string; enactment?: string; limit?: number }>({
   name: "search_statutes",
-  description: "Search India Code enactments and sections in the store (central and state Acts: BNS, BNSS, BSA, IPC, CrPC, Evidence Act, CPC, Specific Relief Act, Karnataka / Telangana / Andhra Pradesh Acts…). Returns sections with stable sources (statute://<enactmentId>/s/<n>) and ids for read_section. The old criminal codes still govern offences committed before 1 July 2024; use map_criminal_section for the correspondence. This store holds a curated set of Acts; for any other Central, State or regulator instrument use search_law / list_law_instruments (the full statutes corpus) when available.",
+  description: "CURATED India Code store (ids <enactmentId>:<section> for read_section): the core codes and selected Central and State Acts (BNS, BNSS, BSA, IPC, CrPC, Evidence Act, CPC, Specific Relief Act, Karnataka / Telangana / Andhra Pradesh Acts…), with successor-code links. When search_law is available prefer it for any statute question (it covers every Central, State and regulator instrument); use this store when search_law is absent or for the curated successor links. The old criminal codes still govern offences committed before 1 July 2024; use map_criminal_section for the correspondence.",
   parameters: { type: "object", properties: { query: { type: "string" }, enactment: { type: "string", description: "Restrict to an Act (title words), e.g. 'Bharatiya Nagarik Suraksha Sanhita'" }, limit: { type: "integer", description: "Default 8, max 25" } }, required: ["query"] },
   examples: [{ query: "anticipatory bail", enactment: "Bharatiya Nagarik Suraksha Sanhita" }, { query: "section 138 dishonour of cheque" }],
   timeoutMs: 15_000,
@@ -630,7 +630,7 @@ export function statuteRow(r: StatuteSectionView) {
 
 export const readSectionTool = defineTool<{ id: string }>({
   name: "read_section",
-  description: "Read one India Code section in full by id (from search_statutes, '<enactmentId>:<section>'), with its stable source and, where recorded, the corresponding section in the successor code. An absent section is reported absent, never the nearest one. For sections found by search_law use read_law_section.",
+  description: "Read one section of the CURATED India Code store in full by id from search_statutes ('<enactmentId>:<section>'), with its stable source and, where recorded, the corresponding section in the successor code. An absent section is reported absent, never the nearest one. Sections found by search_law are read with read_law_section (act_id + section), not this tool.",
   parameters: { type: "object", properties: { id: { type: "string", description: "Section id from search_statutes: '<enactmentId>:<section>'" } }, required: ["id"] },
   examples: [{ id: "ienact_5d0c2e7a9b41f3c8a6e1:482" }],
   timeoutMs: 10_000,
@@ -656,16 +656,78 @@ export const mapCriminalSectionTool = defineTool<{ code: string; section: string
   execute(args) { return mapCriminalSection({ code: args.code, section: args.section, offenceDate: args.offence_date, proceedingInitiated: args.proceeding_initiated }); },
 });
 
+/** Ids the corpus citing path accepts: sc:/hc: corpus ids (optionally "corpus:"-prefixed), neutral citations, CNR@date. */
+export function isCorpusJudgmentKey(id: string): boolean {
+  const k = id.trim().replace(/^corpus:/, "");
+  return /^(sc|hc):\S+$/.test(k) || /^\d{4}\s+INSC\s+\d+$/i.test(k) || /^\d{4}\s*:\s*[A-Z][A-Z-]*\s*:\s*\d+$/i.test(k) || /^[A-Za-z]{4}\d{12}@\d{4}-\d{2}-\d{2}$/.test(k);
+}
+
+export interface CorpusCitingResult {
+  target: { id: string; title: string; court_id: string | null; neutral_citation: string | null; reporter_citation: string | null; decided: string | null; text_key: string };
+  /** The citation strings searched for (exact phrase). */
+  searched: string[];
+  mentions: import("@/modules/india/corpus/text").CitationMention[];
+  checked: number;
+}
+
+/**
+ * Citing references for a judgment in the Postgres corpus: later judgments in the full-text corpus whose text contains
+ * its neutral citation or its reporter citation (exact phrase, confirmed on the text). A text match is a MENTION, not a
+ * treatment: it does not say the judgment was followed, distinguished or overruled. Throws for an unknown id; never
+ * substitutes another judgment.
+ */
+export async function corpusCitingReferences(idOrCitation: string, opts: { limit?: number } = {}): Promise<CorpusCitingResult> {
+  const { resolveCorpusJudgment, findCitationMentions } = await import("@/modules/india/corpus/text");
+  const { remoteStore } = await import("@/lib/db/remote");
+  if (!remoteStore()) throw new Error("The judgment corpus (Postgres) is not configured on this deployment; citing_references works only on ijdg_… ids from search_judgments here.");
+  const t = await resolveCorpusJudgment(idOrCitation);
+  if (!t) throw new Error(`No judgment "${idOrCitation}" in the judgment index (sc:/hc: id, neutral citation such as 2024 INSC 735 or 2024:KHC-D:7336, or CNR@YYYY-MM-DD). It is not substituted with another judgment; find the id with search_judgment_index.`);
+  const searched = [t.neutralCitation, t.reporterCitation].filter((c): c is string => Boolean(c && c.trim()));
+  if (!searched.length) throw new Error(`Judgment ${t.id} has no neutral or reporter citation in the index, so mentions of it cannot be found by text match.`);
+  const r = await findCitationMentions(searched, { excludeKey: t.textKey, limit: opts.limit });
+  if (!r.available) throw new Error("Judgment full text is not loaded on this deployment; citing references for corpus judgments need it.");
+  return { target: { id: t.id, title: t.title, court_id: t.courtId, neutral_citation: t.neutralCitation, reporter_citation: t.reporterCitation, decided: t.decisionDate, text_key: t.textKey }, searched, mentions: r.mentions, checked: r.checked };
+}
+
+/** Negative-treatment words in a passage (a review signal near a mention, never a treatment finding). */
+export function negativeWordsIn(passage: string): string | undefined {
+  return INDIAN_NEGATIVE_PHRASES.find((p) => new RegExp(`\\b${p.replace(/\s+/g, "\\s+")}\\b`, "i").test(passage));
+}
+
+export const MENTION_RELATION = "mentions (text match)";
+
 export const citingReferencesTool = defineTool<{ id: string; limit?: number }>({
   name: "citing_references",
-  description: "For a judgment in the corpus, list later judgments in the corpus that cite it (with the citing passage and any negative-treatment language such as overruled, per incuriam, doubted, referred to a larger bench), and what it cites. A signal to REVIEW, not a citator: absence of negative language does not establish that a judgment is good law, and the corpus holds only what has been ingested.",
-  parameters: { type: "object", properties: { id: { type: "string" }, limit: { type: "integer", description: "Default 10, max 25" } }, required: ["id"] },
-  examples: [{ id: "ijdg_8f2a61c0d9e4b7a35c10" }],
-  timeoutMs: 20_000,
+  description: "Later judgments that cite a given judgment. Accepts: (1) a corpus id (sc:… / hc:…) from search_judgment_index or search_judgment_text, a neutral citation (2024 INSC 735, 2024:KHC-D:7336) or CNR@YYYY-MM-DD — searches the full-text corpus for judgments whose text contains its neutral or reporter citation and returns each with the passage and page, labelled \"mentions (text match)\"; (2) an ijdg_… id from search_judgments — the local store, with negative-treatment language (overruled, per incuriam, doubted, referred to a larger bench). Either way it is a signal to REVIEW, not a citator: a mention is not 'followed' or 'overruled', and silence does not establish good law. Read the citing passage (read_judgment_text with its page) before saying how the judgment was treated.",
+  parameters: { type: "object", properties: { id: { type: "string", description: "sc:…/hc:… corpus id, neutral citation (2024 INSC 735), CNR@YYYY-MM-DD, or an ijdg_… id from search_judgments" }, limit: { type: "integer", description: "Default 10, max 25" } }, required: ["id"] },
+  examples: [{ id: "2024 INSC 735" }, { id: "ijdg_8f2a61c0d9e4b7a35c10" }],
+  timeoutMs: 25_000,
   maxResultChars: 24_000,
   access: "read",
   label: (a) => `Checking citing judgments for ${a.id}`,
   async execute(args, ctx) {
+    if (isCorpusJudgmentKey(args.id)) {
+      const r = await corpusCitingReferences(args.id, { limit: args.limit });
+      const retrievedAt = new Date().toISOString();
+      const source = (m: CorpusCitingResult["mentions"][number]) => `corpus://judgment/${m.judgmentId ?? m.key}${m.page != null ? `#p${m.page}` : ""}`;
+      emit(ctx, r.mentions.map((m, i) => ({ source: source(m), kind: "opinion", provider: "open-india-law", tool: "citing_references", query: r.searched.join(" | "), rank: i + 1, documentId: m.judgmentId ?? undefined, authorityId: m.citation, page: m.page ?? undefined, hash: contentHash(`${m.key}|${m.chunkIndex}|${m.passage}`), retrievedAt })));
+      return {
+        id: r.target.id,
+        title: `${r.target.title}${r.target.neutral_citation ? `, ${r.target.neutral_citation}` : ""}${r.target.reporter_citation ? ` : ${r.target.reporter_citation}` : ""}`,
+        searched_for: r.searched,
+        relation: MENTION_RELATION,
+        checked_passages: r.checked,
+        citing: r.mentions.map((m) => ({
+          type: "search_result" as const, source: source(m),
+          title: `${m.title ?? "Untitled"}, ${m.citation} (${m.court}${m.decisionDate ? `, ${m.decisionDate}` : ""})${m.page != null ? `, p. ${m.page}` : ""}`,
+          content: [m.passage],
+          id: m.key, relation: MENTION_RELATION, page: m.page, matched: m.matched, negative_words_nearby: negativeWordsIn(m.passage) ?? null,
+        })),
+        note: r.mentions.length
+          ? "Each result MENTIONS the citation in its text (exact text match). That is not a treatment finding: read the passage (read_judgment_text with its id and page) before saying the judgment was followed, distinguished, doubted or overruled. negative_words_nearby is only a cue to read."
+          : "No judgment in the full-text corpus mentions this citation. That does not establish the judgment is good law; the corpus covers only the courts and years loaded.",
+      };
+    }
     const r = await citingReferences(args.id, visibleMatters(ctx), { limit: args.limit });
     return {
       id: r.target.id,
@@ -745,7 +807,7 @@ type CorpusIndexArgs = { query: string; courts?: string[]; year_from?: number; y
 
 export const searchJudgmentIndexTool = defineTool<CorpusIndexArgs>({
   name: "search_judgment_index",
-  description: "Search the official judgment index: every Supreme Court of India and High Court judgment backfilled from the court-published open datasets (metadata: title, parties, case number, CNR, neutral/SCR citation, coram, decision date, disposal, the source snippet, and the link to the original PDF). Exact CNR, neutral citation or case number resolves directly. Each result's source is corpus://judgment/<id>. The index holds metadata and the published snippet, not the full judgment text: open the PDF link (fetch) or read_judgment when the judgment is also in the full-text corpus before characterising a holding.",
+  description: "Judgment METADATA index (corpus ids sc:… / hc:…): Supreme Court of India and High Court judgments from the court-published open datasets — title, parties, case number, CNR, neutral/SCR citation, coram, decision date, disposal, the published snippet and the PDF link. Use it to IDENTIFY a judgment: by neutral citation (2024 INSC 735, 2024:KHC-D:7336), CNR (KAHC020100052022), case number (WP/98/2024), party name or judge. Metadata only means there is no judgment text here to read or quote: each result says whether full text exists (text: full) — if so read it with read_judgment_text using the same id; otherwise cite only what the record shows and say the text was not read. For doctrine or holdings search search_judgment_text instead.",
   parameters: { type: "object", properties: { query: { type: "string", description: "Words, a party name, a CNR (e.g. KAHC020100052022), a neutral citation (2024 INSC 735, 2024:KHC-D:7336) or a case number (WP/98/2024)" }, courts: { type: "array", items: { type: "string" }, description: "Registry court ids: sci, hc-karnataka, hc-telangana, hc-andhra, hc-bombay, hc-madras, hc-delhi…" }, year_from: { type: "integer" }, year_to: { type: "integer" }, judge: { type: "string" }, limit: { type: "integer", description: "Default 10, max 25" } }, required: ["query"] },
   examples: [{ query: "land acquisition compensation enhancement", courts: ["hc-karnataka"], year_from: 2020, limit: 10 }, { query: "KAHC020100052022" }],
   timeoutMs: 20_000,
@@ -766,7 +828,7 @@ export const searchJudgmentIndexTool = defineTool<CorpusIndexArgs>({
         content: [h.snippet ? h.snippet.slice(0, 1200) : "(no snippet published in the source metadata)"],
         id: h.id, match: h.match, court: h.court, court_id: h.court_id, bench: h.bench_code, decided: h.decision_date, case_number: h.case_number, cnr: h.cnr,
         neutral_citation: h.neutral_citation, reporter_citation: h.reporter_citation, judges: h.judges, disposal: h.disposal, pdf_url: h.pdf_url,
-        text: h.text_status === "none" ? "metadata and published snippet only; full text not ingested" : h.text_status, issues: h.issues ?? undefined,
+        text: h.text_status === "full" ? `full: read_judgment_text with id ${h.id}` : h.text_status === "none" ? "metadata only (no judgment text here; cite only the record, never a holding)" : h.text_status, issues: h.issues ?? undefined,
       })),
       ...(hits.length ? {} : { note: "No judgment in the index matched. Broaden the query or filters; do not cite authority that was not found." }),
     };
@@ -804,7 +866,7 @@ export function lawSectionRow(h: import("@/modules/law/shared").LawProvisionHit)
 
 export const searchLawTool = defineTool<LawSearchArgs>({
   name: "search_law",
-  description: "Search the full Indian statutes and regulations corpus (about 20,000 instruments: every Central Act incl. repealed ones, State and UT Acts, and SEBI / RBI / MCA / CBIC / IRDAI / TRAI and other regulator regulations), section by section. Returns sections as search_result blocks with stable sources (law://<actId>/s/<section>[~<variant>]), the instrument's status (in force / repealed / superseded) and its official publisher URL. A hit shows words in a provision; read it with read_law_section before characterising it. The text is a third-party parse, not the official text.",
+  description: "PRIMARY statute search: the full Indian statutes and regulations corpus (every Central Act incl. repealed ones, State and UT Acts, and SEBI / RBI / MCA / CBIC / IRDAI / TRAI and other regulator instruments; Law Commission reports only with regulator law-commission), section by section. Use it first for any statute question, then read the exact provision with read_law_section using the act_id and section it returns (ids law://<actId>/s/<section>[~<variant>]). Results carry the instrument's status (in force / repealed / superseded) and its official publisher URL. A hit shows words in a provision, not its meaning; the text is a third-party parse, not the official text. To find an Act by its title use list_law_instruments.",
   parameters: { type: "object", properties: { query: { type: "string", description: "Words or a quoted phrase, e.g. \"anticipatory bail\" or eviction of tenant arrears of rent" }, ...LAW_FILTER_PROPS, limit: { type: "integer", description: "Default 10, max 25" } }, required: ["query"] },
   examples: [{ query: "eviction arrears of rent", jurisdiction: "state", state: "KA", in_force: true, limit: 10 }, { query: "\"related party transaction\" approval", jurisdiction: "regulator", regulator: "sebi" }],
   timeoutMs: 20_000,
@@ -822,7 +884,7 @@ export const searchLawTool = defineTool<LawSearchArgs>({
 
 export const readLawSectionTool = defineTool<{ act_id: string; section: string; variant?: number; max_chars?: number }>({
   name: "read_law_section",
-  description: "Read one section of an Act or regulation from the statutes corpus, exactly by instrument id and section number as printed (\"303\", \"10A\"; \"_\" for the preamble and unnumbered text). Returns the full section text, its chapter, the instrument's status, the official publisher URL and the citation. An absent section is an error — never the nearest section. variant > 0 reads a second provision printed with the same number (search results say when one exists).",
+  description: "Read one provision of an Act or regulation from the statutes corpus exactly, by act_id (from search_law or list_law_instruments, e.g. IND_central_20062) and section number as printed (\"303\", \"10A\"; \"_\" for the preamble and unnumbered text). Returns the full text, chapter, the instrument's status, the official publisher URL and the citation to use (\"Section 303, Bharatiya Nyaya Sanhita, 2023\"). An absent section is an error, never the nearest section. variant > 0 reads a second provision printed with the same number (search results say when one exists). Does not accept ids from search_statutes (use read_section for those).",
   parameters: { type: "object", properties: { act_id: { type: "string", description: "Instrument id, e.g. IND_central_20062" }, section: { type: "string", description: "Section number as printed, e.g. 303, 10A" }, variant: { type: "integer", description: "Default 0" }, max_chars: { type: "integer", description: "Default 20000, max 60000" } }, required: ["act_id", "section"] },
   examples: [{ act_id: "IND_central_20062", section: "303" }],
   timeoutMs: 15_000,
@@ -851,7 +913,7 @@ export const readLawSectionTool = defineTool<{ act_id: string; section: string; 
 
 export const listLawInstrumentsTool = defineTool<{ query: string; jurisdiction?: string; state?: string; regulator?: string; kind?: string; in_force?: boolean; limit?: number }>({
   name: "list_law_instruments",
-  description: "Find Acts and regulations in the statutes corpus by title (e.g. \"Karnataka Rent Act\", \"SEBI Listing Obligations\"), State or regulator. Returns instrument ids for read_law_section and search_law (act_id), with jurisdiction, year, status (in force / repealed / superseded), section count and the official publisher URL.",
+  description: "Find an Act or regulation in the statutes corpus by TITLE (e.g. \"Karnataka Rent Act\", \"SEBI Listing Obligations\"), State or regulator, when you know the instrument but not the section. Returns act_id values for read_law_section and for search_law's act_id filter, with jurisdiction, year, status (in force / repealed / superseded), section count and the official publisher URL. For a question about what the law says, use search_law instead.",
   parameters: { type: "object", properties: { query: { type: "string" }, jurisdiction: LAW_FILTER_PROPS.jurisdiction, state: LAW_FILTER_PROPS.state, regulator: LAW_FILTER_PROPS.regulator, kind: { type: "string", enum: ["act", "regulation"] }, in_force: LAW_FILTER_PROPS.in_force, limit: { type: "integer", description: "Default 10, max 25" } }, required: ["query"] },
   examples: [{ query: "Karnataka Rent Act", jurisdiction: "state", state: "KA" }, { query: "Bharatiya Nyaya Sanhita" }],
   timeoutMs: 15_000,

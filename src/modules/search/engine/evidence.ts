@@ -28,6 +28,9 @@ export function evidenceSourceId(s: Pick<ResearchSource, "id" | "kind" | "url" |
   if (ref?.kind === "section") return h.india?.enactment && h.india.section ? `statute://${enc(ref.id.split(/[:#]/)[0])}/s/${enc(h.india.section)}` : `statute://${enc(ref.id)}`;
   if (ref?.kind === "law") return lawSourceId(ref.actId, ref.section, ref.variant);
   if (ref?.kind === "url" && ref.url.startsWith("ik://")) return `authority://indiankanoon/doc/${enc(ref.url.slice(5))}`;
+  // Judgments from the Postgres corpus (full text or metadata record): the same stable source the corpus tools emit.
+  if (ref?.kind === "url" && ref.url.startsWith("corpus-text://")) return `corpus://judgment/${enc(ref.url.slice("corpus-text://".length))}`;
+  if (s.kind === "caselaw" && h.india?.provider === "corpus" && h.india.judgmentId) return `corpus://judgment/${enc(h.india.judgmentId)}`;
   switch (s.kind) {
     case "caselaw":
       if (ref?.kind === "opinion") return `authority://courtlistener/opinion/${enc(ref.id)}`;

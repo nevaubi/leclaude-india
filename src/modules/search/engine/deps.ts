@@ -7,7 +7,7 @@ import type { TokenUsage } from "@/lib/ai/events";
 import type { ToolContext, ToolDef } from "@/lib/ai/tools";
 import { webSearchTool } from "@/lib/ai/toolkit/web";
 import type { CitationResolution } from "@/lib/ai/toolkit/legal";
-import { citingReferences, ikSource, indianKanoonClient, isIndiaSourceDoc, judgmentRow, resolveIndianCitation, searchJudgments, searchStatuteSections, statuteRow, visibleMatters, type IndianCitationResolution } from "@/lib/ai/toolkit/india";
+import { citingReferences, corpusCitingReferences, ikSource, isCorpusJudgmentKey, indianKanoonClient, isIndiaSourceDoc, judgmentRow, resolveIndianCitation, searchJudgments, searchStatuteSections, statuteRow, visibleMatters, type IndianCitationResolution } from "@/lib/ai/toolkit/india";
 import { htmlToText } from "@/lib/ai/toolkit/http";
 import { listEnactments } from "@/modules/india/sources";
 import { courtForDocsource } from "@/modules/india/sources/indian-kanoon";
@@ -83,6 +83,8 @@ export interface EngineDeps {
    * fast router role when the privacy policy allows it, else on the internal fast role. Absent in minimal fakes.
    */
   translateQuery?(input: { question: string; language: string; matterId?: string | null; signal?: AbortSignal }): Promise<{ query: string; model?: string }>;
+  /** Indian law corpus coverage block for prompts (cached; "" when unknown). Absent in minimal fakes. */
+  coverage?(signal?: AbortSignal): Promise<string>;
 }
 
 function toolCtx(signal?: AbortSignal): ToolContext {
@@ -165,15 +167,18 @@ export async function corpusTextHits(query: string, o: { courts: string[]; yearF
   return out;
 }
 
-function textHit(h: TextSearchHit, nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] }): SearchHit {
-  const citations = [h.neutralCitation, h.reporterCitation].filter((x): x is string => Boolean(x));
+export function textHit(h: TextSearchHit, nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] }): SearchHit {
+  // A High Court text keyed by CNR still carries its record's own neutral citation when the index has one.
+  const neutral = h.neutralCitation ?? h.recordNeutralCitation ?? null;
+  const citations = [neutral, h.reporterCitation].filter((x): x is string => Boolean(x));
   const id = textKey(h);
   return {
     id: `corpus:${id}`,
     source: "caselaw",
     title: h.title || h.citation,
-    subtitle: [h.court, h.caseNumber, h.pageStart != null ? `passage at p. ${h.pageStart}` : "", "full text"].filter(Boolean).join(" · "),
-    cite: h.neutralCitation ?? h.citation,
+    subtitle: [h.court, h.caseNumber, h.neutralCitation ? "" : h.citation, h.pageStart != null ? `passage at p. ${h.pageStart}` : "", "full text"].filter(Boolean).join(" · "),
+    // A CNR is identity, not a citation: CNR-keyed text formats as "Title (CNR …, High Court of …, decided on …)".
+    cite: neutral ?? h.reporterCitation ?? undefined,
     citations,
     court: h.court,
     courtId: h.courtId,
@@ -184,7 +189,7 @@ function textHit(h: TextSearchHit, nctx: { jurisdiction: SearchSettings["jurisdi
     docketNumber: h.caseNumber ?? undefined,
     score: h.rank,
     authority: classifyAuthority(h.courtId, nctx.jurisdiction, nctx.courts, h.decisionDate ?? undefined),
-    india: { judgmentId: id, courtId: h.courtId, judges: h.judges, neutralCitation: h.neutralCitation ?? undefined, reporterCitations: h.reporterCitation ? [h.reporterCitation] : undefined, caseNumber: h.caseNumber ?? undefined, provider: "corpus" },
+    india: { judgmentId: id, courtId: h.courtId, judges: h.judges, neutralCitation: neutral ?? undefined, reporterCitations: h.reporterCitation ? [h.reporterCitation] : undefined, caseNumber: !neutral && h.cnr ? `CNR ${h.cnr}` : h.caseNumber ?? undefined, provider: "corpus" },
     readRef: { kind: "url", url: `${CORPUS_TEXT_PREFIX}${id}` },
   };
 }
@@ -447,7 +452,7 @@ export function defaultDeps(): EngineDeps {
       if (ref.kind === "url" && ref.url.startsWith(CORPUS_TEXT_PREFIX)) {
         const id = ref.url.slice(CORPUS_TEXT_PREFIX.length);
         const r = await withTimeout(readJudgmentText(id, { maxChars: 400_000 }), 30_000, opts.signal);
-        if (!r || !r.chunks.length) throw new Error(`No full text for judgment ${id}`);
+        if (!r || !r.chunks.length) throw new Error(`No full text for judgment ${id} in the judgment text corpus (unknown id or metadata-only record); it is not substituted with another judgment.`);
         return { text: chunksToText(r.chunks), title: r.title ? `${r.title}, ${r.citation}` : r.citation, cite: r.neutralCitation ?? r.citation, url: r.judgmentId ? caseHref(r.judgmentId) : undefined, cached: true };
       }
       if (ref.kind === "url" && ref.url.startsWith(IK_READ_PREFIX)) {
@@ -568,6 +573,12 @@ export function defaultDeps(): EngineDeps {
 
     async citing(input) {
       if (!input.judgmentId) return classifyTreatment({ citing: [], citingCount: 0 }, undefined, { basis: "provider" });
+      // Corpus judgments (sc:/hc: ids, neutral citations, CNR@date): later judgments whose text mentions the citation.
+      if (isCorpusJudgmentKey(input.judgmentId) && remoteStore()) {
+        const c = await withTimeout(corpusCitingReferences(input.judgmentId, { limit: 10 }), 20_000, input.signal);
+        const rows = c.mentions.map((m) => ({ title: `${m.title ?? "Untitled"}, ${m.citation}${m.page != null ? `, p. ${m.page}` : ""} — mentions (text match)`, date: m.decisionDate ?? undefined, url: m.judgmentId ? caseHref(m.judgmentId) : undefined, snippet: m.passage }));
+        return classifyTreatment({ citing: rows, citingCount: rows.length }, undefined, { basis: "corpus", phrases: INDIAN_NEGATIVE_TREATMENT_PHRASES });
+      }
       const r = await citingReferences(input.judgmentId, visibleMatters({ state: {} }), { limit: 10 });
       const row = (c: (typeof r.citing)[number]) => ({ title: c.title, date: c.decided, url: c.source, snippet: c.context });
       // Treatment recorded in the corpus by the ingestion/citation workers is a negative signal only when it says so.
@@ -579,9 +590,21 @@ export function defaultDeps(): EngineDeps {
       return resolveIndianCitation(citation);
     },
 
-    async verifyCitationsRemote(text) {
-      // "Remote" for LeClaude India is the judgment corpus: citations some judgment in the corpus carries (found, not read here).
-      return extractAnswerCitations(text).map((c) => c.citation).filter((c) => resolveIndianCitation(c).state === "resolved");
+    async verifyCitationsRemote(text, signal) {
+      // "Remote" for LeClaude India is the judgment corpus: citations some judgment in the local store or the Postgres
+      // index carries (found, not read here — they stay "requires review", never "resolved").
+      const cites = extractAnswerCitations(text).map((c) => c.citation);
+      const local = cites.filter((c) => resolveIndianCitation(c).state === "resolved");
+      const rest = cites.filter((c) => !local.includes(c));
+      if (!rest.length || !remoteStore()) return local;
+      const { corpusCitationsKnown } = await import("@/modules/india/corpus/text");
+      const known = await withTimeout(corpusCitationsKnown(rest), 10_000, signal).catch((e) => { if ((e as Error).name === "AbortError") throw e; return new Set<string>(); });
+      return [...local, ...rest.filter((c) => known.has(c))];
+    },
+
+    async coverage() {
+      const { coveragePromptBlock } = await import("@/modules/india/corpus/coverage");
+      return coveragePromptBlock({ waitMs: 2_500 });
     },
 
     async translateQuery(input) {

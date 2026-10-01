@@ -192,7 +192,8 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
     if (e.type === "source.read") {
       metrics.mark("firstRead");
       const src = e.source;
-      const judgmentId = src.hit.readRef?.kind === "judgment" ? src.hit.readRef.id : undefined;
+      // Local-store judgments by id; corpus judgments read in full by their corpus key (mentions of their citation).
+      const judgmentId = src.hit.readRef?.kind === "judgment" ? src.hit.readRef.id : src.hit.india?.provider === "corpus" && src.hit.readRef ? src.hit.india.judgmentId : undefined;
       const opinionId = src.hit.readRef?.kind === "opinion" ? src.hit.readRef.id : src.hit.opinionId;
       if (deps.citing && mode === "deep" && src.kind === "caselaw" && (judgmentId || opinionId != null) && !treatments.has(src.id) && treatments.size < MAX_TREATMENT_CHECKS) {
         const t0 = Date.now();
@@ -243,6 +244,11 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
   let searchQuery: string | null = null;
   let subQuestions: string[] = [];
   let plan: Promise<ResearchPlan | null> | undefined;
+  // Indian law corpus coverage (cached server-side; bounded wait) for the planner and the lanes: which courts and years
+  // have full text and which only metadata, so the lanes reach for the right material.
+  const lawScope = settings.sources.includes("caselaw") || settings.sources.includes("statutes");
+  const coverageText = lawScope && deps.coverage ? deps.coverage(signal).catch(() => "") : Promise.resolve("");
+  let coverageBlock = "";
 
   const matterLine = matter
     ? `Active matter: ${matter.name} (${matter.caption ?? matter.shortName}); client ${matter.client} (${matter.clientSide}); ${matter.court ?? ""}; stage: ${matter.stage ?? "n/a"}. ${matter.description ?? ""}`
@@ -306,6 +312,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
       if (searchQuery) emit({ type: "tool.completed", toolId, name: "translate_query", label: `Search terms: ${searchQuery}`, durationMs: Date.now() - t0 });
       else emit({ type: "tool.failed", toolId, name: "translate_query", label: "Translating the question", error: deps.hasKey ? "Translation unavailable; searching with the question's own words only" : "No model provider is configured; searching with the question's own words only", failure: deps.hasKey ? "unknown" : "not_configured", durationMs: Date.now() - t0, retrying: false });
     }
+    coverageBlock = (await settleWithin(coverageText, policy.coverageWaitMs ?? 2_500, signal)) ?? "";
     subQuestions = planSubQuestions({ question, settings, mode, hasMatter: Boolean(matter), matterName: matter?.shortName, topic: searchQuery ? questionTopic(searchQuery) : undefined });
     for (let round = 1; round <= maxRounds && !aborted(); round++) {
       if (round > 1 && (Date.now() - startedAt > policy.runTimeMs || remaining() < ms(MIN_ROUND_MS))) { timeExceeded = true; break; }
@@ -323,7 +330,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
         const planToolId = `${runId}:plan`;
         const planStarted = Date.now();
         emit({ type: "tool.started", toolId: planToolId, name: "plan_research", label: "Planning sub-questions and queries" });
-        plan = timedModelCall(metrics, () => planner({ question, context: planContext(settings, matterLine, subQuestions, searchQuery), laneKinds: lanes.map((l) => l.kind), signal }))
+        plan = timedModelCall(metrics, () => planner({ question, context: planContext(settings, matterLine, subQuestions, searchQuery, coverageBlock), laneKinds: lanes.map((l) => l.kind), signal }))
           .then((p) => {
             subQuestions = mergeSubQuestions(subQuestions, p.subQuestions);
             emit({ type: "tool.completed", toolId: planToolId, name: "plan_research", label: `Planned ${subQuestions.length} sub-questions`, durationMs: Date.now() - planStarted });
@@ -338,7 +345,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
       const known = pool;
       const laneResults = await scheduleLanes<ResearchLane, LaneResult>(
         lanes,
-        (lane, slot) => runLane(lane, { question, settings, matter, deps, emit, signal: slot.signal, runSignal: signal, timedOut: slot.timedOut, texts, reads, known, policy, metrics, priors: slot.priors, board, plan: round === 1 ? plan : undefined }, { queuedMs: slot.queuedMs }),
+        (lane, slot) => runLane(lane, { question, settings, matter, deps, emit, signal: slot.signal, runSignal: signal, timedOut: slot.timedOut, texts, reads, known, policy, metrics, priors: slot.priors, board, plan: round === 1 ? plan : undefined, coverage: coverageBlock || undefined }, { queuedMs: slot.queuedMs }),
         {
           concurrency: policy.laneConcurrency,
           signal,
@@ -669,9 +676,9 @@ function safeTenantId(): string {
 }
 
 /** Volatile planning context (user turn; the planner instructions stay byte-stable). */
-function planContext(settings: SearchSettings, matterLine: string, subQuestions: string[], searchQuery: string | null): string {
+export function planContext(settings: SearchSettings, matterLine: string, subQuestions: string[], searchQuery: string | null, coverage = ""): string {
   const j = jurisdictionByKey(settings.jurisdiction);
-  return [todayLine(), matterLine, `Forum: ${j.label}. Binding: ${bindingCourtIds(j.key).join(", ")}. Sources in scope: ${settings.sources.join(", ")}.`, searchQuery ? `English search terms for the question: ${searchQuery}` : "", `Draft sub-questions:\n${subQuestions.map((q) => `- ${q}`).join("\n")}`].filter(Boolean).join("\n");
+  return [todayLine(), matterLine, `Forum: ${j.label}. Binding: ${bindingCourtIds(j.key).join(", ")}. Sources in scope: ${settings.sources.join(", ")}.`, searchQuery ? `English search terms for the question: ${searchQuery}` : "", coverage, `Draft sub-questions:\n${subQuestions.map((q) => `- ${q}`).join("\n")}`].filter(Boolean).join("\n");
 }
 
 /** Model sub-questions replace the deterministic ones but the adverse-authority question is always kept. */

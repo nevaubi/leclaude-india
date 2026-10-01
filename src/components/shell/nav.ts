@@ -1,5 +1,5 @@
 import { FEATURES } from "@/lib/features";
-import { Home, MessageCircle, Briefcase, Files, Search, Radar, FileSearch, Workflow, LayoutGrid, Library, Settings, FileText, FileSpreadsheet, Presentation, FileType, type LucideIcon } from "lucide-react";
+import { Home, MessageCircle, Briefcase, Files, Gavel, Newspaper, Search, Radar, FileSearch, Workflow, LayoutGrid, Library, Settings, FileText, FileSpreadsheet, Presentation, FileType, type LucideIcon } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/catalog";
 
 /**
@@ -22,6 +22,8 @@ export const NAV: NavItem[] = [
   { label: "Chat", labelKey: "nav.chat", href: "/chat", icon: MessageCircle, shortcut: "G C", description: "Quick answers, web search, calculations and files", descriptionKey: "nav.desc.chat" },
   { label: "Matters", labelKey: "nav.matters", href: "/matters", icon: Briefcase, shortcut: "G M", description: "Matters, parties, hearing dates and the workspace each one scopes", descriptionKey: "nav.desc.matters" },
   { label: "Search", labelKey: "nav.search", href: "/search", icon: Search, shortcut: "G S", description: "Judgments, statutes, rules, cause lists and internal knowledge", descriptionKey: "nav.desc.search" },
+  { label: "Case law", labelKey: "nav.caselaw", href: "/cases", icon: Gavel, shortcut: "G J", description: "Supreme Court and High Court judgments: browse, search and trace each record to its source", descriptionKey: "nav.desc.caselaw" },
+  { label: "News", labelKey: "nav.news", href: "/news", icon: Newspaper, shortcut: "G N", description: "Indian legal news headlines from LiveLaw, Bar & Bench and other publishers", descriptionKey: "nav.desc.news" },
   { label: "Intelligence", labelKey: "nav.intel", href: "/intel", icon: Radar, shortcut: "G I", description: "Courts, benches, authorities and notifications, watched and cross-analysed", descriptionKey: "nav.desc.intel" },
   { label: "Documents", labelKey: "nav.documents", href: "/documents", icon: Files, shortcut: "G D", description: "Upload document sets; ask questions, pull facts and build timelines", descriptionKey: "nav.desc.documents" },
   ...(FEATURES.ediscovery ? [{ label: "E-Discovery", labelKey: "nav.ediscovery", href: "/ediscovery", icon: FileSearch, shortcut: "G E", description: "Document review, witness evidence, chronologies and privilege", descriptionKey: "nav.desc.ediscovery" } satisfies NavItem] : []),
@@ -49,4 +51,4 @@ export const NAV: NavItem[] = [
 export const SECONDARY_NAV: NavItem[] = [{ label: "Settings", labelKey: "nav.settings", href: "/settings", icon: Settings, shortcut: "G ,", description: "Language, AI, research providers, data & automation, integrity and the review queue", descriptionKey: "nav.desc.settings" }];
 
 /** "G" chord targets: key → href (shared by the shell and the palette so both stay in sync). */
-export const GO_CHORD: Record<string, string> = { h: "/", c: "/chat", m: "/matters", s: "/search", i: "/intel", d: "/documents", ...(FEATURES.ediscovery ? { e: "/ediscovery" } : {}), w: "/workflows", o: "/office", l: "/library", ",": "/settings" };
+export const GO_CHORD: Record<string, string> = { h: "/", c: "/chat", m: "/matters", s: "/search", i: "/intel", d: "/documents", j: "/cases", n: "/news", ...(FEATURES.ediscovery ? { e: "/ediscovery" } : {}), w: "/workflows", o: "/office", l: "/library", ",": "/settings" };

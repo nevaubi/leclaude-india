@@ -13,7 +13,8 @@ const LEGACY_HOSTS = /(^|\.)(gov\.in|nic\.in)$/i;
 const MAX_BYTES = 4 * 1024 * 1024;
 
 export function isLegacyTlsError(e: unknown): boolean {
-  const s = `${(e as { code?: string })?.code ?? ""} ${(e as Error)?.message ?? ""} ${String((e as { cause?: unknown })?.cause ?? "")}`;
+  const cause = (e as { cause?: { code?: string; message?: string } })?.cause;
+  const s = `${(e as { code?: string })?.code ?? ""} ${(e as Error)?.message ?? ""} ${cause?.code ?? ""} ${cause?.message ?? ""}`;
   return /UNSAFE_LEGACY_RENEGOTIATION/i.test(s);
 }
 

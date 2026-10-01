@@ -5,6 +5,9 @@ import { AIConfigError } from "@/lib/ai/config";
 import { classifyFailure, isAbortError, type FailureKind } from "@/lib/ai/events";
 import { isIndianLegalFetchHost, mapCriminalSectionTool } from "@/lib/ai/toolkit/india";
 import { matterContextTool } from "@/lib/ai/toolkit/internal";
+import { forumContextLine } from "@/modules/courts/context";
+import type { IndianCaseInfo } from "@/modules/matters/india";
+
 import { formatCaseCitation } from "@/lib/india/citation-style";
 import type { Matter } from "@/lib/types/domain";
 import { LEGAL_STYLE_RULES, todayLine } from "@/lib/ai/prompts";
@@ -23,6 +26,9 @@ import { laneInstructions } from "./prompts";
 import { abortError, settleWithin, withRetry, type LaneBoard, type MetricsRecorder, type RunPolicy } from "./runtime";
 import { mergeSources, sourceFromHit, sourceKey } from "./sources";
 import type { LaneStatus, ResearchEventInput, ResearchLane, ResearchSource } from "./types";
+
+/** " Forum: …" for a matter carrying Indian case particulars (empty otherwise). */
+const matterForumSuffix = (m: object): string => { const line = forumContextLine((m as { india?: IndianCaseInfo }).india); return line ? ` ${line}` : ""; };
 
 export interface LaneContext {
   question: string;
@@ -216,7 +222,7 @@ export async function runLane(lane: ResearchLane, ctx: LaneContext, slot: { queu
       agentRan = true;
       const tools = buildLaneTools(lane, ctx, { found, record, readOne });
       const j = jurisdictionByKey(ctx.settings.jurisdiction);
-      const matterLine = ctx.matter ? `Matter: ${ctx.matter.name} (${ctx.matter.caption ?? ctx.matter.shortName}); client ${ctx.matter.client} (${ctx.matter.clientSide}); ${ctx.matter.court ?? ""}; stage ${ctx.matter.stage ?? "n/a"}; matter id ${ctx.matter.id}.` : "No matter selected.";
+      const matterLine = ctx.matter ? `Matter: ${ctx.matter.name} (${ctx.matter.caption ?? ctx.matter.shortName}); client ${ctx.matter.client} (${ctx.matter.clientSide}); ${ctx.matter.court ?? ""}; stage ${ctx.matter.stage ?? "n/a"}; matter id ${ctx.matter.id}.${matterForumSuffix(ctx.matter)}` : "No matter selected.";
       const forumLine = `Forum: ${j.label}. Binding courts: ${bindingCourtIds(j.key).join(", ")}.${lane.courtFilter?.length ? ` This lane searches: ${lane.courtFilter.join(", ")}.` : ""}`;
       // Byte-stable per lane kind (cacheable prefix); everything volatile is in the user turn below.
       const instructions = laneInstructions(lane.kind, lane.name, lane.brief, firmLabel(), lane.maxReads, LEGAL_STYLE_RULES);

@@ -10,6 +10,10 @@ import { audit } from "@/lib/integrity/audit";
 import { searchIntel } from "@/modules/intel/store";
 import type { IntelDocumentKind } from "@/modules/intel/types";
 import { AGENT_PERSONAS, canHandoff, type AgentId, type AgentPersona, type AgentToolName, type HandoffRequest } from "./personas";
+import { forumContextLine } from "@/modules/courts/context";
+import type { IndianCaseInfo } from "@/modules/matters/india";
+
+const matterForumLine = (m: Record<string, unknown>): string => { const line = forumContextLine(m.india as IndianCaseInfo | undefined); return line ? ` ${line}` : ""; };
 
 export { AGENT_PERSONAS, AGENT_ORDER, agentPersona, canHandoff } from "./personas";
 export type { AgentId, AgentPersona, AgentToolName, HandoffRequest } from "./personas";
@@ -148,7 +152,7 @@ export function personaInstructions(persona: AgentPersona, context: RunPersonaCo
     persona.instructions,
     `Output contract: ${persona.outputContract}`,
     LEGAL_STYLE_RULES,
-    m ? `Matter context: ${m.name} (${m.caption ?? m.shortName ?? ""}); client ${m.client ?? "n/a"} (${m.clientSide ?? "n/a"}); ${m.court ?? "no court"}; stage: ${m.stage ?? "n/a"}.` : "No matter is attached to this request.",
+    m ? `Matter context: ${m.name} (${m.caption ?? m.shortName ?? ""}); client ${m.client ?? "n/a"} (${m.clientSide ?? "n/a"}); ${m.court ?? "no court"}; stage: ${m.stage ?? "n/a"}.${matterForumLine(m)}` : "No matter is attached to this request.",
     context.user && typeof context.user === "object" && "name" in context.user ? `Requested by ${(context.user as { name: string }).name}.` : "",
     context.workflowName ? `This run is a step of the workflow "${context.workflowName}"${context.nodeId ? ` (step ${context.nodeId})` : ""}; later steps consume your output verbatim.` : "",
     context.extra ?? "",

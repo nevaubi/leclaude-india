@@ -10,6 +10,7 @@ import { ServiceError } from "@/modules/workspace/errors";
 import type { PersonRecord } from "@/modules/workspace/service";
 import { CLIENT_SIDES, MATTER_STATUSES, PRACTICE_AREAS, type MatterInput, type MatterRecord, type MatterRow, type MatterStatusFilter } from "./types";
 import { resolveCaseType } from "@/lib/india/procedure";
+import { cityById } from "@/lib/india/forums";
 import { CAUSE_LIST_STATUSES, caseTitle, caseTypesFor, courtName, formatCaseNumber, resolveCourt, validateCnr, type IndianCaseInfo } from "./india";
 
 /**
@@ -80,6 +81,12 @@ function validateIndia(raw: unknown, fields: Record<string, string>): IndianCase
   if (typeof raw !== "object" || Array.isArray(raw)) { fields.india = "Case particulars must be an object."; return undefined; }
   const r = raw as Record<string, unknown>;
   const out: IndianCaseInfo = {};
+  const cityId = str(r.cityId, 40);
+  if (cityId) {
+    // Unknown city ids are rejected, never mapped to the nearest city.
+    if (!cityById(cityId)) fields["india.cityId"] = `Unknown city "${cityId}". Choose a city from the list.`;
+    else out.cityId = cityId;
+  }
   const courtId = str(r.courtId, 40);
   if (courtId) {
     const court = resolveCourt(courtId);

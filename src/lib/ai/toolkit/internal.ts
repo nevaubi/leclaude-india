@@ -8,6 +8,8 @@ import { accessibleMatterIds } from "@/lib/auth/scope";
 import type { MatterScope, Principal } from "@/lib/auth/types";
 import { contentHash } from "@/lib/integrity/hash";
 import type { DepositionQA, EDocument, LibraryItem, Matter } from "@/lib/types/domain";
+import { forumContextFor } from "@/modules/courts/context";
+import type { IndianCaseInfo } from "@/modules/matters/india";
 
 export { VECTOR_COLLECTIONS };
 
@@ -502,6 +504,8 @@ export const matterContextTool = defineTool<{ matter_id?: string; query?: string
       count: matters.length,
       matters: matters.map((matter) => ({
         ...matter,
+        // Forum, city, State and local-law pointer titles (pointers, not authority; get_forum_info resolves them).
+        ...(forumContextFor((matter as Matter & { india?: IndianCaseInfo }).india) ? { forum_context: forumContextFor((matter as Matter & { india?: IndianCaseInfo }).india) } : {}),
         team: matter.teamIds.map((id) => d.people.get(id)).filter(Boolean).map((p) => ({ name: p!.name, title: p!.title })),
         open_tasks: d.tasks.find((t) => t.matterId === matter.id && t.status !== "done").slice(0, 15).map((t) => ({ title: t.title, status: t.status, priority: t.priority, due: t.dueAt })),
         upcoming_events: d.events.find((e) => e.matterId === matter.id && e.startsAt >= today).sort((a, b) => a.startsAt.localeCompare(b.startsAt)).slice(0, 10).map((e) => ({ title: e.title, kind: e.kind, at: e.startsAt })),

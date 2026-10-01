@@ -20,6 +20,7 @@ import { draftFrom, draftToInput, MatterFields, validateDraft, type DraftErrors,
 import { NewMatterDialog } from "./new-matter-dialog";
 import { causeListLabel, courtName, formatCaseNumber } from "../india";
 import { matterDocumentsHref } from "@/lib/features";
+import { MatterForumBlock } from "@/modules/courts/components/matter-forum-block";
 
 type LoadState = { status: "loading" } | { status: "ready"; rows: MatterRow[]; archived: number } | { status: "error"; message: string; denied?: boolean };
 
@@ -316,6 +317,7 @@ function MatterInspector({ matter: m, onClose, onSaved, onArchived }: { matter: 
             { label: t("matters.f.lead"), value: m.leadAttorneyName || "—", muted: !m.leadAttorneyName },
             ...(m.archivedAt ? [{ label: t("matters.f.archived"), value: fmtDate(m.archivedAt) }] : []),
           ]} />
+          {m.india && <MatterForumBlock india={m.india} />}
           <section>
             <h3 className="mb-1 text-[11.5px] font-medium text-muted-foreground">{t("matters.team")}</h3>
             {m.team.length ? (

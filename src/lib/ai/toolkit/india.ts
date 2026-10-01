@@ -776,8 +776,9 @@ export const CORPUS_INDEX_TOOLS = [searchJudgmentIndexTool];
 export const INDIA_CORE_TOOLS = [searchJudgmentsTool, readJudgmentTool, citingReferencesTool, searchStatutesIndiaTool, readSectionTool, mapCriminalSectionTool];
 
 /** Indian research toolset for the current capabilities. */
+import { getForumInfoTool } from "./india-forums";
 export function indiaResearchTools(caps: IndiaCapabilities = indiaCapabilities()) {
-  return [...INDIA_CORE_TOOLS, ...(caps.corpus ? CORPUS_INDEX_TOOLS : []), ...(caps.indianKanoon ? INDIAN_KANOON_TOOLS : [])];
+  return [...INDIA_CORE_TOOLS, ...(caps.corpus ? CORPUS_INDEX_TOOLS : []), ...(caps.indianKanoon ? INDIAN_KANOON_TOOLS : []), getForumInfoTool];
 }
 
 /** Every Indian tool (for contract tests); runtime toolsets use indiaResearchTools(). */

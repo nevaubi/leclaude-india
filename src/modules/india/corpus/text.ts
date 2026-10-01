@@ -178,13 +178,18 @@ export async function readJudgmentText(
   return { ...base, totalChunks: total, chunks, nextChunk };
 }
 
+/** Remove the dataset's structural markers ("[SECTION] ## ", "[TITLE] # ") without changing any words. */
+export function cleanJudgmentText(text: string): string {
+  return text.replace(/\[(SECTION|TITLE|SUBSECTION|HEADER)\]\s*#*\s*/g, "").replace(/^#{1,6}\s+/gm, "");
+}
+
 /** Plain text of chunks with page markers ("[p. 4]"), for readers and models. */
 export function chunksToText(chunks: JudgmentTextChunk[]): string {
   let page: number | null = null;
   const out: string[] = [];
   for (const c of chunks) {
     if (c.pageStart != null && c.pageStart !== page) { out.push(`[p. ${c.pageStart}]`); page = c.pageStart; }
-    out.push(c.text);
+    out.push(cleanJudgmentText(c.text));
   }
   return out.join("\n\n");
 }
@@ -230,7 +235,7 @@ export async function searchJudgmentText(
         SELECT DISTINCT ON (${groupKey}) * FROM m ORDER BY ${groupKey}, rank DESC
       )
       SELECT b.neutral_citation, b.cnr, b.t_date, b.court_id, b.t_title, b.t_case_number, b.chunk_index, b.page_start, b.page_end, b.rank,
-             ts_headline('english', left(b.text, 20000), websearch_to_tsquery('english', $1), 'MaxFragments=2, MaxWords=40, MinWords=15, StartSel=, StopSel=') AS passage,
+             ts_headline('english', left(b.text, 20000), websearch_to_tsquery('english', $1), 'MaxFragments=2, MaxWords=40, MinWords=15, StartSel="", StopSel="", FragmentDelimiter=" … "') AS passage,
              j.id, j.title, j.decision_date::text AS decision_date, j.reporter_citation, j.case_number, j.judges, j.pdf_url
       FROM best b LEFT JOIN LATERAL (
         SELECT id, title, decision_date, reporter_citation, case_number, judges, pdf_url FROM corpus_judgments cj
@@ -261,7 +266,7 @@ export async function searchJudgmentText(
         chunkIndex: Number(r.chunk_index),
         pageStart: r.page_start == null ? null : Number(r.page_start),
         pageEnd: r.page_end == null ? null : Number(r.page_end),
-        passage: (r.passage ?? "").replace(/\s+/g, " ").trim(),
+        passage: cleanJudgmentText(r.passage ?? "").replace(/\s+/g, " ").trim(),
         rank: Number(r.rank ?? 0),
       };
     }),

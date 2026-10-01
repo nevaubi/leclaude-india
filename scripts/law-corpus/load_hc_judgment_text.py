@@ -50,6 +50,8 @@ ALTER TABLE corpus_texts ADD COLUMN IF NOT EXISTS title text;
 ALTER TABLE corpus_texts ADD COLUMN IF NOT EXISTS case_number text;
 CREATE INDEX IF NOT EXISTS corpus_texts_cnr ON corpus_texts (cnr, decision_date, chunk_index) WHERE cnr IS NOT NULL;
 CREATE INDEX IF NOT EXISTS corpus_texts_court ON corpus_texts (court_id);
+-- Coverage counts (one row per judgment): src/modules/india/corpus/coverage.ts
+CREATE INDEX IF NOT EXISTS corpus_texts_first_chunk ON corpus_texts (court_id) WHERE chunk_index = 0;
 CREATE INDEX IF NOT EXISTS corpus_judgments_cnr_date ON corpus_judgments (cnr, decision_date);
 UPDATE corpus_texts SET court_id = 'sci' WHERE court_id IS NULL AND neutral_citation IS NOT NULL;
 """

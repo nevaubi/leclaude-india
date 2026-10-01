@@ -17,7 +17,9 @@ export interface CorpusHit {
   court_id: string | null;
   court: string | null;
   court_code: string | null;
+  bench_id?: string | null;
   bench_code: string | null;
+  bench_strength?: number | null;
   year: number | null;
   decision_date: string | null;
   case_number: string | null;
@@ -41,13 +43,25 @@ export interface CorpusQuery {
   yearFrom?: number;
   yearTo?: number;
   judge?: string;
+  /** Case-insensitive substring of the disposal ("Dismissed", "Allowed"). */
+  disposal?: string;
   limit?: number;
+  /**
+   * Skip this many merged hits (exact, then text, then partial). When set, one extra hit is probed so the result can
+   * say whether more exist (`hasMore`). Bounded by MAX_SEARCH_WINDOW.
+   */
+  offset?: number;
+  /** Order of the full-text phases: by rank (default), or by decision date. Exact identifier matches always lead. */
+  order?: "relevance" | "newest" | "oldest";
 }
+
+/** The deepest merged position a paged search may reach (offset + limit). */
+export const MAX_SEARCH_WINDOW = 500;
 
 const CNR_RE = /^[A-Z]{4}\d{12}$/i;
 const NEUTRAL_RE = /^\d{4}\s*(?::\s*[A-Z-]+\s*:\s*\d+|\s+INSC\s+\d+)$/i;
 
-function parseArray(v: string | null): string[] {
+export function parseArray(v: string | null): string[] {
   if (!v) return [];
   // Postgres text[] in text output: {"A B",C}
   const inner = v.replace(/^\{|\}$/g, "");
@@ -59,12 +73,12 @@ function parseArray(v: string | null): string[] {
   return out;
 }
 
-const COLS = `id, source, title, court_id, court_code, bench_code, year, decision_date::text AS decision_date, case_number, cnr, neutral_citation, reporter_citation, judges, disposal, pdf_url, snippet, text_status, issues`;
+export const COLS = `id, source, title, court_id, court_code, bench_id, bench_code, bench_strength, year, decision_date::text AS decision_date, case_number, cnr, neutral_citation, reporter_citation, judges, disposal, pdf_url, snippet, text_status, issues`;
 
-function toHit(r: Record<string, string | null>, match: CorpusHit["match"]): CorpusHit {
+export function toHit(r: Record<string, string | null>, match: CorpusHit["match"]): CorpusHit {
   return {
     id: String(r.id), source: String(r.source), title: String(r.title), court_id: r.court_id,
-    court: r.court_id ? courtById(r.court_id)?.name ?? null : null, court_code: r.court_code, bench_code: r.bench_code,
+    court: r.court_id ? courtById(r.court_id)?.name ?? null : null, court_code: r.court_code, bench_id: r.bench_id ?? null, bench_code: r.bench_code, bench_strength: r.bench_strength ? Number(r.bench_strength) : null,
     year: r.year ? Number(r.year) : null, decision_date: r.decision_date, case_number: r.case_number, cnr: r.cnr,
     neutral_citation: r.neutral_citation, reporter_citation: r.reporter_citation, judges: parseArray(r.judges), disposal: r.disposal,
     pdf_url: r.pdf_url, snippet: r.snippet, text_status: String(r.text_status ?? "none"), issues: r.issues ? parseArray(r.issues) : null,
@@ -72,22 +86,42 @@ function toHit(r: Record<string, string | null>, match: CorpusHit["match"]): Cor
   };
 }
 
-function filters(o: CorpusQuery, params: SqlValue[]): string {
+const arrayLiteral = (vals: string[]) => `{${vals.map((c) => `"${c.replace(/["\\{}]/g, "")}"`).join(",")}}`;
+
+/**
+ * Court filter values are registry court ids ("sci", "hc-karnataka"); `code:<dataset code>` selects records whose
+ * court code is not in the registry (court_id null), so unmapped records stay reachable without being re-labelled.
+ */
+export function corpusFilters(o: CorpusQuery, params: SqlValue[]): string {
   const where: string[] = [];
-  if (o.courts?.length) { params.push(`{${o.courts.map((c) => `"${c.replace(/"/g, "")}"`).join(",")}}`); where.push(`court_id = ANY($${params.length}::text[])`); }
+  const ids = (o.courts ?? []).filter((c) => c && !c.startsWith("code:"));
+  const codes = (o.courts ?? []).filter((c) => c.startsWith("code:")).map((c) => c.slice(5)).filter(Boolean);
+  if (ids.length || codes.length) {
+    const parts: string[] = [];
+    if (ids.length) { params.push(arrayLiteral(ids)); parts.push(`court_id = ANY($${params.length}::text[])`); }
+    if (codes.length) { params.push(arrayLiteral(codes)); parts.push(`(court_id IS NULL AND court_code = ANY($${params.length}::text[]))`); }
+    where.push(parts.length > 1 ? `(${parts.join(" OR ")})` : parts[0]);
+  }
   if (o.yearFrom) { params.push(o.yearFrom); where.push(`year >= $${params.length}`); }
   if (o.yearTo) { params.push(o.yearTo); where.push(`year <= $${params.length}`); }
   if (o.judge?.trim()) { params.push(`%${o.judge.trim().replace(/[%_]/g, "")}%`); where.push(`judges_text ILIKE $${params.length}`); }
+  if (o.disposal?.trim()) { params.push(`%${o.disposal.trim().replace(/[%_\\]/g, "")}%`); where.push(`disposal ILIKE $${params.length}`); }
   return where.length ? ` AND ${where.join(" AND ")}` : "";
 }
 
-export async function searchCorpus(o: CorpusQuery, store: RemoteStore | null = remoteStore()): Promise<{ hits: CorpusHit[]; total?: number }> {
+export async function searchCorpus(o: CorpusQuery, store: RemoteStore | null = remoteStore()): Promise<{ hits: CorpusHit[]; total?: number; hasMore?: boolean }> {
   if (!store) throw new Error("The judgment corpus is not configured (DATABASE_URL).");
   await ensureCorpusSchema(store);
   const q = o.q.trim();
-  const limit = Math.max(1, Math.min(o.limit ?? 10, 50));
+  const pageSize = Math.max(1, Math.min(o.limit ?? 10, 50));
+  const paged = o.offset !== undefined;
+  const offset = paged ? Math.max(0, Math.min(Math.floor(o.offset ?? 0) || 0, MAX_SEARCH_WINDOW - pageSize)) : 0;
+  // A paged call collects the merged list up to the end of the requested page, plus one probe for `hasMore`.
+  const limit = paged ? offset + pageSize + 1 : pageSize;
+  const textOrder = o.order === "newest" ? "decision_date DESC NULLS LAST, id DESC" : o.order === "oldest" ? "decision_date ASC NULLS LAST, id ASC" : "rank DESC, decision_date DESC NULLS LAST, id";
   const hits: CorpusHit[] = [];
   const seen = new Set<string>();
+  const done = () => (paged ? { hits: hits.slice(offset, offset + pageSize), hasMore: hits.length > offset + pageSize } : { hits });
 
   // Exact identifiers first.
   const exactParams: SqlValue[] = [];
@@ -96,19 +130,19 @@ export async function searchCorpus(o: CorpusQuery, store: RemoteStore | null = r
   else if (NEUTRAL_RE.test(q)) { exactParams.push(q.replace(/\s+/g, " ").replace(/\s*:\s*/g, ":").toUpperCase()); exactWhere = `upper(neutral_citation) = $1`; }
   else if (/\d/.test(q) && q.length <= 60 && /[/.]/.test(q)) { exactParams.push(q.toLowerCase()); exactWhere = `lower(case_number) = $1`; }
   if (exactWhere) {
-    const f = filters(o, exactParams);
+    const f = corpusFilters(o, exactParams);
     const rows = await store.query({ query: `SELECT ${COLS} FROM corpus_judgments WHERE ${exactWhere}${f} ORDER BY decision_date DESC NULLS LAST LIMIT ${limit}`, params: exactParams });
     for (const r of rows) { seen.add(String(r.id)); hits.push(toHit(r, "exact")); }
   }
-  if (hits.length >= limit || !q) return { hits };
+  if (hits.length >= limit || !q) return done();
 
   const params: SqlValue[] = [q];
-  const f = filters(o, params);
+  const f = corpusFilters(o, params);
   const rows = await store.query({
     query: `SELECT ${COLS}, ts_rank_cd(search, websearch_to_tsquery('english', $1)) + ts_rank_cd(search, websearch_to_tsquery('simple', $1)) AS rank
       FROM corpus_judgments
       WHERE (search @@ websearch_to_tsquery('english', $1) OR search @@ websearch_to_tsquery('simple', $1))${f}
-      ORDER BY rank DESC, decision_date DESC NULLS LAST LIMIT ${limit + hits.length}`,
+      ORDER BY ${textOrder} LIMIT ${limit + hits.length}`,
     params,
   });
   for (const r of rows) {
@@ -124,11 +158,11 @@ export async function searchCorpus(o: CorpusQuery, store: RemoteStore | null = r
   const exactFound = hits.some((h) => h.match === "exact");
   if (!exactFound && hits.length < limit && words.length > 1) {
     const orParams: SqlValue[] = [words.join(" or ")];
-    const fo = filters(o, orParams);
+    const fo = corpusFilters(o, orParams);
     const more = await store.query({
       query: `SELECT ${COLS}, ts_rank_cd(search, websearch_to_tsquery('english', $1)) AS rank
         FROM corpus_judgments WHERE search @@ websearch_to_tsquery('english', $1)${fo}
-        ORDER BY rank DESC, decision_date DESC NULLS LAST LIMIT ${limit * 2}`,
+        ORDER BY ${textOrder} LIMIT ${limit * 2}`,
       params: orParams,
     });
     for (const r of more) {
@@ -138,7 +172,7 @@ export async function searchCorpus(o: CorpusQuery, store: RemoteStore | null = r
       if (hits.length >= limit) break;
     }
   }
-  return { hits };
+  return done();
 }
 
 export async function getCorpusJudgment(id: string, store: RemoteStore | null = remoteStore()): Promise<CorpusHit | null> {

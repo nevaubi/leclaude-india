@@ -17,7 +17,7 @@ import type { RemoteStore, SqlQuery } from "@/lib/db/remote";
  * Owner of later changes: the official-core stream (bump OFFICIAL_SCHEMA_VERSION; additive only).
  */
 
-export const OFFICIAL_SCHEMA_VERSION = 1;
+export const OFFICIAL_SCHEMA_VERSION = 2;
 
 export const OFFICIAL_SCHEMA: SqlQuery[] = [
   {
@@ -166,6 +166,15 @@ export const OFFICIAL_SCHEMA: SqlQuery[] = [
     )`,
   },
   { query: `CREATE INDEX IF NOT EXISTS court_holidays_forum ON court_holidays (forum, year, date_from)` },
+  // ---- v2 (official-core pipeline; additive) ----
+  { query: `ALTER TABLE official_units ADD COLUMN IF NOT EXISTS note text` },
+  { query: `CREATE INDEX IF NOT EXISTS official_units_doc ON official_units (document_id) WHERE document_id IS NOT NULL` },
+  /** Outcome of the adapter's deterministic parse of this document ({records, unparsed, notes, at}). */
+  { query: `ALTER TABLE official_documents ADD COLUMN IF NOT EXISTS parse_result jsonb` },
+  /** Extractor version that produced the stored text (a new version re-extracts unchanged bytes). */
+  { query: `ALTER TABLE official_documents ADD COLUMN IF NOT EXISTS extractor_version int` },
+  { query: `CREATE INDEX IF NOT EXISTS official_documents_list ON official_documents (doc_date DESC NULLS LAST, id DESC)` },
+  { query: `CREATE INDEX IF NOT EXISTS official_chunks_pages ON official_chunks (document_id, page_start)` },
 ];
 
 const ready = new WeakSet<RemoteStore>();

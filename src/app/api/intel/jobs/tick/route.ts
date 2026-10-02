@@ -10,9 +10,11 @@ import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 import { refreshLegalNews } from "@/modules/news/service";
 import { runNewsImageJobs } from "@/modules/news/image-jobs";
+import { officialIngestEnabled, runOfficialIngest } from "@/modules/official/run";
+import { OfficialNotConfiguredError } from "@/modules/official/service";
 
 export const runtime = "nodejs";
-/** The tick runs due intel jobs (up to ~50s), then continues the judgment corpus backfill when it is enabled, and returns before 300s. */
+/** The tick runs due intel jobs (up to ~50s), then continues the judgment corpus backfill and the official-sources ingest when they are enabled, and returns before 300s. */
 export const maxDuration = 300;
 
 /**
@@ -53,7 +55,21 @@ async function tick(req: NextRequest) {
     const left = 270_000 - (Date.now() - started);
     if (left > 30_000) corpus = await runBackfill({ deadlineMs: left });
   }
-  return Response.json({ ...result, corpus, legalNews, health: intelHealth() });
+  // Official-sources corpus (durable queue in Postgres, OFFICIAL_INGEST=1): continues with whatever time is left.
+  let official: Record<string, unknown> = { stop: "skipped" };
+  if (url.searchParams.get("official") !== "0" && officialIngestEnabled()) {
+    const left = 270_000 - (Date.now() - started);
+    if (left > 45_000) {
+      const workers = Number(process.env.OFFICIAL_CONCURRENCY);
+      try {
+        const r = await runOfficialIngest({ deadlineMs: left - 5_000, concurrency: Number.isInteger(workers) && workers >= 1 ? Math.min(workers, 16) : 4 });
+        official = { stop: r.stop, units: r.units, total: r.total, dbBytes: r.dbBytes, limitBytes: r.limitBytes, notes: r.notes, ...(r.error ? { error: r.error } : {}) };
+      } catch (e) {
+        official = e instanceof OfficialNotConfiguredError ? { stop: "not_configured" } : { stop: "error", error: e instanceof Error ? e.message.slice(0, 300) : String(e) };
+      }
+    }
+  }
+  return Response.json({ ...result, corpus, official, legalNews, health: intelHealth() });
 }
 
 async function handlePOST(req: NextRequest) { return tick(req); }

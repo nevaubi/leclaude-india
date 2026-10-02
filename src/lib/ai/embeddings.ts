@@ -9,6 +9,8 @@ export interface EmbedTextsOptions {
   signal?: AbortSignal;
   /** Asymmetric embedding models (Cohere) distinguish indexed documents from search queries. */
   inputType?: EmbedOptions["inputType"];
+  /** Output dimensions for models that support shortening (OpenAI text-embedding-3, Titan v2, Cohere v4). */
+  dimensions?: number;
 }
 
 /** Embed texts with the configured embedding provider (OpenAI or Bedrock Titan/Cohere). Batched by the provider. */
@@ -24,7 +26,7 @@ export async function embedTexts(texts: string[], opts: EmbedTextsOptions = {}):
   }
   const provider = reg.providers.get(decision.provider);
   if (!provider?.embed) throw new AIConfigError(`Provider ${decision.provider} cannot embed text.`);
-  return provider.embed(texts, { model: decision.model, signal: opts.signal, inputType: opts.inputType ?? "document" });
+  return provider.embed(texts, { model: decision.model, signal: opts.signal, inputType: opts.inputType ?? "document", ...(opts.dimensions ? { dimensions: opts.dimensions } : {}) });
 }
 
 export async function embedText(text: string, opts: EmbedTextsOptions = {}) {

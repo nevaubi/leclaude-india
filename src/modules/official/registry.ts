@@ -43,6 +43,7 @@ export const ALLOW_HOSTS: Record<SourceId, string[]> = {
   ncdrc: ["ncdrc.nic.in", "e-jagriti.gov.in"],
   "cic-decisions": ["cic.gov.in", "dsscic.nic.in"],
   "rera-appellate": ["erera.co.in", "mahareat.maharashtra.gov.in"],
+  lawcommission: ["lawcommissionofindia.nic.in", "cdnbbsr.s3waas.gov.in"],
 };
 
 /** Placeholder definitions for sources without a registered adapter (disabled; shown as "not available"). */
@@ -72,6 +73,7 @@ const PLACEHOLDER: Record<SourceId, { name: string; publisher: string; kinds: So
   ncdrc: { name: "NCDRC judgments", publisher: "National Consumer Disputes Redressal Commission", kinds: ["judgment", "order"], forum: "ncdrc", homepage: "https://e-jagriti.gov.in/", cadenceMinutes: 1440 },
   "cic-decisions": { name: "CIC decisions", publisher: "Central Information Commission", kinds: ["order"], forum: "cic", homepage: "https://cic.gov.in/decision", cadenceMinutes: 1440 },
   "rera-appellate": { name: "Real Estate Appellate Tribunal orders", publisher: "Real Estate Appellate Tribunals", kinds: ["order", "judgment"], forum: "reat", homepage: "https://erera.co.in/reradelhiindex/courtREAT/REATcourtOrderJudgementsAppellateTribunalInfo", cadenceMinutes: 1440 },
+  lawcommission: { name: "Law Commission of India reports", publisher: "Law Commission of India", kinds: ["reference_report"], forum: "lawcommission", homepage: "https://lawcommissionofindia.nic.in/law-commission-reports/", cadenceMinutes: 1440 * 7 },
 };
 
 function placeholderDef(id: SourceId): SourceDef {

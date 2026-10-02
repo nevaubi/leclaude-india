@@ -70,7 +70,7 @@ export function InstrumentStatus({ i }: { i: Pick<LawInstrument, "title" | "year
  * For a section of the IPC, CrPC or Evidence Act (and the 2023 codes), the corresponding provision(s) in the other
  * code from the coded table, linked into the reader when the other code resolves in the corpus by exact title.
  */
-export function CodeCorrespondence({ instrument, section }: { instrument: LawInstrument; section: string }) {
+export function CodeCorrespondence({ instrument, section, onCompare }: { instrument: LawInstrument; section: string; onCompare?: () => void }) {
   const c = React.useMemo(() => sectionCorrespondence(instrument, section), [instrument, section]);
   const titles = React.useMemo(() => (c ? [c.otherTitle] : []), [c]);
   const { acts } = useExactCentralActs(titles);
@@ -98,9 +98,10 @@ export function CodeCorrespondence({ instrument, section }: { instrument: LawIns
           {c.subject ? <p className="mt-1 text-muted-foreground">{c.subject}{c.confidence === "medium" ? " · correspondence marked medium confidence" : ""}</p> : c.confidence === "medium" ? <p className="mt-1 text-muted-foreground">Correspondence marked medium confidence.</p> : null}
           {c.notes.length ? <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">{c.notes.map((n, k) => <li key={k}>{n}</li>)}</ul> : null}
           <p className="mt-1.5 text-[11px] text-muted-foreground">
-            From a coded correspondence table ({c.source}), not the Gazette. Which code applies depends on the dates; use the{" "}
+            Source: {c.source}. Which code applies depends on the dates; use the{" "}
             <Link href="/tools?tool=codes" className="underline-offset-2 hover:text-foreground hover:underline">converter</Link>.
             {other === null ? <> The {c.otherTitle} is not in the statutes collection, so the provisions are not linked.</> : null}
+            {onCompare ? <>{" "}<button type="button" onClick={onCompare} className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Compare side by side</button>.</> : null}
           </p>
         </div>
       </div>

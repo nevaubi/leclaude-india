@@ -42,13 +42,15 @@ export type SourceId =
   | "aptel" // Appellate Tribunal for Electricity judgments and orders (year listings)
   | "ncdrc" // NCDRC judgments (e-Jagriti: registered disabled)
   | "cic-decisions" // Central Information Commission decisions (CAPTCHA-gated search: registered disabled)
-  | "rera-appellate"; // Real Estate Appellate Tribunals with open listings (Delhi REAT; MahaREAT pending)
+  | "rera-appellate" // Real Estate Appellate Tribunals with open listings (Delhi REAT; MahaREAT pending)
+  | "lawcommission"; // Law Commission of India reports (reference material; registered disabled pending reproduction permission)
 
 /** Every registered source id, in display order. */
 export const SOURCE_IDS: readonly SourceId[] = [
   "sci-causelist", "sci-orders", "sci-calendar", "hc-calendars", "dhc-causelist", "nclt", "nclat", "ibbi", "sebi-orders",
   "sat-orders", "cci-orders", "ngt-orders", "egazette", "cbic", "gst-council", "cbdt", "mca-master", "sansad",
   "rbi", "itat-orders", "cestat-orders", "aptel", "ncdrc", "cic-decisions", "rera-appellate",
+  "lawcommission",
 ];
 
 export function isSourceId(v: unknown): v is SourceId {
@@ -70,7 +72,8 @@ export type SourceKind =
   | "parliament_debate"
   | "committee_report"
   | "company_record"
-  | "dataset";
+  | "dataset"
+  | "reference_report"; // Law Commission reports and similar reference material (context, not law)
 
 /** How the bytes are fetched. Indian government sites often answer only requests from India: `firecrawl_in`. */
 export type FetchMethod = "direct" | "firecrawl_in" | "dataset_push";

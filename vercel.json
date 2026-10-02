@@ -2,6 +2,7 @@
   "crons": [
     { "path": "/api/intel/jobs/tick", "schedule": "0 * * * *" },
     { "path": "/api/official/run", "schedule": "*/2 * * * *" },
-    { "path": "/api/india/hc-text/run", "schedule": "*/5 * * * *" }
+    { "path": "/api/india/hc-text/run", "schedule": "*/5 * * * *" },
+    { "path": "/api/india/law-links/run", "schedule": "17 * * * *" }
   ]
 }

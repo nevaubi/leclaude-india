@@ -61,6 +61,7 @@ const OFFICIAL_LABEL: Record<SourceId, string> = {
   cbic: "CBIC notifications and circulars", "gst-council": "GST Council", cbdt: "CBDT circulars and notifications", "mca-master": "MCA company records", sansad: "Parliament papers",
   rbi: "RBI notifications, master directions and master circulars", "itat-orders": "ITAT Special Bench orders", "cestat-orders": "CESTAT orders",
   aptel: "APTEL judgments", ncdrc: "NCDRC judgments", "cic-decisions": "CIC decisions", "rera-appellate": "Real Estate Appellate Tribunal orders",
+  lawcommission: "Law Commission reports",
 };
 
 let cache: { at: number; value: CorpusCoverage } | null = null;

@@ -155,7 +155,7 @@ describe("helpers and table integrity", () => {
 
 describe("criminal code correspondence", () => {
   const cases: [string, string, string[], string][] = [
-    ["IPC", "302", ["103(1)"], "mapped"], ["IPC", "307", ["109"], "mapped"], ["IPC", "376", ["64"], "mapped"],
+    ["IPC", "302", ["103(1)"], "mapped"], ["IPC", "307", ["109"], "mapped"], ["IPC", "376", ["64", "65(1)"], "split"],
     ["IPC", "420", ["318(4)"], "mapped"], ["IPC", "498A", ["85", "86"], "split"], ["IPC", "498-A", ["85", "86"], "split"],
     ["IPC", "34", ["3(5)"], "mapped"], ["IPC", "120B", ["61(2)"], "mapped"], ["IPC", "120-b", ["61(2)"], "mapped"],
     ["IPC", "506", ["351(2)", "351(3)"], "split"], ["IPC", "304B", ["80"], "mapped"],
@@ -165,6 +165,8 @@ describe("criminal code correspondence", () => {
     ["IEA", "65B", ["63"], "mapped"], ["IEA", "3", ["2"], "mapped"], ["IEA", "25", ["23(1)"], "mapped"],
     ["IEA", "27", ["23(2)"], "mapped"], ["IEA", "32", ["26"], "mapped"], ["IEA", "45", ["39"], "mapped"], ["IEA", "114", ["119"], "mapped"],
   ];
+  // Deliberately changed: IPC 376 → ["64"] (mapped). The official BPR&D table (now the data behind the map) maps
+  // IPC 376(1) and 376(2) to BNS 64 and IPC 376(3) to BNS 65(1), so the whole section is a split.
   it.each(cases)("%s %s → %j (%s)", (code, sec, expected, status) => {
     const r = mapSection(code as "IPC", sec);
     expect(r.candidates.map((c) => c.section)).toEqual(expected);

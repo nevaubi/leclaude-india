@@ -28,6 +28,7 @@ import { ForYouSection } from "./for-you";
 import { MatterWatchSection } from "./insights-matter-watch";
 import { UpcomingPrepSection } from "./insights-upcoming";
 import { FirstRunChecklist } from "./first-run";
+import { ListedSoon } from "./listed-soon";
 
 /** Home page shortcuts, listed in the `?` help dialog. */
 export const HOME_SHORTCUTS: ShortcutGroup[] = [
@@ -137,6 +138,7 @@ function Overview() {
   return (
     <div className="@container mx-auto w-full max-w-[1480px] space-y-4 p-4 pb-8">
       <TodaySpine firstRun={firstRun} />
+      {!firstRun && <ListedSoon />}
       {firstRun && <FirstRunChecklist />}
       <ForYouSection />
       <UpcomingPrepSection />

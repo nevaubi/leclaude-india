@@ -69,7 +69,11 @@ export interface MatterOverview {
 }
 
 export interface PersonLite { id: string; name: string; title?: string; role: Person["role"]; organization?: string }
-export interface MatterLite { id: string; shortName: string; name: string; caption?: string; client: string; practiceArea: PracticeArea; status: Matter["status"]; stage?: string; teamIds: string[]; leadAttorneyId?: string; keyDates: { label: string; date: string }[] }
+export interface MatterLite {
+  id: string; shortName: string; name: string; caption?: string; client: string; practiceArea: PracticeArea; status: Matter["status"]; stage?: string; teamIds: string[]; leadAttorneyId?: string; keyDates: { label: string; date: string }[];
+  /** Next hearing as recorded in the matter's case particulars (`matter.india`), entered by hand; absent when not recorded. */
+  nextHearing?: { date: string; purpose?: string; courtHall?: string; item?: number };
+}
 
 export interface HomeInitialData {
   now: string; // ISO timestamp used for the first render (hydration-safe)

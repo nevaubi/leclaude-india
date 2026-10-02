@@ -21,6 +21,13 @@ import { NewMatterDialog } from "./new-matter-dialog";
 import { causeListLabel, courtName, formatCaseNumber } from "../india";
 import { matterDocumentsHref } from "@/lib/features";
 import { MatterForumBlock } from "@/modules/courts/components/matter-forum-block";
+import { HearingsPanel } from "./desk/hearings-panel";
+import { OrdersPanel } from "./desk/orders-panel";
+import { BriefPanel } from "./desk/brief-panel";
+
+export type InspectorTabId = "details" | "hearings" | "orders" | "brief";
+const INSPECTOR_TABS: readonly InspectorTabId[] = ["details", "hearings", "orders", "brief"];
+const isInspectorTab = (v: string | null): v is InspectorTabId => !!v && (INSPECTOR_TABS as readonly string[]).includes(v);
 
 type LoadState = { status: "loading" } | { status: "ready"; rows: MatterRow[]; archived: number } | { status: "error"; message: string; denied?: boolean };
 
@@ -194,15 +201,20 @@ export function MattersPage() {
             />
           )}
         </div>
-        {selected && <MatterInspector key={selected.id} matter={selected} onClose={() => setActiveId(null)} onSaved={upsert} onArchived={(m) => { upsert(m); if (status !== "all" && status !== "archived") { setActiveId(null); setReload((n) => n + 1); } }} />}
+        {selected && <MatterInspector key={selected.id} matter={selected} initialTab={isInspectorTab(params.get("tab")) ? (params.get("tab") as InspectorTabId) : "details"} onClose={() => setActiveId(null)} onSaved={upsert} onArchived={(m) => { upsert(m); if (status !== "all" && status !== "archived") { setActiveId(null); setReload((n) => n + 1); } }} />}
       </div>
       <NewMatterDialog open={newOpen} onOpenChange={setNewOpen} onCreated={(m) => { upsert(m); setActiveId(m.id); }} />
     </div>
   );
 }
 
-function MatterInspector({ matter: m, onClose, onSaved, onArchived }: { matter: MatterRow; onClose: () => void; onSaved: (m: MatterRow) => void; onArchived: (m: MatterRow) => void }) {
+function MatterInspector({ matter: m, initialTab, onClose, onSaved, onArchived }: { matter: MatterRow; initialTab: InspectorTabId; onClose: () => void; onSaved: (m: MatterRow) => void; onArchived: (m: MatterRow) => void }) {
   const [editing, setEditing] = React.useState(false);
+  const [tab, setTab] = React.useState<InspectorTabId>(initialTab);
+  // Panels stay mounted once opened, so a running brief or a half-filled form survives a tab switch.
+  const [opened, setOpened] = React.useState<Set<InspectorTabId>>(() => new Set([initialTab]));
+  const [briefRequest, setBriefRequest] = React.useState<{ listingId: string | null; nonce: number } | null>(null);
+  const showTab = React.useCallback((id: InspectorTabId) => { setTab(id); setOpened((s) => (s.has(id) ? s : new Set([...s, id]))); }, []);
   const [draft, setDraft] = React.useState<MatterDraft>(() => draftFrom(m));
   const [errors, setErrors] = React.useState<DraftErrors>({});
   const [busy, setBusy] = React.useState(false);
@@ -223,7 +235,7 @@ function MatterInspector({ matter: m, onClose, onSaved, onArchived }: { matter: 
     return () => ac.abort();
   }, [editing, m.team]);
 
-  const startEdit = () => { setDraft(draftFrom(m)); setErrors({}); setEditing(true); };
+  const startEdit = () => { setDraft(draftFrom(m)); setErrors({}); setEditing(true); showTab("details"); };
 
   const save = async () => {
     const v = validateDraft(draft);
@@ -287,9 +299,13 @@ function MatterInspector({ matter: m, onClose, onSaved, onArchived }: { matter: 
     </div>
   );
 
+  const tabs = editing ? undefined : INSPECTOR_TABS.map((id) => ({ id, label: t(`matters.tab.${id}`) }));
   return (
-    <Inspector title={m.shortName || m.name} subtitle={m.number ? `${m.number} · ${m.practiceArea}` : m.practiceArea} icon={Briefcase} onClose={onClose} width={400} footer={footer} ariaLabel={t("matters.detailsAria")}>
-      {editing ? (
+    <Inspector title={m.shortName || m.name} subtitle={m.number ? `${m.number} · ${m.practiceArea}` : m.practiceArea} icon={Briefcase} onClose={onClose} width={420} footer={editing || tab === "details" ? footer : undefined} ariaLabel={t("matters.detailsAria")} tabs={tabs} activeTab={editing ? "details" : tab} onTabChange={(id) => showTab(id as InspectorTabId)}>
+      {!editing && opened.has("hearings") && <div hidden={tab !== "hearings"}><HearingsPanel matter={m} onBrief={(listingId) => { setBriefRequest((r) => ({ listingId, nonce: (r?.nonce ?? 0) + 1 })); showTab("brief"); }} /></div>}
+      {!editing && opened.has("orders") && <div hidden={tab !== "orders"}><OrdersPanel matter={m} /></div>}
+      {!editing && opened.has("brief") && <div hidden={tab !== "brief"}><BriefPanel matter={m} request={briefRequest} /></div>}
+      {!editing && tab !== "details" ? null : editing ? (
         <div className="p-3"><MatterFields draft={draft} onChange={setDraft} errors={errors} team={team} idPrefix={`edit-${m.id}`} compact /></div>
       ) : (
         <div className="space-y-4 p-3">

@@ -11,6 +11,7 @@ import { type CalendarEntry, type DailyBrief, type EventInput, type EventPatch, 
 import { addDays, dateKey, daysBetween, toDate } from "./time";
 import { computeFallbackBrief, type BriefContext } from "./brief-fallback";
 import { FEATURES } from "@/lib/features";
+import type { IndianCaseInfo } from "@/modules/matters/india";
 
 const nowIso = () => new Date().toISOString();
 
@@ -22,8 +23,19 @@ export function listPeopleLite(): PersonLite[] {
   return db().people.list({ sortBy: "name" }).map((p) => ({ id: p.id, name: p.name, title: p.title, role: p.role, organization: p.organization }));
 }
 
+/** The next hearing recorded in a matter's case particulars (date-only, valid ISO), or undefined. */
+export function nextHearingOf(india: IndianCaseInfo | undefined): MatterLite["nextHearing"] {
+  const date = india?.nextHearing;
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return undefined;
+  const item = india?.causeList?.status === "listed" && india.causeList.listDate === date ? india.causeList.item : undefined;
+  return { date, ...(india?.hearingPurpose ? { purpose: india.hearingPurpose } : {}), ...(india?.courtHall ? { courtHall: india.courtHall } : {}), ...(item ? { item } : {}) };
+}
+
 export function listMattersLite(): MatterLite[] {
-  return db().matters.list({ where: (m) => m.status !== "closed", sortBy: "shortName" }).map((m) => ({ id: m.id, shortName: m.shortName, name: m.name, caption: m.caption, client: m.client, practiceArea: m.practiceArea, status: m.status, stage: m.stage, teamIds: m.teamIds, leadAttorneyId: m.leadAttorneyId, keyDates: m.keyDates ?? [] }));
+  return db().matters.list({ where: (m) => m.status !== "closed", sortBy: "shortName" }).map((m) => {
+    const nextHearing = nextHearingOf((m as typeof m & { india?: IndianCaseInfo }).india);
+    return { id: m.id, shortName: m.shortName, name: m.name, caption: m.caption, client: m.client, practiceArea: m.practiceArea, status: m.status, stage: m.stage, teamIds: m.teamIds, leadAttorneyId: m.leadAttorneyId, keyDates: m.keyDates ?? [], ...(nextHearing ? { nextHearing } : {}) };
+  });
 }
 
 // ---------------------------------------------------------------------------

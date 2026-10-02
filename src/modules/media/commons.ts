@@ -124,6 +124,11 @@ export interface CommonsQuery {
   label: string;
   /** At least one of these phrases must appear in the file title (normalised, case-insensitive). */
   require: string[];
+  /**
+   * A Commons category to list instead of a full-text search ("Delhi High Court"). Membership of the category is the
+   * evidence of subject, so the title requirement does not apply; the vision check still decides.
+   */
+  category?: string;
 }
 
 export interface CommonsTarget {
@@ -143,6 +148,9 @@ export function normTitle(t: string): string {
  * Deterministic score for a candidate, or null when it must not be used. Higher is better: licence acceptable and
  * attributable, width ≥ 1000 (≥ 1600 better), landscape 1.2–2.2, JPEG, title naming the subject.
  */
+/** Marker in `require` for candidates whose subject is established by their Commons category. */
+export const ANY_TITLE = "*";
+
 export function scoreCandidate(c: Pick<CommonsCandidate, "title" | "width" | "height" | "mime" | "licence" | "author">, require: string[]): number | null {
   if (!c.licence.ok) return null;
   if (c.licence.attribution && !c.author) return null; // an attribution licence we could not credit
@@ -151,7 +159,7 @@ export function scoreCandidate(c: Pick<CommonsCandidate, "title" | "width" | "he
   if (!(c.width > 0 && c.height > 0) || c.width < 640) return null;
   const title = normTitle(c.title);
   if (NEGATIVE.test(title)) return null;
-  const hits = require.filter((p) => title.includes(normTitle(p))).length;
+  const hits = require.includes(ANY_TITLE) ? 1 : require.filter((p) => title.includes(normTitle(p))).length;
   if (!hits) return null;
   let s = 0;
   s += mime === "image/jpeg" ? 3 : 1;
@@ -250,8 +258,20 @@ export function parseCommonsResponse(body: unknown, query: CommonsQuery): Common
   return out;
 }
 
+/** Files in a Commons category (direct members only), with the same image metadata as a search. */
+export function commonsCategoryUrl(category: string, limit = 30): string {
+  const p = new URLSearchParams({
+    action: "query", format: "json", formatversion: "2", maxlag: "5",
+    generator: "categorymembers", gcmtitle: `Category:${category.replace(/^Category:/i, "")}`, gcmtype: "file", gcmlimit: String(limit),
+    prop: "imageinfo", iiprop: "url|size|mime|extmetadata", iiurlwidth: String(COMMONS_THUMB_WIDTH),
+    iiextmetadatafilter: "LicenseShortName|License|UsageTerms|LicenseUrl|Artist|NonFree|Restrictions|AttributionRequired",
+  });
+  return `${COMMONS_API}?${p.toString()}`;
+}
+
 export async function searchCommons(query: CommonsQuery, deps: CommonsDeps = {}): Promise<CommonsCandidate[]> {
-  return parseCommonsResponse(await commonsGet(commonsSearchUrl(query.q), deps), query);
+  const url = query.category ? commonsCategoryUrl(query.category) : commonsSearchUrl(query.q);
+  return parseCommonsResponse(await commonsGet(url, deps), query);
 }
 
 // ---------------------------------------------------------------------------
@@ -259,6 +279,8 @@ export async function searchCommons(query: CommonsQuery, deps: CommonsDeps = {})
 // ---------------------------------------------------------------------------
 
 const hcq = (q: string, label: string, ...require: string[]): CommonsQuery => ({ q, label, require });
+/** Every file in a Commons category about the subject (title requirement waived; vision still checks). */
+const cat = (category: string, label: string): CommonsQuery => ({ q: `category:${category}`, label, require: [ANY_TITLE], category });
 
 /** Search queries per court (Supreme Court + every High Court in COURTS). */
 export const COURT_QUERIES: Record<string, CommonsQuery[]> = {
@@ -269,14 +291,14 @@ export const COURT_QUERIES: Record<string, CommonsQuery[]> = {
   ],
   "hc-telangana": [hcq("Telangana High Court Hyderabad", "High Court for the State of Telangana, Hyderabad", "telangana high court", "high court of telangana", "high court hyderabad", "hyderabad high court", "andhra pradesh high court hyderabad")],
   "hc-andhra": [hcq("Andhra Pradesh High Court Amaravati", "High Court of Andhra Pradesh, Amaravati", "andhra pradesh high court amaravati", "high court amaravati", "ap high court", "amaravati high court", "high court of andhra pradesh")],
-  "hc-jk": [hcq("Jammu and Kashmir High Court Srinagar", "High Court of Jammu & Kashmir and Ladakh, Srinagar", "high court srinagar", "jammu and kashmir high court", "j&k high court", "srinagar high court")],
+  "hc-jk": [hcq("Jammu and Kashmir High Court Srinagar", "High Court of Jammu & Kashmir and Ladakh, Srinagar", "high court srinagar", "jammu and kashmir high court", "j&k high court", "srinagar high court"), cat("High Court of Jammu and Kashmir and Ladakh", "High Court of Jammu & Kashmir and Ladakh")],
   "hc-hp": [hcq("Himachal Pradesh High Court Shimla", "High Court of Himachal Pradesh, Shimla", "himachal pradesh high court", "high court shimla", "shimla high court", "high court of himachal pradesh")],
   "hc-ph": [hcq("Punjab and Haryana High Court Chandigarh", "High Court of Punjab and Haryana, Chandigarh", "punjab and haryana high court", "high court chandigarh", "chandigarh high court", "palace of justice chandigarh")],
   "hc-uttarakhand": [hcq("Uttarakhand High Court Nainital", "High Court of Uttarakhand, Nainital", "uttarakhand high court", "high court nainital", "nainital high court")],
-  "hc-delhi": [hcq("Delhi High Court building", "High Court of Delhi, New Delhi", "delhi high court", "high court of delhi", "high court delhi")],
-  "hc-rajasthan": [hcq("Rajasthan High Court Jodhpur", "High Court of Rajasthan, Jodhpur", "rajasthan high court", "high court jodhpur", "high court of rajasthan")],
+  "hc-delhi": [hcq("Delhi High Court building", "High Court of Delhi, New Delhi", "delhi high court", "high court of delhi", "high court delhi"), cat("Delhi High Court", "High Court of Delhi, New Delhi")],
+  "hc-rajasthan": [hcq("Rajasthan High Court Jodhpur", "High Court of Rajasthan, Jodhpur", "rajasthan high court", "high court jodhpur", "high court of rajasthan"), cat("Rajasthan High Court", "High Court of Rajasthan, Jodhpur")],
   "hc-allahabad": [hcq("Allahabad High Court building", "High Court of Judicature at Allahabad, Prayagraj", "allahabad high court", "high court allahabad", "high court of judicature at allahabad")],
-  "hc-patna": [hcq("Patna High Court building", "Patna High Court, Patna", "patna high court", "high court patna")],
+  "hc-patna": [hcq("Patna High Court building", "Patna High Court, Patna", "patna high court", "high court patna"), cat("Patna High Court", "Patna High Court, Patna")],
   "hc-sikkim": [hcq("Sikkim High Court Gangtok", "High Court of Sikkim, Gangtok", "sikkim high court", "high court of sikkim", "high court gangtok")],
   "hc-manipur": [hcq("Manipur High Court Imphal", "High Court of Manipur, Imphal", "manipur high court", "high court of manipur", "high court imphal")],
   "hc-tripura": [hcq("Tripura High Court Agartala", "High Court of Tripura, Agartala", "tripura high court", "high court of tripura", "high court agartala")],
@@ -287,7 +309,7 @@ export const COURT_QUERIES: Record<string, CommonsQuery[]> = {
   "hc-orissa": [hcq("Orissa High Court Cuttack", "High Court of Orissa, Cuttack", "orissa high court", "odisha high court", "high court cuttack")],
   "hc-chhattisgarh": [hcq("Chhattisgarh High Court Bilaspur", "High Court of Chhattisgarh, Bilaspur", "chhattisgarh high court", "high court bilaspur", "high court of chhattisgarh")],
   "hc-mp": [hcq("Madhya Pradesh High Court Jabalpur", "High Court of Madhya Pradesh, Jabalpur", "madhya pradesh high court", "high court jabalpur", "jabalpur high court", "mp high court")],
-  "hc-gujarat": [hcq("Gujarat High Court Ahmedabad", "High Court of Gujarat, Ahmedabad", "gujarat high court", "high court of gujarat", "high court ahmedabad")],
+  "hc-gujarat": [hcq("Gujarat High Court Ahmedabad", "High Court of Gujarat, Ahmedabad", "gujarat high court", "high court of gujarat", "high court ahmedabad"), cat("Gujarat High Court", "High Court of Gujarat, Ahmedabad")],
   "hc-bombay": [hcq("Bombay High Court building", "Bombay High Court building, Fort, Mumbai", "bombay high court", "high court bombay", "high court mumbai", "mumbai high court")],
   "hc-kerala": [hcq("Kerala High Court Kochi", "High Court of Kerala, Kochi", "kerala high court", "high court of kerala", "high court kochi", "high court ernakulam")],
   "hc-madras": [hcq("Madras High Court building", "Madras High Court building, Chennai", "madras high court", "high court madras", "high court chennai", "chennai high court")],
@@ -299,10 +321,10 @@ export const CITY_QUERIES: Record<string, CommonsQuery[]> = {
   mumbai: [hcq("Gateway of India Mumbai", "Gateway of India, Mumbai", "gateway of india"), hcq("Chhatrapati Shivaji Terminus", "Chhatrapati Shivaji Maharaj Terminus, Mumbai", "chhatrapati shivaji", "victoria terminus", "csmt", "cst mumbai")],
   bengaluru: [hcq("Vidhana Soudha Bangalore", "Vidhana Soudha, Bengaluru", "vidhana soudha")],
   hyderabad: [hcq("Charminar Hyderabad", "Charminar, Hyderabad", "charminar")],
-  chennai: [hcq("Ripon Building Chennai", "Ripon Building, Chennai", "ripon building"), hcq("Marina Beach Chennai", "Marina Beach, Chennai", "marina beach")],
+  chennai: [hcq("Ripon Building Chennai", "Ripon Building, Chennai", "ripon building"), hcq("Marina Beach Chennai", "Marina Beach, Chennai", "marina beach"), cat("Ripon Building", "Ripon Building, Chennai"), cat("Marina Beach", "Marina Beach, Chennai")],
   kolkata: [hcq("Victoria Memorial Kolkata", "Victoria Memorial, Kolkata", "victoria memorial"), hcq("Howrah Bridge", "Howrah Bridge, Kolkata", "howrah bridge")],
-  pune: [hcq("Shaniwar Wada Pune", "Shaniwar Wada, Pune", "shaniwar wada", "shaniwarwada")],
-  ahmedabad: [hcq("Sidi Saiyyed Mosque Ahmedabad", "Sidi Saiyyed Mosque, Ahmedabad", "sidi saiyyed", "sidi sayyed"), hcq("Sabarmati Riverfront Ahmedabad", "Sabarmati Riverfront, Ahmedabad", "sabarmati riverfront")],
+  pune: [hcq("Shaniwar Wada Pune", "Shaniwar Wada, Pune", "shaniwar wada", "shaniwarwada"), cat("Shaniwar Wada", "Shaniwar Wada, Pune")],
+  ahmedabad: [hcq("Sidi Saiyyed Mosque Ahmedabad", "Sidi Saiyyed Mosque, Ahmedabad", "sidi saiyyed", "sidi sayyed"), hcq("Sabarmati Riverfront Ahmedabad", "Sabarmati Riverfront, Ahmedabad", "sabarmati riverfront"), cat("Sidi Saiyyed Mosque", "Sidi Saiyyed Mosque, Ahmedabad"), cat("Kankaria Lake", "Kankaria Lake, Ahmedabad")],
   amaravati: [hcq("Prakasam Barrage Vijayawada", "Prakasam Barrage, Vijayawada", "prakasam barrage"), hcq("Kanaka Durga Temple Vijayawada", "Kanaka Durga Temple, Vijayawada", "kanaka durga")],
   kochi: [hcq("Chinese fishing nets Kochi", "Chinese fishing nets, Fort Kochi", "chinese fishing net")],
   chandigarh: [hcq("Open Hand Monument Chandigarh", "Open Hand Monument, Chandigarh", "open hand"), hcq("Capitol Complex Chandigarh", "Capitol Complex, Chandigarh", "capitol complex")],

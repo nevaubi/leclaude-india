@@ -21,3 +21,17 @@ describe("Commons thumbnails", () => {
     expect(parseCommonsResponse(body, { q: "x", label: "x", require: [] })).toHaveLength(0);
   });
 });
+
+describe("Commons category queries", () => {
+  it("lists a category's files and waives the title requirement", async () => {
+    const { ANY_TITLE, COURT_QUERIES, commonsCategoryUrl, scoreCandidate } = await import("@/modules/media/commons");
+    const url = new URL(commonsCategoryUrl("Delhi High Court"));
+    expect(url.searchParams.get("generator")).toBe("categorymembers");
+    expect(url.searchParams.get("gcmtitle")).toBe("Category:Delhi High Court");
+    expect(url.searchParams.get("gcmtype")).toBe("file");
+    const cand = { title: "File:IMG 2041.jpg", width: 2000, height: 1300, mime: "image/jpeg", licence: { ok: true, license: "CC BY-SA 4.0", licenseUrl: null, attribution: true }, author: "A" };
+    expect(scoreCandidate(cand, [ANY_TITLE])).not.toBeNull();
+    expect(scoreCandidate(cand, ["delhi high court"])).toBeNull();
+    expect(COURT_QUERIES["hc-delhi"].some((q) => q.category === "Delhi High Court")).toBe(true);
+  });
+});

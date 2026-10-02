@@ -14,7 +14,7 @@ function SourceRow({ s, now }: { s: NewsSourceView; now: Date | null }) {
   const st = s.status;
   return (
     <li className="flex min-w-0 items-baseline gap-2 px-3 py-2">
-      <a href={s.homepage} target="_blank" rel="noopener noreferrer" className="inline-flex min-w-0 items-center gap-0.5 truncate text-[12.5px] font-medium underline-offset-2 hover:underline">
+      <a href={s.homepage} target="_blank" rel="noopener noreferrer" title={s.publisher} className="inline-flex min-w-0 items-center gap-0.5 truncate text-[12.5px] font-medium underline-offset-2 hover:underline">
         <span className="truncate">{s.publisher}</span><ArrowUpRight className="size-3 shrink-0 text-muted-foreground" aria-hidden />
       </a>
       <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">

@@ -99,8 +99,8 @@ describe("Today spine model", () => {
 });
 
 describe("shell navigation", () => {
-  it("keeps the G chord in sync with the nav shortcuts, group children included", () => {
-    const entries = [...NAV, ...SECONDARY_NAV].flatMap((item) => [item, ...(item.children ?? [])]);
+  it("keeps the G chord in sync with the nav shortcuts, group children and section tabs included", () => {
+    const entries = [...NAV, ...SECONDARY_NAV].flatMap((item) => [item, ...(item.children ?? []), ...(item.tabs ?? []).flatMap((tb) => [tb, ...(tb.sub ?? [])])]);
     let checked = 0;
     for (const item of entries) {
       if (!item.shortcut) continue;

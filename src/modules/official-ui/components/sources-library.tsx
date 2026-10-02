@@ -79,10 +79,9 @@ export function SourcesLibrary() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b px-4 pt-3 sm:px-6">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <h1 className="text-[15px] font-semibold tracking-[-0.01em]">Official sources</h1>
-          <span className="min-w-0 text-[12px] text-muted-foreground">Court, tribunal, regulator, Gazette and Parliament documents as their publishers released them</span>
-        </div>
+        {/* The Law section tab already names the page; the heading stays for screen readers. */}
+        <h1 className="sr-only">Official sources</h1>
+        <p className="min-w-0 text-[12px] text-muted-foreground">Court, tribunal, regulator, Gazette and Parliament documents as their publishers released them</p>
         <Tabs value={filters.tab} onValueChange={(v) => update({ tab: v as SourcesTab })} className="mt-1">
           <TabsList variant="underline" className="h-9 gap-3">
             <TabsTrigger value="search">Search</TabsTrigger>

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Moon, Search, Sun, Monitor, Menu, X, LogOut, Keyboard } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { GO_CHORD, NAV, SECONDARY_NAV, isHrefActive, isNavItemActive, navGroupChildren, type NavChild, type NavItem } from "./nav";
+import { GO_CHORD, NAV, SECONDARY_NAV, isHrefActive, isNavItemActive, navGroupChildren, sectionTabsFor, type NavChild, type NavItem } from "./nav";
+import { InTabbedSectionProvider, SectionTabs } from "./section-tabs";
 import { useShellStore } from "./shell-store";
 import { useTheme } from "./theme-provider";
 import { Button } from "@/components/ui/button";
@@ -92,6 +93,8 @@ function ShellFrame({ children, appName, firmName, user, signInEnabled }: { chil
   // Icon rail is the default; labels expand on demand ("[" or the chevron). The mobile drawer always shows labels.
   const expanded = hydrated && !sidebarCollapsed;
   const labels = expanded || mobileOpen;
+  // The current section's pages as tabs: inline in the top bar from md up, a row of their own below it when narrow.
+  const sectionTabs = React.useMemo(() => sectionTabsFor(NAV, pathname ?? "/"), [pathname]);
 
   const railItem = (item: NavItem) =>
     navGroupChildren(item).length ? (
@@ -156,6 +159,13 @@ function ShellFrame({ children, appName, firmName, user, signInEnabled }: { chil
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-11 shrink-0 items-center gap-2 border-b bg-background px-3" style={{ height: "var(--topbar-height)" }}>
           <Button variant="ghost" size="icon-xs" className="md:hidden" aria-label={t("shell.openNav")} onClick={() => setMobileOpen((o) => !o)}>{mobileOpen ? <X className="size-4" /> : <Menu className="size-4" />}</Button>
+          {sectionTabs && (
+            <>
+              <SectionTabs section={sectionTabs.section} tabs={sectionTabs.tabs} pathname={pathname ?? "/"} className="-ms-1 hidden shrink md:flex" />
+              {/* Divides the tabs from the page's own top-bar content; hidden when the page adds none. */}
+              <span aria-hidden className="hidden h-4 w-px shrink-0 bg-border md:block [&:has(+#topbar-slot:empty)]:hidden" />
+            </>
+          )}
           <div className="min-w-0 flex-1" id="topbar-slot" />
           <div className="flex items-center gap-2">
             <AiStatus />
@@ -191,7 +201,12 @@ function ShellFrame({ children, appName, firmName, user, signInEnabled }: { chil
             </DropdownMenu>
           </div>
         </header>
-        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+        {sectionTabs && (
+          <div className="flex h-10 shrink-0 items-center border-b bg-background px-2 md:hidden">
+            <SectionTabs section={sectionTabs.section} tabs={sectionTabs.tabs} pathname={pathname ?? "/"} />
+          </div>
+        )}
+        <main className="min-h-0 flex-1 overflow-hidden"><InTabbedSectionProvider value={sectionTabs != null}>{children}</InTabbedSectionProvider></main>
       </div>
       <CommandPalette />
     </div>

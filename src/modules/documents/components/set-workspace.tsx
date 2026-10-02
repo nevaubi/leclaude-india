@@ -112,7 +112,8 @@ export function SetWorkspace({ setId, initialTab, matters }: { setId: string; in
     <div className="flex h-full min-h-0 flex-col">
       <PageTopbar
         icon={<Files />}
-        title={<span className="flex min-w-0 items-center gap-1.5"><Link href="/documents" className="text-muted-foreground hover:text-foreground">Documents</Link><span className="text-muted-foreground">/</span><span className="max-w-[40vw] truncate">{set?.name ?? "…"}</span></span>}
+        title={<Link href="/documents" className="text-muted-foreground hover:text-foreground">Documents</Link>}
+        crumb={set?.name ?? "…"}
         context={set ? [matter ? matter.shortName : set.matterId ? "Matter" : "Personal", `${set.fileCount.toLocaleString("en-IN")} file${set.fileCount === 1 ? "" : "s"}`, `${set.pageCount.toLocaleString("en-IN")} pages`].join(" · ") : undefined}
       >
         <div className="ms-auto flex items-center gap-1">

@@ -3,6 +3,7 @@ import * as React from "react";
 import { ChevronRight, FolderInput, Library as LibraryIcon, Loader2, MessageSquareText, Star, Trash2, X, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TopbarSlot } from "@/components/shell/app-shell";
+import { useInTabbedSection } from "@/components/shell/section-tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tip } from "@/components/ui/tooltip";
@@ -73,6 +74,7 @@ function Layout() {
 }
 
 function Topbar() {
+  const tabbed = useInTabbedSection();
   const { list, view, isSearching, search, openFolder, listLoading, currentMatterId, matters, aiConfigured } = useLibrary();
   const askOpen = useLibraryUI((s) => s.askOpen);
   const setAskOpen = useLibraryUI((s) => s.setAskOpen);
@@ -80,9 +82,14 @@ function Topbar() {
   const title = isSearching ? `Search: ${search?.query ?? ""}` : view !== "folder" ? { starred: "Starred", recent: "Recent", shared: "Shared with me", all: "All items" }[view] : list?.folder?.name ?? "All folders";
   return (
     <TopbarSlot>
-      <LibraryIcon className="size-4 text-muted-foreground" />
-      <button onClick={() => openFolder(null)} className="shrink-0 text-[13px] font-semibold hover:text-primary cursor-pointer">Library</button>
-      <ChevronRight className="size-3.5 text-muted-foreground" />
+      {/* In the Drafting section the Library tab names the page; the folder path follows it. */}
+      {!tabbed && <LibraryIcon className="size-4 text-muted-foreground" />}
+      {!tabbed && <button onClick={() => openFolder(null)} className="shrink-0 text-[13px] font-semibold hover:text-primary cursor-pointer">Library</button>}
+      {!tabbed && <ChevronRight className="size-3.5 text-muted-foreground rtl:rotate-180" />}
+      {tabbed && view === "folder" && !isSearching && list?.folder ? (
+        <button onClick={() => openFolder(null)} className="shrink-0 text-[12.5px] text-muted-foreground hover:text-foreground cursor-pointer">All folders</button>
+      ) : null}
+      {tabbed && view === "folder" && !isSearching && list?.folder ? <ChevronRight className="size-3.5 text-muted-foreground rtl:rotate-180" /> : null}
       <span className="truncate text-[12.5px] text-muted-foreground">{title}</span>
       {listLoading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
       {matter && <Badge variant="outline" size="sm" className="hidden sm:inline-flex">{matter.shortName}</Badge>}

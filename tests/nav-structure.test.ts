@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { buildGoChord, buildNav, goShortcuts, isHrefActive, isNavItemActive, navDestinations, navGroupChildren, NAV, SECONDARY_NAV, GO_CHORD } from "@/components/shell/nav";
+import { buildGoChord, buildNav, goShortcuts, isHrefActive, isNavItemActive, isTabActive, navDestinations, navGroupChildren, sectionTabsFor, NAV, SECONDARY_NAV, GO_CHORD } from "@/components/shell/nav";
 import { paletteSections } from "@/components/shell/palette-groups";
 import { FEATURES, hiddenSurfaceRedirect, isHiddenHref, readFeatures, type FeatureFlags } from "@/lib/features";
 import { readFileSync } from "node:fs";
@@ -16,32 +16,45 @@ vi.mock("next/navigation", () => ({
 const OFF: FeatureFlags = { ediscovery: false, officeAll: false, workflows: false, intel: false };
 const ON: FeatureFlags = { ediscovery: true, officeAll: true, workflows: true, intel: true };
 
+const tabsOf = (nav: ReturnType<typeof buildNav>, label: string) => (nav.find((n) => n.label === label)!.tabs ?? []).map((tb) => [tb.label, tb.href, tb.shortcut ?? null]);
+
 describe("India navigation structure", () => {
-  it("has ten focused primary entries in order, Settings secondary", () => {
+  it("has six sections in order (seven with Workflows), Settings secondary", () => {
     const nav = buildNav(OFF);
-    expect(nav.map((n) => n.label)).toEqual(["Home", "Chat", "Matters", "Diary", "Research", "Law", "News", "Documents", "Drafting", "Library"]);
-    expect(nav.find((n) => n.label === "Diary")).toMatchObject({ href: "/diary", shortcut: "G Y", labelKey: "nav.diary", descriptionKey: "nav.desc.diary" });
+    expect(nav.map((n) => n.label)).toEqual(["Home", "Research", "Matters", "Law", "Drafting"]);
+    expect(buildNav({ ...OFF, workflows: true }).map((n) => n.label)).toEqual(["Home", "Research", "Matters", "Law", "Drafting", "Workflows"]);
     expect(nav.find((n) => n.label === "Research")).toMatchObject({ href: "/search", shortcut: "G S", labelKey: "nav.search" });
+    expect(nav.find((n) => n.label === "Matters")).toMatchObject({ href: "/matters", shortcut: "G M", labelKey: "nav.matters" });
     expect(nav.find((n) => n.label === "Drafting")).toMatchObject({ href: "/office", shortcut: "G O", labelKey: "nav.drafting" });
     expect(SECONDARY_NAV.map((n) => n.label)).toEqual(["Settings"]);
+    // Sections are plain rail entries: their pages are in-page tabs, not rail flyouts.
+    for (const n of nav) expect(navGroupChildren(n)).toEqual([]);
   });
 
-  it("groups the law corpus and practice tools under Law with each page keeping its own chord and Law having none", () => {
-    const law = buildNav(OFF).find((n) => n.label === "Law")!;
-    expect(law.shortcut).toBeUndefined();
-    expect(law.labelKey).toBe("nav.law");
-    expect(navGroupChildren(law).map((c) => [c.label, c.href, c.shortcut])).toEqual([
+  it("puts every former page in a section as a tab, each keeping its own chord", () => {
+    const nav = buildNav(OFF);
+    expect(tabsOf(nav, "Research")).toEqual([["Research", "/search", null], ["Quick answer", "/chat", "G C"]]);
+    expect(tabsOf(nav, "Matters")).toEqual([["Matters", "/matters", null], ["Diary", "/diary", "G Y"], ["Documents", "/documents", "G D"]]);
+    expect(tabsOf(nav, "Law")).toEqual([
       ["Case law", "/cases", "G J"],
       ["Statutes", "/law", "G A"],
-      ["Sources", "/sources", "G F"],
-      ["Courts", "/courts", "G K"],
-      ["Judges", "/judges", "G U"],
+      ["Official sources", "/sources", "G F"],
+      ["Courts & judges", "/courts", null],
       ["Tools", "/tools", "G T"],
+      ["News", "/news", "G N"],
     ]);
-    expect(navGroupChildren(law).find((c) => c.href === "/tools")).toMatchObject({ labelKey: "nav.tools", descriptionKey: "nav.desc.tools" });
-    expect(navGroupChildren(law).find((c) => c.href === "/sources")).toMatchObject({ labelKey: "nav.sources", descriptionKey: "nav.desc.sources" });
+    expect(tabsOf(nav, "Drafting")).toEqual([["Drafting", "/office", null], ["Library", "/library", "G L"]]);
+    const cj = nav.find((n) => n.label === "Law")!.tabs!.find((tb) => tb.href === "/courts")!;
+    expect(cj).toMatchObject({ labelKey: "nav.courtsJudges", descriptionKey: "nav.desc.courtsJudges" });
+    expect(cj.sub!.map((c) => [c.label, c.href, c.shortcut])).toEqual([["Courts", "/courts", "G K"], ["Judges", "/judges", "G U"]]);
+    const law = nav.find((n) => n.label === "Law")!;
+    expect(law.shortcut).toBeUndefined();
+    expect(law.href).toBe("/cases");
+  });
+
+  it("keeps every old G chord pointing at the same route", () => {
     const chord = buildGoChord([...buildNav(OFF), ...SECONDARY_NAV]);
-    expect(chord).toMatchObject({ j: "/cases", a: "/law", f: "/sources", k: "/courts", u: "/judges", t: "/tools", y: "/diary", s: "/search", o: "/office", ",": "/settings" });
+    expect(chord).toEqual({ h: "/", s: "/search", c: "/chat", m: "/matters", y: "/diary", d: "/documents", j: "/cases", a: "/law", f: "/sources", k: "/courts", u: "/judges", t: "/tools", n: "/news", o: "/office", l: "/library", ",": "/settings" });
   });
 
   it("gives every G chord exactly one destination, with the switches on or off", () => {
@@ -52,34 +65,58 @@ describe("India navigation structure", () => {
     }
   });
 
-  it("marks Law active on its routes (segment-aware) and nowhere else", () => {
-    const law = buildNav(OFF).find((n) => n.label === "Law")!;
-    for (const p of ["/cases", "/cases/abc", "/law", "/law/ipc-1860/s-302", "/sources", "/sources/sci-orders", "/courts", "/courts/delhi", "/judges", "/judges/j_1", "/tools"]) expect(isNavItemActive(law, p)).toBe(true);
-    for (const p of ["/", "/lawyers", "/search", "/news", "/casesx", "/documents", "/toolsx", "/sourcesx", "/diary"]) expect(isNavItemActive(law, p)).toBe(false);
-    expect(buildNav(OFF).filter((n) => isNavItemActive(n, "/diary")).map((n) => n.label)).toEqual(["Diary"]);
+  it("marks exactly one section active on each page (segment-aware)", () => {
+    const nav = buildNav({ ...OFF, workflows: true });
+    const activeOn = (p: string) => nav.filter((n) => isNavItemActive(n, p)).map((n) => n.label);
+    const expected: Record<string, string> = {
+      "/": "Home", "/search": "Research", "/chat": "Research",
+      "/matters": "Matters", "/matters/team-preview": "Matters", "/diary": "Matters", "/documents": "Matters", "/documents/ds_1": "Matters",
+      "/cases": "Law", "/cases/abc": "Law", "/law": "Law", "/law/ipc-1860/s-302": "Law", "/sources": "Law", "/sources/coverage": "Law", "/sources/od_1": "Law",
+      "/courts": "Law", "/courts/delhi": "Law", "/judges": "Law", "/judges/j_1": "Law", "/tools": "Law", "/news": "Law",
+      "/office": "Drafting", "/office/word/d1": "Drafting", "/library": "Drafting", "/workflows": "Workflows", "/workflows/wf_1": "Workflows",
+    };
+    for (const [p, label] of Object.entries(expected)) expect(activeOn(p), p).toEqual([label]);
+    for (const p of ["/lawyers", "/casesx", "/toolsx", "/sourcesx", "/newsx", "/settings"]) expect(activeOn(p), p).toEqual([]);
     expect(isHrefActive("/", "/cases")).toBe(false);
     expect(isHrefActive("/", "/")).toBe(true);
     expect(isHrefActive("/office?kind=word", "/office")).toBe(true);
-    // Exactly one primary entry is active on a law page.
-    expect(buildNav(OFF).filter((n) => isNavItemActive(n, "/judges/j_1")).map((n) => n.label)).toEqual(["Law"]);
+  });
+
+  it("finds the tab bar and its current tab for a page, and none on Home, Settings or the editor", () => {
+    const nav = buildNav({ ...OFF, workflows: true });
+    const cur = (p: string) => { const s = sectionTabsFor(nav, p); return s ? [s.section.label, s.active.label] : null; };
+    expect(cur("/search")).toEqual(["Research", "Research"]);
+    expect(cur("/chat")).toEqual(["Research", "Quick answer"]);
+    expect(cur("/diary")).toEqual(["Matters", "Diary"]);
+    expect(cur("/documents/ds_1")).toEqual(["Matters", "Documents"]);
+    expect(cur("/judges/j_1")).toEqual(["Law", "Courts & judges"]);
+    expect(cur("/courts")).toEqual(["Law", "Courts & judges"]);
+    expect(cur("/sources/coverage")).toEqual(["Law", "Official sources"]);
+    expect(cur("/news")).toEqual(["Law", "News"]);
+    expect(cur("/office")).toEqual(["Drafting", "Drafting"]);
+    expect(cur("/library")).toEqual(["Drafting", "Library"]);
+    for (const p of ["/", "/settings", "/workflows", "/office/word/d1", "/office/word/new", "/lawyers"]) expect(cur(p), p).toBeNull();
+    const cj = nav.find((n) => n.label === "Law")!.tabs!.find((tb) => tb.href === "/courts")!;
+    expect(isTabActive(cj, "/judges")).toBe(true);
+    expect(isTabActive(cj, "/judgesx")).toBe(false);
   });
 
   it("hides Workflows, Intelligence and E-Discovery entries and chords when switched off", () => {
     const nav = buildNav(OFF);
-    const hrefs = nav.flatMap((n) => [n.href, ...(n.children ?? []).map((c) => c.href)]);
+    const hrefs = nav.flatMap((n) => [n.href, ...(n.children ?? []).map((c) => c.href), ...(n.tabs ?? []).map((c) => c.href)]);
     for (const h of ["/workflows", "/intel", "/ediscovery"]) expect(hrefs).not.toContain(h);
     const chord = buildGoChord([...nav, ...SECONDARY_NAV]);
     for (const k of ["w", "i", "e"]) expect(chord[k]).toBeUndefined();
     const help = goShortcuts([...nav, ...SECONDARY_NAV]).map((s) => s.keys.join(" "));
     for (const k of ["g w", "g i", "g e"]) expect(help).not.toContain(k);
-    expect(help).toEqual(expect.arrayContaining(["g j", "g a", "g f", "g k", "g u", "g t", "g y"]));
+    expect(help).toEqual(expect.arrayContaining(["g j", "g a", "g f", "g k", "g u", "g t", "g y", "g c", "g n", "g d", "g l"]));
   });
 
   it("brings them back, and names Office as Office, when the switches are on", () => {
     const nav = buildNav(ON);
-    expect(nav.map((n) => n.label)).toEqual(["Home", "Chat", "Matters", "Diary", "Research", "Intelligence", "Law", "News", "Documents", "E-Discovery", "Workflows", "Office", "Library"]);
+    expect(nav.map((n) => n.label)).toEqual(["Home", "Research", "Matters", "Intelligence", "Law", "E-Discovery", "Office", "Workflows"]);
     const chord = buildGoChord([...nav, ...SECONDARY_NAV]);
-    expect(chord).toMatchObject({ w: "/workflows", i: "/intel", e: "/ediscovery", o: "/office" });
+    expect(chord).toMatchObject({ w: "/workflows", i: "/intel", e: "/ediscovery", o: "/office", l: "/library" });
     expect(navGroupChildren(nav.find((n) => n.label === "Office")!)).toHaveLength(4);
   });
 
@@ -91,28 +128,34 @@ describe("India navigation structure", () => {
   });
 });
 
-describe("Law hub tabs", () => {
-  it("mirror the rail's Law children (same hrefs and i18n keys, same order)", () => {
+describe("Law hub", () => {
+  it("leaves the area tabs to the shell's section tabs (no second tab row)", () => {
     const src = readFileSync(path.resolve("src/components/corpus/law-hub.tsx"), "utf8");
-    const tabs = Array.from(src.matchAll(/\{ area: "([a-z]+)", labelKey: "([a-z.]+)", href: "([^"]+)" \}/g)).map((m) => [m[2], m[3]]);
-    const law = buildNav(OFF).find((n) => n.label === "Law")!;
-    expect(tabs).toEqual(navGroupChildren(law).map((c) => [c.labelKey, c.href]));
+    expect(src).not.toMatch(/<nav aria-label="Law"/);
+    const shell = readFileSync(path.resolve("src/components/shell/app-shell.tsx"), "utf8");
+    expect(shell).toMatch(/sectionTabsFor\(NAV/);
   });
 });
 
 describe("command palette with hidden surfaces", () => {
-  it("lists the Law pages (findable by 'Law') and no hidden destinations or Intelligence command", () => {
+  it("lists every page (Law pages findable by 'Law') and no hidden destinations or Intelligence command", () => {
     const sections = paletteSections({ query: "", nav: navDestinations([...buildNav(OFF), ...SECONDARY_NAV]), features: OFF });
     const go = sections.find((s) => s.id === "go")!.commands;
-    expect(go.map((c) => c.label)).toEqual(["Home", "Chat", "Matters", "Diary", "Research", "Case law", "Statutes", "Sources", "Courts", "Judges", "Tools", "News", "Documents", "Drafting", "Library", "Settings"]);
-    expect(go.find((c) => c.label === "Sources")).toMatchObject({ href: "/sources", shortcut: "G F", keywords: "Law" });
-    expect(go.find((c) => c.label === "Diary")).toMatchObject({ href: "/diary", shortcut: "G Y" });
+    expect(go.map((c) => c.label)).toEqual(["Home", "Research", "Quick answer", "Matters", "Diary", "Documents", "Case law", "Statutes", "Official sources", "Courts", "Judges", "Tools", "News", "Drafting", "Library", "Settings"]);
+    expect(go.find((c) => c.label === "Official sources")).toMatchObject({ href: "/sources", shortcut: "G F", keywords: "Law" });
+    expect(go.find((c) => c.label === "Quick answer")).toMatchObject({ href: "/chat", shortcut: "G C", keywords: "Research" });
+    expect(go.find((c) => c.label === "Diary")).toMatchObject({ href: "/diary", shortcut: "G Y", keywords: "Matters" });
     expect(go.find((c) => c.label === "Tools")).toMatchObject({ href: "/tools", shortcut: "G T", keywords: "Law" });
     expect(go.find((c) => c.label === "Judges")).toMatchObject({ href: "/judges", shortcut: "G U", keywords: "Law" });
+    expect(go.find((c) => c.label === "News")).toMatchObject({ href: "/news", shortcut: "G N", keywords: "Law" });
+    expect(go.find((c) => c.label === "Library")).toMatchObject({ href: "/library", shortcut: "G L", keywords: "Drafting" });
     const all = sections.flatMap((s) => s.commands);
     expect(all.some((c) => c.href?.startsWith("/workflows") || c.href?.startsWith("/intel"))).toBe(false);
     expect(all.some((c) => c.id === "intel-search")).toBe(false);
     expect(all.some((c) => c.href === "/settings#data")).toBe(true); // Data & automation stays reachable
+    // One palette entry per destination.
+    const hrefs = go.map((c) => c.href);
+    expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 
   it("offers Intelligence again when the switch is on", () => {
@@ -169,8 +212,11 @@ describe("hidden routes redirect home", () => {
 });
 
 describe("navigation translations", () => {
-  it("translates Law, Research, Drafting, Tools, Diary and Sources (and their descriptions) in every catalogue", () => {
-    const keys: MessageKey[] = ["nav.law", "nav.search", "nav.drafting", "nav.tools", "nav.desc.law", "nav.desc.drafting", "nav.desc.tools", "nav.diary", "nav.desc.diary", "nav.sources", "nav.desc.sources"];
+  it("translates the section and tab labels (and their descriptions) in every catalogue", () => {
+    const keys: MessageKey[] = ["nav.law", "nav.search", "nav.drafting", "nav.tools", "nav.desc.law", "nav.desc.drafting", "nav.desc.tools", "nav.diary", "nav.desc.diary", "nav.sources", "nav.desc.sources", "nav.quickAnswer", "nav.officialSources", "nav.courtsJudges", "nav.desc.courtsJudges"];
+    expect(englishMessages["nav.quickAnswer"]).toBe("Quick answer");
+    expect(englishMessages["nav.officialSources"]).toBe("Official sources");
+    expect(englishMessages["nav.courtsJudges"]).toBe("Courts & judges");
     expect(englishMessages["nav.diary"]).toBe("Diary");
     expect(englishMessages["nav.sources"]).toBe("Sources");
     expect(englishMessages["nav.law"]).toBe("Law");

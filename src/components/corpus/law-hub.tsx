@@ -1,34 +1,27 @@
 "use client";
 import * as React from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { exactCentralAct } from "@/modules/law/reader";
 import { lawHref } from "@/modules/law/shared";
 import { ArrowRight, Search, X } from "lucide-react";
 import { Kbd, Spinner } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/client";
-import { areaOfPath, lawTabOfPath, routeLawQuery, type LawScope, type LawTab } from "./law-intent";
+import { areaOfPath, routeLawQuery, type LawArea, type LawScope } from "./law-intent";
+import type { MessageKey } from "@/lib/i18n/catalog";
 import { loadVisuals } from "@/modules/media/use-visuals";
 
 /**
- * The Law area header shared by Case law, Statutes, Courts, Judges and Practice tools: a compact row with the area tabs and one search
- * box that routes by what the query looks like (citation → case law, "s. 303 BNS" → that section, a judge → judges,
+ * The Law area header shared by Case law, Statutes, Official sources, Courts, Judges and Practice tools: one search
+ * box (the area tabs are the shell's Law section tabs, src/components/shell/section-tabs.tsx) that routes by what the
+ * query looks like (citation → case law, "s. 303 BNS" → that section, a judge → judges,
  * a city → its courts), with a small scope switch. On the four start pages a second quiet line carries the page's
  * coverage counts and its attribution, which the page supplies through <LawHubMeta>.
  */
 
-/** Same labels and i18n keys as the rail's Law children (src/components/shell/nav.ts). */
-const TABS = [
-  { area: "cases", labelKey: "nav.caselaw", href: "/cases" },
-  { area: "law", labelKey: "nav.statutes", href: "/law" },
-  { area: "sources", labelKey: "nav.sources", href: "/sources" },
-  { area: "courts", labelKey: "nav.courts", href: "/courts" },
-  { area: "judges", labelKey: "nav.judges", href: "/judges" },
-  { area: "tools", labelKey: "nav.tools", href: "/tools" },
-] as const satisfies readonly { area: LawTab; labelKey: string; href: string }[];
+/** The heading of each area start page (the same i18n keys as the Law section tabs in src/components/shell/nav.ts). */
+const AREA_HEADING = { cases: "nav.caselaw", law: "nav.statutes", courts: "nav.courts", judges: "nav.judges" } as const satisfies Record<LawArea, MessageKey>;
 
 const SCOPES: { value: LawScope; label: string }[] = [
   { value: "auto", label: "All" },
@@ -71,10 +64,8 @@ export function LawHub({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const t = useT();
+  // Official sources and Practice tools have no search area of their own: the hub search there behaves as on Case law.
   const area = areaOfPath(pathname);
-  // Official sources and Practice tools have a tab but no search area of their own: the hub search there behaves as on
-  // Case law, while the header marks their own tab current.
-  const tabArea: LawTab = lawTabOfPath(pathname);
   const landing = LANDINGS.has(pathname ?? "");
   const [meta, setMeta] = React.useState<HTMLElement | null>(null);
 
@@ -128,27 +119,9 @@ export function LawHub({ children }: { children: React.ReactNode }) {
       <div className="flex h-full min-h-0 flex-col">
         <React.Suspense fallback={null}><ModeSync onChange={setSectionsMode} /></React.Suspense>
         <header className="shrink-0 border-b bg-background">
-          {landing ? <h1 className="sr-only">{t(TABS.find((x) => x.area === area)?.labelKey ?? "nav.caselaw")}</h1> : null}
+          {landing ? <h1 className="sr-only">{t(AREA_HEADING[area])}</h1> : null}
           <div className="flex h-11 items-center gap-3 px-4 sm:px-6">
-            <nav aria-label="Law" className="flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none]">
-              {TABS.map((tab) => {
-                const active = tab.area === tabArea;
-                return (
-                  <Link
-                    key={tab.area}
-                    href={tab.href}
-                    aria-current={active ? (landing || pathname === tab.href ? "page" : "location") : undefined}
-                    className={cn(
-                      "inline-flex h-7 shrink-0 items-center rounded-md px-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                      active ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                    )}
-                  >
-                    {t(tab.labelKey)}
-                  </Link>
-                );
-              })}
-            </nav>
-            <form role="search" aria-label="Search the law" onSubmit={submit} className="ml-auto flex min-w-0 max-w-[460px] flex-1 items-center justify-end">
+            <form role="search" aria-label="Search the law" onSubmit={submit} className="flex min-w-0 max-w-[560px] flex-1 items-center">
               <div className="flex h-8 w-full min-w-0 items-center rounded-md border bg-background shadow-[0_1px_0_0_var(--line-quiet)] focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/25">
                 <Search className="ml-2.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                 <input

@@ -1,4 +1,5 @@
 import "server-only";
+import { loadPdfjs } from "@/lib/pdf/pdfjs-server";
 import { defaultLanguageForScript, detectScript } from "@/lib/india/languages";
 import { htmlToMarkdown } from "./html-markdown";
 import type { ExtractionMethod } from "./types";
@@ -180,7 +181,7 @@ export function pageTextFromItems(items: PdfTextItem[]): string {
 }
 
 export async function extractPdf(bytes: Uint8Array, opts: { maxChars?: number; withItems?: boolean } = {}): Promise<ExtractedDocument> {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const pdfjs = await loadPdfjs();
   // pdfjs may transfer (detach) the buffer it is given; the caller keeps its bytes for OCR, so hand it a copy.
   const data = new Uint8Array(bytes);
   const task = pdfjs.getDocument({ data, useSystemFonts: true, disableFontFace: true, verbosity: 0 });

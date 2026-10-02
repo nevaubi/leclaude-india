@@ -1,4 +1,5 @@
 import "server-only";
+import { loadPdfjs } from "@/lib/pdf/pdfjs-server";
 import { db } from "@/lib/db";
 
 /**
@@ -66,7 +67,7 @@ export async function extractTextFromBytes(bytes: Uint8Array, name: string | und
   }
   if (ext === "pdf" || /pdf/.test(mime)) {
     try {
-      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const pdfjs = await loadPdfjs();
       const doc = await pdfjs.getDocument({ data: bytes, useSystemFonts: true, disableFontFace: true }).promise;
       const parts: string[] = [];
       for (let p = 1; p <= doc.numPages; p++) {

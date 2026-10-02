@@ -1,6 +1,7 @@
 import "server-only";
 import { cosine } from "@/lib/ai/embeddings";
 import type { RemoteStore, Row, SqlValue } from "@/lib/db/remote";
+import { pageAt } from "./chunk";
 import { decodeVector, defaultEmbed, embeddingModel, ensureVectorSupport, EMBED_DIMS, vectorLiteral, type EmbedFn } from "./embed";
 import { sourceDef } from "./registry";
 import type { OfficialSearchResult } from "./service";
@@ -16,12 +17,31 @@ import { officialStore, pgArray } from "./units";
  * rankings are fused with reciprocal rank fusion (k = 60). Every hit is a verbatim excerpt of one chunk with a stable
  * `src://<documentId>#p<page>` (or `#c<chunk>`) reference, the publisher and the canonical URL. No match → `empty: true`
  * (never padded with unrelated documents). An explicitly empty filter (e.g. `sources: []`) matches nothing.
+ *
+ * - Only the current text of indexed documents is searched and served (`d.status = 'indexed'` and the chunk's
+ *   text_sha256 equal to the document's): a version being replaced, or a failed one, is never returned.
+ * - ANN neighbours are not matches by themselves: a semantic-only candidate must be within the cosine distance cutoff
+ *   (OFFICIAL_SEMANTIC_MAX_DISTANCE, default 0.55), so a query that matches nothing returns `empty: true`; semantic
+ *   hits carry their `similarity` (1 − cosine distance).
+ * - The page in a hit's ref is the page where the excerpt starts (per-chunk page marks), not the chunk's first page;
+ *   when that page cannot be established (older chunks spanning pages), the ref names the chunk (`#c<idx>`).
  */
 
 export const KEYWORD_CANDIDATES = 400;
 export const SEMANTIC_CANDIDATES = 100;
 const RERANK_CANDIDATES = 150;
 export const SEARCH_TIMEOUT_MS = 8_000;
+/** Default cosine-distance cutoff for semantic-only (ANN) candidates. */
+export const DEFAULT_SEMANTIC_MAX_DISTANCE = 0.55;
+
+/** OFFICIAL_SEMANTIC_MAX_DISTANCE (cosine distance, 0–2), default 0.55. */
+export function semanticMaxDistance(env: Readonly<Record<string, string | undefined>> = process.env): number {
+  const n = Number(env.OFFICIAL_SEMANTIC_MAX_DISTANCE);
+  return env.OFFICIAL_SEMANTIC_MAX_DISTANCE != null && env.OFFICIAL_SEMANTIC_MAX_DISTANCE.trim() !== "" && Number.isFinite(n) && n >= 0 ? Math.min(n, 2) : DEFAULT_SEMANTIC_MAX_DISTANCE;
+}
+
+/** Current text of an indexed document only (aliases c = official_chunks, d = official_documents). */
+export const CURRENT_TEXT = `d.status = 'indexed' AND c.text_sha256 = d.text_sha256`;
 const MAX_PER_DOCUMENT = 3;
 export const EXCERPT_CHARS = 1_800;
 const RRF_K = 60;
@@ -120,7 +140,12 @@ export function rrfFuse(lists: string[][], k = RRF_K): { key: string; score: num
 
 /** A verbatim window of `text` (≤ max chars) around the densest cluster of query words; the start if none match. */
 export function focusExcerpt(text: string, q: string, max = EXCERPT_CHARS): string {
-  if (text.length <= max) return text;
+  return focusExcerptAt(text, q, max).text;
+}
+
+/** focusExcerpt plus where the excerpt starts in `text` (for page citations). */
+export function focusExcerptAt(text: string, q: string, max = EXCERPT_CHARS): { text: string; start: number } {
+  if (text.length <= max) return { text, start: 0 };
   const words = [...new Set((q.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []))].slice(0, 12);
   const lower = text.toLowerCase();
   const hits: { at: number; w: number }[] = [];
@@ -148,7 +173,35 @@ export function focusExcerpt(text: string, q: string, max = EXCERPT_CHARS): stri
   // Snap to whitespace so words are not cut (stays a verbatim substring).
   if (start > 0) { const sp = text.indexOf(" ", start); if (sp > 0 && sp - start < 40 && sp < end) start = sp + 1; }
   if (end < text.length) { const sp = text.lastIndexOf(" ", end); if (sp > start && end - sp < 40) end = sp; }
-  return text.slice(start, end);
+  return { text: text.slice(start, end), start };
+}
+
+/**
+ * Where a hit is cited: the page the excerpt starts on (and the pages it spans) from the chunk's page marks; without
+ * marks, the chunk's single page, or its first page when the excerpt is the chunk's start; otherwise unknown (the ref
+ * then names the chunk, never a guessed page).
+ */
+export function excerptPages(chunk: { pageStart: number | null; pageEnd: number | null; marks: [number, number][] | null }, start: number, length: number): { page: number | null; pageEnd: number | null } {
+  if (chunk.marks?.length) {
+    const first = pageAt(chunk.marks, start);
+    const last = pageAt(chunk.marks, Math.max(start, start + length - 1));
+    return { page: first, pageEnd: last ?? first };
+  }
+  if (chunk.pageStart == null) return { page: null, pageEnd: null };
+  const end = chunk.pageEnd ?? chunk.pageStart;
+  if (end === chunk.pageStart) return { page: chunk.pageStart, pageEnd: end };
+  if (start === 0) return { page: chunk.pageStart, pageEnd: null };
+  return { page: null, pageEnd: null };
+}
+
+function parseMarks(v: string | null | undefined): [number, number][] | null {
+  if (!v) return null;
+  try {
+    const m = JSON.parse(v) as unknown;
+    if (!Array.isArray(m)) return null;
+    const out = m.filter((x): x is [number, number] => Array.isArray(x) && x.length === 2 && Number.isInteger(x[0]) && Number.isInteger(x[1]) && x[0] >= 0 && x[1] > 0);
+    return out.length ? out : null;
+  } catch { return null; }
 }
 
 export interface SearchDeps {
@@ -156,9 +209,11 @@ export interface SearchDeps {
   /** Embedding model id (null: keyword only). Defaults to the configured embedding role. */
   model?: string | null;
   timeoutMs?: number;
+  /** Cosine-distance cutoff for semantic-only candidates (default OFFICIAL_SEMANTIC_MAX_DISTANCE / 0.55). */
+  maxDistance?: number;
 }
 
-interface Candidate { key: string; documentId: string; idx: number }
+interface Candidate { key: string; documentId: string; idx: number; similarity?: number }
 
 const keyOf = (documentId: string, idx: number) => `${documentId}#${idx}`;
 
@@ -169,12 +224,12 @@ function candidatesSql(tsquery: "websearch" | "words", filters: string[]): strin
     hits AS (
       (SELECT c.document_id, c.idx, ts_rank_cd(c.search, q.tq) AS r
         FROM official_chunks c JOIN official_documents d ON d.id = c.document_id, q
-        WHERE c.search @@ q.tq${w}
+        WHERE c.search @@ q.tq AND ${CURRENT_TEXT}${w}
         ORDER BY r DESC LIMIT ${KEYWORD_CANDIDATES})
       UNION ALL
       (SELECT c.document_id, c.idx, ts_rank_cd(d.search, q.tq) * 2 AS r
         FROM official_documents d JOIN official_chunks c ON c.document_id = d.id AND c.idx = 0, q
-        WHERE d.search @@ q.tq${w}
+        WHERE d.search @@ q.tq AND ${CURRENT_TEXT}${w}
         ORDER BY r DESC LIMIT 50))
     SELECT document_id, idx, max(r)::float8 AS r FROM hits GROUP BY document_id, idx ORDER BY r DESC, document_id, idx LIMIT ${KEYWORD_CANDIDATES}`;
 }
@@ -190,15 +245,19 @@ async function keywordCandidates(store: RemoteStore, n: NormalizedSearch, timeou
   return toCand(await boundedQuery(store, candidatesSql("words", filters), [words, ...params.slice(1)], timeoutMs));
 }
 
-async function semanticAnn(store: RemoteStore, n: NormalizedSearch, vec: Float32Array, model: string, type: "halfvec" | "vector", timeoutMs: number): Promise<Candidate[]> {
+async function semanticAnn(store: RemoteStore, n: NormalizedSearch, vec: Float32Array, model: string, type: "halfvec" | "vector", timeoutMs: number, maxDistance: number): Promise<Candidate[]> {
   const params: SqlValue[] = [vectorLiteral(vec), model];
   const filters = documentFilters(n, params);
   const rows = await boundedQuery(store,
-    `SELECT c.document_id, c.idx FROM official_chunks c JOIN official_documents d ON d.id = c.document_id
-      WHERE c.embedding_v IS NOT NULL AND c.embedding_model = $2${filters.length ? ` AND ${filters.join(" AND ")}` : ""}
+    `SELECT c.document_id, c.idx, (c.embedding_v <=> $1::${type})::float8 AS dist FROM official_chunks c JOIN official_documents d ON d.id = c.document_id
+      WHERE c.embedding_v IS NOT NULL AND c.embedding_model = $2 AND ${CURRENT_TEXT}${filters.length ? ` AND ${filters.join(" AND ")}` : ""}
       ORDER BY c.embedding_v <=> $1::${type} LIMIT ${SEMANTIC_CANDIDATES}`,
     params, timeoutMs, [{ query: `SELECT set_config('hnsw.ef_search', '${SEMANTIC_CANDIDATES}', true) AS e` }]);
-  return rows.map((r) => ({ key: keyOf(String(r.document_id), Number(r.idx)), documentId: String(r.document_id), idx: Number(r.idx) }));
+  // Nearest neighbours always exist; only those close enough count as matches.
+  return rows
+    .map((r) => ({ key: keyOf(String(r.document_id), Number(r.idx)), documentId: String(r.document_id), idx: Number(r.idx), dist: Number(r.dist) }))
+    .filter((r) => Number.isFinite(r.dist) && r.dist <= maxDistance)
+    .map((r) => ({ key: r.key, documentId: r.documentId, idx: r.idx, similarity: Math.round((1 - r.dist) * 1e4) / 1e4 }));
 }
 
 async function semanticRerank(store: RemoteStore, cands: Candidate[], vec: Float32Array, model: string, timeoutMs: number): Promise<Candidate[]> {
@@ -212,7 +271,7 @@ async function semanticRerank(store: RemoteStore, cands: Candidate[], vec: Float
     .filter((x): x is { c: Candidate; v: Float32Array } => Boolean(x.v))
     .map((x) => ({ ...x, s: cosine(vec, x.v) }))
     .sort((a, b) => b.s - a.s || a.c.key.localeCompare(b.c.key))
-    .map((x) => x.c);
+    .map((x) => ({ ...x.c, similarity: Math.round(x.s * 1e4) / 1e4 }));
 }
 
 /** Hybrid search (see module notes). Throws OfficialNotConfiguredError without Postgres, RangeError on bad input. */
@@ -237,7 +296,7 @@ export async function searchOfficial(query: SourceSearchQuery, storeArg?: Remote
       const vec = await vecPromise;
       if (vec && vec.length === EMBED_DIMS) {
         const support = await ensureVectorSupport(store);
-        if (support.mode === "pgvector" && support.type) semantic = await semanticAnn(store, n, vec, model, support.type, timeoutMs);
+        if (support.mode === "pgvector" && support.type) semantic = await semanticAnn(store, n, vec, model, support.type, timeoutMs, deps.maxDistance ?? semanticMaxDistance());
         else semantic = await semanticRerank(store, keyword, vec, model, timeoutMs);
       }
     } catch (e) {
@@ -262,21 +321,27 @@ export async function searchOfficial(query: SourceSearchQuery, storeArg?: Remote
   if (!picked.length) return { ...none, mode, candidates: keyword.length };
   const wanted = picked.map((f) => { const i = f.key.lastIndexOf("#"); return { document_id: f.key.slice(0, i), idx: Number(f.key.slice(i + 1)) }; });
   const rows = await boundedQuery(store,
-    `SELECT c.document_id, c.idx, c.page_start, c.page_end, c.heading, c.text, d.source, d.kind, d.title, d.url, d.doc_date::text AS doc_date, d.extraction
+    `SELECT c.document_id, c.idx, c.page_start, c.page_end, c.page_marks, c.heading, c.text, d.source, d.kind, d.title, d.url, d.doc_date::text AS doc_date, d.extraction
       FROM official_chunks c JOIN official_documents d ON d.id = c.document_id
-      JOIN jsonb_to_recordset($1::jsonb) AS x(document_id text, idx int) ON c.document_id = x.document_id AND c.idx = x.idx`,
+      JOIN jsonb_to_recordset($1::jsonb) AS x(document_id text, idx int) ON c.document_id = x.document_id AND c.idx = x.idx
+      WHERE ${CURRENT_TEXT}`,
     [JSON.stringify(wanted)], timeoutMs);
   const byKey = new Map(rows.map((r) => [keyOf(String(r.document_id), Number(r.idx)), r]));
   const inKeyword = new Set(keyword.map((c) => c.key));
-  const inSemantic = new Set(semantic.map((c) => c.key));
+  const similarity = new Map(semantic.map((c) => [c.key, c.similarity]));
   const hits: SourceSearchHit[] = [];
   for (const f of picked) {
     const r = byKey.get(f.key);
     if (!r || !isSourceId(r.source)) continue;
-    const pageStart = r.page_start == null ? null : Number(r.page_start);
+    const chunkStart = r.page_start == null ? null : Number(r.page_start);
+    const chunkEnd = r.page_end == null ? chunkStart : Number(r.page_end);
     const idx = Number(r.idx);
-    hits.push({
-      ref: pageStart != null ? sourceRef(String(r.document_id), { page: pageStart }) : sourceRef(String(r.document_id), { chunk: idx }),
+    const ex = focusExcerptAt(String(r.text ?? ""), n.q);
+    const at = excerptPages({ pageStart: chunkStart, pageEnd: chunkEnd, marks: parseMarks(r.page_marks) }, ex.start, ex.text.length);
+    const sim = similarity.get(f.key);
+    // An additive field (`similarity`) on semantic hits; the hit otherwise keeps the SourceSearchHit contract.
+    const hit: SourceSearchHit & { similarity?: number } = {
+      ref: at.page != null ? sourceRef(String(r.document_id), { page: at.page }) : sourceRef(String(r.document_id), { chunk: idx }),
       documentId: String(r.document_id),
       chunkIndex: idx,
       sourceId: r.source,
@@ -285,13 +350,15 @@ export async function searchOfficial(query: SourceSearchQuery, storeArg?: Remote
       publisher: sourceDef(r.source)?.publisher ?? r.source,
       url: String(r.url ?? ""),
       docDate: r.doc_date ?? null,
-      pageStart,
-      pageEnd: r.page_end == null ? pageStart : Number(r.page_end),
-      text: focusExcerpt(String(r.text ?? ""), n.q),
+      pageStart: at.page ?? chunkStart,
+      pageEnd: at.page != null ? at.pageEnd ?? at.page : chunkEnd,
+      text: ex.text,
       score: Math.round(f.score * 1e6) / 1e6,
-      match: inKeyword.has(f.key) && inSemantic.has(f.key) ? "both" : inSemantic.has(f.key) ? "semantic" : "keyword",
+      match: inKeyword.has(f.key) && similarity.has(f.key) ? "both" : similarity.has(f.key) ? "semantic" : "keyword",
       extraction: (r.extraction ?? null) as ExtractionMethod | null,
-    });
+    };
+    if (sim != null) hit.similarity = sim;
+    hits.push(hit);
   }
   return { hits, mode, candidates: keyword.length, empty: hits.length === 0 };
 }

@@ -85,16 +85,23 @@ export function toUnit(r: Row): OfficialUnit {
 
 /**
  * Insert units (one statement; existing ids are left alone). With `requeue`, a unit that already finished (done,
- * failed or skipped) is put back to pending with fresh attempts — used for re-discovery and changed documents; a unit
- * that is pending or running is never touched.
+ * failed or skipped) is put back to pending with fresh attempts — used for re-discovery and changed documents
+ * (`minAgeMinutes`: only one that finished at least that long ago). A unit still pending takes the new payload and
+ * priority (a changed document's OCR request must not run with the previous version's hash and pages) but keeps its
+ * attempts and backoff. A running unit is never touched (its stage re-checks the document version when it finishes).
  */
-export async function enqueueUnits(store: RemoteStore, units: UnitInput[], opts: { requeue?: boolean } = {}): Promise<number> {
+export async function enqueueUnits(store: RemoteStore, units: UnitInput[], opts: { requeue?: boolean; minAgeMinutes?: number } = {}): Promise<number> {
   if (!units.length) return 0;
   const rows = units.map((u) => ({ id: u.id, source: u.source, stage: u.stage, key: u.key, document_id: u.documentId ?? null, payload: u.payload ?? null, priority: u.priority ?? 5, run_after: u.runAfter ?? null }));
+  const age = opts.minAgeMinutes && opts.minAgeMinutes > 0 ? ` AND (official_units.finished_at IS NULL OR official_units.finished_at < now() - interval '${Math.min(Math.floor(opts.minAgeMinutes), 100_000)} minutes')` : "";
   const conflict = opts.requeue
-    ? `ON CONFLICT (id) DO UPDATE SET status = 'pending', attempts = 0, error = NULL, note = NULL, payload = EXCLUDED.payload, priority = EXCLUDED.priority,
-        run_after = EXCLUDED.run_after, lease_until = NULL, started_at = NULL, finished_at = NULL, updated_at = now()
-        WHERE official_units.status IN ('done', 'failed', 'skipped')`
+    ? `ON CONFLICT (id) DO UPDATE SET status = 'pending',
+        attempts = CASE WHEN official_units.status = 'pending' THEN official_units.attempts ELSE 0 END,
+        error = CASE WHEN official_units.status = 'pending' THEN official_units.error ELSE NULL END, note = NULL,
+        payload = EXCLUDED.payload, priority = EXCLUDED.priority,
+        run_after = CASE WHEN official_units.status = 'pending' THEN official_units.run_after ELSE EXCLUDED.run_after END,
+        lease_until = NULL, started_at = NULL, finished_at = NULL, updated_at = now()
+        WHERE (official_units.status IN ('done', 'failed', 'skipped')${age}) OR official_units.status = 'pending'`
     : `ON CONFLICT (id) DO NOTHING`;
   const r = await store.query({
     query: `WITH ins AS (
@@ -166,6 +173,31 @@ export async function releaseUnit(store: RemoteStore, id: string, payload?: Reco
     return;
   }
   await store.query({ query: `UPDATE official_units SET status = 'pending', lease_until = NULL, attempts = greatest(attempts - 1, 0), note = $2, updated_at = now() WHERE id = $1`, params: [id, note ?? null] });
+}
+
+/**
+ * Put a claimed unit back to wait (not a failure): the attempt is given back and the unit is not claimable before
+ * `runAfterSeconds` (e.g. a cause list not yet published, re-checked later; a unit with too little run time left).
+ */
+export async function deferUnit(store: RemoteStore, id: string, runAfterSeconds: number, note: string, payload?: Record<string, unknown> | null): Promise<void> {
+  const s = Math.max(1, Math.min(Math.floor(runAfterSeconds), 7 * 86_400));
+  if (payload !== undefined) {
+    await store.query({ query: `UPDATE official_units SET status = 'pending', lease_until = NULL, attempts = greatest(attempts - 1, 0), run_after = now() + interval '${s} seconds', payload = $2::jsonb, note = $3, updated_at = now() WHERE id = $1`, params: [id, payload == null ? null : JSON.stringify(payload), note.slice(0, 500)] });
+    return;
+  }
+  await store.query({ query: `UPDATE official_units SET status = 'pending', lease_until = NULL, attempts = greatest(attempts - 1, 0), run_after = now() + interval '${s} seconds', note = $2, updated_at = now() WHERE id = $1`, params: [id, note.slice(0, 500)] });
+}
+
+/** Postgres timestamptz text ("2026-10-02 09:00:00.123456+00", "+05:30", ISO) → ISO 8601 UTC; null when unparseable. */
+export function pgTimestampToIso(v: string | null | undefined): string | null {
+  if (v == null) return null;
+  let s = String(v).trim();
+  if (!s) return null;
+  if (!s.includes("T")) s = s.replace(" ", "T");
+  // A bare "+HH" / "+HHMM" offset after the time part (Postgres text output) → "+HH:MM" (what Date.parse accepts).
+  s = s.replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)([+-]\d{2})$/, "$1$2:00").replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)([+-]\d{2})(\d{2})$/, "$1$2:$3");
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
 }
 
 /** Extend the lease of a long-running unit (OCR of a long document). */

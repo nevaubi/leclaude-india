@@ -133,7 +133,7 @@ export async function embedPendingChunks(store: RemoteStore, opts: { documentId?
   const embed = opts.embed ?? defaultEmbed();
   const now = opts.now ?? Date.now;
   const rows = await store.query({
-    query: `SELECT document_id, idx, text FROM official_chunks WHERE embedding IS NULL${opts.documentId ? " AND document_id = $1" : ""} ORDER BY document_id, idx LIMIT ${max + 1}`,
+    query: `SELECT document_id, idx, text, text_sha256 FROM official_chunks WHERE embedding IS NULL${opts.documentId ? " AND document_id = $1" : ""} ORDER BY document_id, idx LIMIT ${max + 1}`,
     params: opts.documentId ? [opts.documentId] : [],
   });
   out.remaining = rows.length > max;
@@ -141,14 +141,16 @@ export async function embedPendingChunks(store: RemoteStore, opts: { documentId?
   const docs = new Set<string>();
   for (let i = 0; i < todo.length; i += BATCH) {
     if (opts.deadline != null && now() > opts.deadline - 5_000) { out.remaining = true; break; }
+    if (opts.signal?.aborted) { out.remaining = true; break; }
     const batch = todo.slice(i, i + BATCH);
     let vectors: Float32Array[];
     try {
       vectors = await embed(batch.map((r) => String(r.text ?? "").slice(0, 8_000)), { signal: opts.signal });
     } catch (e) {
+      out.remaining = true;
+      if (opts.signal?.aborted) break; // the run's deadline: not an embedding failure
       out.error = (e as Error).message.slice(0, 300);
       out.failed += batch.length;
-      out.remaining = true;
       break;
     }
     if (vectors.length !== batch.length || vectors.some((v) => v.length !== EMBED_DIMS)) {
@@ -157,17 +159,27 @@ export async function embedPendingChunks(store: RemoteStore, opts: { documentId?
       out.remaining = true;
       break;
     }
-    const recs = batch.map((r, k) => ({ document_id: String(r.document_id), idx: Number(r.idx), e: hex(float32ToBuffer(vectors[k])), ...(support.mode === "pgvector" ? { v: vectorLiteral(vectors[k]) } : {}) }));
+    // Each vector is written only onto the exact chunk text it was computed from (same text version, still without a
+    // vector): a document re-indexed or re-scrubbed meanwhile keeps its new rows for the next pass.
+    const recs = batch.map((r, k) => ({ document_id: String(r.document_id), idx: Number(r.idx), sha: String(r.text_sha256 ?? ""), e: hex(float32ToBuffer(vectors[k])), ...(support.mode === "pgvector" ? { v: vectorLiteral(vectors[k]) } : {}) }));
     const setV = support.mode === "pgvector" && support.type ? `, embedding_v = x.v::${support.type}` : "";
-    await store.query({
+    const written = await store.query({
       query: `UPDATE official_chunks c SET embedding = decode(x.e, 'hex'), embedding_model = $2, embedding_dims = ${EMBED_DIMS}${setV}
-        FROM jsonb_to_recordset($1::jsonb) AS x(document_id text, idx int, e text, v text)
-        WHERE c.document_id = x.document_id AND c.idx = x.idx`,
+        FROM jsonb_to_recordset($1::jsonb) AS x(document_id text, idx int, sha text, e text, v text)
+        WHERE c.document_id = x.document_id AND c.idx = x.idx AND c.text_sha256 = x.sha AND c.embedding IS NULL
+        RETURNING c.document_id`,
       params: [JSON.stringify(recs), model],
     });
-    out.embedded += batch.length;
+    out.embedded += written.length;
     for (const r of batch) docs.add(String(r.document_id));
   }
+  if (opts.documentId && !out.remaining && !out.error) {
+    // Rows written meanwhile (a re-index replaced the chunks) or skipped by the version guard: not done yet.
+    const left = await store.query({ query: `SELECT 1 AS n FROM official_chunks WHERE document_id = $1 AND embedding IS NULL LIMIT 1`, params: [opts.documentId] });
+    if (left.length) out.remaining = true;
+  }
+  // The document's counter is recomputed even when nothing was written (a stale count would re-queue it every run).
+  if (opts.documentId) docs.add(opts.documentId);
   if (docs.size) {
     await store.query({
       query: `UPDATE official_documents d SET embedded = (SELECT count(*) FROM official_chunks c WHERE c.document_id = d.id AND c.embedding IS NOT NULL), updated_at = now() WHERE d.id = ANY($1::text[])`,
@@ -175,4 +187,30 @@ export async function embedPendingChunks(store: RemoteStore, opts: { documentId?
     });
   }
   return out;
+}
+
+/**
+ * Queue embedding (`index`) units for indexed documents whose chunks are not all embedded and that have no pending or
+ * running index unit — documents indexed while embeddings were not configured, re-scrubbed documents, or ones whose
+ * index unit finished early. Bounded per call; finished (done / skipped) units are re-queued, failed ones are left to
+ * the redrive. Returns how many units were queued.
+ */
+export async function queueMissingEmbeddings(store: RemoteStore, sources: string[], limit: number, priority: number): Promise<number> {
+  if (!sources.length || limit <= 0) return 0;
+  const r = await store.query({
+    query: `WITH c AS (
+        SELECT d.id, d.source, d.url FROM official_documents d
+        WHERE d.status = 'indexed' AND d.chunks > d.embedded AND d.source = ANY($1::text[])
+          AND NOT EXISTS (SELECT 1 FROM official_units u WHERE u.id = 'index:' || d.id AND u.status IN ('pending', 'running', 'failed'))
+        ORDER BY d.indexed_at DESC NULLS LAST, d.id LIMIT ${Math.max(1, Math.min(Math.floor(limit), 1_000))}),
+      ins AS (
+        INSERT INTO official_units (id, source, stage, key, document_id, priority)
+        SELECT 'index:' || c.id, c.source, 'index', c.url, c.id, ${Math.floor(priority)} FROM c
+        ON CONFLICT (id) DO UPDATE SET status = 'pending', attempts = 0, error = NULL, note = NULL, lease_until = NULL, run_after = NULL, started_at = NULL, finished_at = NULL, updated_at = now()
+        WHERE official_units.status IN ('done', 'skipped')
+        RETURNING 1)
+      SELECT count(*)::int AS n FROM ins`,
+    params: [pgArray(sources)],
+  });
+  return Number(r[0]?.n ?? 0);
 }

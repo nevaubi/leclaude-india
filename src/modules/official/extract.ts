@@ -59,9 +59,19 @@ export function textQuality(text: string): { readable: boolean; letters: number;
   return { readable: letters >= 40 && letters / Math.max(1, visible) >= 0.5, letters, visible };
 }
 
-/** Per-page decision: readable text, OCR (scan or glyph garbage), or blank/short (kept as is). */
-export function pageNeedsOcr(text: string, hasImages: boolean): { readable: boolean; letters: number; visible: number; needsOcr: boolean } {
+/** Fewer letters than this on a page that is mostly one image: the text layer is a stamp over a scan. */
+export const SPARSE_PAGE_LETTERS = 400;
+/** Share of the page area an image must cover to count as a scanned page. */
+export const SCAN_IMAGE_COVERAGE = 0.4;
+
+/**
+ * Per-page decision: readable text, OCR (scan or glyph garbage), or blank/short (kept as is). `scanImage` = an image
+ * covers most of the page: a page with a sparse text layer over it (a neutral-citation stamp, "Digitally signed by …")
+ * is a scan whose body is only in the image, so it is OCR'd rather than indexed as the stamp alone.
+ */
+export function pageNeedsOcr(text: string, hasImages: boolean, scanImage = false): { readable: boolean; letters: number; visible: number; needsOcr: boolean } {
   const q = textQuality(text);
+  if (q.readable && scanImage && q.letters < SPARSE_PAGE_LETTERS) return { ...q, needsOcr: true };
   if (q.readable) return { ...q, needsOcr: false };
   const ratio = q.letters / Math.max(1, q.visible);
   if (hasImages) return { ...q, needsOcr: true };
@@ -113,6 +123,20 @@ export function languageOf(text: string): string | null {
 function ext(url: string | null | undefined): string {
   if (!url) return "";
   try { return (new URL(url).pathname.split(".").pop() ?? "").toLowerCase(); } catch { return (url.split(/[?#]/)[0].split(".").pop() ?? "").toLowerCase(); }
+}
+
+/**
+ * What the bytes are, from the bytes alone (no declared type, no URL): used to refuse an HTML error / WAF / soft-404
+ * page served with HTTP 200 where a PDF is expected.
+ */
+export function sniffBytes(bytes: Uint8Array): "pdf" | "html" | "zip" | "ole" | "other" {
+  const head = new TextDecoder("latin1").decode(bytes.subarray(0, Math.min(bytes.length, 1024)));
+  if (/%PDF-\d/.test(head)) return "pdf";
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b) return "zip";
+  if (bytes[0] === 0xd0 && bytes[1] === 0xcf) return "ole";
+  const t = head.replace(/^﻿|^ï»¿/, "").trimStart().toLowerCase();
+  if (/^<!doctype html|^<html|^<head[\s>]|^<body[\s>]|^<\?xml[^>]*>\s*<!doctype html|^<script|^<meta|^<title/.test(t) || /<html[\s>]|<body[\s>]|<\/head>/.test(t)) return "html";
+  return "other";
 }
 
 export function detectKind(bytes: Uint8Array, mime: string | null, url?: string | null): ExtractKind {
@@ -205,13 +229,17 @@ export async function extractPdf(bytes: Uint8Array, opts: { maxChars?: number; w
       const raw = content.items.filter((it): it is typeof it & PdfTextItem => "str" in it) as PdfTextItem[];
       let text = pageTextFromItems(raw);
       let hasImages = false;
-      if (!textQuality(text).readable) {
+      let scanImage = false;
+      const tq = textQuality(text);
+      // Unreadable text, or a sparse text layer (a stamp) that may sit over a full-page scan: look at the images.
+      if (!tq.readable || tq.letters < SPARSE_PAGE_LETTERS) {
         try {
           const ops = await page.getOperatorList();
           hasImages = ops.fnArray.some((f: number) => imageOps.has(f));
+          if (hasImages && tq.readable) scanImage = largestImageShare(ops, imageOps, pdfjs.OPS as unknown as Record<string, number>, page.view) >= SCAN_IMAGE_COVERAGE;
         } catch { hasImages = false; }
       }
-      const q = pageNeedsOcr(text, hasImages);
+      const q = pageNeedsOcr(text, hasImages, scanImage);
       quality.push({ page: p, ...q, hasImages });
       if (q.needsOcr) text = ""; // garbage or a scan: never indexed as text
       const c = cap(text, budget);
@@ -255,6 +283,38 @@ export async function extractPdf(bytes: Uint8Array, opts: { maxChars?: number; w
 }
 
 const round = (n: number) => Math.round(Number(n) * 100) / 100;
+
+type Matrix = [number, number, number, number, number, number];
+const mul = (m: Matrix, n: Matrix): Matrix => [
+  m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1],
+  m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
+  m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5],
+];
+const isMatrix = (v: unknown): v is Matrix => Array.isArray(v) && v.length === 6 && v.every((x) => typeof x === "number" && Number.isFinite(x));
+
+/**
+ * Share of the page area (0–1) covered by its largest painted image: images are drawn into the unit square under the
+ * current transformation matrix, so the area is |det(CTM)| (save / restore / transform and form XObject matrices are
+ * tracked). Deterministic; used to tell a scanned page from a text page carrying a small logo or seal.
+ */
+export function largestImageShare(ops: { fnArray: number[]; argsArray: unknown[] }, imageOps: Set<number>, OPS: Record<string, number>, view: number[] | undefined): number {
+  const pageArea = view && view.length === 4 ? Math.abs((view[2] - view[0]) * (view[3] - view[1])) : 0;
+  if (!(pageArea > 0)) return 0;
+  let ctm: Matrix = [1, 0, 0, 1, 0, 0];
+  const stack: Matrix[] = [];
+  let best = 0;
+  for (let i = 0; i < ops.fnArray.length; i++) {
+    const fn = ops.fnArray[i];
+    const args = ops.argsArray[i] as unknown[] | null;
+    if (fn === OPS.save) stack.push(ctm);
+    else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
+    else if (fn === OPS.transform && args) { const m = args.slice(0, 6); if (isMatrix(m)) ctm = mul(ctm, m); }
+    else if (fn === OPS.paintFormXObjectBegin && args) { stack.push(ctm); if (isMatrix(args[0])) ctm = mul(ctm, args[0]); }
+    else if (fn === OPS.paintFormXObjectEnd) ctm = stack.pop() ?? ctm;
+    else if (imageOps.has(fn)) best = Math.max(best, Math.abs(ctm[0] * ctm[3] - ctm[1] * ctm[2]) / pageArea);
+  }
+  return Math.min(1, best);
+}
 
 export function extractHtml(html: string, baseUrl: string | null): ExtractedDocument {
   const { title, markdown, links } = htmlToMarkdown(html, { baseUrl, maxChars: MAX_TEXT_CHARS });
@@ -337,6 +397,13 @@ export async function extractDocument(input: { bytes: Uint8Array; mime: string |
       default: return empty("unsupported", `unsupported file type (${input.mime ?? "unknown"})`);
     }
   } catch (e) {
+    // A container the parser cannot open (unsupported ZIP compression, a legacy .doc / .xls renamed, a damaged or
+    // encrypted archive) is deterministic: it is classified unsupported (excluded with this reason), never a failure
+    // that retries and redrives would repeat.
+    if (kind === "docx" || kind === "sheet") {
+      const zip = input.bytes[0] === 0x50 && input.bytes[1] === 0x4b;
+      return empty("unsupported", `unsupported or damaged ${kind === "docx" ? "Word" : "spreadsheet"} ${zip ? "ZIP container" : "file"} (${(e as Error).message.slice(0, 160)})`);
+    }
     return empty(kind, `extraction failed: ${(e as Error).message.slice(0, 200)}`);
   }
 }
@@ -365,11 +432,28 @@ export function firecrawlPages(markdown: string): PageText[] | null {
   return pages[0]?.page === 1 ? pages : null;
 }
 
-/** Markdown returned by Firecrawl's PDF parser: paged when its page markers are consistent, else page-less. */
-export function extractFirecrawlMarkdown(markdown: string, numPages: number | null): ExtractedDocument {
+/**
+ * Markdown returned by Firecrawl's PDF parser: paged when its page markers are consistent, else page-less. With
+ * `maxPages` (the parse limit that was requested) a parse that may have stopped at the limit is flagged `truncated`
+ * with a warning — never presented as the complete document: paged output with `maxPages` pages or fewer pages than
+ * the reported count, or page-less output whose page count is unknown or at the limit.
+ */
+export function extractFirecrawlMarkdown(markdown: string, numPages: number | null, maxPages?: number | null): ExtractedDocument {
   const pages = firecrawlPages(markdown);
-  if (!pages) return { ...single("pdf", "firecrawl_pdf", markdown.replace(/<!-- page \d+ -->/g, "").trim()), pageCount: numPages };
+  const limit = maxPages != null && maxPages > 0 ? Math.floor(maxPages) : null;
+  if (!pages) {
+    const base = { ...single("pdf", "firecrawl_pdf", markdown.replace(/<!-- page \d+ -->/g, "").trim()), pageCount: numPages };
+    if (base.truncated) return base;
+    if (limit != null && (numPages == null || numPages >= limit)) {
+      return { ...base, truncated: true, warning: numPages == null ? `Firecrawl did not report the page count; the parse is limited to ${limit} pages, so the text may be incomplete` : `Firecrawl parsed at most ${limit} of ${numPages} pages; the text may be incomplete` };
+    }
+    return base;
+  }
   const all = pages.map((p) => p.text).join("\n\n");
   const quality = pages.map((p) => ({ page: p.page, ...textQuality(p.text), hasImages: false, needsOcr: false }));
-  return { kind: "pdf", method: all.trim() ? "firecrawl_pdf" : null, paged: true, pageCount: numPages ?? pages.length, pages, items: [], quality, ocrPages: [], title: null, links: [], language: languageOf(all), truncated: false, warning: null };
+  const fewer = numPages != null && numPages > pages.length;
+  const atLimit = limit != null && (pages.length >= limit || (numPages != null && numPages >= limit && numPages > pages.length));
+  const truncated = fewer || atLimit;
+  const warning = truncated ? `Firecrawl parsed only the first ${pages.length} of ${numPages != null && numPages > pages.length ? numPages : `${pages.length}+`} pages${limit != null ? ` (parse limit ${limit} pages)` : ""}` : null;
+  return { kind: "pdf", method: all.trim() ? "firecrawl_pdf" : null, paged: true, pageCount: Math.max(numPages ?? 0, pages.length), pages, items: [], quality, ocrPages: [], title: null, links: [], language: languageOf(all), truncated, warning };
 }

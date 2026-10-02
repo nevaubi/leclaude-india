@@ -140,6 +140,7 @@ describe("runOfficialIngest end to end (fake adapter, fake fetch, fake store)", 
     // A re-discovery that asks for a refetch of unchanged bytes: nothing is re-indexed, the version stays.
     items[0] = { ...items[0], meta: { ...items[0].meta, refetch: true } };
     const before = store.chunks.length;
+    store.clock += 3 * 3600_000; // refetch is honoured once the last fetch is older than OFFICIAL_REFETCH_MIN_MINUTES (120)
     const r2 = await runOfficialIngest({ store, deadlineMs: 120_000, concurrency: 1, sleep: tick, forceDiscover: true, http: () => http, embedModel: "test-embed", embed: fakeEmbed, log: () => undefined });
     expect(r2.stop).toBe("done");
     expect(r2.total).toMatchObject({ discovered: 0, fetched: 1, skipped: 1, indexed: 0 });
@@ -214,6 +215,7 @@ describe("runOfficialIngest end to end (fake adapter, fake fetch, fake store)", 
     const id = documentIdFor("sci-orders", url);
     const first = store.docs.get(id)!.sha256;
     files[url] = { bytes: await makePdf([ORDER_P1, ORDER_P2]), mime: "application/pdf" };
+    store.clock += 3 * 3600_000;
     await runOfficialIngest({ store, deadlineMs: 60_000, concurrency: 1, sleep: tick, forceDiscover: true, http: () => http, embedModel: null, log: () => undefined });
     const d = store.docs.get(id)!;
     expect(d.version).toBe(2);
@@ -235,6 +237,7 @@ describe("runOfficialIngest end to end (fake adapter, fake fetch, fake store)", 
     const id = documentIdFor("sci-orders", url);
     expect(store.chunks.filter((c) => c.document_id === id).length).toBeGreaterThan(0);
     files[url] = { bytes: await makePdf(["IMAGE", "IMAGE"]), mime: "application/pdf" };
+    store.clock += 3 * 3600_000;
     await runOfficialIngest({ store, deadlineMs: 60_000, concurrency: 1, sleep: tick, forceDiscover: true, http: () => http, embedModel: null, maxOcrPages: 1, log: () => undefined });
     expect(store.docs.get(id)).toMatchObject({ status: "ocr_needed", version: 2, chunks: 0, embedded: 0, text_sha256: null });
     expect(store.chunks.filter((c) => c.document_id === id)).toHaveLength(0);
@@ -248,7 +251,8 @@ describe("runOfficialIngest end to end (fake adapter, fake fetch, fake store)", 
     const store = new OfficialFakeStore();
     const requests: number[][] = [];
     const model: OcrModel = { id: "fake-ocr-1", async transcribe(req) { requests.push(req.pages); return req.pages.map((p) => `<!-- page ${p} -->\n\nORDER\nThe interim stay granted earlier is extended until the next date of hearing (page ${p}).`).join("\n\n"); } };
-    const r = await runOfficialIngest({ store, deadlineMs: 120_000, concurrency: 1, sleep: tick, http: () => fakeHttp({ [url]: { bytes: pdf, mime: "application/pdf" } }), ocrModel: model, embedModel: null, log: () => undefined });
+    // OCR units start only with at least OCR_MIN_MS (2 min) left in the run.
+    const r = await runOfficialIngest({ store, deadlineMs: 240_000, concurrency: 1, sleep: tick, http: () => fakeHttp({ [url]: { bytes: pdf, mime: "application/pdf" } }), ocrModel: model, embedModel: null, log: () => undefined });
     expect(r.stop).toBe("done");
     expect(requests).toEqual([[2]]); // never the text-layer page, never the blank page
     const d = store.docs.get(documentIdFor("sci-orders", url))!;

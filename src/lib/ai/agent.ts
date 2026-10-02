@@ -450,11 +450,13 @@ async function runInference(req: InferenceRequest): Promise<InferenceResult> {
   try { return await infer(req); } catch (e) { throw mapConfigError(e); }
 }
 
-export async function generateText(opts: GenerateOptions): Promise<{ text: string; responseId: string; usage?: GenerateUsage }> {
+export async function generateText(opts: GenerateOptions): Promise<{ text: string; responseId: string; usage?: GenerateUsage; stopReason?: InferenceResult["stopReason"] }> {
   const cfg = aiConfig();
   const res = await runInference(buildGenerateRequest(opts, cfg));
   if (!res.text?.trim()) assertComplete(res, "Generation");
-  return { text: res.text, responseId: res.responseId ?? res.messageId ?? "", usage: toGenerateUsage(res.usage) };
+  // `stopReason` (additive): a non-empty text can still be incomplete ("max_tokens"); callers that need complete output
+  // (verbatim OCR) check it.
+  return { text: res.text, responseId: res.responseId ?? res.messageId ?? "", usage: toGenerateUsage(res.usage), stopReason: res.stopReason };
 }
 
 export async function generateJSON<T = unknown>(opts: GenerateOptions & { schema: Record<string, unknown>; name?: string }): Promise<T> {

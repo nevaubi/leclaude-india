@@ -251,7 +251,8 @@ function printedWord(hay: string, needle: string): boolean {
 }
 
 // Apostrophe variants are one character for matching: rosters print "Hon`ble" and "Hon’ble", extractors return "Hon'ble".
-const squash = (s: string) => s.replace(/[`´‘’ʼ]/g, "'").replace(/[\s\\*_]+/g, " ").trim().toLowerCase();
+// Markdown escapes ("Hon\\`ble") are unescaped first so the backslash does not split the word.
+const squash = (s: string) => s.replace(/\\([`'*_#[\]()])/g, "$1").replace(/[`´‘’ʼ]/g, "'").replace(/[\s\\*_]+/g, " ").trim().toLowerCase();
 
 /**
  * Guard structured extraction against invention: a judge is kept only when the printed name appears verbatim in the

@@ -104,7 +104,7 @@ describe("guarded extraction", () => {
     expect(entries[0].photoUrl).toBeNull();
   });
   it("treats apostrophe variants as the same character but still drops names that are not printed", () => {
-    const page = "| Hon`ble Mr. Justice Vibhu Bakhru | Chief Justice |\n| Hon’ble Mr. Justice Anu Sivaraman |";
+    const page = "### Hon\\`ble Mr. Justice Vibhu Bakhru<br>Chief Justice\n| Hon’ble Mr. Justice Anu Sivaraman |";
     const { entries } = guardExtracted([{ name: "Hon'ble Mr. Justice Vibhu Bakhru" }, { name: "Hon'ble Mr. Justice Anu Sivaraman" }, { name: "Hon'ble Mr. Justice Someone Else" }], page, "https://hc.example.gov.in/judges");
     expect(entries).toHaveLength(2);
   });

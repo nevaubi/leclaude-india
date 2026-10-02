@@ -67,7 +67,7 @@ export interface OfficialRunOptions {
   limitPerSource?: number;
   /** Run discovery now even when the source's cadence has not elapsed. */
   forceDiscover?: boolean;
-  /** Re-queue failed fetch/ocr/index/parse units of the requested sources (not "not published" 404/410 failures). */
+  /** Re-queue failed discover/fetch/ocr/index/parse units of the requested sources (not "not published" 404/410 failures). */
   retryFailed?: boolean;
   /** Bounded automatic redrive (scheduled runs): failed units older than the cooldown, at most `maxRedrives` times each. */
   redrive?: RedriveOptions;
@@ -464,7 +464,7 @@ export async function retryFailedUnits(store: RemoteStore, sources: string[], re
   const r = await store.query({
     query: `WITH u AS (
         UPDATE official_units SET status = 'pending', attempts = 0, error = NULL, run_after = NULL, lease_until = NULL, finished_at = NULL, updated_at = now()${counter}
-        WHERE status = 'failed' AND stage IN ('fetch', 'ocr', 'index', 'parse') AND source = ANY($1::text[]) ${bounded}
+        WHERE status = 'failed' AND stage IN ('discover', 'fetch', 'ocr', 'index', 'parse') AND source = ANY($1::text[]) ${bounded}
           AND NOT EXISTS (SELECT 1 FROM official_documents d WHERE d.id = official_units.document_id AND d.error LIKE 'not published%')
         RETURNING document_id),
       d AS (UPDATE official_documents SET status = 'discovered', error = NULL, updated_at = now()

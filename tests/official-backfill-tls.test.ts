@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import tls from "node:tls";
 import { X509Certificate } from "node:crypto";
-import { acceptIntermediate, completeChain, isIncompleteChainError, knownChainAgent, resetChainCacheForTests } from "@/modules/official/tls-chain";
+import { acceptIntermediate, completeChain, isIncompleteChainError, knownChainAgent, resetChainCacheForTests, resolveChain } from "@/modules/official/tls-chain";
 import { diaryKeyOf } from "@/modules/official/causelist/query";
 import { BACKFILL_SOURCES, backfillRequest, startBackfills } from "@/modules/official/run";
 import { parseCursor } from "@/modules/official/adapters/regulators/common";
 import type { SourceDef } from "@/modules/official/types";
 import { OfficialFakeStore } from "./official-fakes";
+import { LENCR_ROOT_YR_X1_PEM, LENCR_YR2_PEM } from "./fixtures/lencr-chain";
 
 // A public root from Node's store stands in for "an intermediate issued by a root": it is a CA certificate, issued and
 // signed by a certificate in the trusted set (itself).
@@ -52,6 +53,28 @@ describe("incomplete certificate chains", () => {
     expect(knownChainAgent("cbic.gov.in")).toBeNull();
     const noLeaf = await completeChain("x.gov.in", { ...deps, readLeaf: async () => null });
     expect(noLeaf).toBeNull();
+  });
+});
+
+describe("multi-hop chain completion (Let's Encrypt YR2, as served without intermediates by egazette.gov.in)", () => {
+  const YR2 = new X509Certificate(LENCR_YR2_PEM);
+  const ROOT_YR = new X509Certificate(LENCR_ROOT_YR_X1_PEM);
+  const at = Date.parse("2026-10-02T00:00:00Z");
+  const served: Record<string, Uint8Array> = { "http://yr2.i.lencr.org/": new Uint8Array(YR2.raw), "http://yr.i.lencr.org/": new Uint8Array(ROOT_YR.raw) };
+  const leaf = { issuer: YR2.subject, issuerUrls: ["http://yr2.i.lencr.org/"] };
+
+  it("follows YR2 → Root YR (cross-signed by ISRG Root X1) to a root in Node's store", async () => {
+    const urls: string[] = [];
+    const pems = await resolveChain(leaf, async (u) => { urls.push(u); return served[u] ?? null; }, { now: at });
+    expect(urls).toEqual(["http://yr2.i.lencr.org/", "http://yr.i.lencr.org/"]);
+    expect(pems).toHaveLength(2);
+  });
+
+  it("refuses a path that does not reach a trusted root, a wrong issuer, or a certificate outside its validity", async () => {
+    expect(await resolveChain(leaf, async (u) => (u === "http://yr2.i.lencr.org/" ? served[u] : null), { now: at })).toBeNull();
+    expect(await resolveChain({ ...leaf, issuer: "CN=Not YR2" }, async (u) => served[u] ?? null, { now: at })).toBeNull();
+    expect(await resolveChain(leaf, async (u) => served[u] ?? null, { now: Date.parse("2026-01-01T00:00:00Z") })).toBeNull(); // Root YR cross-sign starts 2026-05-13
+    expect(await resolveChain(leaf, async (u) => served[u] ?? null, { now: at, roots: [ROOT_PEM] })).toBeNull(); // X1 not trusted
   });
 });
 

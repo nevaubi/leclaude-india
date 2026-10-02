@@ -11,9 +11,10 @@ import { safeFetch } from "@/lib/net/safe-fetch";
  * Browsers complete such chains from the certificate's Authority Information Access "CA Issuers" URL; this does the
  * same, once per host:
  * 1. read the leaf certificate (that connection carries no request and is closed at once; nothing from it is trusted);
- * 2. download the issuer certificate from the URL the leaf names (public hosts only, 64 KB, 10 s);
- * 3. accept it only when it is a CA certificate, currently valid, its subject is the leaf's issuer, and a root in
- *    Node's store issued and signed it;
+ * 2. download the issuer certificate from the URL the leaf names (public hosts only, 64 KB, 10 s), and that
+ *    certificate's own issuer the same way, at most three hops (e.g. Let's Encrypt YR2 → Root YR cross-signed by X1);
+ * 3. accept the path only when every certificate is a currently valid CA, is named as the previous one's issuer and
+ *    signed it, and the last one was issued and signed by a root in Node's store;
  * 4. requests then go through an agent whose CA list is Node's roots plus that intermediate: the full chain is still
  *    verified for every request, including the host name.
  */
@@ -48,17 +49,59 @@ function parsedRoots(pems?: readonly string[]): X509Certificate[] {
   return rootCache;
 }
 
-/** The intermediate as PEM when it may complete the leaf's chain (see module notes); null otherwise. */
-export function acceptIntermediate(leafIssuer: string, bytes: Uint8Array, opts: { roots?: readonly string[]; now?: number } = {}): string | null {
+const MAX_HOPS = 3;
+
+function issuedBy(child: X509Certificate, parent: X509Certificate): boolean {
+  try { return child.checkIssued(parent) && child.verify(parent.publicKey); } catch { return false; }
+}
+
+/** A currently valid CA certificate whose subject is `subject`; null otherwise. */
+function caCert(bytes: Uint8Array, subject: string, now: number): X509Certificate | null {
   let cert: X509Certificate;
   try { cert = new X509Certificate(Buffer.from(bytes)); } catch { return null; }
-  if (!cert.ca || cert.subject !== leafIssuer) return null;
-  const now = opts.now ?? Date.now();
+  if (!cert.ca || cert.subject !== subject) return null;
   if (Date.parse(cert.validFrom) > now || Date.parse(cert.validTo) < now) return null;
-  const issuedByRoot = parsedRoots(opts.roots).some((r) => {
-    try { return cert.checkIssued(r) && cert.verify(r.publicKey); } catch { return false; }
-  });
-  return issuedByRoot ? cert.toString() : null;
+  return cert;
+}
+
+/** Issuer URLs a certificate names in its Authority Information Access extension (http/https only). */
+function aiaIssuerUrls(cert: X509Certificate): string[] {
+  return (cert.infoAccess ?? "").split("\n").map((l) => /^CA Issuers - URI:(\S+)$/.exec(l.trim())?.[1] ?? "").filter((u) => /^https?:\/\//i.test(u)).slice(0, 3);
+}
+
+/** The intermediate as PEM when it may complete the leaf's chain in one hop (see module notes); null otherwise. */
+export function acceptIntermediate(leafIssuer: string, bytes: Uint8Array, opts: { roots?: readonly string[]; now?: number } = {}): string | null {
+  const cert = caCert(bytes, leafIssuer, opts.now ?? Date.now());
+  return cert && parsedRoots(opts.roots).some((r) => issuedBy(cert, r)) ? cert.toString() : null;
+}
+
+/**
+ * Walk issuer certificates from the leaf's AIA URL (each one's own AIA URL next) until one is issued by a trusted root,
+ * at most MAX_HOPS. Every certificate must be a valid CA named as the previous one's issuer and must have signed it.
+ * Returns the intermediates as PEM, or null when no trusted path was found.
+ */
+export async function resolveChain(leaf: LeafInfo, fetchIssuer: (url: string) => Promise<Uint8Array | null>, opts: { roots?: readonly string[]; now?: number } = {}): Promise<string[] | null> {
+  const roots = parsedRoots(opts.roots);
+  const now = opts.now ?? Date.now();
+  const chain: X509Certificate[] = [];
+  let subject = leaf.issuer;
+  let urls = leaf.issuerUrls.slice(0, 3);
+  for (let hop = 0; hop < MAX_HOPS; hop++) {
+    let next: X509Certificate | null = null;
+    for (const url of urls) {
+      const bytes = await fetchIssuer(url);
+      const cert = bytes ? caCert(bytes, subject, now) : null;
+      const prev = chain[chain.length - 1];
+      if (cert && (!prev || issuedBy(prev, cert))) { next = cert; break; }
+    }
+    if (!next) return null;
+    const found = next;
+    chain.push(found);
+    if (roots.some((r) => issuedBy(found, r))) return chain.map((c) => c.toString());
+    subject = found.issuer;
+    urls = aiaIssuerUrls(found);
+  }
+  return null;
 }
 
 function defaultReadLeaf(host: string): Promise<LeafInfo | null> {
@@ -109,13 +152,8 @@ export function completeChain(host: string, deps: ChainDeps = {}): Promise<https
   if (!p) {
     p = (async () => {
       const leaf = await (deps.readLeaf ?? defaultReadLeaf)(host);
-      let pem: string | null = null;
-      for (const url of leaf?.issuerUrls ?? []) {
-        const bytes = await (deps.fetchIssuer ?? defaultFetchIssuer)(url);
-        pem = bytes && leaf ? acceptIntermediate(leaf.issuer, bytes, { roots: deps.roots, now: now() }) : null;
-        if (pem) break;
-      }
-      const agent = pem ? new https.Agent({ ca: [...(deps.roots ?? tls.rootCertificates), pem], keepAlive: false, secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT }) : null;
+      const pems = leaf ? await resolveChain(leaf, deps.fetchIssuer ?? defaultFetchIssuer, { roots: deps.roots, now: now() }) : null;
+      const agent = pems?.length ? new https.Agent({ ca: [...(deps.roots ?? tls.rootCertificates), ...pems], keepAlive: false, secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT }) : null;
       agents.set(host, { agent, at: now() });
       return agent;
     })().finally(() => pending.delete(host));

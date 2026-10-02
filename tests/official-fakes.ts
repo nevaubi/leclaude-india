@@ -350,7 +350,7 @@ export class OfficialFakeStore implements RemoteStore {
     let n = 0;
     let docs = 0;
     for (const u of this.units.values()) {
-      if (u.status !== "failed" || !["fetch", "ocr", "index", "parse"].includes(u.stage) || !sources.includes(u.source)) continue;
+      if (u.status !== "failed" || !["discover", "fetch", "ocr", "index", "parse"].includes(u.stage) || !sources.includes(u.source)) continue;
       const d = u.document_id ? this.docs.get(u.document_id) : undefined;
       if (d?.error?.startsWith("not published")) continue;
       const redrives = Number(u.payload?.redrives ?? 0);

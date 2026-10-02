@@ -325,6 +325,7 @@ export function createOfficialHttp(def: SourceDef, opts: OfficialHttpOptions = {
     async fetchPage(url, o = {}) {
       const allowFc = Boolean(o.firecrawl) || firecrawlAllowed;
       if (o.actions?.length) return viaFirecrawl(url, o); // browser actions only exist in Firecrawl
+      if (o.firecrawlOnly && firecrawl && allowFc) return viaFirecrawl(url, o);
       try {
         const r = await direct(url, { headers: { Accept: "text/html,application/xhtml+xml,*/*;q=0.8", "Accept-Language": "en-IN,en;q=0.9", ...(o.headers ?? {}) }, maxBytes: PAGE_MAX_BYTES });
         const html = new TextDecoder("utf-8", { fatal: false }).decode(r.body);

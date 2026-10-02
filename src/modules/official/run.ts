@@ -491,6 +491,8 @@ export async function requeueCappedOcr(store: RemoteStore, sources: string[], ca
 export interface BackfillRequest {
   generation: string;
   sources: string[];
+  /** Per-source generation overrides (OFFICIAL_BACKFILL_GENERATIONS="rbi=2,aptel=3"): restarts only those sources. */
+  generations?: Record<string, string>;
 }
 
 /** Sources whose cursor is the walker's (./adapters/regulators/common.ts); court adapters keep their own cursors. */
@@ -500,7 +502,12 @@ export function backfillRequest(env: Readonly<Record<string, string | undefined>
   const sources = (env.OFFICIAL_BACKFILL ?? "").split(",").map((x) => x.trim()).filter(Boolean);
   if (!sources.length) return null;
   const generation = (env.OFFICIAL_BACKFILL_GENERATION ?? "1").trim().slice(0, 40) || "1";
-  return { generation, sources };
+  const generations: Record<string, string> = {};
+  for (const part of (env.OFFICIAL_BACKFILL_GENERATIONS ?? "").split(",")) {
+    const m = /^\s*([a-z0-9-]+)\s*=\s*([A-Za-z0-9._-]{1,40})\s*$/.exec(part);
+    if (m) generations[m[1]] = m[2];
+  }
+  return Object.keys(generations).length ? { generation, sources, generations } : { generation, sources };
 }
 
 /** Seed a backfill cursor for each requested, enabled walker source not yet started in this generation. */
@@ -512,11 +519,12 @@ export async function startBackfills(store: RemoteStore, enabled: SourceDef[], r
     if (!wanted.has(def.id) || !BACKFILL_SOURCES.includes(def.id)) continue;
     const markerKey = `official_backfill:${def.id}`;
     const marker = await getOfficialState<{ generation?: string }>(store, markerKey);
-    if (marker?.generation === req.generation) continue;
+    const generation = req.generations?.[def.id] ?? req.generation;
+    if (marker?.generation === generation) continue;
     const cursorKey = `official_cursor:${def.id}`;
     const current = parseCursor(await getOfficialState<string>(store, cursorKey));
     if (current?.mode !== "backfill") await setOfficialState(store, cursorKey, backfillCursor({ lastSeen: current?.lastSeen ?? {} }));
-    await setOfficialState(store, markerKey, { generation: req.generation, startedAt: new Date().toISOString() });
+    await setOfficialState(store, markerKey, { generation, startedAt: new Date().toISOString() });
     out.push(def);
   }
   return out;

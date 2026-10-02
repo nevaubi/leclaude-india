@@ -36,6 +36,9 @@ export const RBI_SEED_ID = 13725;
 export const RBI_MASTER_DIRECTIONS_URL = `${BASE}/Scripts/BS_ViewMasterDirections.aspx`;
 export const RBI_MASTER_CIRCULARS_URL = `${BASE}/scripts/BS_ViewMasterCirculardetails.aspx`;
 
+/** rbi.org.in refuses requests from outside India (HTTP 418) and serves a different page to our servers: Firecrawl (IN) only. */
+const RBI_FETCH = { firecrawlOnly: true } as const;
+
 export function rbiNotificationUrl(id: number): string {
   return `${BASE}/Scripts/NotificationUser.aspx?Id=${id}&Mode=0`;
 }
@@ -210,9 +213,13 @@ const notifications: SequenceStream = {
   incrementalMax: 120,
   async fetch(id: number, ctx: AdapterContext): Promise<DiscoveredDoc | null> {
     const url = rbiNotificationUrl(id);
-    const page = await ctx.fetchPage(url);
+    const page = await ctx.fetchPage(url, RBI_FETCH);
     if (page.status >= 400) return null;
-    const n = parseRbiNotification(page.html ?? "", page.finalUrl || url);
+    const html = page.html ?? "";
+    // A page without the notification container is not "nothing published" (that page says so inside the container):
+    // it is an unexpected answer (a block or error page), reported as a failure so a walk never ends on it.
+    if (!/id="NotificationUser"/i.test(html)) throw new Error(`rbi: unexpected page for id ${id} (no notification container)`);
+    const n = parseRbiNotification(html, page.finalUrl || url);
     if (!n) {
       ctx.log("rbi: nothing published under id", { id });
       return null;
@@ -231,7 +238,7 @@ function groupedStream(id: "master-directions" | "master-circulars", url: string
     // One page listing everything in force, grouped by department (not in publication order): relisted in full.
     markerless: true,
     async fetch(_page: number, ctx: AdapterContext): Promise<ListingPage> {
-      const res = await ctx.fetchPage(url);
+      const res = await ctx.fetchPage(url, RBI_FETCH);
       const rows = parseRbiGroupedListing(res.html ?? "", res.finalUrl || url, detail);
       const notes = rows.length ? undefined : [`no rows could be read from ${limitText(url, 120)}`];
       return { items: rbiListingDocs(rows, id, url), last: true, notes };

@@ -112,6 +112,10 @@ describe("backfill trigger", () => {
     expect(store.state.has("official_cursor:nclt")).toBe(false);
 
     expect(await startBackfills(store, defs, { generation: "1", sources: ["ibbi", "sansad"] })).toEqual([]);
+    // A per-source generation restarts only that source.
+    expect(backfillRequest({ OFFICIAL_BACKFILL: "ibbi,sansad", OFFICIAL_BACKFILL_GENERATION: "1", OFFICIAL_BACKFILL_GENERATIONS: "sansad=2, bad, ibbi=" })).toEqual({ generation: "1", sources: ["ibbi", "sansad"], generations: { sansad: "2" } });
+    const only = await startBackfills(store, defs, { generation: "1", sources: ["ibbi", "sansad"], generations: { sansad: "2" } });
+    expect(only.map((d) => d.id)).toEqual(["sansad"]);
     const again = await startBackfills(store, defs, { generation: "2", sources: ["ibbi"] });
     expect(again.map((d) => d.id)).toEqual(["ibbi"]);
   });

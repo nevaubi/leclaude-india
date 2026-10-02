@@ -29,14 +29,16 @@ type Route = string | { status?: number; html?: string } | Error;
 /** In-memory AdapterContext: routes by URL; anything unrouted answers 404 (as the core fetchers report it). */
 function makeCtx(o: { pages?: (url: string) => Route | undefined; json?: (url: string) => unknown; cursor?: string | null; limit?: number; today?: string } = {}) {
   const calls: string[] = [];
+  const fetchOpts: unknown[] = [];
   const nf = (url: string) => Object.assign(new Error(`HTTP 404 for ${url}`), { status: 404 });
   const ctx: AdapterContext = {
     limit: o.limit ?? 200,
     deadline: Date.now() + 60_000,
     cursor: o.cursor ?? null,
     today: o.today ?? "2026-10-02",
-    async fetchPage(url): Promise<FetchedPage> {
+    async fetchPage(url, fo): Promise<FetchedPage> {
       calls.push(url);
+      fetchOpts.push(fo);
       const r = o.pages?.(url);
       if (r === undefined) throw nf(url);
       if (r instanceof Error) throw r;
@@ -55,7 +57,7 @@ function makeCtx(o: { pages?: (url: string) => Route | undefined; json?: (url: s
     async postForm(url) { throw nf(url); },
     log() {},
   };
-  return { ctx, calls };
+  return { ctx, calls, fetchOpts };
 }
 
 const NOT_FOUND_RBI = '<html><body><div id="NotificationUser" class="text1"><h1 class="page_title">Notifications</h1><table><tr><td>No Notification Found.</td></tr></table></div><div class="grid_1 archives alpha"></div></body></html>';
@@ -154,6 +156,23 @@ describe("RBI (live fixtures, 2026-10-02)", () => {
     const r = await rbi.discover(makeCtx({ pages, cursor }).ctx);
     expect(r.items.map((d) => d.meta?.notificationId)).toEqual([RBI_BACKFILL_START_ID, RBI_BACKFILL_START_ID + 40]);
     expect(parseCursor(r.nextCursor)!.mode).toBe("incremental");
+  });
+
+  it("fetches only through Firecrawl (the publisher refuses our servers) and never reads a block page as 'nothing published'", async () => {
+    const { ctx, fetchOpts } = makeCtx({ pages: routes, limit: 1 });
+    await rbi.discover(ctx);
+    expect(fetchOpts.length).toBeGreaterThan(0);
+    expect(fetchOpts.every((o) => (o as { firecrawlOnly?: boolean } | undefined)?.firecrawlOnly === true)).toBe(true);
+    // An answer without the notification container (block / error page) is a failure, not a miss: the walk never ends on it.
+    const blocked = (url: string): Route | undefined => (/NotificationUser\.aspx\?Id=/.test(url) ? "<html><body>Access Denied</body></html>" : routes(url));
+    const cursor = backfillCursor({ only: ["notifications"], lastSeen: {} });
+    const r = await rbi.discover(makeCtx({ pages: blocked, cursor }).ctx).then((x) => ({ ok: true as const, x }), (e: Error) => ({ ok: false as const, e }));
+    if (r.ok) {
+      expect(r.x.items.filter((d) => d.meta?.track === "notifications")).toEqual([]);
+      expect(parseCursor(r.x.nextCursor)?.mode).toBe("backfill"); // still walking, not "finished with nothing"
+    } else {
+      expect(r.e.message).toMatch(/unexpected page|no notification container/);
+    }
   });
 
   it("is limited to rbi.org.in (and its rbidocs subdomain) and fetched from India", () => {

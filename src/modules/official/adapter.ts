@@ -56,7 +56,7 @@ export interface AdapterContext {
   today: string;
   /** Fetch an HTML page: direct first (browser UA, legacy-TLS retry for gov.in), Firecrawl (location IN) on failure
    *  when the source's fetch method is firecrawl_in or `opts.firecrawl` is true. */
-  fetchPage(url: string, opts?: { waitForMs?: number; actions?: Array<Record<string, unknown>>; firecrawl?: boolean; headers?: Record<string, string> }): Promise<FetchedPage>;
+  fetchPage(url: string, opts?: { waitForMs?: number; actions?: Array<Record<string, unknown>>; firecrawl?: boolean; /** Skip the direct request (the publisher refuses requests from our servers): Firecrawl, location IN, only. */ firecrawlOnly?: boolean; headers?: Record<string, string> }): Promise<FetchedPage>;
   /** Fetch a file (PDF, XLSX, JSON) directly; size-limited (default 40 MB). */
   fetchFile(url: string, opts?: { maxBytes?: number; accept?: string; headers?: Record<string, string> }): Promise<FetchedFile>;
   /** GET JSON from an API endpoint (direct). */

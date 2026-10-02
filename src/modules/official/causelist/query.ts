@@ -25,7 +25,8 @@ export class CauseListQueryError extends Error {
 
 export const MAX_WINDOW_DAYS = 62;
 export const MAX_LISTING_WINDOW_DAYS = 92;
-const DEFAULT_LIMIT = 200;
+export const CAUSELIST_DEFAULT_LIMIT = 200;
+const DEFAULT_LIMIT = CAUSELIST_DEFAULT_LIMIT;
 const MAX_LIMIT = 1000;
 const MAX_IDENTIFIERS = 500;
 

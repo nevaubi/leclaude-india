@@ -664,7 +664,7 @@ describe("routes", () => {
     setRemoteStoreForTests(new FakeStore(() => [entryRow({})]));
     const ok = await causelistsRoute.GET(req("/api/official/causelists?forum=sci&date=2026-10-05&case=SLP(C)%20No.%201234/2026"));
     expect(ok.status).toBe(200);
-    expect((await ok.json()).count).toBe(1);
+    expect(await ok.json()).toMatchObject({ count: 1, truncated: false });
     expect((await causelistsRoute.GET(req("/api/official/causelists?forum=sci"))).status).toBe(400);
     const bad = await causelistsRoute.GET(req("/api/official/causelists?case=SLP%20something"));
     expect(bad.status).toBe(400);

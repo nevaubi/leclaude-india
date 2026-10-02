@@ -3,14 +3,14 @@ import { jsonError } from "@/lib/ai/sse";
 import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 import { OfficialNotConfiguredError } from "@/modules/official/service";
-import { causeListEntries, caseKeyOf, CauseListQueryError, diaryKeyOf } from "@/modules/official/causelist/query";
+import { causeListEntries, caseKeyOf, CauseListQueryError, CAUSELIST_DEFAULT_LIMIT, diaryKeyOf } from "@/modules/official/causelist/query";
 import { isForumKey } from "@/modules/official/causelist/forums";
 
 export const runtime = "nodejs";
 
 /**
  * GET /api/official/causelists?forum=sci&date=2026-10-05 (or from&to) [&case=SLP(C) No. 1234/2026|SLPC/1234/2026]
- *   [&diary=54583/2026] [&advocate=AJAY MARWAH] [&limit=200] → { entries, count }
+ *   [&diary=54583/2026] [&advocate=AJAY MARWAH] [&limit=200] → { entries, count, truncated }
  *
  * Exact matches only: `case` is normalized (a value that is not one recognisable case number is a 400, never guessed),
  * `diary` must be a diary number, `advocate` matches a whole printed name (case-insensitive). Without a date window or
@@ -53,7 +53,8 @@ async function handleGET(req: NextRequest) {
       advocate: sp.get("advocate") ?? undefined,
       limit,
     });
-    return Response.json({ entries, count: entries.length });
+    // A full page means more entries may match: the caller is told so (narrow the window or raise the limit).
+    return Response.json({ entries, count: entries.length, truncated: entries.length >= (limit ?? CAUSELIST_DEFAULT_LIMIT) });
   } catch (e) {
     if (e instanceof OfficialNotConfiguredError) return jsonError(e.message, 503, { code: e.code });
     if (e instanceof CauseListQueryError) return jsonError(e.message, 400, { code: e.code });

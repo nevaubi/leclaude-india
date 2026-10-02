@@ -2,7 +2,7 @@ import type { Messages } from "./en";
 
 /** हिन्दी — standard Indian legal terminology (न्यायालय, याचिका, निर्णय, अधिवक्ता, वाद सूची). */
 export const hi: Messages = {
-  "brand.name": "LeClaude India",
+  "brand.name": "Pramana",
   "brand.tagline": "भारतीय न्यायालयों के लिए मुकदमा-प्रबंधन इंटेलिजेंस",
   "brand.homeAria": "{app} मुखपृष्ठ",
 
@@ -689,12 +689,12 @@ export const hi: Messages = {
   "diary.listed": "सूचीबद्ध",
   "diary.particulars": "वाद विवरण से",
   "diary.advocates": "अधिवक्तावार सूचियाँ",
-  "diary.advocatesHint": "LeClaude द्वारा पढ़ी गई वाद सूचियों में अगले 7 दिनों के लिए नाम का हूबहू मिलान।",
+  "diary.advocatesHint": "Pramana द्वारा पढ़ी गई वाद सूचियों में अगले 7 दिनों के लिए नाम का हूबहू मिलान।",
   "diary.advocateAdd": "अधिवक्ता का नाम जोड़ें",
   "diary.advocateNone": "कोई नाम सहेजा नहीं गया।",
   "diary.advocateNoMatches": "कोई सूचीबद्धता नहीं मिली।",
   "diary.courtPages": "उच्च न्यायालयों की अधिवक्तावार सूचियाँ",
-  "diary.courtPagesHint": "न्यायालय की अपनी वेबसाइट पर खोजें। ये पृष्ठ केवल लिंक हैं, LeClaude इन्हें नहीं पढ़ता।",
+  "diary.courtPagesHint": "न्यायालय की अपनी वेबसाइट पर खोजें। ये पृष्ठ केवल लिंक हैं, Pramana इन्हें नहीं पढ़ता।",
   "diary.linksChecked": "लिंक {date} को जाँचे गए",
   "diary.toast.namesSaved": "नाम सहेजे गए",
   "home.listed.title": "आज और कल सूचीबद्ध",

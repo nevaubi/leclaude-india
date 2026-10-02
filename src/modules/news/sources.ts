@@ -5,6 +5,7 @@
  * Feeds that failed that check are recorded in `EXCLUDED_FEEDS` so nobody re-adds them without re-verifying.
  * Accuracy matters here: the registry is the user-facing answer to "where do these headlines come from?".
  */
+import { BRAND } from "@/lib/brand";
 
 export type NewsSourceType = "legal news" | "legal blog";
 
@@ -49,7 +50,7 @@ export const NEWS_SOURCES: readonly NewsSource[] = [
     language: "en",
     country: "IN",
     format: "RSS 2.0",
-    carries: "Bar & Bench headlines with author and publish time; items carry the article body (content:encoded) and media images, LeClaude keeps only the headline, the feed's description when present and the link, never the article body.",
+    carries: `Bar & Bench headlines with author and publish time; items carry the article body (content:encoded) and media images, ${BRAND.name} keeps only the headline, the feed's description when present and the link, never the article body.`,
     itemsWhenVerified: 18,
     verifiedAt: "2026-10-01",
     enabled: true,

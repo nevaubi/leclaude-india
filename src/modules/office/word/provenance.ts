@@ -6,18 +6,19 @@
  * Rule: nothing here claims a check that did not run. The citation-check line and properties are generated from the
  * actual check result: "checked" only when the whole check ran, "partial" (with what could not run and citations found
  * vs checked) when part of it did not, "not_run" when nothing ran, "stale" when the document changed after the check.
- * AI use is "true" only when LeClaude recorded it (assistant turns, or a LeClaude AI feature that created the document),
- * otherwise "unknown" — never "false", since use outside LeClaude cannot be known.
+ * AI use is "true" only when the app recorded it (assistant turns, or an app AI feature that created the document),
+ * otherwise "unknown" — never "false", since use outside the app cannot be known.
  */
 import { newId, type PMNode } from "./doc-model";
 import { filingSummary, type FilingCheckCounts, type FilingCheckReport } from "./filing-check";
-import type { CustomProp } from "./ooxml/custom-props";
+import { BRAND } from "@/lib/brand";
+import { OWN_PREFIX, type CustomProp } from "./ooxml/custom-props";
 
 export const DECLARATION_HEADING = "Declaration on use of AI tools";
 
 /** Neutral default wording; the user edits it before export. */
 export const DEFAULT_DECLARATION =
-  "AI tools (LeClaude) were used in preparing this document, for drafting assistance and to check citations. The contents, citations and quotations are the responsibility of the undersigned, who has reviewed them.";
+  `AI tools (${BRAND.name}) were used in preparing this document, for drafting assistance and to check citations. The contents, citations and quotations are the responsibility of the undersigned, who has reviewed them.`;
 
 export const DECLARATION_MAX_CHARS = 2000;
 
@@ -120,7 +121,7 @@ export interface ExportProvenanceInput {
   openIssues?: number;
   acknowledgement: { acknowledged: boolean; by: string; at: string; items: number; matchesExport: boolean } | null;
   assistantTurns: number;
-  /** LeClaude AI features recorded as having produced this document's content (e.g. "documents.parawise: …"). */
+  /** App AI features recorded as having produced this document's content (e.g. "documents.parawise: …"). */
   aiSurfaces?: string[];
   providerRole: string;
   models: string[];
@@ -128,7 +129,7 @@ export interface ExportProvenanceInput {
   appendix: { included: boolean; sources: number };
 }
 
-/** Word documents a LeClaude AI feature creates (meta.source), when the creator did not record meta.ai itself. */
+/** Word documents an app AI feature creates (meta.source), when the creator did not record meta.ai itself. */
 const AI_SOURCES: Record<string, string> = {
   "documents.dates": "list of dates from AI-extracted timeline events (synopsis drafted by AI when present)",
   "documents.parawise": "para-wise reply with AI-proposed responses",
@@ -143,66 +144,66 @@ export function aiSurfacesFromMeta(meta: Record<string, unknown> | null | undefi
   const ai = meta.ai && typeof meta.ai === "object" ? (meta.ai as { assisted?: unknown; surface?: unknown; detail?: unknown }) : null;
   if (ai) {
     if (ai.assisted !== true) return [];
-    const surface = typeof ai.surface === "string" && ai.surface ? ai.surface.slice(0, 80) : source || "LeClaude";
+    const surface = typeof ai.surface === "string" && ai.surface ? ai.surface.slice(0, 80) : source || BRAND.name;
     return [`${surface}${typeof ai.detail === "string" && ai.detail.trim() ? `: ${ai.detail.trim().slice(0, 300)}` : ""}`];
   }
   return AI_SOURCES[source] ? [`${source}: ${AI_SOURCES[source]}`] : [];
 }
 
-/** Machine-readable provenance properties (LeClaude.* names, replaced on every export). */
+/** Machine-readable provenance properties (OWN_PREFIX names, replaced on every export). */
 export function exportCustomProps(i: ExportProvenanceInput): CustomProp[] {
   const props: CustomProp[] = [
-    { name: "LeClaude.Export.Tool", value: "LeClaude Word" },
-    { name: "LeClaude.Export.At", value: new Date(i.exportedAt) },
-    { name: "LeClaude.Document.Hash", value: `sha256:${i.docHash}` },
-    { name: "LeClaude.Document.HashScope", value: "Body text (tracked deletions excluded), before any appended declaration or appendix" },
-    // true only when recorded; otherwise "unknown" (AI use outside LeClaude cannot be known), never false.
-    { name: "LeClaude.AI.Assisted", value: i.assistantTurns > 0 || (i.aiSurfaces?.length ?? 0) > 0 ? true : "unknown" },
-    { name: "LeClaude.AI.AssistantTurns", value: i.assistantTurns },
-    { name: "LeClaude.AI.Basis", value: [i.assistantTurns ? `drafting assistant (${i.assistantTurns} recorded turn${i.assistantTurns === 1 ? "" : "s"})` : "", ...(i.aiSurfaces ?? [])].filter(Boolean).join("; ").slice(0, 1000) || "no AI use recorded by LeClaude for this document" },
-    { name: "LeClaude.AI.ProviderRole", value: i.providerRole },
-    { name: "LeClaude.AI.Models", value: i.models.length ? i.models.join(", ") : "none recorded" },
-    { name: "LeClaude.CitationCheck.State", value: i.check.state },
+    { name: `${OWN_PREFIX}Export.Tool`, value: `${BRAND.name} Word` },
+    { name: `${OWN_PREFIX}Export.At`, value: new Date(i.exportedAt) },
+    { name: `${OWN_PREFIX}Document.Hash`, value: `sha256:${i.docHash}` },
+    { name: `${OWN_PREFIX}Document.HashScope`, value: "Body text (tracked deletions excluded), before any appended declaration or appendix" },
+    // true only when recorded; otherwise "unknown" (AI use outside the app cannot be known), never false.
+    { name: `${OWN_PREFIX}AI.Assisted`, value: i.assistantTurns > 0 || (i.aiSurfaces?.length ?? 0) > 0 ? true : "unknown" },
+    { name: `${OWN_PREFIX}AI.AssistantTurns`, value: i.assistantTurns },
+    { name: `${OWN_PREFIX}AI.Basis`, value: [i.assistantTurns ? `drafting assistant (${i.assistantTurns} recorded turn${i.assistantTurns === 1 ? "" : "s"})` : "", ...(i.aiSurfaces ?? [])].filter(Boolean).join("; ").slice(0, 1000) || `no AI use recorded by ${BRAND.name} for this document` },
+    { name: `${OWN_PREFIX}AI.ProviderRole`, value: i.providerRole },
+    { name: `${OWN_PREFIX}AI.Models`, value: i.models.length ? i.models.join(", ") : "none recorded" },
+    { name: `${OWN_PREFIX}CitationCheck.State`, value: i.check.state },
   ];
-  if (i.gate) props.push({ name: "LeClaude.FilingCheck.Gate", value: i.gate });
-  if (i.check.state === "not_run") props.push({ name: "LeClaude.CitationCheck.Reason", value: i.check.reason.slice(0, 1000) });
+  if (i.gate) props.push({ name: `${OWN_PREFIX}FilingCheck.Gate`, value: i.gate });
+  if (i.check.state === "not_run") props.push({ name: `${OWN_PREFIX}CitationCheck.Reason`, value: i.check.reason.slice(0, 1000) });
   else {
     const c = i.check.counts;
-    if (i.check.state === "partial") props.push({ name: "LeClaude.CitationCheck.Unavailable", value: i.check.reasons.join(" ").slice(0, 1000) });
+    if (i.check.state === "partial") props.push({ name: `${OWN_PREFIX}CitationCheck.Unavailable`, value: i.check.reasons.join(" ").slice(0, 1000) });
     props.push(
-      { name: "LeClaude.CitationCheck.At", value: new Date(i.check.checkedAt) },
-      { name: "LeClaude.CitationCheck.Citations", value: c.citations },
-      { name: "LeClaude.CitationCheck.CitationsFound", value: c.found ?? c.citations },
-      { name: "LeClaude.CitationCheck.CitationsChecked", value: c.checked ?? c.citations },
-      { name: "LeClaude.CitationCheck.Resolved", value: c.resolved },
-      { name: "LeClaude.CitationCheck.Ambiguous", value: c.ambiguous },
-      { name: "LeClaude.CitationCheck.Unresolved", value: c.unresolved },
-      { name: "LeClaude.CitationCheck.Unchecked", value: c.unchecked ?? 0 },
-      { name: "LeClaude.CitationCheck.CitatorChecked", value: c.citatorChecked ?? 0 },
-      { name: "LeClaude.CitationCheck.CitatorUnchecked", value: c.citatorUnchecked ?? 0 },
-      { name: "LeClaude.CitationCheck.NegativeSignals", value: c.negative },
-      { name: "LeClaude.CitationCheck.QuotesFound", value: c.quotesFound },
-      { name: "LeClaude.CitationCheck.QuotesNotFound", value: c.quotesNotFound },
-      { name: "LeClaude.CitationCheck.QuotesUnchecked", value: c.quotesUnchecked },
-      { name: "LeClaude.CitationCheck.Summary", value: i.check.summary },
+      { name: `${OWN_PREFIX}CitationCheck.At`, value: new Date(i.check.checkedAt) },
+      { name: `${OWN_PREFIX}CitationCheck.Citations`, value: c.citations },
+      { name: `${OWN_PREFIX}CitationCheck.CitationsFound`, value: c.found ?? c.citations },
+      { name: `${OWN_PREFIX}CitationCheck.CitationsChecked`, value: c.checked ?? c.citations },
+      { name: `${OWN_PREFIX}CitationCheck.Resolved`, value: c.resolved },
+      { name: `${OWN_PREFIX}CitationCheck.Ambiguous`, value: c.ambiguous },
+      { name: `${OWN_PREFIX}CitationCheck.Unresolved`, value: c.unresolved },
+      { name: `${OWN_PREFIX}CitationCheck.Unchecked`, value: c.unchecked ?? 0 },
+      { name: `${OWN_PREFIX}CitationCheck.CitatorChecked`, value: c.citatorChecked ?? 0 },
+      { name: `${OWN_PREFIX}CitationCheck.CitatorUnchecked`, value: c.citatorUnchecked ?? 0 },
+      { name: `${OWN_PREFIX}CitationCheck.NegativeSignals`, value: c.negative },
+      { name: `${OWN_PREFIX}CitationCheck.QuotesFound`, value: c.quotesFound },
+      { name: `${OWN_PREFIX}CitationCheck.QuotesNotFound`, value: c.quotesNotFound },
+      { name: `${OWN_PREFIX}CitationCheck.QuotesUnchecked`, value: c.quotesUnchecked },
+      { name: `${OWN_PREFIX}CitationCheck.Summary`, value: i.check.summary },
     );
   }
-  if (i.openIssues != null) props.push({ name: "LeClaude.FilingCheck.OpenIssues", value: i.openIssues });
+  if (i.openIssues != null) props.push({ name: `${OWN_PREFIX}FilingCheck.OpenIssues`, value: i.openIssues });
   // Items were listed (or no check ran) and nobody acknowledged them: say so rather than leave it blank.
-  if (!i.acknowledgement && ((i.openIssues ?? 0) > 0 || i.check.state === "not_run")) props.push({ name: "LeClaude.FilingCheck.Acknowledged", value: false });
+  if (!i.acknowledgement && ((i.openIssues ?? 0) > 0 || i.check.state === "not_run")) props.push({ name: `${OWN_PREFIX}FilingCheck.Acknowledged`, value: false });
   if (i.acknowledgement) {
     props.push(
-      { name: "LeClaude.FilingCheck.Acknowledged", value: i.acknowledgement.acknowledged },
-      { name: "LeClaude.FilingCheck.AcknowledgedBy", value: i.acknowledgement.by },
-      { name: "LeClaude.FilingCheck.AcknowledgedAt", value: new Date(i.acknowledgement.at) },
-      { name: "LeClaude.FilingCheck.AcknowledgedItems", value: i.acknowledgement.items },
-      { name: "LeClaude.FilingCheck.AckMatchesExport", value: i.acknowledgement.matchesExport },
+      { name: `${OWN_PREFIX}FilingCheck.Acknowledged`, value: i.acknowledgement.acknowledged },
+      { name: `${OWN_PREFIX}FilingCheck.AcknowledgedBy`, value: i.acknowledgement.by },
+      { name: `${OWN_PREFIX}FilingCheck.AcknowledgedAt`, value: new Date(i.acknowledgement.at) },
+      { name: `${OWN_PREFIX}FilingCheck.AcknowledgedItems`, value: i.acknowledgement.items },
+      { name: `${OWN_PREFIX}FilingCheck.AckMatchesExport`, value: i.acknowledgement.matchesExport },
     );
   }
   props.push(
-    { name: "LeClaude.Declaration.Included", value: i.declaration },
-    { name: "LeClaude.ProvenanceAppendix.Included", value: i.appendix.included },
-    { name: "LeClaude.ProvenanceAppendix.Sources", value: i.appendix.sources },
+    { name: `${OWN_PREFIX}Declaration.Included`, value: i.declaration },
+    { name: `${OWN_PREFIX}ProvenanceAppendix.Included`, value: i.appendix.included },
+    { name: `${OWN_PREFIX}ProvenanceAppendix.Sources`, value: i.appendix.sources },
   );
   return props;
 }

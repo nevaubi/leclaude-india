@@ -21,6 +21,7 @@ import { anchorXml, buildChartXml, chartFrameXml, DRAWING_OPEN, pxToAnchor } fro
 import { chartFingerprint, headerToExcel, Package, parseRels, pxToPt, pxToWidth, REL, relsPathFor, type Rel } from "./reader";
 import { parseStyles, parseTheme, StylesBuilder } from "./styles";
 import { makeEntry, writeZip, type ZipEntry } from "./zip";
+import { BRAND } from "@/lib/brand";
 import { attrStr, el, esc, escText, nsDecls, parseXml, children, child, attrs, splitTopLevel, text, XML_DECL } from "./xml";
 
 const NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -682,8 +683,8 @@ function writeFresh(wb: Workbook, computed: Computed): Uint8Array {
   const workbookXml = `${XML_DECL}<workbook xmlns="${NS_MAIN}" xmlns:r="${NS_R}"><workbookPr defaultThemeVersion="164011"/><bookViews><workbookView xWindow="0" yWindow="0" windowWidth="28800" windowHeight="16000" activeTab="${wb.activeSheet}"/></bookViews>${sheetsXml(wb, ids)}${definedNamesXml(wb)}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`;
   const all: Part[] = [
     { name: "_rels/.rels", data: relsXml([{ id: "rId1", type: REL.officeDocument, target: "xl/workbook.xml" }, { id: "rId2", type: REL.coreProps, target: "docProps/core.xml" }, { id: "rId3", type: REL.extendedProps, target: "docProps/app.xml" }]) },
-    { name: "docProps/core.xml", data: `${XML_DECL}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:creator>LeClaude</dc:creator></cp:coreProperties>`, ct: CT.core },
-    { name: "docProps/app.xml", data: `${XML_DECL}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>LeClaude</Application></Properties>`, ct: CT.app },
+    { name: "docProps/core.xml", data: `${XML_DECL}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:creator>${BRAND.name}</dc:creator></cp:coreProperties>`, ct: CT.core },
+    { name: "docProps/app.xml", data: `${XML_DECL}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>${BRAND.name}</Application></Properties>`, ct: CT.app },
     { name: "xl/workbook.xml", data: workbookXml, ct: CT.workbook },
     { name: "xl/_rels/workbook.xml.rels", data: relsXml(wbRels) },
     ...parts,

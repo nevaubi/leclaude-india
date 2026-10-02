@@ -7,7 +7,7 @@
  */
 export const en = {
   // Brand
-  "brand.name": "LeClaude India",
+  "brand.name": "Pramana",
   "brand.tagline": "Litigation intelligence for Indian courts",
   "brand.homeAria": "{app} home",
 
@@ -703,12 +703,12 @@ export const en = {
   "diary.listed": "Listed",
   "diary.particulars": "From case particulars",
   "diary.advocates": "Advocate lists",
-  "diary.advocatesHint": "Exact name matches in the cause lists LeClaude reads, for the next 7 days.",
+  "diary.advocatesHint": "Exact name matches in the cause lists Pramana reads, for the next 7 days.",
   "diary.advocateAdd": "Add advocate name",
   "diary.advocateNone": "No names saved.",
   "diary.advocateNoMatches": "No listings found.",
   "diary.courtPages": "High Court advocate-wise lists",
-  "diary.courtPagesHint": "Search on the court's own website. These pages are linked, not read by LeClaude.",
+  "diary.courtPagesHint": "Search on the court's own website. These pages are linked, not read by Pramana.",
   "diary.linksChecked": "Links checked {date}",
   "diary.toast.namesSaved": "Names saved",
   "home.listed.title": "Listed today and tomorrow",

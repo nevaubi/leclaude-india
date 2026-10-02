@@ -2,7 +2,7 @@ import type { Messages } from "./en";
 
 /** తెలుగు — Telangana / Andhra Pradesh court usage (న్యాయస్థానం, పిటిషన్, తీర్పు, న్యాయవాది, కక్షిదారు). */
 export const te: Messages = {
-  "brand.name": "LeClaude India",
+  "brand.name": "Pramana",
   "brand.tagline": "భారతీయ న్యాయస్థానాల కోసం వ్యాజ్య విశ్లేషణ",
   "brand.homeAria": "{app} ప్రధాన పేజీ",
 
@@ -689,12 +689,12 @@ export const te: Messages = {
   "diary.listed": "జాబితాలో ఉంది",
   "diary.particulars": "కేసు వివరాల నుంచి",
   "diary.advocates": "న్యాయవాదుల వారీ జాబితాలు",
-  "diary.advocatesHint": "LeClaude చదివే కేసుల జాబితాల్లో తదుపరి 7 రోజులకు పేరు ఖచ్చితంగా సరిపోలినవి.",
+  "diary.advocatesHint": "Pramana చదివే కేసుల జాబితాల్లో తదుపరి 7 రోజులకు పేరు ఖచ్చితంగా సరిపోలినవి.",
   "diary.advocateAdd": "న్యాయవాది పేరు జోడించండి",
   "diary.advocateNone": "పేర్లు ఏవీ సేవ్ చేయలేదు.",
   "diary.advocateNoMatches": "జాబితా నమోదులు దొరకలేదు.",
   "diary.courtPages": "హైకోర్టుల న్యాయవాదుల వారీ జాబితాలు",
-  "diary.courtPagesHint": "న్యాయస్థానం సొంత వెబ్‌సైట్‌లో వెతకండి. ఈ పేజీలకు లింక్ మాత్రమే ఇచ్చాం; LeClaude వాటిని చదవదు.",
+  "diary.courtPagesHint": "న్యాయస్థానం సొంత వెబ్‌సైట్‌లో వెతకండి. ఈ పేజీలకు లింక్ మాత్రమే ఇచ్చాం; Pramana వాటిని చదవదు.",
   "diary.linksChecked": "లింకులు {date} న తనిఖీ చేయబడ్డాయి",
   "diary.toast.namesSaved": "పేర్లు సేవ్ అయ్యాయి",
   "home.listed.title": "ఈరోజు మరియు రేపు జాబితాలో",

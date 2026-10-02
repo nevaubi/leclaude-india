@@ -1,9 +1,10 @@
 /**
- * The app's own OOXML parts for documents created in LeClaude (and for definitions an imported package lacks):
+ * The app's own OOXML parts for documents created in the app (and for definitions an imported package lacks):
  * styles, list definitions, settings, fonts, footer with a PAGE field, notes, comments and document properties.
  */
 import { MARGIN_PRESETS, PAGE_SIZES, type DocSettings, type MarginPresetId, type PageSizeId } from "../constants";
 import type { PMNode } from "../doc-model";
+import { BRAND } from "@/lib/brand";
 import { escAttr, escText, stripInvalidXmlChars, WORD_NS_DECLS, XML_DECL } from "./xml";
 
 const T = (s: string) => escText(stripInvalidXmlChars(s));
@@ -184,9 +185,9 @@ export function mergeSectionSpec(a: SectionSpec | null, b: SectionSpec | null | 
 
 export function coreXml(title: string, author: string): string {
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-  return `${XML_DECL}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${T(title)}</dc:title><dc:creator>${T(author)}</dc:creator><cp:lastModifiedBy>${T(author)}</cp:lastModifiedBy><dc:description>Exported from LeClaude</dc:description><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`;
+  return `${XML_DECL}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${T(title)}</dc:title><dc:creator>${T(author)}</dc:creator><cp:lastModifiedBy>${T(author)}</cp:lastModifiedBy><dc:description>Exported from ${BRAND.name}</dc:description><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`;
 }
 
 export function appPropsXml(): string {
-  return `${XML_DECL}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>LeClaude</Application><DocSecurity>0</DocSecurity></Properties>`;
+  return `${XML_DECL}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>${BRAND.name}</Application><DocSecurity>0</DocSecurity></Properties>`;
 }

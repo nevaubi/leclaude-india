@@ -18,8 +18,9 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { isPublicPath, PATH_HEADER } from "@/lib/auth/gatekeeper";
 import { safeNextPath } from "@/lib/auth/session-token";
+import { appDisplayName } from "@/lib/brand";
 
-const appName = process.env.NEXT_PUBLIC_APP_NAME?.trim() || "LeClaude India";
+const appName = appDisplayName();
 const envFirmName = process.env.NEXT_PUBLIC_FIRM_NAME?.trim() || "Your firm";
 
 /*

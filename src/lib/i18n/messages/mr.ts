@@ -2,7 +2,7 @@ import type { Messages } from "./en";
 
 /** मराठी — Bombay High Court usage (न्यायालय, याचिका, निकाल, अधिवक्ता, अशील, सुनावणी). */
 export const mr: Messages = {
-  "brand.name": "LeClaude India",
+  "brand.name": "Pramana",
   "brand.tagline": "भारतीय न्यायालयांसाठी खटला-विश्लेषण",
   "brand.homeAria": "{app} मुखपृष्ठ",
 
@@ -689,12 +689,12 @@ export const mr: Messages = {
   "diary.listed": "यादीत",
   "diary.particulars": "प्रकरणाच्या तपशिलातून",
   "diary.advocates": "वकीलनिहाय याद्या",
-  "diary.advocatesHint": "LeClaude वाचत असलेल्या सुनावणी याद्यांमध्ये पुढील 7 दिवसांसाठी नावाचे तंतोतंत जुळणे.",
+  "diary.advocatesHint": "Pramana वाचत असलेल्या सुनावणी याद्यांमध्ये पुढील 7 दिवसांसाठी नावाचे तंतोतंत जुळणे.",
   "diary.advocateAdd": "वकिलाचे नाव जोडा",
   "diary.advocateNone": "कोणतेही नाव जतन केलेले नाही.",
   "diary.advocateNoMatches": "कोणतीही सुनावणी नोंद सापडली नाही.",
   "diary.courtPages": "उच्च न्यायालयांच्या वकीलनिहाय याद्या",
-  "diary.courtPagesHint": "न्यायालयाच्या स्वतःच्या संकेतस्थळावर शोधा. ही पाने फक्त दुवे आहेत, LeClaude ती वाचत नाही.",
+  "diary.courtPagesHint": "न्यायालयाच्या स्वतःच्या संकेतस्थळावर शोधा. ही पाने फक्त दुवे आहेत, Pramana ती वाचत नाही.",
   "diary.linksChecked": "दुवे {date} रोजी तपासले",
   "diary.toast.namesSaved": "नावे जतन केली",
   "home.listed.title": "आज आणि उद्या यादीत",

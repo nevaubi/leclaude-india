@@ -7,6 +7,7 @@ import { courtById } from "@/lib/india/courts";
 import type { NewsArticle, NewsLabel, NewsListResponse, RefreshResult } from "../types";
 import { newsSourceById } from "../sources";
 import { exactCourtNames } from "../labels";
+import { BRAND } from "@/lib/brand";
 
 // ---------------------------------------------------------------------------
 // Time (IST)
@@ -191,7 +192,7 @@ export function HeadlineRow({ item, now, summary, compact }: { item: NewsArticle
         <span className="truncate font-medium text-foreground/80">{item.publisher}</span>
         <span aria-hidden>·</span>
         {undated
-          ? <Tip label={`The feed gave no publish date${item.publishedRaw ? ` (it said "${item.publishedRaw}")` : ""}; sorted by when LeClaude first saw it.`}><span className="whitespace-nowrap"><TimeAgo iso={item.firstSeenAt} now={now} prefix="first seen" /></span></Tip>
+          ? <Tip label={`The feed gave no publish date${item.publishedRaw ? ` (it said "${item.publishedRaw}")` : ""}; sorted by when ${BRAND.name} first saw it.`}><span className="whitespace-nowrap"><TimeAgo iso={item.firstSeenAt} now={now} prefix="first seen" /></span></Tip>
           : <TimeAgo iso={item.publishedAt!} now={now} />}
         {syndicated.length > 0 && <Tip label={`Also carried by ${syndicated.join(", ")}`}><span className="hidden truncate sm:inline">· also {syndicated[0]}{syndicated.length > 1 ? ` +${syndicated.length - 1}` : ""}</span></Tip>}
       </div>

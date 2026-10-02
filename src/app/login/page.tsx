@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { pagePrincipal, signInEnforced } from "@/lib/auth/page";
 import { safeNextPath } from "@/lib/auth/session-token";
+import { appDisplayName } from "@/lib/brand";
 import { bootstrapStatus } from "@/modules/workspace/signin";
 import { workspaceView } from "@/modules/workspace/service";
 import { LoginForm } from "@/modules/workspace/components/login-form";
@@ -24,7 +25,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ n
   const s = bootstrapStatus();
   return (
     <LoginForm
-      appName={process.env.NEXT_PUBLIC_APP_NAME?.trim() || "LeClaude India"}
+      appName={appDisplayName()}
       firmName={ws.firmName}
       next={next}
       status={{ needsOwnerPassword: s.needsOwnerPassword, setupTokenConfigured: s.setupTokenConfigured, signInConfigured: s.signInConfigured }}

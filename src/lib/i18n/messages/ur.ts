@@ -2,7 +2,7 @@ import type { Messages } from "./en";
 
 /** اردو — right-to-left; Indian court usage (عدالت، درخواست، فیصلہ، وکیل، مؤکل، سماعت). Digits stay Latin. */
 export const ur: Messages = {
-  "brand.name": "LeClaude India",
+  "brand.name": "Pramana",
   "brand.tagline": "ہندوستانی عدالتوں کے لیے مقدمات کی بصیرت",
   "brand.homeAria": "{app} صفحۂ اول",
 
@@ -689,12 +689,12 @@ export const ur: Messages = {
   "diary.listed": "فہرست میں",
   "diary.particulars": "مقدمے کی تفصیلات سے",
   "diary.advocates": "وکیل وار فہرستیں",
-  "diary.advocatesHint": "LeClaude کی پڑھی گئی کاز لسٹوں میں اگلے 7 دنوں کے لیے نام کی ہوبہو مماثلت۔",
+  "diary.advocatesHint": "Pramana کی پڑھی گئی کاز لسٹوں میں اگلے 7 دنوں کے لیے نام کی ہوبہو مماثلت۔",
   "diary.advocateAdd": "وکیل کا نام شامل کریں",
   "diary.advocateNone": "کوئی نام محفوظ نہیں۔",
   "diary.advocateNoMatches": "کوئی فہرست بندی نہیں ملی۔",
   "diary.courtPages": "ہائی کورٹس کی وکیل وار فہرستیں",
-  "diary.courtPagesHint": "عدالت کی اپنی ویب سائٹ پر تلاش کریں۔ ان صفحات کے صرف لنک دیے گئے ہیں؛ LeClaude انہیں نہیں پڑھتا۔",
+  "diary.courtPagesHint": "عدالت کی اپنی ویب سائٹ پر تلاش کریں۔ ان صفحات کے صرف لنک دیے گئے ہیں؛ Pramana انہیں نہیں پڑھتا۔",
   "diary.linksChecked": "لنک {date} کو جانچے گئے",
   "diary.toast.namesSaved": "نام محفوظ ہو گئے",
   "home.listed.title": "آج اور کل فہرست میں",

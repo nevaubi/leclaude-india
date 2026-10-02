@@ -205,6 +205,16 @@ function RailLink({ item, active, labels }: { item: NavItem; active: boolean; la
   return labels ? <div>{link}</div> : <Tip label={label} side="right" shortcut={item.shortcut}>{link}</Tip>;
 }
 
+/** True when focus is in a text field or an editable region (typing there must not be interrupted). */
+function isEditing(el: Element | null): boolean {
+  if (!el) return false;
+  if ((el as HTMLElement).isContentEditable) return true;
+  const tag = el.tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag === "INPUT") return !["button", "checkbox", "radio", "submit", "reset", "range", "color", "file"].includes((el as HTMLInputElement).type);
+  return false;
+}
+
 /**
  * A group (Law: Case law, Statutes, Courts, Judges). In the labelled sidebar it is a disclosure that opens on its
  * own routes; on the icon rail it is a menu button whose flyout opens on hover, click or Enter/Space/ArrowRight,
@@ -230,7 +240,8 @@ function RailGroup({ item, pathname, labels }: { item: NavItem; pathname: string
   const via = React.useRef<"hover" | "pin">("pin");
   const closeTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const cancelClose = () => clearTimeout(closeTimer.current);
-  const hoverOpen = () => { cancelClose(); if (!open) { via.current = "hover"; setOpen(true); } };
+  // The menu moves focus into itself when it opens, so hover never opens it while the user is typing in a field.
+  const hoverOpen = () => { cancelClose(); if (!open && !isEditing(document.activeElement)) { via.current = "hover"; setOpen(true); } };
   const hoverClose = () => { cancelClose(); if (via.current === "hover") closeTimer.current = setTimeout(() => setOpen(false), 160); };
   React.useEffect(() => () => clearTimeout(closeTimer.current), []);
   React.useEffect(() => { setOpen(false); }, [pathname]);

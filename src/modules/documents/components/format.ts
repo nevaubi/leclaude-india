@@ -5,8 +5,12 @@
 import type { DatePrecision, DocEvent, DocFile, DocFileStatus, ExtractionMethod } from "../types";
 
 /** Workspace tabs (in ?tab=). Kept here, not in the client component, so the server page can validate the param. */
-export const WORKSPACE_TABS = ["files", "ask", "facts", "timeline", "review"] as const;
+export const WORKSPACE_TABS = ["files", "ask", "facts", "timeline", "review", "drafting"] as const;
 export type WorkspaceTab = (typeof WORKSPACE_TABS)[number];
+
+/** Litigation drafting tools inside the Drafting tab (in ?tool=). */
+export const DRAFTING_TOOLS = ["dates", "paperbook", "reply", "defects"] as const;
+export type DraftingTool = (typeof DRAFTING_TOOLS)[number];
 
 export function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return "—";

@@ -14,7 +14,8 @@ import { MARGIN_PRESETS, PAGE_SIZES } from "../constants";
 import { appAbstractNumXml, appStyleDefs, commentXml, initialsOf, listRefFor, mergeSectionSpec, noteXml, numXml, patchSectPr, sectPrInnerXml, type AppListRef, type SectionSpec } from "./app-parts";
 import { canonKey, hasTrackedMarks } from "./canon";
 import { anchorOrphanComments, type CommentInput } from "./fresh";
-import { CT, IMAGE_MIME, nextRelId, REL, relatedPart, relsPathFor, serializeContentTypes, serializeRels, type Rel } from "./package";
+import { CT_CUSTOM_PROPS, CUSTOM_PROPS_PATH, customPropsXml, REL_CUSTOM_PROPS, type CustomProp } from "./custom-props";
+import { CT, IMAGE_MIME, nextRelId, parseRels, REL, relatedPart, relsPathFor, resolveTarget, serializeContentTypes, serializeRels, type Rel } from "./package";
 import { readDocx, type ReadResult } from "./reader";
 import { commentSpans, writeBlocks, type CommentAllocator, type ExportImageData, type NoteAllocator, type NumAllocator, type PristineIndex, type RelAllocator, type StyleResolver, type WriterEnv } from "./writer";
 import { attr, kids, parseXml, XML_DECL, NS, type XEl } from "./xml";
@@ -28,6 +29,8 @@ export interface PreserveOptions {
   images: Map<string, ExportImageData | null>;
   /** Must match the importer's image src mapping so image nodes compare equal. */
   imageSrc: (bytes: Uint8Array, mime: string, name: string, sha256: string) => string;
+  /** Custom file properties to set (LeClaude-owned ones are replaced; the package's other custom properties are kept). */
+  customProps?: CustomProp[];
 }
 
 export interface PreserveResult { bytes: Buffer; changedParts: string[]; regeneratedBlocks: number; preservedBlocks: number; warnings: string[] }
@@ -268,8 +271,8 @@ export async function exportPreserving(doc: PMNode, base: Uint8Array, o: Preserv
   if (extPath && pkg.text(extPath)) for (const m of pkg.text(extPath)!.matchAll(/<w15:commentEx\b[^>]*\/>/g)) { const pid = /w15:paraId="([^"]+)"/.exec(m[0])?.[1]; if (pid) origDone.set(pid, /w15:done="1"/.test(m[0])); }
   for (const [pid, want] of Array.from(resolvedPatch)) if ((origDone.get(pid) ?? false) === want) resolvedPatch.delete(pid);
 
-  // Nothing changed since import: the original package is the exact answer.
-  if (o.changes === "revisions" && !commentEdits.size && !commentAdds.length && !resolvedPatch.size && settingsEqual(read.meta.importedSettings, o.settings) && canonKey(prepared.doc) === canonKey(read.doc)) {
+  // Nothing changed since import (and no properties to stamp): the original package is the exact answer.
+  if (o.changes === "revisions" && !o.customProps?.length && !commentEdits.size && !commentAdds.length && !resolvedPatch.size && settingsEqual(read.meta.importedSettings, o.settings) && canonKey(prepared.doc) === canonKey(read.doc)) {
     return { bytes: Buffer.from(base), changedParts: [], regeneratedBlocks: 0, preservedBlocks: pristineNodes.size, warnings };
   }
 
@@ -426,6 +429,18 @@ export async function exportPreserving(doc: PMNode, base: Uint8Array, o: Preserv
     const deps = new Set<string>(injectStyles);
     for (const id of injectStyles) { const m = /<w:basedOn w:val="([^"]+)"/.exec(appDefs[id]); if (m && !stylesById.has(m[1]) && appDefs[m[1]]) deps.add(m[1]); }
     changed.set(part.path, appendToRoot(part.xml, "w:styles", Array.from(deps).map((id) => appDefs[id]).join("")));
+  }
+  // custom file properties (package-level part): merged into the existing part, or a new part related from _rels/.rels
+  if (o.customProps?.length) {
+    const pkgRels = parseRels(pkg.text("_rels/.rels"));
+    const rel = pkgRels.find((r) => r.type === REL_CUSTOM_PROPS && !r.external);
+    const path = rel ? resolveTarget("", rel.target) : CUSTOM_PROPS_PATH;
+    changed.set(path, customPropsXml(o.customProps, pkg.files.has(path) ? pkg.text(path) : null));
+    if (!rel) {
+      pkgRels.push({ id: nextRelId(pkgRels), type: REL_CUSTOM_PROPS, target: CUSTOM_PROPS_PATH, external: false });
+      changed.set("_rels/.rels", serializeRels(pkgRels));
+    }
+    if (ct.overrides[path] !== CT_CUSTOM_PROPS) { ct.overrides[path] = CT_CUSTOM_PROPS; ctChanged = true; }
   }
   if (relsChanged) changed.set(relsPathFor(main), serializeRels(rels));
   if (ctChanged) changed.set("[Content_Types].xml", serializeContentTypes(ct));

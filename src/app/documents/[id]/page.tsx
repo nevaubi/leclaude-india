@@ -9,7 +9,7 @@ import { pagePrincipal, visibleMatters } from "../_lib/page-data";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Document set" };
 
-/** /documents/<setId>?tab=files|ask|facts|timeline|review[&review=<reviewId>]. The set itself loads through the authorized API (404 → not found or no access). */
+/** /documents/<setId>?tab=files|ask|facts|timeline|review|drafting[&review=<reviewId>][&tool=dates|paperbook|reply|defects]. The set itself loads through the authorized API (404 → not found or no access). */
 export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   await pageDb();
   const [{ id }, sp] = await Promise.all([params, searchParams]);

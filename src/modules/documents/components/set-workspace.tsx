@@ -2,13 +2,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, CalendarRange, ChevronLeft, ClipboardCheck, Files, FolderOpen, ListChecks, MessageSquareText, RotateCcw, ShieldAlert, Trash2 } from "lucide-react";
+import { AlertCircle, CalendarRange, ChevronLeft, ClipboardCheck, Files, FolderOpen, ListChecks, MessageSquareText, PenLine, RotateCcw, ShieldAlert, Trash2 } from "lucide-react";
 import { PageTopbar } from "@/components/shell/page-topbar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DocSet } from "../types";
 import { docsApi, errorKind, errorMessage, setUrl, type ApiErrorKind, type DocsStatus } from "./api";
 import { AskTab } from "./ask-tab";
+import { DraftingTab } from "./drafting/drafting-tab";
 import { WORKSPACE_TABS, type WorkspaceTab } from "./format";
 import { FactsTab, TimelineTab, useExtraction } from "./extract-tabs";
 import { FilesTab } from "./files-tab";
@@ -21,7 +22,7 @@ import { useDocUploads } from "./use-doc-uploads";
 
 type Load = { status: "loading" } | { status: "ready"; set: DocSet } | { status: "error"; message: string; kind: ApiErrorKind };
 
-/** /documents/[id]: one set, with Files | Ask | Facts | Timeline | Review (tab in ?tab=; the selected review in ?review=). */
+/** /documents/[id]: one set, with Files | Ask | Facts | Timeline | Review | Drafting (tab in ?tab=; the selected review in ?review=; the drafting tool in ?tool=). */
 export function SetWorkspace({ setId, initialTab, matters }: { setId: string; initialTab: WorkspaceTab; matters: MatterChoice[] }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -38,6 +39,8 @@ export function SetWorkspace({ setId, initialTab, matters }: { setId: string; in
   const refreshSet = React.useCallback(() => setReload((n) => n + 1), []);
   const [reviewOpened, setReviewOpened] = React.useState(initialTab === "review");
   React.useEffect(() => { if (tab === "review") setReviewOpened(true); }, [tab]);
+  const [draftingOpened, setDraftingOpened] = React.useState(initialTab === "drafting");
+  React.useEffect(() => { if (tab === "drafting") setDraftingOpened(true); }, [tab]);
 
   // Deep link from Chat and Research sources: ?file=<fileId>&page=<n> opens the text viewer at that page.
   const linkFile = params.get("file");
@@ -68,6 +71,7 @@ export function SetWorkspace({ setId, initialTab, matters }: { setId: string; in
     setTab(next);
     const sp = new URLSearchParams(params.toString());
     if (next === "files") sp.delete("tab"); else sp.set("tab", next);
+    if (next !== "drafting") sp.delete("tool");
     const qs = sp.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
@@ -123,6 +127,7 @@ export function SetWorkspace({ setId, initialTab, matters }: { setId: string; in
             <TabsTrigger value="facts"><ListChecks /> Facts</TabsTrigger>
             <TabsTrigger value="timeline"><CalendarRange /> Timeline</TabsTrigger>
             <TabsTrigger value="review"><ClipboardCheck /> Review</TabsTrigger>
+            <TabsTrigger value="drafting"><PenLine /> Drafting</TabsTrigger>
           </TabsList>
           {set?.description && <span className="hidden min-w-0 truncate text-[12px] text-muted-foreground lg:inline" title={set.description}>{set.description}</span>}
         </div>
@@ -149,6 +154,10 @@ export function SetWorkspace({ setId, initialTab, matters }: { setId: string; in
             {/* Mounted once opened and kept while switching tabs, so a running review is not cancelled by a tab change. */}
             <TabsContent value="review" forceMount={reviewOpened || undefined} className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
               {reviewOpened && <ReviewTab setId={setId} setName={set?.name ?? "set"} aiReady={aiReady} fileCount={set?.fileCount ?? 0} active={tab === "review"} onView={setViewer} onOpenFiles={() => selectTab("files")} />}
+            </TabsContent>
+            {/* Kept mounted once opened, like Review: a running proposal or synopsis survives tab switches. */}
+            <TabsContent value="drafting" forceMount={draftingOpened || undefined} className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
+              {draftingOpened && <DraftingTab setId={setId} setName={set?.name ?? "set"} matterId={set?.matterId ?? null} aiReady={aiReady} fileCount={set?.fileCount ?? 0} active={tab === "drafting"} onView={setViewer} onOpenTab={selectTab} />}
             </TabsContent>
           </>
         )}

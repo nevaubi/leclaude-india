@@ -111,52 +111,72 @@ type Impl = {
   courtCalendar?: (forum: string, years: number[], store?: RemoteStore | null) => Promise<CourtCalendar | null>;
 };
 
-/** Implementations registered by the core and courts modules (see ./wire.ts). Tests may override. */
+/** Implementations registered by the core and courts modules (see ./wire-core.ts, ./wire-courts.ts). Tests may override. */
 const impl: Impl = {};
 
 export function registerOfficialImpl(part: Impl): void {
   Object.assign(impl, part);
 }
 
-function need<K extends keyof Impl>(k: K): NonNullable<Impl[K]> {
+let wiring: Promise<void> | null = null;
+
+/**
+ * Wire the real implementations on first use. Dynamic imports keep the module graph acyclic at load time: the
+ * implementation modules import this file (for its error classes and registerOfficialImpl), so a static import here
+ * would evaluate them before `impl` exists.
+ */
+function ensureWired(): Promise<void> {
+  wiring ??= (async () => {
+    const [core, courts] = await Promise.all([import("./wire-core"), import("./wire-courts")]);
+    core.wireOfficialCore();
+    courts.wireCourts();
+  })().catch((e) => {
+    wiring = null;
+    throw e;
+  });
+  return wiring;
+}
+
+async function need<K extends keyof Impl>(k: K): Promise<NonNullable<Impl[K]>> {
+  if (!impl[k]) await ensureWired();
   const f = impl[k];
   if (!f) throw new OfficialNotImplementedError(k);
   return f as NonNullable<Impl[K]>;
 }
 
 /** Hybrid search over official-document chunks; returns citable hits with stable `src://` refs. */
-export function searchOfficial(q: SourceSearchQuery, store?: RemoteStore | null): Promise<OfficialSearchResult> {
-  return need("searchOfficial")(q, store);
+export async function searchOfficial(q: SourceSearchQuery, store?: RemoteStore | null): Promise<OfficialSearchResult> {
+  return (await need("searchOfficial"))(q, store);
 }
 
 /** Read a document's chunks (from a chunk index or the chunk containing `page`), bounded by `maxChars`. */
-export function readOfficialDocument(id: string, opts?: { fromChunk?: number; page?: number; maxChars?: number }, store?: RemoteStore | null): Promise<OfficialReadResult | null> {
-  return need("readOfficialDocument")(id, opts, store);
+export async function readOfficialDocument(id: string, opts?: { fromChunk?: number; page?: number; maxChars?: number }, store?: RemoteStore | null): Promise<OfficialReadResult | null> {
+  return (await need("readOfficialDocument"))(id, opts, store);
 }
 
-export function listOfficialDocuments(q: OfficialListQuery, store?: RemoteStore | null): Promise<OfficialListResult> {
-  return need("listOfficialDocuments")(q, store);
+export async function listOfficialDocuments(q: OfficialListQuery, store?: RemoteStore | null): Promise<OfficialListResult> {
+  return (await need("listOfficialDocuments"))(q, store);
 }
 
-export function officialStatus(store?: RemoteStore | null): Promise<OfficialStatus> {
-  return need("officialStatus")(store);
+export async function officialStatus(store?: RemoteStore | null): Promise<OfficialStatus> {
+  return (await need("officialStatus"))(store);
 }
 
-export function causeListEntries(q: CauseListQuery, store?: RemoteStore | null): Promise<CauseListEntry[]> {
-  return need("causeListEntries")(q, store);
+export async function causeListEntries(q: CauseListQuery, store?: RemoteStore | null): Promise<CauseListEntry[]> {
+  return (await need("causeListEntries"))(q, store);
 }
 
 /** Exact matches of matters' identifiers against parsed cause-list entries in [from, to]. */
-export function listingsForMatters(matters: { matterId: string; identifiers: MatterCaseIdentifier[] }[], opts: { from: string; to: string }, store?: RemoteStore | null): Promise<ListingMatch[]> {
-  return need("listingsForMatters")(matters, opts, store);
+export async function listingsForMatters(matters: { matterId: string; identifiers: MatterCaseIdentifier[] }[], opts: { from: string; to: string }, store?: RemoteStore | null): Promise<ListingMatch[]> {
+  return (await need("listingsForMatters"))(matters, opts, store);
 }
 
 /** Orders / judgments whose published metadata carries one of these identifiers exactly (diary no., case no.). */
-export function ordersForIdentifiers(identifiers: MatterCaseIdentifier[], opts?: { since?: string; limit?: number }, store?: RemoteStore | null): Promise<SourceDocument[]> {
-  return need("ordersForIdentifiers")(identifiers, opts, store);
+export async function ordersForIdentifiers(identifiers: MatterCaseIdentifier[], opts?: { since?: string; limit?: number }, store?: RemoteStore | null): Promise<SourceDocument[]> {
+  return (await need("ordersForIdentifiers"))(identifiers, opts, store);
 }
 
 /** The court's notified calendar for the given years, built from official holiday lists; null when none is loaded. */
-export function courtCalendar(forum: string, years: number[], store?: RemoteStore | null): Promise<CourtCalendar | null> {
-  return need("courtCalendar")(forum, years, store);
+export async function courtCalendar(forum: string, years: number[], store?: RemoteStore | null): Promise<CourtCalendar | null> {
+  return (await need("courtCalendar"))(forum, years, store);
 }

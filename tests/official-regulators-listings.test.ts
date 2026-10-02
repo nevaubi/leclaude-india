@@ -92,11 +92,11 @@ describe("IBBI (live listing fixtures)", () => {
     expect(first.url).toBe(first.fileUrl);
     expect(first.meta).toMatchObject({ forum: "nclt", caseKeys: ["CPIB/188/2026"], corporateDebtor: "TAKSHASHILA CORPORATION LLP", remarks: "Admission - Final Order", fileSize: "548.55 KB", orderDatePrinted: "25 Sep, 2026" });
     expect(raninga.meta?.caseNumbers).toEqual(["IA/1037(AHM) 2026", "IA (Plan)/9(AHM) 2026", "CP (IB)/271(AHM)2025"]);
-    expect(raninga.meta?.caseKeys).toEqual(["IA/1037/2026", "IAPLAN/9/2026", "CPIB/271/2025"]);
-    expect(zicom.meta).toMatchObject({ corporateDebtor: "Zicom Electronic Security Systems Limited", caseKeys: ["IAIBC/1566/2026", "CPIB/610/2021"] });
+    expect(raninga.meta?.caseKeys).toEqual(["IA/1037/2026", "IA/1037/2026@AHM", "IAPLAN/9/2026", "IAPLAN/9/2026@AHM", "CPIB/271/2025", "CPIB/271/2025@AHM"]);
+    expect(zicom.meta).toMatchObject({ corporateDebtor: "Zicom Electronic Security Systems Limited", caseKeys: ["IAIBCPLAN/32/2026", "IAIBCPLAN/32/2026@MB", "IAIBC/1566/2026", "IAIBC/1566/2026@MB", "CPIB/610/2021"] });
     // An unreadable prefix stays printed only (never guessed into a key).
     expect(spright.meta).toMatchObject({ caseNumbers: ["?? (IB)86(AHM)2026"], caseKeys: [] });
-    expect(magic.meta).toMatchObject({ caseKeys: ["CPIB/507/2021"], remarks: "Appointment - Appointment of Liquidator" });
+    expect(magic.meta).toMatchObject({ caseKeys: ["CPIB/507/2021", "CPIB/507/2021@MB"], remarks: "Appointment - Appointment of Liquidator" });
     expect(ibbiLastPage(fx("ibbi-nclt-page1.html"))).toBe(1590);
   });
 

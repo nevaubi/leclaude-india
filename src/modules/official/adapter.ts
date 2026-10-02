@@ -104,6 +104,10 @@ export interface SourceAdapter {
   discover(ctx: AdapterContext): Promise<DiscoverResult>;
   /** Optional: derive structured records (pure, deterministic). */
   parse?(doc: ParseInput): ParseResult;
-  /** Optional: store parsed records (idempotent; replaces the records of this document). */
+  /** Optional: store parsed records (idempotent; replaces the records of this document). When an adapter has no
+   *  persist, records shaped `{ meta: {...} }` have the first record's meta merged into the document's meta. */
   persist?(store: RemoteStore, doc: ParseInput, result: ParseResult): Promise<{ stored: number }>;
+  /** Optional: turn the bytes a publisher returns into the document's real bytes before hashing and extraction
+   *  (e.g. CBIC answers PDFs as base64 inside JSON). Throw when the answer is not the expected document. */
+  decode?(meta: Record<string, unknown>, bytes: Uint8Array): { bytes: Uint8Array; mime: string | null };
 }

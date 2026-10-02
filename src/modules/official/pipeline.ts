@@ -238,6 +238,13 @@ async function runParse(store: RemoteStore, adapter: SourceAdapter, input: Parse
   try {
     const result = adapter.parse!(input);
     const stored = adapter.persist ? (await adapter.persist(store, input, result)).stored : null;
+    if (!adapter.persist) {
+      // Metadata-only parsers (SEBI order numbers, gazette part/section, ...) return [{ meta }]: merge it.
+      const first = result.records[0] as { meta?: unknown } | undefined;
+      if (first && first.meta && typeof first.meta === "object" && !Array.isArray(first.meta)) {
+        await store.query({ query: `UPDATE official_documents SET meta = meta || $2::jsonb, updated_at = now() WHERE id = $1`, params: [input.id, JSON.stringify(first.meta)] });
+      }
+    }
     await store.query({
       query: `UPDATE official_documents SET parse_result = $2::jsonb, updated_at = now() WHERE id = $1`,
       params: [input.id, JSON.stringify({ records: result.records.length, unparsed: result.unparsed, stored, notes: (result.notes ?? []).slice(0, 20), at: input.fetchedAt })],
@@ -409,7 +416,9 @@ async function processFetch(unit: OfficialUnit, deps: PipelineDeps): Promise<Uni
   let mime: string | null;
   let bytes: Uint8Array | null = null;
   try {
-    const f = await http.fetchFile(target, { maxBytes: maxFileBytes() });
+    const raw = await http.fetchFile(target, { maxBytes: maxFileBytes() });
+    const decoded = adapter.decode ? adapter.decode(doc.meta, raw.bytes) : null;
+    const f = decoded ? { ...raw, bytes: decoded.bytes, mime: decoded.mime ?? raw.mime } : raw;
     bytes = f.bytes;
     sha = sha256Hex(f.bytes);
     provenance = f.provenance;
@@ -519,10 +528,12 @@ async function processExtract(unit: OfficialUnit, deps: PipelineDeps): Promise<U
 async function bytesFor(deps: PipelineDeps, doc: DocRow, def: SourceDef, sha: string): Promise<Uint8Array | "changed"> {
   const cached = deps.bytes.get(doc.id, sha);
   if (cached) return cached;
-  const f = await deps.http(def).fetchFile(doc.fileUrl ?? doc.url, { maxBytes: maxFileBytes() });
-  if (sha256Hex(f.bytes) !== sha) return "changed";
-  deps.bytes.set(doc.id, sha, f.bytes);
-  return f.bytes;
+  const raw = await deps.http(def).fetchFile(doc.fileUrl ?? doc.url, { maxBytes: maxFileBytes() });
+  const adapter = officialAdapter(doc.source);
+  const fileBytes = adapter?.decode ? adapter.decode(doc.meta, raw.bytes).bytes : raw.bytes;
+  if (sha256Hex(fileBytes) !== sha) return "changed";
+  deps.bytes.set(doc.id, sha, fileBytes);
+  return fileBytes;
 }
 
 async function processOcr(unit: OfficialUnit, deps: PipelineDeps): Promise<UnitOutcome> {

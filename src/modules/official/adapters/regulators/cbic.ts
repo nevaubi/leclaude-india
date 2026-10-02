@@ -233,6 +233,10 @@ export const def: SourceDef = {
 
 export const adapter: SourceAdapter = {
   def,
+  decode(meta, bytes) {
+    if (meta.base64Json !== true && meta.contentEncoding !== "cbic-base64-json") return { bytes, mime: null };
+    return { bytes: decodeCbicPdf(bytes).bytes, mime: "application/pdf" };
+  },
   discover(ctx) {
     const planNotes: string[] = [];
     return walkStreams(ctx, {

@@ -8,7 +8,9 @@ import { OfficialNotConfiguredError } from "@/modules/official/service";
 import * as service from "@/modules/official/service";
 import { parseCauseList } from "@/modules/official/causelist/parse";
 import { entryCaseKeys, persistCauseListEntries } from "@/modules/official/causelist/persist";
-import { causeListEntries, CauseListQueryError, listingsForMatters, ordersForIdentifiers, caseKeyOf, diaryKeyOf } from "@/modules/official/causelist/query";
+import { causeListEntries, CauseListQueryError, listingsForMatters, ordersForIdentifiers, caseKeyOf, diaryKeyOf, LISTING_PAGE_ROWS, MAX_LISTING_IDENTIFIERS } from "@/modules/official/causelist/query";
+import { calendarParse, calendarPersist } from "@/modules/official/adapters/courts/common";
+import type { ParseInput } from "@/modules/official/adapter";
 import { caseKeyBindable, expandForum, forumMatches, identifierCanBind } from "@/modules/official/causelist/forums";
 import { courtCalendar, courtCalendarWithSources, CalendarQueryError } from "@/modules/official/calendars/query";
 import { persistHolidays } from "@/modules/official/calendars/persist";
@@ -161,6 +163,14 @@ describe("causeListEntries", () => {
     await expect(causeListEntries({ date: "2026-10-05" })).rejects.toBeInstanceOf(OfficialNotConfiguredError);
   });
 
+  it("an identifier lookup without a window lists the latest listings first; a window reads in date order", async () => {
+    const store = new FakeStore(() => []);
+    await causeListEntries({ caseKeys: ["SLPC/1234/2026"] }, store);
+    expect(store.last().query).toMatch(/ORDER BY list_date DESC, forum ASC/);
+    await causeListEntries({ caseKeys: ["SLPC/1234/2026"], from: "2026-10-01", to: "2026-10-09" }, store);
+    expect(store.last().query).toMatch(/ORDER BY list_date ASC, forum ASC/);
+  });
+
   it("parses route parameters into keys without guessing", () => {
     expect(caseKeyOf("SLP(C) No. 1234/2026")).toBe("SLPC/1234/2026");
     expect(caseKeyOf("slpc/1234/2026")).toBe("SLPC/1234/2026");
@@ -254,19 +264,20 @@ describe("listingsForMatters", () => {
       { from: "2026-10-01", to: "2026-10-31" },
       store,
     );
+    // Rows in (list date, forum, court, page, id) order; matters in the order given.
     expect(out.map((m) => [m.matterId, m.entry.id, m.matchedOn.kind])).toEqual([
+      ["m4q", "B", "case_number"],
+      ["m8", "F", "case_number"],
+      ["m5", "C", "case_number"],
       ["m1", "A", "case_number"],
       ["m6", "A", "case_number"],
-      ["m4q", "B", "case_number"],
-      ["m5", "C", "case_number"],
       ["m6", "D", "diary_no"],
-      ["m8", "F", "case_number"],
     ]);
     const q = store.last();
     expect(q.query).toContain("WHERE parsed AND list_date BETWEEN $1::date AND $2::date");
     expect(q.params?.[0]).toBe("2026-10-01");
-    expect(String(q.params?.[2])).toContain("CPIB/29/2022@MB");
-    expect(String(q.params?.[2])).not.toContain("SLP(C)"); // printed values are not keys: never normalized on the fly
+    expect(q.params?.some((p) => String(p).includes("CPIB/29/2022@MB"))).toBe(true);
+    expect(q.params?.some((p) => String(p).includes("SLP(C)"))).toBe(false); // printed values are not keys: never normalized on the fly
     // Identifiers that can never bind are not even queried: the root "nclt" with an unqualified key, the "hc" root.
     const none = new FakeStore(() => rows);
     const never = [{ matterId: "m3", identifiers: [{ forum: "nclt", kind: "case_number" as const, value: "CPIB/29/2022" }, { forum: "hc", kind: "case_number" as const, value: "SLPC/1234/2026" }] }];
@@ -288,6 +299,89 @@ describe("listingsForMatters", () => {
     expect(await listingsForMatters([{ matterId: "m", identifiers: [{ forum: "sci", kind: "case_number", value: "x" }] }], { from: "2026-10-01", to: "2026-10-02" }, store)).toEqual([]);
     expect(store.calls).toEqual([]);
     await expect(listingsForMatters([], { from: "2026-10-01", to: "2027-10-01" }, store)).rejects.toBeInstanceOf(CauseListQueryError);
+  });
+
+  it("puts the forum and bench rules into SQL per identifier forum (other benches' rows are never read)", async () => {
+    const store = new FakeStore(() => []);
+    await listingsForMatters(
+      [
+        { matterId: "m1", identifiers: [{ forum: "sci", kind: "case_number", value: "SLPC/1234/2026" }, { forum: "sci", kind: "diary_no", value: "54583/2026" }] },
+        { matterId: "m2", identifiers: [{ forum: "nclt-indore", kind: "case_number", value: "IA/12/2026" }] },
+        { matterId: "m3", identifiers: [{ forum: "nclt", kind: "case_number", value: "CPIB/29/2022@MP" }] },
+      ],
+      { from: "2026-10-01", to: "2026-10-31" },
+      store,
+    );
+    const q = store.last();
+    const p = (v: string) => `$${q.params!.indexOf(v) + 1}`;
+    // sci: its own forum, exact keys with the bench-code rule, and the diary number.
+    expect(q.query).toContain(`((forum = ${p("sci")}) AND ((case_keys && ${p('{"SLPC/1234/2026"}')}::text[] AND EXISTS`);
+    expect(q.query).toContain(`diary_no = ANY(${p('{"54583/2026"}')}::text[])`);
+    // An unqualified NCLT key only at exactly its bench (no NCLT guard needed there).
+    expect(q.query).toContain(`((forum = ${p("nclt-indore")}) AND ((case_keys && ${p('{"IA/12/2026"}')}::text[] AND EXISTS`);
+    // The family root with a bench-qualified key: the family's forums, the qualified key matched exactly.
+    expect(q.query).toContain(`((forum = ${p("nclt")} OR forum LIKE ${p("nclt-%")}) AND (case_keys && ${p('{"CPIB/29/2022@MP"}')}::text[]))`);
+    expect(q.query).toMatch(/ORDER BY list_date ASC, id ASC LIMIT \$\d+$/);
+    expect(q.query).not.toContain("LIMIT 2000");
+  });
+
+  it("reads every page (keyset by list date and id) instead of stopping at a row cap", async () => {
+    const pageRows = (start: number, n: number) =>
+      Array.from({ length: n }, (_, i) => entryRow({ id: `R${String(start + i).padStart(5, "0")}`, list_date: "2026-10-20", forum: "nclt-indore", case_keys: '{"IA/12/2026"}' }));
+    let call = 0;
+    const store = new FakeStore((q) => {
+      if (!q.query.includes("FROM causelist_entries")) return [];
+      call++;
+      return call === 1 ? pageRows(0, LISTING_PAGE_ROWS) : call === 2 ? pageRows(LISTING_PAGE_ROWS, 3) : [];
+    });
+    const out = await listingsForMatters([{ matterId: "m", identifiers: [{ forum: "nclt-indore", kind: "case_number", value: "IA/12/2026" }] }], { from: "2026-10-01", to: "2026-10-31" }, store);
+    expect(out).toHaveLength(LISTING_PAGE_ROWS + 3); // the latest listings are not dropped
+    const reads = store.calls.filter((c) => c.query.includes("FROM causelist_entries"));
+    expect(reads).toHaveLength(2);
+    expect(reads[0].query).not.toContain("(list_date, id) >");
+    expect(reads[1].query).toMatch(/AND \(list_date, id\) > \(\$\d+::date, \$\d+\)/);
+    expect(reads[1].params?.slice(-3)).toEqual(["2026-10-20", `R${String(LISTING_PAGE_ROWS - 1).padStart(5, "0")}`, LISTING_PAGE_ROWS]);
+  });
+
+  it("queries identifiers in batches (none silently skipped) and fails loudly past the bounds", async () => {
+    const many = Array.from({ length: 1200 }, (_, i) => ({ matterId: `m${i}`, identifiers: [{ forum: "sci", kind: "case_number" as const, value: `SLPC/${i + 1}/2026` }] }));
+    const store = new FakeStore((q) => (q.query.includes("FROM causelist_entries") ? [entryRow({ id: "LAST", case_keys: '{"SLPC/1200/2026"}' })] : []));
+    const out = await listingsForMatters(many, { from: "2026-10-01", to: "2026-10-31" }, store);
+    const reads = store.calls.filter((c) => c.query.includes("FROM causelist_entries"));
+    expect(reads).toHaveLength(3); // 500 + 500 + 200
+    const keysQueried = reads.flatMap((c) => (c.params ?? []).filter((p) => String(p).startsWith("{"))).flatMap((p) => String(p).slice(1, -1).split(","));
+    expect(new Set(keysQueried).size).toBe(1200);
+    expect(out.map((m) => m.matterId)).toEqual(["m1199"]); // the 1200th identifier still binds
+    const tooMany = Array.from({ length: MAX_LISTING_IDENTIFIERS + 1 }, (_, i) => ({ matterId: `m${i}`, identifiers: [{ forum: "sci", kind: "case_number" as const, value: `SLPC/${i + 1}/2026` }] }));
+    await expect(listingsForMatters(tooMany, { from: "2026-10-01", to: "2026-10-31" }, new FakeStore())).rejects.toThrow(/at most 5000 distinct/);
+    // A store that never runs out of rows: the bound is an error, never a silently shortened answer.
+    const endless = new FakeStore((q) => (q.query.includes("FROM causelist_entries") ? Array.from({ length: LISTING_PAGE_ROWS }, (_, i) => entryRow({ id: `E${i}` })) : []));
+    await expect(listingsForMatters([{ matterId: "m", identifiers: [{ forum: "sci", kind: "case_number", value: "SLPC/1234/2026" }] }], { from: "2026-10-01", to: "2026-10-31" }, endless)).rejects.toThrow(/more than 20000 cause-list rows/);
+  });
+
+  it("an NCLT row printed without a serial number ('Main Matter Listed on 26-11-2026') never binds a matter", async () => {
+    // Parse the published Indore list, persist it, and serve the stored rows back as the database would.
+    const doc = { id: "doc_nclt_ind", markdown: read("nclt-indore-05.10.2026.md"), pages: [], fetchedAt: "2026-10-02T10:00:00.000Z" };
+    const parsed = parseCauseList(doc, { layout: "tribunal", forum: "nclt-indore", listType: "daily", listDate: "2026-10-05" });
+    const sink = new FakeStore();
+    await persistCauseListEntries(sink, doc.id, parsed.records);
+    const stored = JSON.parse(String(sink.txs[0][1].params![0])) as Record<string, unknown>[];
+    const asRow = (r: Record<string, unknown>): Row => ({
+      ...entryRow({}), id: String(r.id), document_id: String(r.document_id), forum: String(r.forum), list_date: String(r.list_date), item_no: (r.item_no as string | null) ?? null,
+      case_numbers: JSON.stringify(r.case_numbers), case_keys: `{${(r.case_keys as string[]).map((k) => `"${k}"`).join(",")}}`, diary_no: null, raw: String(r.raw), parsed: r.parsed ? "t" : "f",
+    });
+    const db = new FakeStore(() => stored.map(asRow));
+    const window = { from: "2026-10-01", to: "2026-10-31" };
+    // CP/11(MP)2025 is printed only in that itemless reference row.
+    for (const value of ["CP/11/2025", "CP/11/2025@MP"]) {
+      expect(await listingsForMatters([{ matterId: "m", identifiers: [{ forum: "nclt-indore", kind: "case_number", value }] }], window, db), value).toEqual([]);
+    }
+    // CP/9(MP)2021 binds only through numbered item 4 (an application in it), never through its itemless row.
+    const cp9 = await listingsForMatters([{ matterId: "m", identifiers: [{ forum: "nclt-indore", kind: "case_number", value: "CP/9/2021@MP" }] }], window, db);
+    expect(cp9.map((m) => m.entry.itemNo)).toEqual(["4"]);
+    // A numbered item of the same list still binds.
+    const hit = await listingsForMatters([{ matterId: "m", identifiers: [{ forum: "nclt-indore", kind: "case_number", value: "CPIB/29/2022@MP" }] }], window, db);
+    expect(hit.map((m) => m.entry.itemNo)).toEqual(["201"]);
   });
 });
 
@@ -493,8 +587,44 @@ describe("courtCalendar", () => {
     const [del, ins, upd] = store.txs[0];
     expect(del.query).toBe("DELETE FROM court_holidays WHERE document_id = $1");
     expect(JSON.parse(String(ins.params![0]))).toHaveLength(1);
-    expect(upd.query).toContain("meta = meta || jsonb_build_object('coversYears', $2::jsonb, 'holidaysParsed', $3::int)");
-    expect(upd.params).toEqual(["doc_json", "[2026]", 1]);
+    expect(upd.query).toContain("meta = meta || jsonb_build_object('coversYears', $2::jsonb, 'holidaysParsed', $3::int, 'partialYears', $4::jsonb)");
+    expect(upd.params).toEqual(["doc_json", "[2026]", 1, "[]"]);
+  });
+
+  it("a calendar with rejected rows is stored as partial, and courtCalendar answers 'unknown' with a note", async () => {
+    // 2026 table: eight closures, one printed with a wrong weekday (Christmas 2026 is a Friday).
+    const text = [
+      "| Republic Day | January 26 | Monday |", "| Holi | March 4 | Wednesday |", "| Good Friday | April 3 | Friday |", "| Independence Day | August 15 | Saturday |",
+      "| Gandhi Jayanti | October 2 | Friday |", "| Diwali | November 8 | Sunday |", "| Guru Nanak's Birthday | November 24 | Tuesday |", "| Christmas | December 25 | Thursday |",
+    ].join("\n");
+    const doc: ParseInput = { id: "doc_pdf", url: "https://www.sci.gov.in/calendar-2026.pdf", title: "Calendar 2026", docDate: "2026-01-01", meta: { forum: "sci", format: "pdf", year: 2026 }, markdown: text, pages: [{ page: 1, text }], fetchedAt: "2026-10-02T04:00:00Z" };
+    const parsed = calendarParse(doc, { forum: "sci" });
+    expect([parsed.records.length, parsed.unparsed]).toEqual([7, 1]);
+    const store = new FakeStore();
+    await calendarPersist(store, doc, parsed);
+    const upd = store.txs[0].at(-1)!;
+    expect(upd.params).toEqual(["doc_pdf", "[]", 7, "[2026]"]); // not covered; partial
+    // Served back: the rows exist but nothing covers 2026, so the year is unknown (never "open" on 25 December).
+    const rows = parsed.records.map((r) => holidayRow({ date_from: r.dateFrom, date_to: r.dateTo, name: r.name, kind: r.kind, document_id: "doc_pdf", doc_url: doc.url, covers: "[]", partial: "[2026]" }));
+    const r = await courtCalendarWithSources("sci", [2026], new FakeStore(() => rows));
+    expect(r.calendar).toBeNull();
+    expect(r.notes[0]).toMatch(/^no complete official calendar loaded for sci 2026/);
+    expect(r.notes[1]).toMatch(/^partial: the official calendar for 2026 \(https:\/\/www\.sci\.gov\.in\/calendar-2026\.pdf\) was loaded but some of its rows could not be read/);
+    // Another document covering 2026 completely answers it; the partial one is still named in the notes for other years only.
+    const both = await courtCalendarWithSources("sci", [2026], new FakeStore(() => [...rows, holidayRow({ partial: "[]" })]));
+    expect(both.calendar?.years).toEqual([2026]);
+    expect(both.notes.join(" ")).not.toMatch(/partial/);
+  });
+
+  it("legacy documents (coverage stored before partial years were recorded) cover nothing when their last parse rejected rows", async () => {
+    const legacy = (unparsed: string | null) => [holidayRow({ covers: "[2026]", partial: null, doc_unparsed: unparsed })];
+    expect((await courtCalendarWithSources("sci", [2026], new FakeStore(() => legacy("2")))).calendar).toBeNull();
+    expect((await courtCalendarWithSources("sci", [2026], new FakeStore(() => legacy("2")))).notes.join(" ")).toMatch(/partial: the official calendar for 2026/);
+    expect((await courtCalendarWithSources("sci", [2026], new FakeStore(() => legacy("0")))).calendar?.years).toEqual([2026]);
+    const q = new FakeStore(() => legacy(null));
+    expect((await courtCalendarWithSources("sci", [2026], q)).calendar?.years).toEqual([2026]);
+    expect(q.last().query).toContain("(d.meta->'partialYears')::text AS partial");
+    expect(q.last().query).toContain("d.parse_result->>'unparsed' AS doc_unparsed");
   });
 });
 

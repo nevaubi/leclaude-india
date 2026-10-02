@@ -3,14 +3,22 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   calendarCoverage,
+  calendarJsonText,
   dedupeHolidays,
   normalizeOcrMath,
   parseCalendarNotes,
   parseHolidayTable,
   parseSciHolidayJson,
+  truthfulCoverage,
   type HolidayRecord,
 } from "@/modules/official/calendars/parse";
 import { htmlParagraphs } from "@/modules/india/sources/parse-util";
+import type { ParseInput } from "@/modules/official/adapter";
+import { calendarParse } from "@/modules/official/adapters/courts/common";
+import { sciHolidayJsonUrl } from "@/modules/official/adapters/courts/sci-calendar";
+import { extractDocument, extractHtml, pageMarkdown, type ExtractedDocument } from "@/modules/official/extract";
+import { scrubPages } from "@/modules/official/pipeline";
+import { chunkMarkdown } from "@/modules/official/chunk";
 
 /**
  * Fixtures (tests/fixtures/official/courts, captured 2026-10-02 via Firecrawl, location IN):
@@ -133,6 +141,137 @@ describe("Delhi High Court calendar 2026 (scanned PDF, OCR text)", () => {
     expect(normalizeOcrMath("$ 7^{n d}, $ $ 1 0^{n d} $")).toBe("7nd, 10nd");
     expect(normalizeOcrMath("$ \\ast $Saturdays")).toBe("*Saturdays");
     expect(normalizeOcrMath("1 <sup>st</sup> June")).toBe("1st June");
+  });
+});
+
+describe("Supreme Court holiday data through the ingestion pipeline (core extraction renders JSON as a fenced block)", () => {
+  const bytes = new Uint8Array(readFileSync(path.join(FIX, "sci-calendar-ajax.json")));
+  const meta = { forum: "sci", docKind: "calendar", format: "json", year: 2026 };
+  const input = (markdown: string, pages: { page: number; text: string }[]): ParseInput => ({
+    id: "od_sci_json", url: sciHolidayJsonUrl(2026), title: "Supreme Court of India — Holiday data 2026", docDate: "2026-01-01", meta, markdown, pages, fetchedAt: "2026-10-02T04:00:00.000Z",
+  });
+
+  /** What indexDocument hands the parser: scrubbed pages and their page markdown. */
+  const asParsed = (ex: ExtractedDocument) => {
+    const scrubbed = scrubPages(ex.pages, "calendar");
+    return input(pageMarkdown(scrubbed.pages, ex.paged), scrubbed.pages);
+  };
+  const expect28 = (doc: ParseInput) => {
+    const r = calendarParse(doc, { forum: "sci" });
+    expect(r.notes).toEqual([]);
+    expect(r.unparsed).toBe(0);
+    expect(r.records).toHaveLength(28);
+    expect(r.records.find((h) => h.name === "Republic Day 2026")).toMatchObject({ dateFrom: "2026-01-26", kind: "holiday", year: 2026 });
+    expect(truthfulCoverage(r.records, { year: 2026, format: "json" }, r)).toEqual({ covers: [2026], partialYears: [] });
+  };
+
+  it("Firecrawl fallback (firecrawl_in source): the browser's <pre> rendering of the JSON becomes a ``` fence", () => {
+    // Chromium renders a JSON response as <pre>…</pre>; Firecrawl returns that as rawHtml, which the pipeline extracts
+    // with extractHtml (pipeline.ts firecrawlFallback).
+    const raw = read("sci-calendar-ajax.json");
+    const rawHtml = `<html><head><meta name="color-scheme" content="light dark"></head><body><pre style="word-wrap: break-word; white-space: pre-wrap;">${raw.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre></body></html>`;
+    const ex = extractHtml(rawHtml, sciHolidayJsonUrl(2026));
+    expect(ex.pages[0].text.startsWith("```\n{")).toBe(true); // what the parser actually receives
+    expect28(asParsed(ex));
+  });
+
+  it("a JSON response the core extractor detects as JSON becomes a ```json fence", async () => {
+    const ex = await extractDocument({ bytes, mime: "application/json", url: "https://www.sci.gov.in/holidays-2026.json" });
+    expect(ex.kind).toBe("json");
+    expect(ex.pages[0].text.startsWith("```json\n{")).toBe(true);
+    expect28(asParsed(ex));
+  });
+
+  it("direct fetch of the admin-ajax.php URL (extracted as HTML: the JSON text itself) still parses", async () => {
+    const ex = await extractDocument({ bytes, mime: "application/json", url: sciHolidayJsonUrl(2026) });
+    expect(ex.kind).toBe("html");
+    expect28(asParsed(ex));
+  });
+
+  it("parses it when the text is rebuilt from stored chunks (parse-stage path: chunks joined with blank lines)", async () => {
+    const ex = await extractDocument({ bytes, mime: "application/json", url: "https://www.sci.gov.in/holidays-2026.json" });
+    const markdown = pageMarkdown(scrubPages(ex.pages, "calendar").pages, ex.paged);
+    const chunks = chunkMarkdown(markdown, { target: 600, max: 900 });
+    expect(chunks.length).toBeGreaterThan(1);
+    const rebuilt = chunks.map((c) => c.text).join("\n\n");
+    const r = calendarParse(input(rebuilt, [{ page: 1, text: rebuilt }]), { forum: "sci" });
+    expect(r.records).toHaveLength(28);
+    expect(r.unparsed).toBe(0);
+  });
+
+  it("reads raw JSON too, and never takes page text for JSON", () => {
+    expect(calendarJsonText(read("sci-calendar-ajax.json"))).not.toBeNull();
+    expect(calendarJsonText("```json\n{\"a\": 1}\n```")).toBe('{"a": 1}');
+    expect(calendarJsonText("[Page 1]\nRepublic Day January 26 Monday")).toBeNull();
+    expect(calendarJsonText("```\nnot json\n```")).toBeNull();
+  });
+});
+
+describe("calendar coverage is truthful when rows are rejected", () => {
+  // 2026 table: eight closures, two of them printed with the wrong weekday (an OCR / transcription error).
+  const rows = [
+    "| Republic Day | January 26 | Monday |",
+    "| Holi | March 4 | Wednesday |",
+    "| Good Friday | April 3 | Friday |",
+    "| Independence Day | August 15 | Saturday |",
+    "| Gandhi Jayanti | October 2 | Friday |",
+    "| Diwali | November 8 | Sunday |",
+    "| Christmas | December 25 | Thursday |",
+    "| Guru Nanak's Birthday | November 24 | Wednesday |",
+  ].join("\n");
+  const doc = (text: string, meta: Record<string, unknown>): ParseInput => ({ id: "cal", url: "https://example.gov.in/calendar.pdf", title: "Calendar", docDate: "2026-01-01", meta, markdown: text, pages: [{ page: 1, text }], fetchedAt: "2026-10-02T04:00:00.000Z" });
+
+  it("a year with rejected rows is partial, never covered (the court would read as open on a notified holiday)", () => {
+    const r = calendarParse(doc(rows, { forum: "sci", format: "pdf", year: 2026 }), { forum: "sci" });
+    expect(r.records).toHaveLength(6);
+    expect(r.unparsed).toBe(2);
+    expect(r.rejectedYears).toEqual([2026]);
+    expect(calendarCoverage(r.records, { year: 2026, format: "pdf" })).toEqual([2026]); // six closures read: not enough
+    expect(truthfulCoverage(r.records, { year: 2026, format: "pdf" }, r)).toEqual({ covers: [], partialYears: [2026] });
+    // Without the mismatched rows the same table covers its year.
+    const clean = rows.split("\n").filter((l) => !/Christmas|Guru/.test(l)).join("\n");
+    const ok = calendarParse(doc(clean, { forum: "sci", format: "pdf", year: 2026 }), { forum: "sci" });
+    expect(truthfulCoverage(ok.records, { year: 2026, format: "pdf" }, ok)).toEqual({ covers: [2026], partialYears: [] });
+  });
+
+  it("a rejected Supreme Court JSON entry blocks only the year it belongs to", () => {
+    const data = JSON.parse(read("sci-calendar-ajax.json")) as { data: { holidays: Record<string, unknown>[] } };
+    const bad2027 = { start_date: "26/01/2027", end_date: "26/01/2027", start_year: "2027", title: "Republic Day 2027", type: "gazetted", days_of_the_week: { start: "Monday", end: "" } }; // a Tuesday
+    const r = calendarParse(doc(JSON.stringify({ data: { holidays: [...data.data.holidays, bad2027] } }), { forum: "sci", format: "json", year: 2026 }), { forum: "sci" });
+    expect(r.unparsed).toBe(1);
+    expect(r.rejectedYears).toEqual([2027]);
+    expect(truthfulCoverage(r.records, { year: 2026, format: "json" }, r).covers).toEqual([2026]);
+    const unknown = { start_date: "03/08/2026", end_date: "03/08/2026", start_year: "2026", title: "Restricted holiday", type: "restricted" };
+    const r2 = calendarParse(doc(JSON.stringify({ data: { holidays: [...data.data.holidays, unknown] } }), { forum: "sci", format: "json", year: 2026 }), { forum: "sci" });
+    expect(r2.notes.join(" ")).toMatch(/unknown holiday type "restricted"/);
+    expect(truthfulCoverage(r2.records, { year: 2026, format: "json" }, r2)).toEqual({ covers: [], partialYears: [2026] });
+  });
+
+  it("the published calendars read without rejections keep covering their years", () => {
+    const cases: [string, Record<string, unknown>, number | null, number][] = [
+      [read("dhc-calendar-2026.md"), { forum: "hc-delhi", format: "pdf", year: 2026 }, 2026, 2026],
+      [read("sci-calendar-2027.md"), { forum: "sci", format: "pdf", year: 2027 }, 2027, 2027],
+      [htmlParagraphs(read("sci-calendar-page.html")), { forum: "sci", format: "html_table" }, null, 2026],
+    ];
+    for (const [text, meta, year, covered] of cases) {
+      const r = calendarParse(doc(text, meta));
+      expect(r.unparsed).toBe(0);
+      expect(truthfulCoverage(r.records, { year, format: String(meta.format) }, r)).toEqual({ covers: [covered], partialYears: [] });
+    }
+  });
+
+  it("a rejection whose year is unknown (or no attribution at all) makes every year of the document partial", () => {
+    const recs = parseSciHolidayJson(read("sci-calendar-ajax.json")).records;
+    expect(truthfulCoverage(recs, { year: 2026, format: "json" }, { unparsed: 1, rejectedYears: [], rejectedUndated: 1 }).covers).toEqual([]);
+    expect(truthfulCoverage(recs, { year: 2026, format: "json" }, { unparsed: 1 }).covers).toEqual([]);
+  });
+
+  it("an unvalidated calendar footnote (closures missing) makes the table's year partial", () => {
+    const table = rows.split("\n").filter((l) => !/Christmas|Guru/.test(l)).join("\n");
+    const note = "The High Court will remain closed for Summer Vacation from Monday, 1st June to Monday, 30th June (both days inclusive).";
+    const r = calendarParse(doc(`${table}\n\n${note}`, { forum: "hc-delhi", format: "pdf", year: 2026 }), { forum: "hc-delhi", format: "pdf" });
+    expect(r.notes.join(" ")).toMatch(/vacation note could not be validated/);
+    expect(truthfulCoverage(r.records, { year: 2026, format: "pdf" }, r)).toEqual({ covers: [], partialYears: [2026] });
   });
 });
 

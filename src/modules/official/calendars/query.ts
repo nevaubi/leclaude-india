@@ -9,6 +9,10 @@ import { addDaysIso } from "../causelist/text";
  *
  * - Only years that a loaded official calendar covers completely (official_documents.meta.coversYears) are answered;
  *   other years stay outside `years`, so isCourtOpen() reports "unknown" for them. No holidays loaded → null.
+ * - A year in which rows of a calendar were read but rejected (OCR / weekday mismatch, unknown entry type, a footnote
+ *   that could not be validated) is partial (meta.partialYears): never covered by that document, and `notes` says so.
+ *   Documents stored before partial years were recorded (no meta.partialYears) cover nothing when their last parse
+ *   rejected rows (parse_result.unparsed > 0), until they are parsed again.
  * - Closures: holidays (single days, expanded) and vacations (ranges). Partial court working days and notified working
  *   days are NOT closures: they are listed in `source` so the reader sees them.
  * - weeklyOff comes from the court's own data where it is printed; otherwise Sunday only, with a note. Treating an
@@ -107,6 +111,8 @@ interface HolidayRow {
   note: string | null;
   fetchedAt: string | null;
   covers: number[];
+  /** Years the source document speaks for only partially (rows rejected). */
+  partial: number[];
   docUrl: string | null;
   extraction: string | null;
   ocr: boolean;
@@ -120,6 +126,15 @@ export function ocrOf(extraction: string | null, ocrPages: number, rowNote: stri
   return { ocr: false, note: null };
 }
 
+/**
+ * Years a source document covers, as stored. A document parsed before partial years were recorded (no
+ * meta.partialYears) whose last parse rejected rows covers nothing: its coverage may hide a missing closure.
+ */
+export function trustedCovers(covers: number[], partialRecorded: boolean, lastUnparsed: number | null): number[] {
+  if (!partialRecorded && lastUnparsed != null && lastUnparsed > 0) return [];
+  return covers;
+}
+
 export async function courtCalendarWithSources(forum: string, years: number[], storeArg?: RemoteStore | null): Promise<CourtCalendarResult> {
   if (!isForumKey(String(forum ?? "").toLowerCase())) throw new CalendarQueryError("unknown forum");
   const ys = validYears(years);
@@ -129,15 +144,18 @@ export async function courtCalendarWithSources(forum: string, years: number[], s
   const rows = await bounded(
     store,
     `SELECT h.forum, h.date_from::text AS date_from, h.date_to::text AS date_to, h.name, h.kind, h.registry_open, h.document_id, h.source_url, h.year, h.note,
-       ${isoTs("h.fetched_at")} AS fetched_at, (d.meta->'coversYears')::text AS covers, d.url AS doc_url,
+       ${isoTs("h.fetched_at")} AS fetched_at, (d.meta->'coversYears')::text AS covers, (d.meta->'partialYears')::text AS partial,
+       d.parse_result->>'unparsed' AS doc_unparsed, d.url AS doc_url,
        d.extraction AS doc_extraction, coalesce(cardinality(d.ocr_pages), 0) AS doc_ocr_pages
      FROM court_holidays h LEFT JOIN official_documents d ON d.id = h.document_id
      WHERE h.forum = ANY($1::text[]) AND h.date_from <= $3::date AND h.date_to >= $2::date
      ORDER BY h.date_from ASC, h.id ASC LIMIT 5000`,
     [pgTextArray(forums), `${ys[0] - 1}-12-01`, `${ys[ys.length - 1]}-12-31`],
   );
+  const years_ = (v: string | null | undefined) => parseJson<unknown[]>(v, []).map(Number).filter((y) => Number.isInteger(y));
   const list: HolidayRow[] = rows.map((r) => {
     const o = ocrOf(r.doc_extraction ?? null, int(r.doc_ocr_pages) ?? 0, r.note ?? null);
+    const partialRecorded = r.partial != null && r.partial !== "";
     return {
       forum: String(r.forum),
       dateFrom: String(r.date_from),
@@ -150,7 +168,8 @@ export async function courtCalendarWithSources(forum: string, years: number[], s
       year: int(r.year),
       note: r.note ?? null,
       fetchedAt: r.fetched_at ?? null,
-      covers: parseJson<unknown[]>(r.covers, []).map(Number).filter((y) => Number.isInteger(y)),
+      covers: trustedCovers(years_(r.covers), partialRecorded, int(r.doc_unparsed)),
+      partial: partialRecorded ? years_(r.partial) : int(r.doc_unparsed) ? years_(r.covers) : [],
       docUrl: r.doc_url ?? null,
       extraction: r.doc_extraction ?? null,
       ocr: o.ocr,
@@ -158,13 +177,28 @@ export async function courtCalendarWithSources(forum: string, years: number[], s
     };
   });
 
+  // Requested years for which a calendar was loaded but rows were rejected, and no other document covers them.
+  const partialNotes = (f: string | null, covered: number[]): string[] => {
+    const out: string[] = [];
+    for (const y of ys) {
+      if (covered.includes(y)) continue;
+      const docs = [...new Set(list.filter((r) => (f == null || r.forum === f) && r.partial.includes(y)).map((r) => r.docUrl ?? r.sourceUrl))];
+      if (docs.length) {
+        out.push(`partial: the official calendar for ${y} (${docs.join("; ")}) was loaded but some of its rows could not be read (weekday mismatch / OCR error, unknown entry type or an unvalidated note); ${y} is not answered — a notified closure may be missing`);
+      }
+    }
+    return out;
+  };
+
   for (const f of forums) {
     const mine = list.filter((r) => r.forum === f);
     const covered = ys.filter((y) => mine.some((r) => r.covers.includes(y)));
     if (!covered.length) continue;
-    return { ...buildCalendar(f, covered, mine), forum: f };
+    const built = buildCalendar(f, covered, mine);
+    return { ...built, notes: [...built.notes, ...partialNotes(f, covered)], forum: f };
   }
-  return { calendar: null, sources: [], forum: null, notes: [`no official calendar loaded for ${forum} ${ys.join(", ")}`] };
+  const partial = partialNotes(null, []);
+  return { calendar: null, sources: [], forum: null, notes: [`no ${partial.length ? "complete " : ""}official calendar loaded for ${forum} ${ys.join(", ")}`, ...partial] };
 }
 
 export async function courtCalendar(forum: string, years: number[], store?: RemoteStore | null): Promise<CourtCalendar | null> {

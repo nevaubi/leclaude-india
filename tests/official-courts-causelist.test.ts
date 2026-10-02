@@ -3,7 +3,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseCauseList, causeListEntryId, type CauseListDoc } from "@/modules/official/causelist/parse";
 import { classifyHeader, groupLines, type TextItem } from "@/modules/official/causelist/table";
-import { hasContact, scAdvocates, scParties, scrubContact, tribunalAdvocates, normalizeParties, printedDate } from "@/modules/official/causelist/text";
+import { commaAdvocates, hasContact, scAdvocates, scParties, scrubContact, tribunalAdvocates, normalizeParties, printedDate } from "@/modules/official/causelist/text";
+import { scrubPersonalData } from "@/modules/official/chunk";
 
 /**
  * Fixtures in tests/fixtures/official/courts are verbatim captures (Firecrawl, 2026-10-02) of published lists, except that
@@ -125,6 +126,15 @@ describe("NCLT list (markdown, Indore bench)", () => {
     expect(itemless.map((e) => e.caseNumbers[0].printed)).toEqual(["CP/9(MP)2021", "CP/11(MP)2025"]);
     const e3 = r.records.find((e) => e.itemNo === "3")!;
     expect(e3.caseNumbers.map((c) => c.printed)).toEqual(["Co. Appeal/11(MP)2026"]);
+  });
+
+  it("rows without a serial number are reference rows, never listings: parsed false, as from positional text", () => {
+    // "CP/11(MP)2025 | Main Matter | Main Matter Listed on 26-11-2026": not a hearing on 2026-10-05.
+    const itemless = r.records.filter((e) => e.itemNo == null);
+    expect(itemless.map((e) => [e.caseNumbers[0].printed, e.parsed])).toEqual([["CP/9(MP)2021", false], ["CP/11(MP)2025", false]]);
+    expect(itemless.find((e) => e.caseNumbers[0].printed === "CP/11(MP)2025")!.raw).toContain("Main Matter Listed on 26-11-2026");
+    // Numbered items are unaffected.
+    expect(r.records.filter((e) => e.itemNo != null).every((e) => e.parsed)).toBe(true);
   });
 
   it("reports the publisher's entry count against parsed items", () => {
@@ -362,6 +372,21 @@ describe("binding never crosses a court header", () => {
     expect(r.unparsed).toBe(1);
   });
 
+  it("markdown: a note line ends the open record without binding anything after it", () => {
+    const md = [
+      "| SNo. | Case No. | Petitioner / Respondent | Petitioner/Respondent Advocate |",
+      "| --- | --- | --- | --- |",
+      "| 1 | SLP(C) No. 1/2026 | A Versus B | X- 1 |",
+      "**NOTE: Item 1 will be taken up after lunch.**",
+      "|  |  | {Mention Memo} IA No. 5/2026 | |",
+      "| 2 | SLP(C) No. 2/2026 | C Versus D | Y- 2 |",
+    ].join("\n");
+    const r = parseCauseList({ id: "x", markdown: md, pages: [{ page: 1, text: md }], fetchedAt: "2026-10-02T10:00:00Z" }, { layout: "sci-table", forum: "sci", listType: "advance", listDate: "2026-10-07" });
+    expect(r.records.map((e) => [e.itemNo, e.parsed])).toEqual([["1", true], ["2", true]]);
+    expect(r.records[0].raw).not.toContain("IA No. 5/2026");
+    expect(r.unparsed).toBe(1);
+  });
+
   it("positional: record-like lines after a mid-page court header mark the record before it unparsed", () => {
     const items = page(1, [
       SC_HEADER,
@@ -373,5 +398,188 @@ describe("binding never crosses a court header", () => {
     ]);
     const r = parseCauseList(scDoc(items), SC_OPTS);
     expect(r.records.map((e) => [e.itemNo, e.parsed, e.courtNo])).toEqual([["10", false, null], ["11", true, "6"]]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Page boundaries (markdown): records never continue across a page break
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe("markdown page boundaries", () => {
+  const DHC_HEAD = "| ITEM NUMBER | CASE NUMBER | PARTY NAME | ADVOCATE NAME |\n| --- | --- | --- | --- |";
+  const dhc = (pages: string[]) =>
+    parseCauseList({ id: "pb", markdown: "", pages: pages.map((text, i) => ({ page: i + 1, text })), fetchedAt: "2026-10-02T10:00:00Z" }, { layout: "dhc", forum: "hc-delhi", listType: "main", listDate: "2026-10-05" });
+
+  it("a continuation row at the top of the next page is never bound to the previous page's item, which becomes unparsed", () => {
+    const r = dhc([
+      `${DHC_HEAD}\n| 1 | W.P.(C) 123/2026 | A V/s B | X Y |`,
+      "| | CM APPL. 999/2026 | C V/s D | Z Q |\n| 2 | W.P.(C) 5/2026 | E V/s F | G |",
+    ]);
+    expect(r.records.map((e) => [e.itemNo, e.page, e.parsed, e.caseNumbers.map((c) => c.printed), e.parties])).toEqual([
+      ["1", 1, false, ["W.P.(C) 123/2026"], "A V/s B"],
+      ["2", 2, true, ["W.P.(C) 5/2026"], "E V/s F"],
+    ]);
+    expect(JSON.stringify(r.records)).not.toContain("CM APPL. 999/2026");
+    expect(r.unparsed).toBe(2); // the orphan row + item 1 (unparsed)
+  });
+
+  it("a page that starts with a numbered item leaves the previous page's record intact; the URL-paged form reads the same", () => {
+    const pages = [`${DHC_HEAD}\n| 1 | W.P.(C) 123/2026 | A V/s B | X Y |\n| | | AND ORS | |`, "| 2 | W.P.(C) 5/2026 | E V/s F | G |"];
+    const r = dhc(pages);
+    expect(r.records.map((e) => [e.itemNo, e.page, e.parsed, e.parties])).toEqual([["1", 1, true, "A V/s B AND ORS"], ["2", 2, true, "E V/s F"]]);
+    // Page-marked markdown without per-page text splits the same way.
+    const md = pages.map((p, i) => `<!-- page ${i + 1} -->\n\n${p}`).join("\n\n");
+    const m = parseCauseList({ id: "pb", markdown: md, pages: [], fetchedAt: "2026-10-02T10:00:00Z" }, { layout: "dhc", forum: "hc-delhi", listType: "main", listDate: "2026-10-05" });
+    expect(m.records.map((e) => [e.itemNo, e.page, e.parsed])).toEqual([["1", 1, true], ["2", 2, true]]);
+  });
+
+  it("stray text inside an open record (a cell spilled out of the table) makes that record unparsed", () => {
+    const r = dhc([`${DHC_HEAD}\n| 1 | W.P.(C) 123/2026 | A V/s B | X Y |\nShubham Mittal, Adv\n| 2 | W.P.(C) 5/2026 | E V/s F | G |`]);
+    expect(r.records.map((e) => [e.itemNo, e.parsed])).toEqual([["1", false], ["2", true]]);
+    expect(r.records[0].raw).not.toContain("Shubham");
+    // Page furniture is not record text: a page number or a line left with only a removal marker changes nothing.
+    const f = dhc([`${DHC_HEAD}\n| 1 | W.P.(C) 123/2026 | A V/s B | X Y |\nPage 3 of 40\n**<[link removed]>**`, "| 2 | W.P.(C) 5/2026 | E V/s F | G |"]);
+    expect(f.records.map((e) => [e.itemNo, e.parsed])).toEqual([["1", true], ["2", true]]);
+  });
+
+  it("Supreme Court tables: a row repeating the previous page's SNo and Case No continues that record, as printed", () => {
+    const head = "| SNo. | Case No. | Petitioner / Respondent | Petitioner/Respondent Advocate |\n| --- | --- | --- | --- |";
+    const r = parseCauseList(
+      {
+        id: "adv",
+        markdown: "",
+        pages: [
+          { page: 1, text: `${head}\n| 1 | SLP(C) No. 1/2026 | A Versus | X- 1 |` },
+          { page: 2, text: `${head}\n| 1 | SLP(C) No. 1/2026 | B | |\n| 2 | SLP(C) No. 2/2026 | C Versus D | Y- 2 |` },
+        ],
+        fetchedAt: "2026-10-02T10:00:00Z",
+      },
+      { layout: "sci-table", forum: "sci", listType: "advance", listDate: "2026-10-07" },
+    );
+    expect(r.records.map((e) => [e.itemNo, e.page, e.parsed, e.parties])).toEqual([["1", 1, true, "A Versus B"], ["2", 2, true, "C Versus D"]]);
+    // A different case number under the same SNo is not the same record: a new one.
+    const other = parseCauseList(
+      { id: "adv2", markdown: "", pages: [{ page: 1, text: `${head}\n| 1 | SLP(C) No. 1/2026 | A Versus B | X- 1 |` }, { page: 2, text: `${head}\n| 1 | SLP(C) No. 9/2026 | E Versus F | |` }], fetchedAt: "2026-10-02T10:00:00Z" },
+      { layout: "sci-table", forum: "sci", listType: "advance", listDate: "2026-10-07" },
+    );
+    expect(other.records.map((e) => [e.itemNo, e.page, e.caseNumbers.map((c) => c.printed)])).toEqual([["1", 1, ["SLP(C) No. 1/2026"]], ["1", 2, ["SLP(C) No. 9/2026"]]]);
+  });
+
+  it("NCLT: an itemless row at the top of a page is its own unparsed record and the previous page's record becomes unparsed", () => {
+    const head = "| Sr. | CP. No. | CA/IA No. | Purpose | Name of the Parties | Name of Counsel for Petitioner/ Applicant |\n| --- | --- | --- | --- | --- | --- |";
+    const r = parseCauseList(
+      {
+        id: "nc",
+        markdown: "",
+        pages: [
+          { page: 1, text: `${head}\n| 7 | CP(IB)/40(MP)2026 | Main Matter | Admission | P V/s Q | A, Adv |` },
+          { page: 2, text: `| | IA/12(MP)2026 | | | R V/s S | |\n| 8 | CP(IB)/41(MP)2026 | Main Matter | Admission | T V/s U | B, Adv |` },
+        ],
+        fetchedAt: "2026-10-02T10:00:00Z",
+      },
+      { layout: "tribunal", forum: "nclt-indore", listType: "daily", listDate: "2026-10-05" },
+    );
+    expect(r.records.map((e) => [e.itemNo, e.page, e.parsed])).toEqual([["7", 1, false], [null, 2, false], ["8", 2, true]]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Contact data: Indian phone formats, positional items, the pipeline's page scrub
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe("contact data is never stored", () => {
+  const PHONES = [
+    "9810012345",
+    "+91-98100-12345",
+    "+91 98100 12345",
+    "+919810012345",
+    "098100-12345",
+    "98100 12345",
+    "98100-12345",
+    "98100.12345",
+    "987-654-3210",
+    "011-23456789",
+    "(011) 2345 6789",
+    "0731-2345678",
+    "0731 2345678",
+    "0731.2345678",
+    "+91-731-2345678",
+    "9810012345/9810054321",
+    "9810012345 / 0731-2345678",
+  ];
+
+  it("scrubs common Indian phone formats (including slash-joined lists) and detects them", () => {
+    for (const p of PHONES) {
+      const s = `RAHUL SHARMA (${p}) (PETITIONER)`;
+      expect(hasContact(s), p).toBe(true);
+      const c = scrubContact(s);
+      expect(c, p).toBe("RAHUL SHARMA ([phone removed]) (PETITIONER)");
+      expect(hasContact(c), p).toBe(false);
+      expect(scrubContact(c), p).toBe(c); // idempotent
+    }
+    expect(scrubContact("Mob: 98100 12345, Ph. No. 2338 8922, e-mail adv[at]nic[dot]in")).toBe("Mob: [phone removed], Ph. No. [phone removed], e-mail [e-mail removed]");
+    expect(scrubContact("Tel 0731 2345678 adv.x@gmail.com https://zoom.us/j/1")).toBe("Tel [phone removed] [e-mail removed] [link removed]");
+  });
+
+  it("leaves case numbers, diary numbers, ranges, dates, citations and amounts alone", () => {
+    const keep = [
+      "IA No. 209282/2026 Diary No. 54583-2026 W.P.(C)-10678/2022",
+      "W.P.(C) Nos. 61234-61235/2026",
+      "C.A. No. 3309-3310/1997",
+      "CP(IB)/29(MP)2022 IA/259(MP)2026 in C.P.(IB)/18(MP)2021",
+      "Comp. App. (AT) (Ins) No. 2133 of 2024",
+      "Listed on 26-11-2026 DATE : 05.10.2026 at 10:30 AM",
+      "Section 230-232, 241-242 r.w. Rule 11",
+      "Rs. 1500000000 INR 25000000000",
+      "CNR DLHC010012342026 (2026) 5 SCC 123 2026:DHC:1234",
+      "Meeting No. 1669 92 0249",
+    ];
+    for (const k of keep) {
+      expect(scrubContact(k), k).toBe(k);
+      expect(hasContact(k), k).toBe(false);
+    }
+  });
+
+  it("removes at least everything the pipeline's page scrub removes (chunk.ts scrubPersonalData)", () => {
+    const corpus = [
+      ...PHONES.map((p) => `A. SHARMA ${p} (R-1)`),
+      "A. SHARMA (Mob. 98100 12345, adv@x.in) https://dhcvirtualcourt.webex.com/meet/x Ph: 011-23388922",
+      "Contact 98765 43210 / 98765 43211; WhatsApp: 9876543210",
+      "registrar[at]nclt[dot]gov[dot]in, x (at) y (dot) in",
+      "Cisco Webex Video Conference ID : 25174224672",
+    ];
+    for (const s of corpus) {
+      const after = scrubPersonalData(scrubContact(s), { allLinks: true });
+      expect(after.counts, s).toEqual({ phones: 0, emails: 0, links: 0 });
+    }
+  });
+
+  it("advocate names never hold a phone number, a removal marker or a bare contact label", () => {
+    expect(tribunalAdvocates("Rahul Sharma, Adv Mob: 98100 12345")).toEqual(["Rahul Sharma"]);
+    expect(tribunalAdvocates("Rahul Sharma, Adv 9810012345, 9810054321")).toEqual(["Rahul Sharma"]);
+    expect(tribunalAdvocates("Rahul Sharma, Adv (9810012345/9810054321) Priya Rao, Adv Ph. 0731-2345678")).toEqual(["Rahul Sharma", "Priya Rao"]);
+    expect(commaAdvocates("RAHUL SHARMA, 9810012345, PRIYA RAO (adv@x.in), [phone removed]")).toEqual(["RAHUL SHARMA", "PRIYA RAO"]);
+    expect(scAdvocates("AJAY MARWAH- 2312 Mob. 98100 12345 [R-1], BIMLESH KUMAR SINGH, [e-mail removed]")).toEqual(["AJAY MARWAH (AOR 2312)", "BIMLESH KUMAR SINGH"]);
+  });
+
+  it("entries read from positional PDF items (not scrubbed upstream) store no phone number or e-mail in raw, parties, advocates or bench", () => {
+    const items = page(1, [
+      [800, [[40, "NATIONAL COMPANY LAW TRIBUNAL INDORE BENCH COURT ROOM NO. 1"]]],
+      [780, [[40, "CORAM: HON'BLE Shri. X Y, MEMBER JUDICIAL (Ph. 0731-2345678)"]]],
+      [760, [[20, "Sr."], [70, "CP. No."], [190, "CA/IA No."], [340, "Purpose"], [470, "Name of the Parties"], [690, "Name of Counsel for Petitioner/"], [910, "Name of Counsel for Respondent"]]],
+      [740, [[20, "5"], [50, "CP(IB)/40(MP)2026"], [160, "Main Matter"], [330, "Admission"], [440, "P Ltd (98100 12345) V/s Q Ltd"], [680, "Rahul Sharma, Adv"], [900, "Priya Rao, Adv"]]],
+      [728, [[680, "Mob: +91-98100-12345"], [900, "priya.rao@example.com"]]],
+      [716, [[680, "9810012345/9810054321"], [900, "Ph. 011-23456789"]]],
+    ]);
+    const r = parseCauseList({ id: "pos_contact", markdown: "", pages: [], items, fetchedAt: "2026-10-02T10:00:00Z" }, { layout: "tribunal", forum: "nclt-indore", listType: "daily", listDate: "2026-10-05" });
+    expect(r.records).toHaveLength(1);
+    const e = r.records[0];
+    expect(e).toMatchObject({ itemNo: "5", parsed: true, advocates: ["Rahul Sharma", "Priya Rao"] });
+    expect(e.caseNumbers.map((c) => c.printed)).toEqual(["CP(IB)/40(MP)2026"]);
+    const stored = JSON.stringify({ raw: e.raw, parties: e.parties, advocates: e.advocates, bench: e.bench });
+    expect(stored).not.toMatch(/@|98100|12345|9810054321|2345678|23456789/);
+    expect(e.raw).toContain("[phone removed]");
+    expect(e.bench).toContain("[phone removed]");
+    for (const v of [e.raw, e.parties ?? "", e.bench ?? "", ...e.advocates]) expect(hasContact(v)).toBe(false);
   });
 });

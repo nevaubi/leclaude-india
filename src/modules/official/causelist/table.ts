@@ -248,7 +248,14 @@ function pipeCells(line: string): string[] | null {
 
 const SEPARATOR_RE = /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 
-/** Walk markdown pipe tables of a cause list into records. */
+/**
+ * Walk markdown pipe tables of a cause list into records.
+ *
+ * Records never continue across a page break (as in `walkPositional`): every page starts with no open record, rows
+ * above the first numbered item of a page are counted as unparsed and make the previous page's last record ambiguous
+ * (they may continue it; that cannot be known). The one exception is printed, not inferred: a Supreme Court advance /
+ * weekly row that repeats the previous page's last SNo and Case No continues that record.
+ */
 export function walkMarkdown(pages: PageText[], profile: TableProfile): WalkResult {
   const ctx = new CauseContext();
   const records: RawRecord[] = [];
@@ -264,6 +271,17 @@ export function walkMarkdown(pages: PageText[], profile: TableProfile): WalkResu
   };
 
   for (const { page, text } of pages) {
+    close();
+    /** The previous page's last record (closed above). */
+    const carry: RawRecord | null = records.length ? records[records.length - 1] : null;
+    let seenRecordOnPage = false;
+    /** A row that cannot be bound while no record is open: before the first record of a page it may continue the
+     *  previous page's last record, after a heading a multi-cell row may continue the record before it. */
+    const orphanRow = (cellCount: number) => {
+      unparsed++;
+      const last = records[records.length - 1];
+      if (last && !last.dropped && (last.page < page ? !seenRecordOnPage : cellCount > 1)) last.ambiguous = true;
+    };
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
       if (SEPARATOR_RE.test(line.trim())) continue;
@@ -271,7 +289,14 @@ export function walkMarkdown(pages: PageText[], profile: TableProfile): WalkResu
       if (!cells) {
         // A court / bench / section header ends the open record: rows after it never continue the previous court's items.
         if (ctx.consume(line)) close();
-        else if (current && /[A-Za-z]{2}/.test(line)) unparsed++; // stray text between rows (page-break debris) is counted, never bound
+        // A printed note is not record text: it ends the record above it.
+        else if (/^NOTE\b/i.test(squash(plain(line)))) close();
+        else if (current && !isPageFurniture(line) && /[A-Za-z]{2}/.test(line)) {
+          // Stray text while a record is open (a wrapped cell spilled out of the table, page-break debris): it may belong
+          // to the open record, so that record can no longer be read unambiguously. Counted, never bound.
+          (current as RawRecord).ambiguous = true;
+          unparsed++;
+        }
         continue;
       }
       const keys = cells.map(classifyHeader);
@@ -315,6 +340,7 @@ export function walkMarkdown(pages: PageText[], profile: TableProfile): WalkResu
         close();
         current = newRecord(page, itemNo, ctx);
         current.dropped = true;
+        seenRecordOnPage = true;
         continue;
       }
       if (itemNo) {
@@ -322,8 +348,21 @@ export function walkMarkdown(pages: PageText[], profile: TableProfile): WalkResu
           appendRow(current, row, rawLine);
           continue;
         }
+        if (
+          profile.scGrouping && !current && !seenRecordOnPage && carry && !carry.dropped && carry.item === itemNo && row.case &&
+          sameCase(carry, row.case) && records[records.length - 1] === carry
+        ) {
+          // The row prints the previous page's last SNo and Case No again: the same record, as printed.
+          records.pop();
+          current = carry;
+          seenRecordOnPage = true;
+          if (mismatch) current.ambiguous = true;
+          appendRow(current, row, rawLine);
+          continue;
+        }
         close();
         current = newRecord(page, itemNo, ctx);
+        seenRecordOnPage = true;
         if (mismatch) current.ambiguous = true;
         appendRow(current, row, rawLine);
         continue;
@@ -340,14 +379,21 @@ export function walkMarkdown(pages: PageText[], profile: TableProfile): WalkResu
         current.connected = true;
         current.itemless = false;
         if (!parent) current.ambiguous = true;
+        seenRecordOnPage = true;
         appendRow(current, { ...row, case: row.case.replace(/^connected\s*/i, "") }, rawLine);
         continue;
       }
       if (profile.itemless === "entry" && (row.case || row.caseAlt) && /\d/.test(`${row.case ?? ""} ${row.caseAlt ?? ""}`)) {
+        // A printed row without a serial number (NCLT "main matter" rows: a disposed main matter, or one listed on another
+        // day): it cannot be told apart from a wrapped cell or a reference row with certainty, so it becomes its own
+        // unparsed record (shown as published, never matched), exactly as in walkPositional. Before the first record
+        // of a page it may also continue the previous page's last record.
+        if (!current && !seenRecordOnPage && carry && !carry.dropped && carry.page < page) carry.ambiguous = true;
         close();
         current = newRecord(page, null, ctx);
         current.itemless = true;
-        if (mismatch) current.ambiguous = true;
+        current.ambiguous = true;
+        seenRecordOnPage = true;
         appendRow(current, row, rawLine);
         continue;
       }
@@ -359,12 +405,18 @@ export function walkMarkdown(pages: PageText[], profile: TableProfile): WalkResu
         }
         continue;
       }
-      unparsed++;
+      orphanRow(nonEmpty.length);
     }
   }
   close();
   if (!headerFound) notes.push("no table header recognised");
   return { records, unparsed, headerFound, notes };
+}
+
+/** Page numbers ("Page 3 of 40", "- 3 -") and lines left with nothing but contact-removal markers: never record text. */
+function isPageFurniture(line: string): boolean {
+  const t = squash(plain(line).replace(/\[(?:e-?mail|phone|link) removed\]/gi, " ").replace(/[<>()[\]*_:|-]/g, " "));
+  return !/[A-Za-z]{2}/.test(t) || /^page\s*(?:no\.?\s*)?\d+(?:\s*(?:of|\/)\s*\d+)?$/i.test(t);
 }
 
 function sameCase(rec: RawRecord, caseCell: string | undefined): boolean {

@@ -27,18 +27,80 @@ export function squash(s: string): string {
   return s.replace(/[ \s]+/g, " ").trim();
 }
 
+/*
+ * Contact-data patterns. They cover at least everything the pipeline's page scrub (../chunk.ts scrubPersonalData, run
+ * on page text before parsing) removes, with the same markers, because positional PDF items reach the parsers raw and
+ * every stored field (raw, parties, advocates, bench) is scrubbed here. Kept dependency-free (this module is pure);
+ * tests/official-courts-causelist.test.ts checks that nothing the page scrub removes survives here.
+ *
+ * Case numbers are never touched: their numbers have at most 7 digits ("N/YYYY", "N of YYYY", "N-YYYY" diary numbers,
+ * "N-M/YYYY" ranges), a phone number has 10 digits after its prefix. Amounts after "Rs." / "INR" / "₹" are left alone.
+ */
+export const PHONE_REMOVED = "[phone removed]";
+export const EMAIL_REMOVED = "[e-mail removed]";
+export const LINK_REMOVED = "[link removed]";
+const MARKER_RE = /\[(?:e-?mail|phone|link) removed\]/gi;
+
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\.?/g;
-const URL = /\b(?:https?:\/\/|www\.)[^\s|)>\]]+/gi;
-// Indian mobile / landline numbers printed as contact data: 10–12 digits, optionally +91 / 0 prefixed, not part of a
-// longer number and not followed by "/" (case numbers are "N/YYYY") or preceded by "No." patterns.
-const PHONE = /(?<![\d/])(?:\+?91[\s-]?)?\d{10,12}(?![\d/])/g;
+// "registrar[at]nic[dot]in", "x (at) y (dot) gov (dot) in".
+const EMAIL_OBF = /[A-Za-z0-9._%+-]+\s*[[({]\s*at\s*[\])}]\s*[A-Za-z0-9-]+(?:\s*(?:[[({]\s*dot\s*[\])}]|\.)\s*[A-Za-z0-9-]+)+/gi;
+const URL = /\b(?:https?:\/\/|www\.)[^\s|)>\]"']+/gi;
+
+// A phone number never touches a letter, digit, "@" or "_", is never the continuation of a decimal / digit range and
+// never follows "Rs." / "INR" / "₹" (amounts).
+const BEFORE = String.raw`(?<![\p{L}\p{N}@_])(?<!\d[.,-])(?<!(?:Rs|RS|rs|INR|₹|Rupees|rupees)\.?\s{0,2})`;
+const AFTER = String.raw`(?![\p{L}\p{N}@_]|[.,-]\d)`;
+// Grouped forms are additionally never next to "/" ("61234-61235/2026" is a case-number range).
+const NO_SLASH_BEFORE = String.raw`(?<!\/\s*)`;
+const NO_SLASH_AFTER = String.raw`(?!\s*\/)`;
+// 10–12 unbroken digits, optionally +91 / 91 prefixed: no case number has that many digits, so "/" may touch it
+// ("9810012345/9810054321", "Adv/9810012345").
+const PLAIN = String.raw`(?:\+91[\s.-]?|91[\s-])?\d{10,12}`;
+// Grouped mobiles: "98100 12345", "+91-98100-12345", "098100-12345", "987-654-3210", "98100.12345".
+const GROUPED_MOBILE = String.raw`(?:\+91[\s.-]?|91[\s-]|0)?[6-9](?:\d{4}[\s.-]\d{5}|\d{2}[\s.-]\d{3}[\s.-]\d{4})`;
+// Landlines with a trunk 0 or +91 and an STD code: "011-23388922", "(0731) 234 5678", "+91-11-23388922",
+// "0731.2345678" (exactly 10 digits after the prefix; checked in code).
+// A bracket is part of the number only around the STD code: "(011)", "+91 (11)"; "(011-23456789)" keeps its brackets.
+const LANDLINE = String.raw`(?:(?:\+91[\s.-]?)?\(0?\d{2,4}\)|\+91[\s.-]?\d{2,4}|0\d{2,4})[\s.-]?\d{3,4}[\s.-]?\d{3,4}`;
+const ANY_PHONE = `(?:${GROUPED_MOBILE}|${LANDLINE}|${PLAIN})`;
+// Two or more numbers joined by "/" ("9810012345/9810054321", "0731-2345678 / 98100 12345").
+const PHONE_LIST_RE = new RegExp(`${BEFORE}${ANY_PHONE}(?:\\s*\\/\\s*${ANY_PHONE})+${AFTER}`, "gu");
+const PLAIN_RE = new RegExp(`${BEFORE}${PLAIN}${AFTER}`, "gu");
+const GROUPED_MOBILE_RE = new RegExp(`${BEFORE}${NO_SLASH_BEFORE}${GROUPED_MOBILE}${NO_SLASH_AFTER}${AFTER}`, "gu");
+const LANDLINE_RE = new RegExp(`${BEFORE}${NO_SLASH_BEFORE}${LANDLINE}${NO_SLASH_AFTER}${AFTER}`, "gu");
+// A number introduced as one: "Ph: 23388922", "Mob. No. 98100 12345, 98765 43210", "Tel 0731.2345678".
+const LABELLED_PHONE_RE = /\b(ph|phone|phones|mob|mobile|tel|telephone|cell|contact|whatsapp|fax)\b\.?\s*(?:no|nos|number|numbers)?\.?\s*[:\-–]?\s*(\+?\d[\d \t.-]{5,16}\d(?:\s*[,/]\s*\+?\d[\d \t.-]{5,16}\d)*)/giu;
+
+/** Digits of a phone-shaped match after its +91 / 91 / trunk-0 prefix. */
+function subscriberDigits(m: string): number {
+  const t = m.trim();
+  let d = t.replace(/\D/g, "");
+  if (/^\+91/.test(t) || (/^91[\s-]/.test(t) && d.length > 10)) d = d.slice(2);
+  else if (/^\(?0/.test(t)) d = d.slice(1);
+  return d.length;
+}
+
+/** One phone-shaped piece is a phone number: 10 subscriber digits (12 at most for unbroken runs). */
+function isPhone(piece: string): boolean {
+  const unbroken = /^\s*(?:\+91[\s.-]?|91[\s-])?\d{10,12}\s*$/.test(piece);
+  return unbroken || subscriberDigits(piece) === 10;
+}
+
+/** Contact data replaced by markers; nothing else changes (no whitespace clean-up). Idempotent. */
+function scrubCore(s: string): string {
+  if (!s) return s;
+  let t = s.replace(EMAIL, EMAIL_REMOVED).replace(EMAIL_OBF, EMAIL_REMOVED).replace(URL, LINK_REMOVED);
+  t = t.replace(LABELLED_PHONE_RE, (m: string, _label: string, num: string) => (num.replace(/\D/g, "").length < 6 ? m : m.slice(0, m.length - num.length) + PHONE_REMOVED));
+  t = t.replace(PHONE_LIST_RE, (m: string) => (m.split("/").every(isPhone) ? PHONE_REMOVED : m));
+  t = t.replace(GROUPED_MOBILE_RE, PHONE_REMOVED);
+  t = t.replace(LANDLINE_RE, (m: string) => (subscriberDigits(m) === 10 ? PHONE_REMOVED : m));
+  t = t.replace(PLAIN_RE, PHONE_REMOVED);
+  return t;
+}
 
 /** Remove e-mail addresses, URLs and phone numbers (contact data never stored, logged or indexed). */
 export function scrubContact(s: string): string {
-  return s
-    .replace(EMAIL, "[email removed]")
-    .replace(URL, "[link removed]")
-    .replace(PHONE, "[phone removed]")
+  return scrubCore(s)
     .replace(/\(\s*\)/g, "")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
@@ -46,12 +108,27 @@ export function scrubContact(s: string): string {
 
 /** True when the text still holds contact data (used by tests and as a persist guard). */
 export function hasContact(s: string): boolean {
-  EMAIL.lastIndex = 0;
-  PHONE.lastIndex = 0;
-  const r = EMAIL.test(s) || new RegExp(PHONE.source).test(s);
-  EMAIL.lastIndex = 0;
-  PHONE.lastIndex = 0;
-  return r;
+  return !!s && scrubCore(s) !== s;
+}
+
+const CONTACT_LABEL = String.raw`\b(?:ph|phone|phones|mob|mobile|tel|telephone|cell|contact|whatsapp|fax|e-?mail(?:\s*id)?|vc\s*link|link)\b\.?\s*(?:no|nos|number|numbers|id)?\.?\s*[:\-–]?\s*`;
+const LABELLED_MARKER_RE = new RegExp(`(?:${CONTACT_LABEL})?\\[(?:e-?mail|phone|link) removed\\]`, "gi");
+
+/**
+ * Text for name fields (advocates): contact data removed together with its label ("Mob: [phone removed]"), so neither
+ * a removal marker nor a bare label is ever stored as a name. Line breaks (name separators) are kept.
+ */
+export function contactFree(s: string): string {
+  return scrubContact(s)
+    .replace(LABELLED_MARKER_RE, " ")
+    .replace(/\(\s*[,;/&-]?\s*\)/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+/** True when a name part is only contact residue (markers, labels, punctuation): never a name. */
+function contactResidue(s: string): boolean {
+  return !/[A-Za-z]{2}/.test(s.replace(MARKER_RE, " ").replace(new RegExp(CONTACT_LABEL, "gi"), " "));
 }
 
 /** Parties "A V/s B", "A Versus B", "A Vs. B" with glued separators repaired ("BHARANAV/s IDBI" → "BHARANA V/s IDBI"). */
@@ -98,7 +175,7 @@ function cutNotes(s: string): string {
 
 /** "AJAY MARWAH- 2312 BIMLESH KUMAR SINGH- 1652 [R-1]" → ["AJAY MARWAH (AOR 2312)", "BIMLESH KUMAR SINGH (AOR 1652)"]. */
 export function scAdvocates(text: string): string[] {
-  const s = squash(scrubContact(text.replace(/\*/g, "")));
+  const s = squash(contactFree(text.replace(/\*/g, "")));
   if (!s) return [];
   const out: string[] = [];
   const coded = /([A-Z][A-Z.'&() ]*?[A-Z.)])\s*-\s*(\d{1,6})(?:\s*\[[PR]-?\s*\d+\])?/g;
@@ -117,14 +194,14 @@ export function scAdvocates(text: string): string[] {
   }
   for (const part of rest.split(/\[[PR]-?\s*\d+\]|,|;/)) {
     const name = squash(part).replace(/^[-–\s]+|[-–\s]+$/g, "");
-    if (name && /[A-Za-z]{2}/.test(name)) out.push(name);
+    if (name && /[A-Za-z]{2}/.test(name) && !contactResidue(name)) out.push(name);
   }
   return dedupe(out);
 }
 
 /** Delhi HC advocates cell "L.K. RAWAL, SHANTANU SAGAR, SIDDHARTH PANDA" → names. */
 export function commaAdvocates(text: string): string[] {
-  return dedupe(scrubContact(text).split(/\s*[,;]\s*/).map((x) => squash(x)).filter((x) => /[A-Za-z]{2}/.test(x)));
+  return dedupe(contactFree(text).split(/\s*[,;]\s*/).map((x) => squash(x)).filter((x) => /[A-Za-z]{2}/.test(x) && !contactResidue(x)));
 }
 
 /**
@@ -133,7 +210,7 @@ export function commaAdvocates(text: string): string[] {
  * at a lower→upper case boundary.
  */
 export function tribunalAdvocates(text: string): string[] {
-  let s = scrubContact(text)
+  let s = contactFree(text)
     .replace(/\(\s*R\s*-[^)]*\)/gi, " ")
     .replace(/\s*-\s*In\s*-\s*Person\b/gi, " ")
     .replace(/-\s*R\s*-?\s*\d+(?:\s*(?:&|,)\s*\d+)*/g, " | ");
@@ -143,7 +220,7 @@ export function tribunalAdvocates(text: string): string[] {
   for (const p of parts) {
     for (const q of p.split(/\s*,\s*/)) {
       const name = squash(q).replace(/^[-–&,\s]+|[-–&,\s]+$/g, "");
-      if (name && /[A-Za-z]{2}/.test(name) && !/^(?:and|for|with)$/i.test(name)) out.push(name);
+      if (name && /[A-Za-z]{2}/.test(name) && !/^(?:and|for|with)$/i.test(name) && !contactResidue(name)) out.push(name);
     }
   }
   return dedupe(out);

@@ -52,6 +52,16 @@ export function supportsAdaptiveThinking(modelId: string): boolean {
   return f === "adaptive" || f === "adaptive-always";
 }
 
+/**
+ * Models that run adaptive thinking when the request omits `thinking` (Fable / Mythos / Opus 5 / Opus 5.5, and Sonnet 5
+ * / Sonnet 5.5 in the "adaptive" family), so their history carries thinking blocks even when no thinking was asked
+ * for. Opus 4.6–4.8 and Sonnet 4.6 run without thinking when it is omitted.
+ */
+export function thinksWhenOmitted(modelId: string): boolean {
+  if (claudeFamily(modelId) === "adaptive-always") return true;
+  return /^claude-sonnet-5(-\d+)?$/.test(normalizeClaudeModelId(modelId));
+}
+
 /** `output_config.effort` levels the family accepts. Opus/Sonnet 4.6 lack `xhigh` (arrived with Opus 4.7). */
 export function effortLevelsFor(modelId: string): ("low" | "medium" | "high" | "xhigh" | "max")[] | null {
   const f = claudeFamily(modelId);
@@ -69,11 +79,11 @@ export function supportsNativeStructuredOutput(modelId: string): boolean {
   return /^claude-(opus|sonnet|haiku)-4-5$/.test(m);
 }
 
-/** Forced `tool_choice` (`any` / `tool`) returns 400 on Fable / Mythos / Opus 5.5. */
+/** Forced `tool_choice` (`any` / `tool`) returns 400 on Fable / Mythos / Opus 5.5 / Sonnet 5.5. */
 export function supportsForcedToolChoice(modelId: string): boolean {
   const m = normalizeClaudeModelId(modelId);
   if (/^claude-(fable|mythos)-/.test(m)) return false;
-  if (/^claude-opus-5-5$/.test(m)) return false;
+  if (/^claude-(opus|sonnet)-5-5$/.test(m)) return false;
   return true;
 }
 

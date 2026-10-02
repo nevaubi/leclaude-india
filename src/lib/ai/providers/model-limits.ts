@@ -25,7 +25,9 @@
  *   Bedrock limits request payloads to 20 MB.
  *
  * Env overrides (clamped to [8k, the family ceiling]; a typo can only shrink, never exceed what the family accepts):
- * OPENAI_CONTEXT_WINDOW / OPENAI_MAX_OUTPUT_TOKENS, ANTHROPIC_CONTEXT_WINDOW, BEDROCK_CONTEXT_WINDOW.
+ * OPENAI_CONTEXT_WINDOW / OPENAI_MAX_OUTPUT_TOKENS, ANTHROPIC_CONTEXT_WINDOW, BEDROCK_CONTEXT_WINDOW. A window-only override
+ * that lowers the window never lets the output reservation take more than half of it (a quarter is reserved instead),
+ * so maxInput stays ≥ half the window (≥ 3/4 on 128K–255K windows).
  * (ANTHROPIC_/BEDROCK_MAX_OUTPUT_TOKENS remain the DEFAULT `max_tokens` of a request; see providers/env.ts.)
  */
 import { normalizeClaudeModelId } from "./claude-models";
@@ -121,8 +123,15 @@ export function modelLimits(provider: ProviderId, modelId: string, env: LimitsEn
   const ctxCeiling = base ? base.contextWindow : 1_050_000;
   const outCeiling = base ? base.maxOutput : 128_000;
   const contextWindow = ctx != null ? clamp(ctx, 8_000, ctxCeiling) : limits.contextWindow;
-  const maxOutput = out != null ? clamp(out, 1_000, Math.min(outCeiling, contextWindow - 1_000)) : Math.min(limits.maxOutput, contextWindow - 1_000);
-  const maxInput = Math.max(1, Math.min(limits.maxInput, contextWindow - maxOutput));
+  let maxOutput: number;
+  if (out != null) maxOutput = clamp(out, 1_000, Math.min(outCeiling, contextWindow - 1_000));
+  // Only the window was lowered: the family's full output reservation (128K) would leave almost no input on a 128K–200K
+  // window. When it would take more than half the window, reserve a quarter instead (the input keeps three quarters).
+  else if (contextWindow < limits.contextWindow && contextWindow - limits.maxOutput < contextWindow / 2) maxOutput = Math.max(1_000, Math.min(limits.maxOutput, Math.floor(contextWindow / 4)));
+  else maxOutput = Math.min(limits.maxOutput, contextWindow - 1_000);
+  // A coded family keeps its publisher-stated input ceiling; an unknown id raised by the operator gets the window it was given.
+  const inputCeiling = base ? limits.maxInput : Number.POSITIVE_INFINITY;
+  const maxInput = Math.max(1, Math.min(inputCeiling, contextWindow - maxOutput));
   return { ...limits, contextWindow, maxOutput, maxInput, basis: "env" };
 }
 

@@ -158,12 +158,28 @@ export const PERSONA_BUDGET: Record<AgentId, BudgetProfileId> = {
   steward: "chat_fast",
 };
 
+/** Statuses tools return when nothing was read (the source was unavailable, the identifier unusable, nothing matched). */
+const NON_EVIDENCE_STATUS = new Set(["not_available", "unparsed_identifier", "no_match_in_loaded_lists", "no_calendar", "sample_only"]);
+
+/**
+ * A successful tool call that read nothing is not evidence: `{ available: false }` (corpus not on this deployment, no
+ * calendar loaded), a zero `count` (no search hit, no cause-list entry), or a non-evidence `status`.
+ */
+export function isNonEvidenceResult(result: unknown): boolean {
+  if (result == null) return true;
+  if (typeof result !== "object" || Array.isArray(result)) return false;
+  const r = result as { available?: unknown; count?: unknown; status?: unknown };
+  if (r.available === false) return true;
+  if (r.count === 0) return true;
+  return typeof r.status === "string" && NON_EVIDENCE_STATUS.has(r.status);
+}
+
 /** Evidence for verification from the run's tool results (full values, not the client previews), bounded by the budget. */
 export function evidenceFromToolCalls(toolCalls: { name: string; result?: unknown; error?: string }[], limits: { maxSources: number; maxChars: number }): VerifySource[] {
   const out: VerifySource[] = [];
   for (const c of toolCalls) {
     if (out.length >= limits.maxSources) break;
-    if (c.error || c.result == null || c.name === "handoff") continue;
+    if (c.error || c.result == null || c.name === "handoff" || isNonEvidenceResult(c.result)) continue;
     let text = "";
     try { text = typeof c.result === "string" ? c.result : JSON.stringify(c.result); } catch { text = ""; }
     if (text.length <= 40) continue;

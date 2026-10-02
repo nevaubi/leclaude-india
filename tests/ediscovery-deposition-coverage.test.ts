@@ -13,6 +13,14 @@ type Call = { name?: string; instructions?: string; input?: unknown };
 const calls: Call[] = [];
 const script: Record<string, (c: Call) => unknown> = {};
 
+// The fake key enables AI paths; embeddings are stubbed so seeding and indexing never call a real endpoint (no network,
+// no unhandled rejection from a failed embedding request).
+vi.mock("@/lib/ai/embeddings", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/ai/embeddings")>();
+  const vec = () => Float32Array.from({ length: 8 }, (_, i) => (i === 0 ? 1 : 0));
+  return { ...real, embedTexts: async (texts: string[]) => texts.map(vec), embedText: async () => vec() };
+});
+
 vi.mock("@/lib/ai/agent", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/ai/agent")>();
   return {

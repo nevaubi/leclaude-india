@@ -6,7 +6,8 @@ import { AIConfigError } from "@/lib/ai/config";
 import { classifyFailure, createEmitter, isAbortError, STOP_LABEL, type FailureKind, type ResearchStopState, type RunMetrics, type RunTerminalState } from "@/lib/ai/events";
 import { LEGAL_STYLE_RULES, todayLine } from "@/lib/ai/prompts";
 import { firmLabel } from "../firm";
-import type { VerificationResult } from "@/lib/ai/verify";
+import { coverageNote, verifierCapacity, type VerificationResult } from "@/lib/ai/verify";
+import type { ResolvedBudget } from "@/lib/ai/context-budget";
 import { audit } from "@/lib/integrity/audit";
 import { attachProvenance } from "@/lib/integrity/record";
 import type { Matter } from "@/lib/types/domain";
@@ -29,7 +30,7 @@ import { citedNumbers, hasCiteMarker } from "./markers";
 import { focusTerms } from "./paragraphs";
 import { answerLanguageLine, offenceDateFromText, questionLanguage, resolveAnswerLanguage, setPreferredAnswerLanguageHook } from "./india-context";
 import { preferredAnswerLanguage } from "@/lib/i18n/preferences";
-import { ADVERSE_SUBQUESTION_MARK, forumPhrase, planLanes, planSubQuestions, questionTopic } from "./planner";
+import { ADVERSE_SUBQUESTION_MARK, forumPhrase, laneReadBoost, planLanes, planSubQuestions, questionTopic } from "./planner";
 import { CORRECTION_INSTRUCTIONS, LANE_NOTE_HEADER, NO_ANSWER_SENTENCE, synthesisInstructions } from "./prompts";
 import { assembleProvenance } from "./provenance";
 import { checkClaimEvidence, recountVerification } from "./quotes";
@@ -136,6 +137,8 @@ export function decideOutcome(i: OutcomeInput): Outcome {
   if (i.verificationUnavailable) return { terminal: "partial", stop: "verification_unavailable", reason: i.verificationUnavailable };
   if (i.verification && !i.verificationCurrent) return { terminal: "partial", stop: "verification_unavailable", reason: "The answer was revised after verification and the revised text was not re-verified" };
   if (!i.verification) return { terminal: "partial", stop: "verification_unavailable", reason: "No claim was checked against a source read in full" };
+  // The verifier did not see everything (a source cut short or not shown, answer text beyond its budget, the claim cap).
+  if (i.verification.partial) return { terminal: "partial", stop: "coverage_sufficient", reason: coverageNote({ coverage: i.verification.coverage }) || "Verification was partial: not every claim or source was checked" };
   const failed = i.lanes.filter((l) => l.status === "error" || l.status === "timeout" || l.status === "skipped");
   const degraded = i.lanes.filter((l) => l.status === "done" && l.error);
   if (failed.length) return { terminal: "partial", stop: "coverage_sufficient", reason: `${failed.length} of ${i.lanes.length} lanes ${failed.length === 1 ? "did not finish" : "did not finish"}: ${failed.map((l) => `${l.name} (${l.status === "timeout" ? "timed out" : l.error ?? l.status})`).join("; ")}` };
@@ -267,6 +270,9 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
   // Context budgets resolved against the configured models (real deps); fakes without `budget` keep the fixed bounds.
   const synthBudget = deps.budget?.("deep_research_synthesis") ?? null;
   const laneBudget = deps.budget?.("research_lane") ?? null;
+  // Verification is never weaker than synthesis: the synthesis evidence is capped at what one verifier call can show
+  // (in characters and script-aware tokens), so the verifier sees every passage the synthesis saw, whole.
+  const verifierCap = synthBudget ? (() => { const vb = deps.budget?.("verify"); return vb ? verifierCapacity(vb) : null; })() : null;
   const correctionChars = synthBudget ? Math.max(5_000, Math.min(synthBudget.perSourceChars, 20_000)) : 5_000;
   let terms: string[] = focusTerms([question]);
   let evidence: ReturnType<typeof buildEvidenceBlocks> = [];
@@ -280,7 +286,10 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
   const runVerification = async (pass: number, verifiable: ResearchSource[], stageSignal: AbortSignal | undefined = signal): Promise<VerificationSummary> => {
     const hash = artifactHash;
     emit({ type: "verification.started", artifactHash: hash, sources: verifiable.length, pass });
-    const v = await timedModelCall(metrics, () => withRetry(() => deps.verify({ answer, sources: verifyInput(verifiable), signal: stageSignal }), { ...modelRetry, signal: stageSignal }));
+    const sources = verifyInput(verifiable);
+    // The verifier's reach per source is at least what the synthesis was given for any source (budgeted runs).
+    const reach = synthBudget ? sources.reduce((m, x) => Math.max(m, x.text.length), 0) : undefined;
+    const v = await timedModelCall(metrics, () => withRetry(() => deps.verify({ answer, sources, signal: stageSignal, ...(reach ? { perSourceChars: reach } : {}) }), { ...modelRetry, signal: stageSignal }));
     agents++;
     const raw = toSummary(v, verifiable, hash, pass);
     const checked = checkClaimEvidence(answer, raw.verdicts, numbered, textOf);
@@ -321,7 +330,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
     for (let round = 1; round <= maxRounds && !aborted(); round++) {
       if (round > 1 && (Date.now() - startedAt > policy.runTimeMs || remaining() < ms(MIN_ROUND_MS))) { timeExceeded = true; break; }
       rounds = round;
-      const planned: ResearchLane[] = planLanes({ question, settings, mode, hasMatter: Boolean(matter), round, refinements, searchQuery: searchQuery ?? undefined, readBoost: laneBudget ? Math.max(0, laneBudget.maxFullSources - 5) : 0 });
+      const planned: ResearchLane[] = planLanes({ question, settings, mode, hasMatter: Boolean(matter), round, refinements, searchQuery: searchQuery ?? undefined, readBoost: laneReadBoost(laneBudget) });
       // Regional-language question: every lane also searches the question's own words (judgments in that language).
       const regional: ResearchLane[] = searchQuery && round === 1 ? planned.map((l) => ({ ...l, queries: Array.from(new Set([...l.queries, l.kind === "contrary" ? l.queries[0] : question.slice(0, 200)])).slice(0, 3) })) : planned;
       // Lanes get what is left after keeping time back for synthesis and verification (never below 25s).
@@ -421,9 +430,10 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
       // Byte-stable per mode: the cacheable prefix. Date, matter, jurisdiction and the question travel in the user turn.
       synthesisInstructionsText = synthesisInstructions(mode, firmLabel(), LEGAL_STYLE_RULES);
       terms = focusTerms([question, ...lanes.flatMap((l) => l.queries), ...subQuestions]);
-      // With a budget (real deps), the top read sources go in full up to the synthesis budget (12 × ~40k characters on a
-      // large-context model, focused ≤2k-character blocks); the rest carry their snippets. Fakes keep the old bounds.
-      evidence = buildEvidenceBlocks(numbered, textOf, { terms, matterId: settings.matterId, tenantId, ...(synthBudget ? { maxCharsPerSource: synthBudget.perSourceChars, maxTotalChars: synthBudget.totalEvidenceChars, maxBlockChars: synthBudget.blockChars, maxFullSources: synthBudget.maxFullSources, maxTotalTokens: Math.floor(synthBudget.inputTokens * 0.8) } : {}) });
+      // With a budget (real deps), the top read sources go in full up to the synthesis budget (12 × up to ~40k characters
+      // on a large-context model, focused ≤2k-character blocks) — capped at what the verifier can show, shared evenly over
+      // the sources given in full; the rest carry their snippets. Fakes keep the old bounds.
+      evidence = buildEvidenceBlocks(numbered, textOf, { terms, matterId: settings.matterId, tenantId, ...(synthBudget ? synthesisEvidenceLimits(synthBudget, verifierCap, numbered.filter((s) => s.read).length) : {}) });
       const priorAnswerChars = synthBudget ? Math.max(2_500, Math.floor(synthBudget.historyChars / 2)) : 2_500;
       const prior = thread.messages.slice(-4).filter((m) => m.content).map((m) => `${m.role === "user" ? "Earlier question" : "Earlier answer"}: ${m.content.slice(0, m.role === "user" ? 600 : priorAnswerChars)}`).join("\n\n");
       const context = [
@@ -659,7 +669,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
     recordResearchRun({ id: runId, threadId: thread.id, question, settings, startedAt, sources: compact, message, mode, savedSearchId: input.savedSearchId, noKey });
     audit("ai.generate", { kind: "research", id: runId, label: question.slice(0, 120), matterId: settings.matterId ?? undefined }, {
       threadId: thread.id, mode, terminal: outcome.terminal, stop: outcome.stop ?? null, failure: outcome.failure ?? null, sources: stats.sources, read: stats.read, rounds: stats.rounds, agents: stats.agents, durationMs: stats.durationMs,
-      verification: verification ? { status: verification.status, supported: verification.supported, unsupported: verification.unsupported, contradicted: verification.contradicted, score: verification.score, artifactHash: verification.artifactHash, current: verificationCurrent } : null,
+      verification: verification ? { status: verification.status, supported: verification.supported, unsupported: verification.unsupported, contradicted: verification.contradicted, score: verification.score, artifactHash: verification.artifactHash, current: verificationCurrent, partial: verification.partial ?? false } : null,
       citationsUnmatched: citationChecks?.filter((c) => !c.matched).length ?? 0, banner, model: noKey ? null : deps.model, artifactHash: message.artifactHash ?? null, trust: message.trust,
       metrics: { acknowledgedMs: finalMetrics.acknowledgedMs, firstEvidenceMs: finalMetrics.firstEvidenceMs, firstModelTokenMs: finalMetrics.firstModelTokenMs, firstSourceBackedMs: finalMetrics.firstSourceBackedMs, finalAnswerMs: finalMetrics.finalAnswerMs, verifiedAnswerMs: finalMetrics.verifiedAnswerMs, totalMs: finalMetrics.totalMs, toolTimeMs: finalMetrics.toolTimeMs, modelTimeMs: finalMetrics.modelTimeMs, tokens: finalMetrics.tokens.total },
     });
@@ -725,7 +735,28 @@ function toSummary(v: VerificationResult, sources: ResearchSource[], artifactHas
     artifactHash,
     pass,
     verdicts: v.verdicts.map((x) => ({ claim: x.claim, status: x.status, sourceN: x.sourceIndex != null ? sources[x.sourceIndex]?.n ?? null : null, quote: x.quote, note: x.note })),
+    // What the verifier saw travels with the verdicts to the message (and the UI): a partial check is never "verified".
+    ...(v.coverage ? { coverage: v.coverage } : {}),
+    ...(v.partial ? { partial: true } : {}),
   };
+}
+
+/** Share of the verifier's capacity the synthesis evidence may fill (room for block markers and a source's first block). */
+const EVIDENCE_MARGIN = 0.9;
+
+/**
+ * Evidence limits for the synthesis: its own budget, capped at the verifier's capacity (characters and tokens) so the
+ * verifier can be shown every passage whole; the per-source size is an even share of that total over the sources
+ * given in full (never above the synthesis per-source budget). Pure.
+ */
+export function synthesisEvidenceLimits(synth: Pick<ResolvedBudget, "perSourceChars" | "totalEvidenceChars" | "blockChars" | "maxFullSources" | "inputTokens">, verifier: { totalChars: number; totalTokens: number } | null, readSources: number): { maxCharsPerSource: number; maxTotalChars: number; maxBlockChars: number; maxFullSources: number; maxTotalTokens: number } {
+  // Margins: the character bound counts paragraph text (the "¶k " markers and line breaks come on top) and the token
+  // bound lets a source keep its first block; the verifier must still be able to show every block whole.
+  const maxTotalChars = verifier ? Math.min(synth.totalEvidenceChars, Math.floor(verifier.totalChars * EVIDENCE_MARGIN)) : synth.totalEvidenceChars;
+  const maxTotalTokens = verifier ? Math.min(Math.floor(synth.inputTokens * 0.8), Math.floor(verifier.totalTokens * EVIDENCE_MARGIN)) : Math.floor(synth.inputTokens * 0.8);
+  const full = Math.max(1, Math.min(synth.maxFullSources, readSources || synth.maxFullSources));
+  const maxCharsPerSource = verifier ? Math.min(synth.perSourceChars, Math.max(Math.min(6_000, maxTotalChars), Math.floor(maxTotalChars / full))) : synth.perSourceChars;
+  return { maxCharsPerSource, maxTotalChars, maxBlockChars: synth.blockChars, maxFullSources: synth.maxFullSources, maxTotalTokens };
 }
 
 /** Deterministic follow-ups when the model is unavailable: bound to the forum and matter. */

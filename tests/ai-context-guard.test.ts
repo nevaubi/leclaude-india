@@ -8,6 +8,8 @@ import type { ResponseInput } from "openai/resources/responses/responses";
 
 const calls: Array<Record<string, unknown>> = [];
 let failFirst: { status: number; message: string } | null = null;
+/** Optional per-call script: the stream events for call n (1-based); default is a plain "ok" answer. */
+let script: ((n: number) => unknown[] | null) | null = null;
 
 function stream(events: unknown[]) {
   return { async *[Symbol.asyncIterator]() { for (const e of events) yield e; } };
@@ -18,6 +20,8 @@ vi.mock("@/lib/ai/openai", () => ({
       create: async (params: Record<string, unknown>) => {
         calls.push(params);
         if (failFirst && calls.length === 1) { const e = Object.assign(new Error(failFirst.message), { status: failFirst.status }); throw e; }
+        const scripted = script?.(calls.length);
+        if (scripted) return stream(scripted);
         return stream([
           { type: "response.output_text.delta", delta: "ok", item_id: "m", output_index: 0 },
           { type: "response.completed", response: { id: `resp_${calls.length}`, usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 }, output: [] } },
@@ -45,7 +49,18 @@ function toolTurns(sizes: number[]): InferenceMessage[] {
   return out;
 }
 
-beforeEach(() => { calls.length = 0; failFirst = null; process.env.OPENAI_API_KEY = "test"; });
+beforeEach(() => { calls.length = 0; failFirst = null; script = null; process.env.OPENAI_API_KEY = "test"; });
+
+/** A Responses stream that calls one function tool (with server ids, as the API returns them). */
+function functionCallStream(n: number, name: string) {
+  const item = { type: "function_call", id: `fc_${n}`, call_id: `call_${n}`, name, arguments: JSON.stringify({ id: `doc${n}` }), status: "completed" };
+  return [
+    { type: "response.output_item.added", item: { ...item, arguments: "" }, output_index: 0 },
+    { type: "response.function_call_arguments.done", item_id: item.id, arguments: item.arguments, output_index: 0 },
+    { type: "response.output_item.done", item, output_index: 0 },
+    { type: "response.completed", response: { id: `resp_${n}`, usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 }, output: [item] } },
+  ];
+}
 
 describe("guardHistory", () => {
   it("elides the oldest tool results first, never the latest tool turn, and says how to re-read them", () => {
@@ -123,6 +138,47 @@ describe("runAgent budgets and the context guard", () => {
     expect(retried[0]).toMatch(/^\[elided 5000 chars — re-read with read_judgment_text\]$/);
     expect(retried[1].length).toBe(5_000);
     expect(events.some((e) => e.type === "status" && /Context window exceeded; elided 1 earlier tool result/.test(e.message))).toBe(true);
+  });
+
+  it("OpenAI step ≥ 2: an elision resets previous_response_id and replays the elided history (no truncation:auto)", async () => {
+    // chat_fast on gpt-5.4 (~96k input tokens). Each read returns 250k characters (~67k tokens): step 2 fits one, step 3
+    // does not, so the guard elides the first read — which only takes effect if the history is replayed in full.
+    const read = { name: "read_judgment_text", description: "read", parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }, maxResultChars: 300_000, execute: async () => big("judgment", 250_000) };
+    script = (n) => (n <= 2 ? functionCallStream(n, "read_judgment_text") : null);
+    const events: AgentEvent[] = [];
+    const res = await runAgent({ instructions: "test", input: "question", tools: [read as never], onEvent: (e) => events.push(e), budget: "chat_fast", maxSteps: 4 });
+    expect(res.text).toBe("ok");
+    expect(calls).toHaveLength(3);
+    // Step 2 continued server-side (only the new tool output was sent), and never with truncation:auto.
+    expect(calls[1].previous_response_id).toBe("resp_1");
+    expect((calls[1].input as unknown[]).length).toBe(1);
+    for (const c of calls) expect(c).not.toHaveProperty("truncation");
+    // Step 3: the guard elided the first read, so the request starts from the local history again (no continuation).
+    expect(res.elided).toBe(1);
+    expect(calls[2].previous_response_id).toBeUndefined();
+    const sent = calls[2].input as Array<Record<string, unknown>>;
+    expect(sent[0]).toMatchObject({ role: "user", content: "question" });
+    const outputs = sent.filter((i) => i.type === "function_call_output").map((i) => String(i.output));
+    expect(outputs[0]).toBe("[elided 250000 chars — re-read with read_judgment_text]");
+    expect(outputs[1].length).toBe(250_000);
+    // Replayed function calls carry their call_id but not the server item id (no reasoning item travels with them).
+    const fcs = sent.filter((i) => i.type === "function_call");
+    expect(fcs.map((f) => f.call_id)).toEqual(["call_1", "call_2"]);
+    for (const f of fcs) expect(f).not.toHaveProperty("id");
+    expect(events.some((e) => e.type === "status" && /Context budget: elided 1 earlier tool result/.test(e.message))).toBe(true);
+  });
+
+  it("with a caller's stored conversation, an elision replays the local history on top of it (the base is never dropped)", async () => {
+    const read = { name: "read_judgment_text", description: "read", parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }, maxResultChars: 300_000, execute: async () => big("judgment", 250_000) };
+    script = (n) => (n <= 2 ? functionCallStream(n, "read_judgment_text") : null);
+    await runAgent({ instructions: "test", input: "follow-up question", previousResponseId: "resp_base", tools: [read as never], onEvent: () => {}, budget: "chat_fast", maxSteps: 4 });
+    expect(calls[0].previous_response_id).toBe("resp_base");
+    expect(calls[1].previous_response_id).toBe("resp_1");
+    expect(calls[2].previous_response_id).toBe("resp_base");
+    const sent = calls[2].input as Array<Record<string, unknown>>;
+    expect(sent[0]).toMatchObject({ role: "user", content: "follow-up question" });
+    expect(sent.filter((i) => i.type === "function_call_output").map((i) => String(i.output).slice(0, 8))).toEqual(["[elided ", "judgment"]);
+    for (const c of calls) expect(c).not.toHaveProperty("truncation");
   });
 
   it("fails honestly when nothing can be elided", async () => {

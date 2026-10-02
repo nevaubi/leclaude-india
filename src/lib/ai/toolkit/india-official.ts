@@ -165,6 +165,10 @@ export const searchOfficialSourcesTool = defineTool<SearchArgs>({
 
 type ReadArgs = { id: string; from_chunk?: number; page?: number; max_chars?: number };
 
+/** Bound on read_official_document's serialized result, and the size the tool keeps its own result under (JSON overhead). */
+const READ_RESULT_MAX_CHARS = 64_000;
+const READ_RESULT_BUDGET = READ_RESULT_MAX_CHARS - 512;
+
 export const readOfficialDocumentTool = defineTool<ReadArgs>({
   name: "read_official_document",
   description: "Read an official document (order, judgment, cause list, circular, notification, gazette, minutes, Parliament paper) exactly as extracted from the publisher's file, with page markers ([p. 4]). `id` is the document id or the src:// reference that search_official_sources returned (src://<id>#p<page> jumps to that page). Use `from_chunk` (next_chunk of the previous call) to continue. Returns the publisher, official URL, SHA-256 of the file read, fetch time and extraction method; OCR pages are flagged and must be checked against the PDF before a quotation is filed. An unknown id is an error, never another document.",
@@ -180,7 +184,7 @@ export const readOfficialDocumentTool = defineTool<ReadArgs>({
   },
   examples: [{ id: "src://sebi-orders_9f3a1c2b7e#p3" }, { id: "sci-orders_4d2e9a01bc", from_chunk: 4 }],
   timeoutMs: 20_000,
-  maxResultChars: 64_000,
+  maxResultChars: READ_RESULT_MAX_CHARS,
   access: "read",
   label: (a) => `Reading official document ${a.id}`,
   async execute(args, ctx) {
@@ -210,37 +214,50 @@ export const readOfficialDocumentTool = defineTool<ReadArgs>({
     if (!r.chunks.length) throw new Error(`${d.title} has no extracted text${page != null ? ` at page ${page}` : ""} (status ${d.status}${d.error ? `: ${d.error}` : ""}).`);
     const first = r.chunks[0];
     const ocrPages = new Set(d.ocrPages ?? []);
-    const content = r.chunks.flatMap((c) => {
-      const label = pageLabel(c.pageStart, c.pageEnd);
-      const ocr = c.pageStart != null && (ocrPages.has(c.pageStart) || (c.pageEnd != null && ocrPages.has(c.pageEnd))) ? " (OCR)" : "";
-      return blocks(c.text).map((b, i) => (i === 0 && label ? `[${label}${ocr}] ${b}` : b));
-    });
-    const text = r.chunks.map((c) => c.text).join("\n\n");
-    const source = sourceRef(d.id, first.pageStart != null ? { page: first.pageStart } : { chunk: first.index });
-    emit(ctx, [{ source, kind: officialEvidenceKind(d.kind), provider: `official:${d.sourceId}`, tool: "read_official_document", rank: 1, documentId: d.id, chunkIndex: first.index, page: first.pageStart ?? undefined, url: d.url, hash: d.sha256 ?? contentHash(text), retrievedAt: new Date().toISOString() }]);
     const ocrUsed = d.extraction === "ocr_model" || ocrPages.size > 0;
-    return {
-      type: "search_result" as const,
-      source,
-      title: [d.title, d.docDate ? `dated ${d.docDate}` : "", pageLabel(first.pageStart, r.chunks[r.chunks.length - 1].pageEnd ?? r.chunks[r.chunks.length - 1].pageStart)].filter(Boolean).join(" · "),
-      content: content.length ? content : ["(no text)"],
-      id: d.id,
-      source_id: d.sourceId,
-      kind: d.kind,
-      date: d.docDate,
-      url: d.url,
-      file_url: d.fileUrl,
-      sha256: d.sha256,
-      fetched_at: d.fetchedAt,
-      version: d.version,
-      pages: d.pages,
-      extraction: d.extraction,
-      ...(ocrUsed ? { ocr: OCR_NOTE, ocr_pages: d.ocrPages } : {}),
-      chunks: `${first.index}–${r.chunks[r.chunks.length - 1].index}`,
-      has_more: r.hasMore,
-      next_chunk: r.nextChunk,
-      attribution: r.attribution,
+    const source = sourceRef(d.id, first.pageStart != null ? { page: first.pageStart } : { chunk: first.index });
+    const build = (chunks: typeof r.chunks, more: { hasMore: boolean; nextChunk: number | null | undefined }) => {
+      const content = chunks.flatMap((c) => {
+        const label = pageLabel(c.pageStart, c.pageEnd);
+        const ocr = c.pageStart != null && (ocrPages.has(c.pageStart) || (c.pageEnd != null && ocrPages.has(c.pageEnd))) ? " (OCR)" : "";
+        return blocks(c.text).map((b, i) => (i === 0 && label ? `[${label}${ocr}] ${b}` : b));
+      });
+      const last = chunks[chunks.length - 1];
+      return {
+        type: "search_result" as const,
+        source,
+        title: [d.title, d.docDate ? `dated ${d.docDate}` : "", pageLabel(first.pageStart, last.pageEnd ?? last.pageStart)].filter(Boolean).join(" · "),
+        content: content.length ? content : ["(no text)"],
+        id: d.id,
+        source_id: d.sourceId,
+        kind: d.kind,
+        date: d.docDate,
+        url: d.url,
+        file_url: d.fileUrl,
+        sha256: d.sha256,
+        fetched_at: d.fetchedAt,
+        version: d.version,
+        pages: d.pages,
+        extraction: d.extraction,
+        ...(ocrUsed ? { ocr: OCR_NOTE, ocr_pages: d.ocrPages } : {}),
+        chunks: `${first.index}–${last.index}`,
+        has_more: more.hasMore,
+        next_chunk: more.nextChunk,
+        attribution: r.attribution,
+      };
     };
+    // The result must fit the tool's result bound WHOLE: a bounded (trimmed) middle block would be lost, because
+    // next_chunk would already point past it. Trailing chunks that do not fit are left for the next call instead.
+    let kept = r.chunks.length;
+    let result = build(r.chunks, { hasMore: r.hasMore, nextChunk: r.nextChunk });
+    while (kept > 1 && JSON.stringify(result).length > READ_RESULT_BUDGET) {
+      kept--;
+      result = build(r.chunks.slice(0, kept), { hasMore: true, nextChunk: r.chunks[kept].index });
+    }
+    const returned = r.chunks.slice(0, kept);
+    const text = returned.map((c) => c.text).join("\n\n");
+    emit(ctx, [{ source, kind: officialEvidenceKind(d.kind), provider: `official:${d.sourceId}`, tool: "read_official_document", rank: 1, documentId: d.id, chunkIndex: first.index, page: first.pageStart ?? undefined, url: d.url, hash: d.sha256 ?? contentHash(text), retrievedAt: new Date().toISOString() }]);
+    return result;
   },
 });
 
@@ -304,7 +321,8 @@ export const causelistLookupTool = defineTool<CauseArgs>({
     if (!date && from && to) {
       const span = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY;
       if (!(span >= 0)) throw new Error("from must be on or before to.");
-      if (span > 31) throw new Error("The range is longer than 31 days; narrow it.");
+      // "At most 31 days" counts both ends: 1 → 31 October is 31 days (span 30); 1 October → 1 November is 32.
+      if (span >= 31) throw new Error("The range is longer than 31 days (both dates count); narrow it.");
     }
     const caseInput = args.case_number?.trim();
     const diaryInput = args.diary_no?.trim();
@@ -315,8 +333,10 @@ export const causelistLookupTool = defineTool<CauseArgs>({
     const unparsed: string[] = [];
     if (caseInput && !caseKey) unparsed.push(`case number "${caseInput}"`);
     if (diaryInput && !diaryKey) unparsed.push(`diary number "${diaryInput}"`);
-    if (unparsed.length && !caseKey && !diaryKey && !advocate) {
-      return { status: "unparsed_identifier", count: 0, entries: [], note: `Could not normalise ${unparsed.join(" and ")} into TYPE/NUMBER/YEAR. No lookup was run (identifiers are matched exactly, never guessed). Give it as printed on the case papers, e.g. "SLP(C) No. 1234/2026".` };
+    // A supplied case or diary number that cannot be normalised stops the lookup: answering on the other criteria
+    // (an advocate's name) would report another matter's listing as this one's.
+    if (unparsed.length) {
+      return { status: "unparsed_identifier", count: 0, entries: [], note: `Could not normalise ${unparsed.join(" and ")} into TYPE/NUMBER/YEAR. No lookup was run (identifiers are matched exactly, never guessed, and the other criteria are not used in their place). Give it as printed on the case papers, e.g. "SLP(C) No. 1234/2026".` };
     }
     const limit = Math.max(1, Math.min(50, Math.floor(args.limit ?? 25)));
     let entries: CauseListEntry[];
@@ -333,7 +353,6 @@ export const causelistLookupTool = defineTool<CauseArgs>({
       status: matched.length ? "listed" : "no_match_in_loaded_lists",
       count: matched.length,
       matched_on: { case_number: caseKey?.key ?? null, diary_no: diaryKey, advocate: advocate || null },
-      ...(unparsed.length ? { unparsed: `Not used (could not be normalised): ${unparsed.join(", ")}` } : {}),
       entries: matched.map(entryRow),
       caveat: CAUSELIST_CAVEAT,
       ...(matched.length ? {} : { note: "No parsed cause-list entry matched in the lists loaded for this date range. This does not prove the matter is not listed: the list may not be loaded yet or the entry may be unparsed. Check the court's website." }),

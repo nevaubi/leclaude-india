@@ -9,6 +9,8 @@ import { DEFAULT_KNOWLEDGE, type ChatAttachmentInput, type ChatEvent, type ChatF
 import { INDIAN_LAW_TOOL_ROUTING, indiaRoutingFor } from "@/lib/ai/india-guidance";
 import { knowledgeTools } from "./knowledge";
 import { chatModels, routeMessage, type ChatRoute } from "./routing";
+import { guardConversation, historyWindow } from "./context";
+import { clipWithMarker, estimateTokens } from "@/lib/ai/context-budget";
 import { newId } from "./store";
 
 /**
@@ -127,8 +129,11 @@ function toolsFor(route: ChatRoute, defs: ToolDef<never, unknown>[]): unknown[] 
   return t;
 }
 
-function historyInput(history: ChatMessage[], turns = HISTORY_TURNS): unknown[] {
-  return history.slice(-turns * 2).filter((m) => m.text.trim()).map((m) => ({ role: m.role, content: m.text }));
+/** Replayed history within the budget's turns and characters; older messages left out are stated to the model. */
+function historyInput(history: ChatMessage[], turns: number, maxChars: number): { items: unknown[]; omitted: number } {
+  const w = historyWindow(history.map((m) => ({ role: m.role, text: m.text })), { turns, maxChars });
+  const note = w.omitted ? [{ role: "developer", content: `${w.omitted} earlier message${w.omitted === 1 ? "" : "s"} of this conversation ${w.omitted === 1 ? "is" : "are"} not included here (context budget). If the user refers to something you cannot see, say so and ask them to restate it.` }] : [];
+  return { items: [...note, ...w.items], omitted: w.omitted };
 }
 
 function userInput(message: string, attachments: ChatAttachmentInput[]): unknown {
@@ -187,7 +192,11 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
   const containerFiles: { containerId: string; fileId: string; filename: string }[] = [];
   let status: ChatMessage["status"] = "complete";
   let error: string | undefined;
-  let conversation: unknown[] = [...historyInput(input.history, route.historyTurns), userInput(input.message, input.attachments)];
+  const past = historyInput(input.history, route.historyTurns || HISTORY_TURNS, route.historyChars);
+  let conversation: unknown[] = [...past.items, userInput(input.message, input.attachments)];
+  // Items from here on belong to the latest round (never elided by the context guard).
+  let latestRoundStart = conversation.length;
+  const fixedTokens = estimateTokens(instructions) + estimateTokens(JSON.stringify(tools));
 
   const step = (label: string, state: "running" | "done" | "failed", id = newId("st")) => {
     input.send({ type: "step", id, label, state });
@@ -204,9 +213,14 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
   };
 
   for (const note of input.notes ?? []) step(note, "failed");
+  if (past.omitted) step(`Earlier conversation: ${past.omitted} older message${past.omitted === 1 ? "" : "s"} not sent to the model (context budget)`, "done");
 
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
+      // Context guard: the conversation is replayed in full every round (store:false), so the oldest tool outputs are
+      // elided before a round would exceed the tier's input budget; the model is told how to fetch them again.
+      const guard = guardConversation(conversation, { maxTokens: route.inputTokens, fixedTokens, keepFrom: latestRoundStart });
+      if (guard.elided) step(`Context budget: ${guard.elided} earlier tool result${guard.elided === 1 ? "" : "s"} elided (${guard.chars.toLocaleString("en-US")} characters)`, "done");
       const params: Record<string, unknown> = {
         model,
         instructions,
@@ -285,12 +299,13 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
         try {
           const out = await runFunction(c.name ?? "", args, input, deadline.signal, addSource, (f) => { files.push(f); input.send({ type: "file", file: f }); });
           step(c.name === "fetch_url" ? `Read ${hostOf(String(args.url ?? ""))}` : c.name === "create_file" ? `Created ${String(args.filename ?? "a file")}` : "Done", "done", sid);
-          return { type: "function_call_output", call_id: c.call_id, output: JSON.stringify(out).slice(0, route.toolResultChars) };
+          return { type: "function_call_output", call_id: c.call_id, output: clipWithMarker(JSON.stringify(out), route.toolResultChars, "tool result") };
         } catch (e) {
           step(`${c.name === "fetch_url" ? `Could not read ${hostOf(String(args.url ?? ""))}` : `${c.name} failed`}`, "failed", sid);
           return { type: "function_call_output", call_id: c.call_id, output: JSON.stringify({ error: (e as Error).message.slice(0, 300) }) };
         }
       }));
+      latestRoundStart = conversation.length + outputItems.length;
       conversation = [...conversation, ...outputItems, ...results];
       if (round === MAX_ROUNDS - 1) { status = "incomplete"; error = "Stopped after the maximum number of tool rounds."; }
     }

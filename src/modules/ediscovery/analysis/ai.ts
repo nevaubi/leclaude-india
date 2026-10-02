@@ -192,9 +192,9 @@ The digest is for the defending team. Be precise about what the witness actually
     structuredEvidence = transcript;
   } else {
     // 2. Analyse every window in parallel (bounded pool); a failed window is recorded, never silently skipped.
-    const settled = await mapPoolSettled(segments, budget.concurrency, async (g) => {
+    const settled = await mapPoolSettled(segments, budget.concurrency, async (g, _index, poolSignal) => {
       const text = transcriptText(dep, { indexes: g.indexes, maxChars: Number.MAX_SAFE_INTEGER });
-      const r = await generateJSON<SegmentFindings>({ instructions: `${instructions}\nYou are reading window ${g.index + 1} of ${segments.length} (${g.range}). Report what is in this window only, with page:line cites from it; list every qualification, correction, retraction or errata separately under qualifications.`, input: `${header}\n\nTranscript window ${g.range}:\n${text}`, schema: SEGMENT_SCHEMA, name: "deposition_segment", maxOutputTokens: budget.maxOutputTokens, signal: opts.signal });
+      const r = await generateJSON<SegmentFindings>({ instructions: `${instructions}\nYou are reading window ${g.index + 1} of ${segments.length} (${g.range}). Report what is in this window only, with page:line cites from it; list every qualification, correction, retraction or errata separately under qualifications.`, input: `${header}\n\nTranscript window ${g.range}:\n${text}`, schema: SEGMENT_SCHEMA, name: "deposition_segment", maxOutputTokens: budget.maxOutputTokens, signal: poolSignal });
       return normalizeFindings(r);
     }, opts.signal);
     const findings = settled.map((x, i) => ({ segment: segments[i], result: x }));
@@ -557,12 +557,14 @@ Extract dated events from the documents: things that happened (a study delivered
   // Model work (extraction + self-correction) runs in parallel across batches (bounded); merging and dedupe then run
   // in document order so the result does not depend on which batch finished first.
   let finished = 0;
-  const modelResults = await mapPool(batches, budget.concurrency, async (batch) => {
+  // Stop-on-failure: a failed batch stops the extraction (no further model calls; batches in flight are aborted through
+  // poolSignal) and nothing is merged, so a failed run never writes a partial chronology.
+  const modelResults = await mapPool(batches, budget.concurrency, async (batch, _index, poolSignal) => {
     const evidence = batch.map((x) => docBlock(x, docChars)).join("\n\n---\n\n");
-    const raw = await generateJSON<{ events: RawEvent[] }>({ fast: true, instructions, input: evidence, schema: EVENTS_SCHEMA, name: "timeline_events", maxOutputTokens: Math.max(4_000, budget.maxOutputTokens), signal: opts.signal });
+    const raw = await generateJSON<{ events: RawEvent[] }>({ fast: true, instructions, input: evidence, schema: EVENTS_SCHEMA, name: "timeline_events", maxOutputTokens: Math.max(4_000, budget.maxOutputTokens), signal: poolSignal });
     const target = { kind: "timeline", label: `event extraction (${batch.map((x) => x.bates).join(", ")})`, matterId };
     const base = recordGeneration({ surface: "ediscovery.timeline", instructions, input: evidence, sources: documentSources(batch), model: aiConfig().fastModel, target, meta: { events: raw.events.length } });
-    const checked = await verifyStructured(base, { label: "chronology events", output: raw.events, evidence, schema: { type: "array", items: EVENT_ITEM }, verify: opts.verify, signal: opts.signal, instructions: "A date must appear in, or be the date of, the cited document. Drop events whose Bates number is not in the evidence." }, target);
+    const checked = await verifyStructured(base, { label: "chronology events", output: raw.events, evidence, schema: { type: "array", items: EVENT_ITEM }, verify: opts.verify, signal: poolSignal, instructions: "A date must appear in, or be the date of, the cited document. Drop events whose Bates number is not in the evidence." }, target);
     finished += batch.length;
     opts.onProgress?.(Math.min(docs.length, finished), docs.length);
     return { raw, checked };

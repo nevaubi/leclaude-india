@@ -69,6 +69,10 @@ export interface ChatRoute {
   historyTurns: number;
   /** Characters of one function-tool result given back to the model (budget). */
   toolResultChars: number;
+  /** Characters of replayed conversation history (budget; older turns beyond it are left out and said so). */
+  historyChars: number;
+  /** Input tokens one round may use before the oldest tool outputs are elided (budget). */
+  inputTokens: number;
   /** The chosen model's maximum output (reasoning headroom is clamped to it). */
   modelMaxOutput: number;
 }
@@ -85,7 +89,7 @@ function budgetEnv(): LimitEnv {
 export function chatBudget(tier: "fast" | "standard", model: string | undefined, env: LimitEnv = budgetEnv()) {
   const limits = modelLimits("openai", model ?? "", env);
   const b = resolveContextBudget(tier === "fast" ? "chat_fast" : "chat_standard", limits, env);
-  return { maxOutputTokens: b.maxOutputTokens, historyTurns: b.historyTurns, toolResultChars: b.toolResultChars, modelMaxOutput: limits.maxOutput };
+  return { maxOutputTokens: b.maxOutputTokens, historyTurns: b.historyTurns, toolResultChars: b.toolResultChars, historyChars: b.historyChars, inputTokens: b.inputTokens, modelMaxOutput: limits.maxOutput };
 }
 
 const URL_RE = /https?:\/\/[^\s)]+/i;

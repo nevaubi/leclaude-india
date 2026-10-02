@@ -9,6 +9,7 @@ import { describeModels, readRuntimeEnv } from "@/lib/ai/providers/env";
 import { buildAnthropicRequest, THINKING_BINDING_BETA, type AnthropicWireOptions } from "@/lib/ai/providers/anthropic-wire";
 import { buildOpenAIParams } from "@/lib/ai/providers/openai";
 import { CAPABILITIES } from "@/lib/ai/capabilities";
+import { resolveContextBudget } from "@/lib/ai/context-budget";
 import type { InferenceRequest } from "@/lib/ai/providers/types";
 
 const anthropicOpts = (model: string, extra: Partial<AnthropicWireOptions> = {}): AnthropicWireOptions => ({ platform: "anthropic", model, capabilities: CAPABILITIES.anthropic, defaultMaxTokens: 16_000, thinkingBudget: 0, toolExamples: false, structuredOutput: "auto", ...extra });
@@ -49,10 +50,33 @@ describe("model limits by family", () => {
     expect(modelLimits("openai", "gpt-5.4", { OPENAI_CONTEXT_WINDOW: "nonsense" }).basis).toBe("coded");
     expect(modelLimits("openai", "gpt-5.4", { OPENAI_CONTEXT_WINDOW: "10" }).contextWindow).toBe(8_000);
     expect(modelLimits("bedrock", "anthropic.claude-opus-4-6-v1", { BEDROCK_CONTEXT_WINDOW: "200000" }).contextWindow).toBe(200_000);
-    // An unknown id may be raised by the operator, up to the largest coded window.
-    expect(modelLimits("openai", "mystery-model", { OPENAI_CONTEXT_WINDOW: "400000" }).contextWindow).toBe(400_000);
+    // An unknown id may be raised by the operator, up to the largest coded window (and its input follows the window).
+    expect(modelLimits("openai", "mystery-model", { OPENAI_CONTEXT_WINDOW: "400000" })).toMatchObject({ contextWindow: 400_000, maxOutput: 16_000, maxInput: 384_000 });
     expect(clampOutputTokens(200_000, { maxOutput: 128_000 })).toBe(128_000);
     expect(clampOutputTokens(undefined, { maxOutput: 128_000 })).toBeUndefined();
+  });
+
+  it("a window-only override never lets the output reservation eat the input (maxInput ≥ window / 2)", () => {
+    for (const [provider, model, key] of [["openai", "gpt-5.4", "OPENAI_CONTEXT_WINDOW"], ["openai", "gpt-6-luna", "OPENAI_CONTEXT_WINDOW"], ["openai", "gpt-5.4-mini", "OPENAI_CONTEXT_WINDOW"], ["bedrock", "us.anthropic.claude-fable-5-1-v1", "BEDROCK_CONTEXT_WINDOW"], ["anthropic", "claude-opus-5-5", "ANTHROPIC_CONTEXT_WINDOW"]] as const) {
+      for (const window of [128_000, 200_000, 300_000]) {
+        const l = modelLimits(provider, model, { [key]: String(window) });
+        expect(l.contextWindow, `${model} @ ${window}`).toBe(window);
+        expect(l.maxInput, `${model} @ ${window}`).toBeGreaterThanOrEqual(window / 2);
+        expect(l.maxInput + l.maxOutput, `${model} @ ${window}`).toBeLessThanOrEqual(window);
+      }
+    }
+    // The reviewer's cases: 128K → 96K input (was 1K), 200K → 150K input (was 72K).
+    expect(modelLimits("openai", "gpt-5.4", { OPENAI_CONTEXT_WINDOW: "128000" })).toMatchObject({ maxOutput: 32_000, maxInput: 96_000 });
+    expect(modelLimits("openai", "gpt-5.4", { OPENAI_CONTEXT_WINDOW: "200000" })).toMatchObject({ maxOutput: 50_000, maxInput: 150_000 });
+    // An explicit output override is still honoured as given.
+    expect(modelLimits("openai", "gpt-5.4", { OPENAI_CONTEXT_WINDOW: "300000", OPENAI_MAX_OUTPUT_TOKENS: "32000" }).maxOutput).toBe(32_000);
+  });
+
+  it("deep research on a 200K Bedrock window keeps a real input budget (not the 32K floor)", () => {
+    const fable200 = modelLimits("bedrock", "us.anthropic.claude-fable-5-1-v1", { BEDROCK_CONTEXT_WINDOW: "200000" });
+    const b = resolveContextBudget("deep_research_synthesis", fable200, {});
+    expect(b.inputTokens).toBeGreaterThan(60_000);
+    expect(b.inputTokens + b.maxOutputTokens).toBeLessThan(200_000);
   });
 
   it("describeModels fills contextWindow / maxOutput / maxInput on chat models only", () => {
@@ -72,9 +96,11 @@ describe("output caps follow the model", () => {
     const p = buildOpenAIParams({ ...hi, maxOutputTokens: 60_000 }, "gpt-5.4", { reasoningEffort: "medium" }, { maxOutput: 100_000 }) as unknown as Record<string, unknown>;
     expect(p.max_output_tokens).toBe(100_000);
     expect(p).not.toHaveProperty("truncation");
-    // A server-side continuation cannot be shortened locally: the API may drop the oldest items instead of failing.
+    // A continuation never asks the API to drop the oldest items silently (truncation:auto): overflow is a typed
+    // context_length error and the runtime replays the elided local history instead.
     const cont = buildOpenAIParams({ ...hi, previousResponseId: "resp_1" }, "gpt-5.4", { reasoningEffort: "medium" }) as unknown as Record<string, unknown>;
-    expect(cont.truncation).toBe("auto");
+    expect(cont).not.toHaveProperty("truncation");
+    expect(cont.previous_response_id).toBe("resp_1");
   });
 
   it("Anthropic max_tokens uses the model limit instead of a fixed 64k clamp", () => {
@@ -99,6 +125,14 @@ describe("output caps follow the model", () => {
     const untouched = buildAnthropicRequest({ ...hi, reasoningEffort: "high" }, anthropicOpts("claude-opus-5-5"));
     expect(untouched.betas).not.toContain(THINKING_BINDING_BETA);
     expect(untouched.body.thinking).not.toHaveProperty("block_binding");
+    // Sonnet 5 / 5.5 think when `thinking` is omitted (effort none): the binding still goes with {type: "adaptive"}.
+    for (const m of ["claude-sonnet-5-5", "claude-sonnet-5", "us.anthropic.claude-sonnet-5-5-v1"]) {
+      const r = buildAnthropicRequest({ ...hi, reasoningEffort: "none", historyEdited: true }, anthropicOpts(m));
+      expect(r.body.thinking, m).toMatchObject({ type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } });
+      expect(r.betas, m).toContain(THINKING_BINDING_BETA);
+    }
+    // Opus 4.6 / Sonnet 4.6 run without thinking when it is omitted: no thinking is switched on for them.
+    expect(buildAnthropicRequest({ ...hi, reasoningEffort: "none", historyEdited: true }, anthropicOpts("claude-sonnet-4-6")).body).not.toHaveProperty("thinking");
     // No thinking (older family, effort none): nothing to bind.
     expect(buildAnthropicRequest({ ...hi, reasoningEffort: "none", historyEdited: true }, anthropicOpts("claude-haiku-4-5")).body).not.toHaveProperty("thinking");
   });

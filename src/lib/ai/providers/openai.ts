@@ -34,10 +34,14 @@ function textPartsToOpenAI(parts: ContentPart[]): Array<Record<string, unknown>>
   return out;
 }
 
-/** Messages → Responses input items. With `previousResponseId` only the items after the last assistant turn are new. */
-export function renderOpenAIInput(messages: InferenceMessage[], previousResponseId?: string | null): ResponseInput {
+/**
+ * Messages → Responses input items. With `previousResponseId` only the items after the last assistant turn are new
+ * (the server holds the rest), unless `replayAll` says the local history was edited after that point and must be
+ * replayed in full on top of `previousResponseId`.
+ */
+export function renderOpenAIInput(messages: InferenceMessage[], previousResponseId?: string | null, opts: { replayAll?: boolean } = {}): ResponseInput {
   let start = 0;
-  if (previousResponseId) {
+  if (previousResponseId && !opts.replayAll) {
     for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === "assistant") { start = i + 1; break; }
   }
   const items: ResponseInputItem[] = [];
@@ -58,7 +62,31 @@ export function renderOpenAIInput(messages: InferenceMessage[], previousResponse
     if (parts.length === 1 && parts[0].type === "input_text") items.push({ role: "user", content: String(parts[0].text) } as ResponseInputItem);
     else items.push({ role: "user", content: parts } as unknown as ResponseInputItem);
   }
-  return items;
+  return detachReplayedOutputs(items);
+}
+
+/**
+ * Replayed model outputs without their reasoning items: an output item that keeps its server id (`fc_…`, `msg_…`) is
+ * bound to the reasoning item that preceded it, and the API rejects it when that reasoning item is not sent along (or
+ * finds it a duplicate of a stored item). When the input carries no reasoning item, replayed function calls drop their
+ * id (call_id stays) and assistant output messages become plain assistant messages. Inputs that do carry reasoning items
+ * are sent exactly as given.
+ */
+function detachReplayedOutputs(items: ResponseInputItem[]): ResponseInputItem[] {
+  const raw = items as unknown as Array<Record<string, unknown>>;
+  if (raw.some((it) => it?.type === "reasoning")) return items;
+  return raw.map((it) => {
+    if (it?.type === "function_call" && "id" in it) {
+      const { id: _id, status: _status, ...rest } = it;
+      void _id; void _status;
+      return rest;
+    }
+    if (it?.type === "message" && it.role === "assistant" && "id" in it) {
+      const content = Array.isArray(it.content) ? (it.content as Array<Record<string, unknown>>).map((c) => (c?.type === "output_text" && typeof c.text === "string" ? c.text : c?.type === "refusal" && typeof c.refusal === "string" ? c.refusal : "")).join("") : String(it.content ?? "");
+      return { role: "assistant", content };
+    }
+    return it;
+  }) as unknown as ResponseInputItem[];
 }
 
 /** Built-in tool specs → OpenAI tool objects (the same shapes toolkit/web.ts builds). */
@@ -84,7 +112,7 @@ export function buildOpenAIParams(req: InferenceRequest, model: string, cfg: Pic
   const params: CreateParams = {
     model,
     instructions: req.instructions,
-    input: renderOpenAIInput(messages, req.previousResponseId),
+    input: renderOpenAIInput(messages, req.previousResponseId, { replayAll: req.replayHistory }),
     tools: tools.length ? tools : undefined,
     previous_response_id: req.previousResponseId ?? undefined,
     max_output_tokens: outputTokenBudget(model, req.maxOutputTokens, limits.maxOutput),
@@ -92,9 +120,9 @@ export function buildOpenAIParams(req: InferenceRequest, model: string, cfg: Pic
     metadata: req.metadata,
     stream: true,
   };
-  // A continued conversation lives server-side, where the local context guard cannot shorten it: let the API drop the
-  // oldest items instead of failing with a context-length error. Fresh requests keep the default (fail, never truncate).
-  if (req.previousResponseId) (params as CreateParams & { truncation?: "auto" | "disabled" }).truncation = "auto";
+  // No `truncation: "auto"`: the API would silently drop the oldest items (the task, the SOURCES block, early reads).
+  // Overflow fails as a typed context_length error instead, and the runtime retries once with the elided local history
+  // replayed (agent.ts), so whatever is left out is stated, never silent.
   if (req.parallelToolCalls != null) params.parallel_tool_calls = req.parallelToolCalls;
   if (req.toolChoice) params.tool_choice = typeof req.toolChoice === "string" ? req.toolChoice : { type: "function", name: req.toolChoice.name };
   if (isReasoningModel(model)) {

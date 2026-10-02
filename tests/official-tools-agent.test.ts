@@ -10,7 +10,7 @@ import type { ToolContext } from "@/lib/ai/tools";
 import { causelistLookupTool, courtCalendarTool, OFFICIAL_TOOL_NAMES, readOfficialDocumentTool, searchOfficialSourcesTool } from "@/lib/ai/toolkit/india-official";
 import { indiaResearchTools, INDIA_TOOLS } from "@/lib/ai/toolkit/india";
 import { indiaRoutingFor, ROUTED_INDIA_TOOLS } from "@/lib/ai/india-guidance";
-import { AGENT_PERSONAS, toolsFor } from "@/lib/ai/agents/registry";
+import { AGENT_PERSONAS, evidenceFromToolCalls, isNonEvidenceResult, toolsFor } from "@/lib/ai/agents/registry";
 import { OfficialNotConfiguredError, registerOfficialImpl, type CauseListQuery } from "@/modules/official/service";
 import type { CauseListEntry, SourceChunk, SourceDocument, SourceSearchHit } from "@/modules/official/types";
 
@@ -26,6 +26,9 @@ const CHUNKS: SourceChunk[] = [
   { documentId: DOC.id, index: 2, pageStart: 3, pageEnd: 3, heading: null, text: "13. The Noticee traded while in possession of unpublished price sensitive information." },
   { documentId: DOC.id, index: 3, pageStart: 4, pageEnd: 4, heading: null, text: "14. Accordingly, a penalty of Rs. 10,00,000 is imposed under section 15G." },
 ];
+/** A document whose chunks, as read at max_chars 60,000, serialize past the tool's 64,000-character result bound. */
+const BIG_DOC: SourceDocument = { ...DOC, id: "sebi-orders_bigbigbig01", pages: 40, chunks: 40 };
+const BIG_CHUNKS: SourceChunk[] = Array.from({ length: 34 }, (_, i) => ({ documentId: BIG_DOC.id, index: i, pageStart: i + 1, pageEnd: i + 1, heading: null, text: `${i + 1}. "${"Para text with \"quotes\" and lines\n".repeat(52)}"`.slice(0, 1_990) }));
 const HITS: SourceSearchHit[] = [
   { ref: "src://sebi-orders_9f3a1c2b7e#p3", documentId: DOC.id, chunkIndex: 2, sourceId: "sebi-orders", kind: "order", title: DOC.title, publisher: "Securities and Exchange Board of India", url: DOC.url, docDate: "2026-09-30", pageStart: 3, pageEnd: 3, text: CHUNKS[0].text, score: 0.9, match: "both", extraction: "text_layer" },
   { ref: "src://ibbi_5c1d2e3f4a#p2", documentId: "ibbi_5c1d2e3f4a", chunkIndex: 1, sourceId: "ibbi", kind: "order", title: "NCLAT order in Comp. App. (AT) (Ins) No. 351 of 2026", publisher: "Insolvency and Bankruptcy Board of India", url: "https://ibbi.gov.in/orders/nclat", docDate: "2026-09-12", pageStart: 2, pageEnd: 2, text: "The appeal is dismissed.", score: 0.7, match: "keyword", extraction: "ocr_model" },
@@ -36,6 +39,22 @@ const entry = (over: Partial<CauseListEntry>): CauseListEntry => ({
 });
 
 describe("not available on this deployment", () => {
+  it("official not-available and empty results are not evidence (an agent that read nothing is not source-backed)", async () => {
+    const na = [
+      { name: "search_official_sources", result: await run(searchOfficialSourcesTool, { q: "insider trading" }) },
+      { name: "read_official_document", result: await run(readOfficialDocumentTool, { id: "src://sebi-orders_9f3a1c2b7e#p3" }) },
+      { name: "causelist_lookup", result: await run(causelistLookupTool, { date: "2026-10-05", case_number: "SLP(C) No. 1234/2026" }) },
+      { name: "court_calendar", result: await run(courtCalendarTool, { forum: "sci", year: 2026 }) },
+      { name: "causelist_lookup", result: { status: "unparsed_identifier", count: 0, entries: [], note: "Could not normalise" } },
+      { name: "search_official_sources", result: { available: true, count: 0, results: [], note: "No official document matched." } },
+    ];
+    for (const c of na) expect(JSON.stringify(c.result).length, c.name).toBeGreaterThan(40); // long enough to have counted before
+    expect(na.every((c) => isNonEvidenceResult(c.result))).toBe(true);
+    expect(evidenceFromToolCalls(na, { maxSources: 24, maxChars: 20_000 })).toEqual([]);
+    const read = { name: "read_official_document", result: { type: "search_result", source: "src://x#p1", title: "Order", content: ["13. The Noticee traded while in possession of UPSI."], available: undefined } };
+    expect(evidenceFromToolCalls([...na, read], { maxSources: 24, maxChars: 20_000 })).toHaveLength(1);
+  });
+
   it("returns a deterministic not-available result while the corpus is not configured (no Postgres in tests)", async () => {
     await expect(run(searchOfficialSourcesTool, { q: "insider trading" })).resolves.toMatchObject({ available: false, status: "not_available", reason: "official_not_configured", count: 0, results: [] });
     await expect(run(readOfficialDocumentTool, { id: "src://sebi-orders_9f3a1c2b7e#p3" })).resolves.toMatchObject({ available: false, reason: "official_not_configured" });
@@ -56,7 +75,11 @@ describe("with the official corpus", () => {
   const causeQueries: CauseListQuery[] = [];
   beforeAll(() => registerOfficialImpl({
     searchOfficial: async (q) => ({ hits: q.q === "nothing" ? [] : HITS.slice(0, q.limit ?? 8), mode: "hybrid", candidates: 40, empty: q.q === "nothing" }),
-    readOfficialDocument: async (id, opts) => { reads.push({ id, opts }); return id === DOC.id ? { document: DOC, chunks: CHUNKS, hasMore: true, nextChunk: 4, attribution: "Securities and Exchange Board of India — sebi.gov.in" } : null; },
+    readOfficialDocument: async (id, opts) => {
+      reads.push({ id, opts });
+      if (id === BIG_DOC.id) return { document: BIG_DOC, chunks: BIG_CHUNKS, hasMore: false, nextChunk: null, attribution: "Securities and Exchange Board of India — sebi.gov.in" };
+      return id === DOC.id ? { document: DOC, chunks: CHUNKS, hasMore: true, nextChunk: 4, attribution: "Securities and Exchange Board of India — sebi.gov.in" } : null;
+    },
     causeListEntries: async (q) => { causeQueries.push(q); return [entry({}), entry({ id: "cle_2", parsed: false, raw: "unparsed line SLP(C) 1234/2026" })].filter((e) => (!q.caseKeys?.length || e.caseNumbers.some((c) => q.caseKeys!.includes(c.normalized ?? ""))) && (!q.diaryNos?.length || q.diaryNos.includes(e.diaryNo ?? ""))); },
     courtCalendar: async (forum, years) => {
       if (forum === "sci") return { id: "sci-2026", courtId: "sci", years: [2026, 2027], weeklyOff: [0], holidays: [{ date: "2026-10-02", name: "Mahatma Gandhi's Birthday" }, { date: "2027-01-01", name: "New Year Holiday" }], vacations: [{ from: "2026-10-19", to: "2026-10-24", name: "Dussehra Holidays" }], sample: false, source: "https://www.sci.gov.in/calendar/" };
@@ -92,6 +115,31 @@ describe("with the official corpus", () => {
     await expect(run(readOfficialDocumentTool, { id: "src://sci-orders_ffffffffff" })).rejects.toThrow(/not substituted with another document/);
     await expect(run(readOfficialDocumentTool, { id: "../../etc/passwd" })).rejects.toThrow(/not an official document id/);
     await expect(run(readOfficialDocumentTool, { id: "src://bad ref" })).rejects.toThrow(/not a valid official source reference/);
+  });
+
+  it("a read that would exceed the result bound returns fewer WHOLE chunks and next_chunk from what was returned", async () => {
+    const r = (await run(readOfficialDocumentTool, { id: BIG_DOC.id, max_chars: 60_000 })) as { content: string[]; has_more: boolean; next_chunk: number; chunks: string };
+    const json = JSON.stringify(r);
+    expect(json.length).toBeLessThanOrEqual(64_000 - 512);
+    expect(json).not.toMatch(/truncated/);
+    expect(r.has_more).toBe(true);
+    const returned = Number(r.chunks.split("–")[1]);
+    expect(returned).toBeLessThan(BIG_CHUNKS.length - 1);
+    expect(r.next_chunk).toBe(returned + 1);
+    // Every returned chunk is whole (its full text is in the content blocks).
+    const text = r.content.join("\n\n");
+    for (const c of BIG_CHUNKS.slice(0, returned + 1)) expect(text).toContain(c.text.slice(-40));
+  });
+
+  it("cause-list ranges count both dates (31 days accepted, 32 refused) and an unparsed number stops the lookup even with an advocate", async () => {
+    await expect(run(causelistLookupTool, { from: "2026-10-01", to: "2026-10-31", case_number: "SLP(C) No. 1234/2026" })).resolves.toMatchObject({ status: "listed" });
+    await expect(run(causelistLookupTool, { from: "2026-10-01", to: "2026-11-01", case_number: "SLP(C) No. 1234/2026" })).rejects.toThrow(/longer than 31 days/);
+    const before = causeQueries.length;
+    const r = (await run(causelistLookupTool, { date: "2026-10-05", case_number: "the bail matter", advocate: "X Y" })) as { status: string; count: number; entries: unknown[] };
+    expect(r).toMatchObject({ status: "unparsed_identifier", count: 0, entries: [] });
+    expect(causeQueries.length).toBe(before); // the advocate's other listings are never reported as this matter's
+    const d = (await run(causelistLookupTool, { date: "2026-10-05", case_number: "SLP(C) No. 1234/2026", diary_no: "not a diary number" })) as { status: string };
+    expect(d.status).toBe("unparsed_identifier");
   });
 
   it("cause-list lookup matches the normalised case number exactly and never reports an unparsed line", async () => {

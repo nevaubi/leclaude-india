@@ -181,6 +181,12 @@ export interface InferenceRequest {
    * conversation prefix then ask the API to drop the invalidated blocks instead of rejecting the request.
    */
   historyEdited?: boolean;
+  /**
+   * Render every message even though `previousResponseId` is set (OpenAI): the local history was edited after the
+   * server-side continuation point, so this request continues from `previousResponseId` (the caller's base
+   * conversation) with the whole edited local history replayed. Ignored without `previousResponseId`.
+   */
+  replayHistory?: boolean;
 }
 
 // ---------------- Events and results ----------------

@@ -4,7 +4,7 @@ import type { ResponseInput } from "openai/resources/responses/responses";
 import { db } from "@/lib/db";
 import { runAgent, strictJsonSchema, type AgentEvent } from "@/lib/ai/agent";
 import { aiBudget, aiConfig } from "@/lib/ai/config";
-import { clipWithMarker, type BudgetProfileId, type ResolvedBudget } from "@/lib/ai/context-budget";
+import { charsForTokens, clipWithMarker, estimateTokens, type BudgetProfileId, type ResolvedBudget } from "@/lib/ai/context-budget";
 import type { TaskType } from "@/lib/ai/providers/types";
 import { indiaRoutingFor } from "@/lib/ai/india-guidance";
 import { evidenceFromToolCalls } from "@/lib/ai/agents/registry";
@@ -211,11 +211,28 @@ export function stepBudget(profile: BudgetProfileId, tier?: "fast" | "primary"):
   return aiBudget(profile, tier ? { fast: tier === "fast" } : {});
 }
 
-/** Clip step input to the budget (never below the size the step always accepted), logging when material is left out. */
-export function clipInput(x: Pick<ExecContext, "log">, text: string, max: number, what: string): string {
-  if (text.length <= max) return text;
-  x.log(`${what}: ${text.length.toLocaleString("en-US")} characters; the first ${max.toLocaleString("en-US")} were given to the model (budget).`);
-  return clipWithMarker(text, max, what);
+/** Largest share of a step's input budget one piece of step input may take (the rest: instructions, tools, results). */
+export const STEP_INPUT_SHARE = 0.5;
+
+/** Tokens one piece of step input may use: `share` (≤ 50%) of the step's input budget left after the fixed prompt. */
+export function stepInputTokens(budget: Pick<ResolvedBudget, "inputTokens">, fixed: string[] = [], share = STEP_INPUT_SHARE): number {
+  const s = Math.min(STEP_INPUT_SHARE, Math.max(0.05, share));
+  const fixedTokens = fixed.reduce((a, t) => a + estimateTokens(t), 0);
+  return Math.max(500, Math.floor((budget.inputTokens - fixedTokens) * s));
+}
+
+/**
+ * Clip step input to `stepInputTokens` (counted with the script-aware estimator, so Indic text gets fewer characters
+ * than English, and the model's real limit wins over the character floors steps used before budgets). Never silent: the
+ * cut is logged on the run and marked in the text.
+ */
+export function clipToBudget(x: Pick<ExecContext, "log">, text: string, budget: Pick<ResolvedBudget, "inputTokens">, what: string, opts: { fixed?: string[]; share?: number } = {}): string {
+  const maxTokens = stepInputTokens(budget, opts.fixed, opts.share);
+  const tokens = estimateTokens(text);
+  if (tokens <= maxTokens) return text;
+  const n = charsForTokens(text, maxTokens);
+  x.log(`${what}: ${text.length.toLocaleString("en-US")} characters (~${tokens.toLocaleString("en-US")} tokens); the first ${n.toLocaleString("en-US")} (~${maxTokens.toLocaleString("en-US")} tokens, at most half of the step's input budget) were given to the model.`);
+  return clipWithMarker(text, n, what);
 }
 
 export async function callModel(x: ExecContext, call: ModelCall): Promise<ModelResult> {
@@ -438,7 +455,7 @@ const aiExtract: Executor = async (x) => {
   const instructions = `${firmPreamble(x)}\n\nExtract the requested fields from the source document exactly as they appear; normalize dates to YYYY-MM-DD and amounts to numbers. Use empty values (\"\", 0, false, []) when a field is genuinely absent — never guess. For every field add an _evidence entry quoting the supporting language.\n${c.instructions ? `Additional guidance: ${str(c.instructions)}` : ""}`;
   const tier = c.modelTier === "fast" ? "fast" : "primary";
   const b = stepBudget("workflow_step", tier);
-  const r = await callModel(x, { instructions, input: `SOURCE DOCUMENT:\n"""\n${clipInput(x, source, Math.max(120_000, b.inputChars), "Source document")}\n"""`, tier, json: { name: "extraction", schema }, taskType: "extract" });
+  const r = await callModel(x, { instructions, input: `SOURCE DOCUMENT:\n"""\n${clipToBudget(x, source, b, "Source document", { fixed: [instructions, JSON.stringify(schema)] })}\n"""`, tier, json: { name: "extraction", schema }, taskType: "extract" });
   x.log(`Extracted ${fields.length} field(s)`);
   const j = (r.json ?? {}) as Record<string, unknown>;
   const ev = Array.isArray(j._evidence) ? (j._evidence as { confidence?: number }[]).map((e) => Number(e.confidence)).filter((n) => Number.isFinite(n)) : [];
@@ -462,7 +479,7 @@ const aiClassify: Executor = async (x) => {
     : { type: "object", properties: { label: { type: "string", enum: enumValues }, confidence: { type: "number", description: "0..1" }, rationale: { type: "string", description: "One or two sentences citing the decisive language" } }, required: ["label", "confidence", "rationale"] };
   const instructions = `${firmPreamble(x)}\n\nClassify the text into ${multi ? "one or more" : "exactly one"} of these labels:\n${labels.map((l) => `- ${l.label}: ${l.description ?? ""}`).join("\n")}\nGive a calibrated confidence between 0 and 1 and a short rationale that quotes the decisive language.\n${c.instructions ? `Additional guidance: ${str(c.instructions)}` : ""}`;
   const tier = c.modelTier === "fast" ? "fast" : "primary";
-  const r = await callModel(x, { instructions, input: `TEXT:\n"""\n${clipInput(x, source, Math.max(80_000, stepBudget("workflow_step", tier).inputChars), "Text")}\n"""`, tier, json: { name: "classification", schema }, taskType: "classify" });
+  const r = await callModel(x, { instructions, input: `TEXT:\n"""\n${clipToBudget(x, source, stepBudget("workflow_step", tier), "Text", { fixed: [instructions] })}\n"""`, tier, json: { name: "classification", schema }, taskType: "classify" });
   const j = r.json as Record<string, unknown>;
   const output = multi ? { labels: j.labels, label: (j.labels as { label: string }[])?.[0]?.label ?? "", confidence: (j.labels as { confidence: number }[])?.[0]?.confidence ?? 0, rationale: (j.labels as { rationale: string }[])?.map((l) => l.rationale).join(" ") } : { ...j, labels: [{ label: j.label, confidence: j.confidence, rationale: j.rationale }] };
   x.log(`Label: ${str(output.label)} (${Math.round(num(output.confidence, 0) * 100)}%)`);
@@ -484,7 +501,7 @@ const aiSummarize: Executor = async (x) => {
   };
   const instructions = `${firmPreamble(x)}\n\n${LEGAL_STYLE_RULES}\n\nSummarize the source in Markdown. ${styles[str(c.style)] ?? styles.bullets} Target about ${words} words.${c.focus ? ` Focus on: ${str(c.focus)}.` : ""} Preserve names, dates, Bates numbers, page:line cites and dollar figures exactly.`;
   const tier = c.modelTier === "fast" ? "fast" : "primary";
-  const r = await callModel(x, { instructions, input: `SOURCE:\n"""\n${clipInput(x, source, Math.max(150_000, stepBudget("workflow_step", tier).inputChars), "Source")}\n"""`, tier, taskType: "summarize" });
+  const r = await callModel(x, { instructions, input: `SOURCE:\n"""\n${clipToBudget(x, source, stepBudget("workflow_step", tier), "Source", { fixed: [instructions] })}\n"""`, tier, taskType: "summarize" });
   const verified = await verifyNarrativeStep(x, recordStep(x, r, { sources: [{ kind: "internal", title: "summarized source", cite: contentHash(source).slice(0, 12) }] }), r.text, [{ title: "Source", text: source.slice(0, verifyEvidenceChars()) }], { maxClaims: 30 });
   const provenance = storeStepProvenance(x, verified.provenance);
   return { output: { text: verified.text, wordCount: verified.text.split(/\s+/).filter(Boolean).length, _provenance: provenance }, usage: r.usage, calls: r.calls };
@@ -509,7 +526,7 @@ const aiDraft: Executor = async (x) => {
   const instructions = `${firmPreamble(x)}\n\n${LEGAL_STYLE_RULES}\n\nDraft ${kinds[str(c.kind)] ?? kinds.memo}. Tone: ${tones[str(c.tone)] ?? tones.formal}. Audience: ${audiences[str(c.audience)] ?? audiences.partner}. Output Markdown only. Start with a single H1 title line. Use [VERIFY] for any fact or authority you could not confirm. Do not add commentary outside the document.`;
   const tier = c.modelTier === "fast" ? "fast" : "primary";
   const draftBudget = stepBudget("litigation_draft", tier);
-  const input = `DRAFTING BRIEF:\n${brief}${c.context ? `\n\nADDITIONAL CONTEXT:\n${clipInput(x, str(c.context), Math.max(100_000, draftBudget.inputChars), "Drafting context")}` : ""}`;
+  const input = `DRAFTING BRIEF:\n${brief}${c.context ? `\n\nADDITIONAL CONTEXT:\n${clipToBudget(x, str(c.context), draftBudget, "Drafting context", { fixed: [instructions, brief] })}` : ""}`;
   const r = await callModel(x, { instructions, input, tier, research: c.research as ModelCall["research"], maxSteps: draftBudget.maxSteps, budget: "litigation_draft", taskType: "draft" });
   const title = r.text.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? `${x.workflow.name} — ${str(c.kind)}`;
   const verified = await verifyNarrativeStep(x, recordStep(x, r, { meta: { kind: str(c.kind), title } }), r.text, evidenceFor(r, [{ title: "Drafting brief", text: brief }, { title: "Additional context", text: c.context ? str(c.context) : "" }]), { maxClaims: 30 });
@@ -534,7 +551,8 @@ const aiReview: Executor = async (x) => {
   };
   const instructions = `${firmPreamble(x)}\n\nReview the document against each checklist item. For each item report pass / fail / unclear / n/a, a severity, a one-sentence note and the exact quote you relied on. Then give a two-sentence summary and an overall score (100 = every item passes).\n${c.instructions ? `Additional guidance: ${str(c.instructions)}` : ""}`;
   const tier = c.modelTier === "fast" ? "fast" : "primary";
-  const r = await callModel(x, { instructions, input: `CHECKLIST:\n${checklist.map((i, n) => `${n + 1}. ${i}`).join("\n")}\n\nDOCUMENT:\n"""\n${clipInput(x, source, Math.max(120_000, stepBudget("workflow_step", tier).inputChars), "Document")}\n"""`, tier, json: { name: "review", schema }, taskType: "review" });
+  const checklistText = checklist.map((i, n) => `${n + 1}. ${i}`).join("\n");
+  const r = await callModel(x, { instructions, input: `CHECKLIST:\n${checklistText}\n\nDOCUMENT:\n"""\n${clipToBudget(x, source, stepBudget("workflow_step", tier), "Document", { fixed: [instructions, checklistText, JSON.stringify(schema)] })}\n"""`, tier, json: { name: "review", schema }, taskType: "review" });
   const j = r.json as { findings: { status: string }[]; summary: string; score: number };
   const failed = (j.findings ?? []).filter((f) => f.status === "fail").length;
   x.log(`${failed} failing item(s), score ${Math.round(num(j.score, 0))}`);

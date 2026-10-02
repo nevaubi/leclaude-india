@@ -23,10 +23,13 @@ describe("resolveContextBudget", () => {
         expect(b.maxOutputTokens, label).toBeLessThanOrEqual(Math.min(spec.outputTokens.ceil, b.model.maxOutput));
         expect(b.inputTokens, label).toBeLessThanOrEqual(spec.inputTokens.ceil);
         expect(b.inputTokens + b.maxOutputTokens, label).toBeLessThan(b.model.contextWindow);
+        // Floors hold unless the model's input cannot carry them: then the model limit wins (85% of the input characters
+        // for evidence, 50% for one tool result or the history, one source never above the evidence total).
+        const caps = { totalEvidenceChars: b.inputChars * 0.85, toolResultChars: b.inputChars * 0.5, historyChars: b.inputChars * 0.5, perSourceChars: b.totalEvidenceChars, blockChars: Number.POSITIVE_INFINITY };
         for (const k of ["perSourceChars", "totalEvidenceChars", "toolResultChars", "historyChars", "blockChars"] as const) {
           const r = spec[k];
-          expect(b[k], `${label} ${k}`).toBeGreaterThanOrEqual(r.floor);
-          expect(b[k], `${label} ${k}`).toBeLessThanOrEqual(r.ceil);
+          expect(b[k], `${label} ${k}`).toBeGreaterThanOrEqual(Math.min(r.floor, Math.floor(caps[k])));
+          expect(b[k], `${label} ${k}`).toBeLessThanOrEqual(Math.min(r.ceil, Math.ceil(caps[k])));
         }
         expect(b.maxFullSources, label).toBeGreaterThanOrEqual(spec.maxFullSources.floor);
         expect(Number.isFinite(b.inputChars) && b.inputChars > 0, label).toBe(true);
@@ -52,6 +55,18 @@ describe("resolveContextBudget", () => {
   it("a small model's limit wins over a floor (never asks for more output than the model produces)", () => {
     const b = resolveContextBudget("litigation_draft", { contextWindow: 200_000, maxOutput: 4_096, maxInput: 195_000 }, NO_ENV);
     expect(b.maxOutputTokens).toBe(4_096);
+  });
+
+  it("the model limit wins over char floors on 128K / 200K models (verify evidence ≤ 85% of its input)", () => {
+    for (const model of [null, { contextWindow: 200_000, maxOutput: 64_000, maxInput: 136_000 }, modelLimits("openai", "gpt-4o")]) {
+      const v = resolveContextBudget("verify", model, NO_ENV);
+      expect(v.totalEvidenceChars, `${model?.contextWindow ?? "default"}`).toBeLessThanOrEqual(v.inputChars * 0.85);
+      expect(v.perSourceChars).toBeLessThanOrEqual(v.totalEvidenceChars);
+      expect(v.toolResultChars).toBeLessThanOrEqual(v.inputChars * 0.5);
+      expect(v.historyChars).toBeLessThanOrEqual(v.inputChars * 0.5);
+      const chat = resolveContextBudget("chat_fast", model, NO_ENV);
+      expect(chat.toolResultChars).toBeLessThanOrEqual(chat.inputChars * 0.5);
+    }
   });
 
   it("AI_CONTEXT_SCALE shrinks input budgets toward the floors (clamped to 0.25–1)", () => {

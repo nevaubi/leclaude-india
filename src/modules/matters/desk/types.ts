@@ -211,6 +211,54 @@ export interface OrderActionSetSummary {
   stale: boolean;
 }
 
+// ---- the matter's latest order (exact selection) --------------------------------------------------------------------
+
+/**
+ * Outcome of choosing "the latest order" of a matter in code. Only `found` carries an order; every other state says
+ * exactly why none was chosen (never another case's order in its place):
+ * - not_found: the matter's identifiers were looked up and no order or judgment carries one of them;
+ * - ambiguous: more than one order shares the latest date, or the exact matches carry no date (name one with orderRef);
+ * - not_linked: the order named by orderRef is not among the matter's exact matches;
+ * - untracked: the matter tracks no case or diary number the official sources can match;
+ * - not_tracked: the case number given is not one of the matter's tracked identifiers;
+ * - unparsed_identifier: the case number given does not normalize (nothing was looked up);
+ * - not_indexed: the chosen order's text has not been extracted yet;
+ * - not_available: the official-sources corpus is not configured or not wired on this deployment.
+ */
+export type LatestOrderStatus = "found" | "not_found" | "ambiguous" | "not_linked" | "untracked" | "not_tracked" | "unparsed_identifier" | "not_indexed" | "not_available";
+
+export interface LatestOrderCandidate {
+  id: string;
+  /** Stable src:// reference of the document. */
+  ref: string;
+  title: string;
+  date: string | null;
+  kind: string;
+  url: string;
+}
+
+export interface LatestOrderResult {
+  status: LatestOrderStatus;
+  /** One sentence for the person running it (what was checked, what was or was not found). */
+  message: string;
+  order: (LatestOrderCandidate & { fileUrl: string | null; sha256: string | null; version: number; sourceId: string; ocr: boolean; ocrPages: number[] }) | null;
+  /** The tracked identifier the chosen order carries (exact match). */
+  matchedOn: TrackedIdentifier | null;
+  /** Printed forms of the identifiers that were looked up. */
+  identifiers: string[];
+  /** Exact matches, newest first (at most 10); for `ambiguous`, the orders to choose from. */
+  candidates: LatestOrderCandidate[];
+  /** Number of exact matches (orders and judgments). */
+  matches: number;
+  /** Order text with [Page N] markers ("" unless found). */
+  text: string;
+  /** False when the read stopped at its character bound before the end of the order. */
+  complete: boolean;
+  chars: number;
+  /** SHA-256 of the text read (pages and chunk text), null unless found. */
+  textSha256: string | null;
+}
+
 // ---- hearing brief ------------------------------------------------------------------------------------------------
 
 /** Evidence states kept apart (constitution §23): found by a search, read in full, or supplied from the matter. */

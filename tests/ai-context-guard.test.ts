@@ -31,7 +31,7 @@ vi.mock("@/lib/ai/openai", () => ({
   }),
 }));
 
-import { guardHistory, runAgent, type AgentEvent } from "@/lib/ai/agent";
+import { contextLimit, guardHistory, runAgent, type AgentEvent } from "@/lib/ai/agent";
 import { mapOpenAIError } from "@/lib/ai/providers/openai";
 import { InferenceError, type InferenceMessage } from "@/lib/ai/providers/types";
 import { resolveContextBudget } from "@/lib/ai/context-budget";
@@ -83,6 +83,32 @@ describe("guardHistory", () => {
     const aggressive = guardHistory(h, { maxTokens: 30_000, aggressive: true });
     expect(aggressive.elided).toBeGreaterThanOrEqual(normal.elided);
     expect(aggressive.tokens).toBeLessThanOrEqual(normal.tokens);
+  });
+});
+
+describe("contextLimit (when the guard elides)", () => {
+  it("elides at the model's capacity capped by the profile ceiling, not at the sizing share", () => {
+    // research_lane on Claude Haiku 4.5 (200K window): the sizing share is ~38K tokens, but the model holds ~128K, so a
+    // lane's five reads (~11K tokens each) stay in context instead of being elided mid-lane.
+    const haiku = modelLimits("anthropic", "claude-haiku-4-5");
+    const lane = resolveContextBudget("research_lane", haiku, {});
+    expect(lane.inputTokens).toBeLessThan(60_000);
+    const limit = contextLimit(haiku, lane, lane.maxOutputTokens);
+    expect(limit).toBe(lane.guardTokens);
+    expect(limit).toBeGreaterThan(5 * 11_000 + 20_000);
+    expect(limit).toBeLessThanOrEqual(haiku.maxInput);
+    // A large model is still capped by the profile ceiling (cost / long-context price tier), not by its 1M window.
+    const big = modelLimits("openai", "gpt-5.4");
+    expect(contextLimit(big, resolveContextBudget("research_lane", big, {}), 3_000)).toBe(160_000);
+    expect(contextLimit(big, resolveContextBudget("deep_research_synthesis", big, {}), 16_000)).toBeLessThan(272_000);
+    // chat_fast on gpt-5.4 is unchanged (share = ceiling = 96K).
+    const fast = resolveContextBudget("chat_fast", big, {});
+    expect(contextLimit(big, fast, fast.maxOutputTokens)).toBe(fast.inputTokens);
+    // Never above what the model accepts with a larger explicit output reservation, never below the sizing share.
+    expect(contextLimit(haiku, lane, 100_000)).toBe(Math.max(lane.inputTokens, Math.min(haiku.maxInput, haiku.contextWindow - 100_000) - 8_000));
+    // AI_CONTEXT_SCALE shrinks the guard with the other input budgets.
+    const scaled = resolveContextBudget("research_lane", haiku, { AI_CONTEXT_SCALE: "0.25" });
+    expect(scaled.guardTokens).toBe(Math.max(scaled.inputTokens, 40_000));
   });
 });
 

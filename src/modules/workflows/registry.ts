@@ -13,7 +13,9 @@ import type { WorkflowNodeType } from "@/lib/types/domain";
  * types, so `AnyNodeType` is the full catalogue until that union is extended.
  */
 export type IntegrityNodeType = "ai.verify" | "data.dedupe" | "logic.review";
-export type AnyNodeType = WorkflowNodeType | IntegrityNodeType;
+/** Official-sources steps (deterministic: exact identifier matching, no model). */
+export type OfficialNodeType = "data.official_order";
+export type AnyNodeType = WorkflowNodeType | IntegrityNodeType | OfficialNodeType;
 
 export type NodeCategory = "trigger" | "ai" | "data" | "intel" | "logic" | "action";
 
@@ -370,6 +372,21 @@ export const NODE_TYPES: NodeTypeSpec[] = [
     outputShape: "{ items[], kept, dropped, droppedItems[{ item, duplicateOf }], hashes[] }", outputPaths: ["output.items", "output.kept", "output.dropped", "output.droppedItems"],
   },
 
+  {
+    type: "data.official_order" as WorkflowNodeType, category: "data", label: "Matter's latest order", short: "Order", icon: "Gavel",
+    description: "The run matter's latest published order or judgment, chosen in code: only orders whose published metadata carries one of the matter's tracked identifiers exactly (case number, Supreme Court diary number; NCLT numbers with their bench), the latest by order date. Reads its text with page markers. Never searches by free text and never uses another case's order: when there is no exact match, two orders share the latest date, or the matter tracks no identifier, the status says so and no order is returned.",
+    keywords: ["order", "judgment", "official sources", "case number", "latest order", "next date", "India", "exact match"],
+    defaultConfig: { forum: "", caseNumber: "", orderRef: "", maxChars: 60000 },
+    fields: [
+      { key: "caseNumber", label: "Case number (as printed)", type: "template", help: "Optional. Narrows to this one of the matter's tracked identifiers; empty uses all of them. A number the matter does not track is never looked up." },
+      { key: "forum", label: "Court / tribunal", type: "template", placeholder: "sci · hc-delhi · nclt · nclat", help: "Optional, with the case number: the forum it is tracked under." },
+      { key: "orderRef", label: "Specific order", type: "template", placeholder: "src://sci-orders_4d2e9a01bc", help: "Optional src:// reference; it must be one of the matter's exact matches." },
+      { key: "maxChars", label: "Max characters read", type: "number", min: 2000, max: 60000 },
+    ],
+    outputShape: "{ status: found|not_found|ambiguous|not_linked|untracked|not_tracked|unparsed_identifier|not_indexed|not_available, message, order{ id, ref, title, date, url, ocr }, matchedOn{ forum, kind, value, printed }, candidates[], matches, text, complete }",
+    outputPaths: ["output.status", "output.message", "output.order.ref", "output.order.title", "output.order.date", "output.order.url", "output.matchedOn.printed", "output.candidates", "output.text", "output.complete"],
+  },
+
   // ───────────────────────── Logic ─────────────────────────
   {
     type: "logic.branch", category: "logic", label: "Branch", short: "Branch", icon: "GitBranch",
@@ -431,15 +448,16 @@ export const NODE_TYPES: NodeTypeSpec[] = [
 
   {
     type: "logic.review" as WorkflowNodeType, category: "logic", label: "Trust review", short: "Review", icon: "ShieldAlert",
-    description: "Gate on AI provenance: continues when every referenced AI step is trusted (source-backed, verified, above the confidence gate); otherwise pauses the run for a person with the reason (e.g. '3 extracted events failed verification'). Approving lets the run proceed; rejecting skips the gated path.",
+    description: "Gate on AI provenance: continues when every referenced AI step is trusted (source-backed, verified, above the confidence gate); otherwise pauses the run for a person with the reason (e.g. '3 extracted events failed verification'). With 'Always ask a person' it pauses every time, trusted or not. Approving lets the run proceed; rejecting skips the gated path.",
     keywords: ["gate", "trust", "provenance", "human", "review", "confidence", "pause"],
-    defaultConfig: { steps: "events, memo", approverId: "{{user.id}}", title: "Review AI output", message: "AI output needs a look before the workflow acts on it.", minConfidence: 0.6 },
+    defaultConfig: { steps: "events, memo", approverId: "{{user.id}}", title: "Review AI output", message: "AI output needs a look before the workflow acts on it.", minConfidence: 0.6, requireHuman: false },
     fields: [
       { key: "steps", label: "Steps to review", type: "text", required: true, help: "Comma-separated node ids of AI steps; the gate reads their provenance." },
       { key: "approverId", label: "Reviewer", type: "person" },
       { key: "title", label: "Title", type: "text" },
       { key: "message", label: "Message to reviewer", type: "template", rows: 4 },
       { key: "minConfidence", label: "Minimum confidence", type: "number", min: 0, max: 1, help: "0..1; defaults to the platform gate (0.6)." },
+      { key: "requireHuman", label: "Always ask a person", type: "toggle", help: "Pause for the reviewer even when every step is trusted (deadlines, next dates and other high-risk fields)." },
     ],
     outputs: [{ id: "approved", label: "Trusted / approved" }, { id: "rejected", label: "Rejected" }],
     outputShape: "{ trusted, approved, reasons[], steps[{ id, trusted, reason, confidence }], decidedBy, comment }", outputPaths: ["output.trusted", "output.approved", "output.reasons", "output.steps", "output.comment"],

@@ -10,6 +10,7 @@ import { executionPlan, isLoopBackEdge, validateWorkflow, type ExecutionPlan } f
 import { EXECUTORS, StepError, TrustGateError, matterContext, stepProvenanceOf, type ExecContext, type ExecResult, type Executor, type RunTrustState } from "./executors";
 import { AGENT_EXECUTORS } from "./executors-agents";
 import { INTEL_EXECUTORS } from "./executors-intel";
+import { OFFICIAL_EXECUTORS } from "./executors-official";
 import { validateFrontendValues } from "./frontend";
 import { audit } from "@/lib/integrity/audit";
 import { resolveDateRule, resolveDeep, resolveTemplate, resolveText, type ResolveReport, type TemplateContext } from "./template-expr";
@@ -21,8 +22,8 @@ import {
   type EngineStepContext, type ExecResultTelemetry, type ExecutorEmit, type RunApproval, type RunArtifact, type RunBudget, type RunFollowUps, type RunHandoff, type RunIteration, type RunLease, type RunOutcome, type RunOutput, type RunStartRequest, type RunStopReason, type RunTerminalStatus, type RunUsage, type WorkflowRunRecord,
 } from "./types";
 
-/** Every executor the engine can run: the original catalogue plus the intelligence, steward, output and agent steps. */
-export const ALL_EXECUTORS: Record<AnyNodeType, Executor> = { ...EXECUTORS, ...(INTEL_EXECUTORS as Record<AnyNodeType, Executor>), ...(AGENT_EXECUTORS as Record<AnyNodeType, Executor>) };
+/** Every executor the engine can run: the original catalogue plus the intelligence, steward, output, agent and official-sources steps. */
+export const ALL_EXECUTORS: Record<AnyNodeType, Executor> = { ...EXECUTORS, ...(INTEL_EXECUTORS as Record<AnyNodeType, Executor>), ...(AGENT_EXECUTORS as Record<AnyNodeType, Executor>), ...(OFFICIAL_EXECUTORS as Record<AnyNodeType, Executor>) };
 
 /**
  * Workflow engine: executes a validated DAG with dynamic scheduling (a node

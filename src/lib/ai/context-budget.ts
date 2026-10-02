@@ -48,8 +48,15 @@ export interface ResolvedBudget {
   profile: BudgetProfileId;
   /** Default `maxOutputTokens` for the call (visible answer size; reasoning headroom is added per provider, then clamped to the model). */
   maxOutputTokens: number;
-  /** Tokens the whole input (instructions + history + evidence) may use before the context guard elides old tool results. */
+  /** Tokens the whole input (instructions + history + evidence) is sized to: the share callers pack evidence and history against. */
   inputTokens: number;
+  /**
+   * Tokens of input the context guard allows before it elides old tool results: what the model accepts after the output
+   * reservation, capped by the profile's input ceiling (latency, cost, the long-context price tier); never below
+   * `inputTokens`. The guard is not the sizing share: a run on a smaller model keeps its earlier reads until the model's
+   * own limit (or the ceiling) is near, instead of eliding them at a fraction of it.
+   */
+  guardTokens: number;
   /** `inputTokens` in characters at a conservative 3 chars/token (Latin script; use estimateTokens for Indic text). */
   inputChars: number;
   /** Characters of one source given in full (research evidence, verifier source, deposition segment, document window). */
@@ -175,6 +182,7 @@ export function resolveContextBudget(profile: BudgetProfileId, descriptor?: Pick
   const usable = Math.max(1_000, Math.min(maxInput, contextWindow - maxOutputTokens) - OVERHEAD_TOKENS);
   const wanted = Math.round(usable * spec.inputShare * scale);
   const inputTokens = Math.max(1, Math.min(usable, clamp(wanted, spec.inputTokens.floor, spec.inputTokens.ceil)));
+  const guardTokens = Math.max(inputTokens, Math.min(usable, Math.round(spec.inputTokens.ceil * scale)));
   const inputChars = inputTokens * CHARS_PER_TOKEN;
   // Char targets apply in full at REFERENCE_INPUT_TOKENS of input; smaller budgets scale them toward the floor.
   const ratio = Math.min(1, inputTokens / REFERENCE_INPUT_TOKENS) * scale;
@@ -192,6 +200,7 @@ export function resolveContextBudget(profile: BudgetProfileId, descriptor?: Pick
     profile,
     maxOutputTokens,
     inputTokens,
+    guardTokens,
     inputChars,
     perSourceChars,
     totalEvidenceChars,

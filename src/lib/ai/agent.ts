@@ -330,12 +330,17 @@ export function guardHistory(history: InferenceMessage[], opts: { maxTokens: num
   return { elided, chars, tokens };
 }
 
-/** Input-token limit for the context guard: the budget's, else what the model accepts minus the output reservation. */
-export function contextLimit(descriptor: Pick<ModelDescriptor, "contextWindow" | "maxOutput" | "maxInput"> | undefined, budget: ResolvedBudget | null, maxOutputTokens: number | undefined): number {
-  if (budget) return budget.inputTokens;
+/**
+ * Input-token limit for the context guard: what the model accepts minus the output reservation; with a budget, the
+ * budget's guard (the model's capacity capped by the profile's input ceiling, never below the sizing share). The
+ * sizing share (`inputTokens`) is not the elision trigger: on a smaller model it is a fraction of what the model holds.
+ */
+export function contextLimit(descriptor: Pick<ModelDescriptor, "contextWindow" | "maxOutput" | "maxInput"> | undefined, budget: Pick<ResolvedBudget, "inputTokens"> & { guardTokens?: number } | null, maxOutputTokens: number | undefined): number {
   const window = descriptor?.contextWindow ?? 128_000;
   const maxInput = descriptor?.maxInput ?? window - (descriptor?.maxOutput ?? 16_000);
-  return Math.max(8_000, Math.min(maxInput, window - (maxOutputTokens ?? 16_000)) - 8_000);
+  const capacity = Math.max(8_000, Math.min(maxInput, window - (maxOutputTokens ?? 16_000)) - 8_000);
+  if (budget) return Math.min(budget.guardTokens ?? budget.inputTokens, Math.max(budget.inputTokens, capacity));
+  return capacity;
 }
 
 // ---------------------------------------------------------------------------

@@ -26,6 +26,7 @@ export function nodeSummary(type: string, c: Record<string, unknown>): string {
     case "data.search_ediscovery": return `${s(c.query, 40) || "*"}${c.privilegedOnly ? " · privileged" : ""}${c.hotOnly ? " · hot" : ""}`;
     case "data.legal_search": return `${s(c.source, 18)} · ${s(c.source === "verify_citations" ? c.text : c.query, 40)}`;
     case "data.fetch_url": return s(c.url, 60);
+    case "data.official_order": return c.orderRef ? `Order ${s(c.orderRef, 44)}` : c.caseNumber ? `Latest order · ${s(c.caseNumber, 40)}` : "Latest order · tracked identifiers";
     case "logic.branch": return `${Array.isArray(c.rules) ? c.rules.length : 0} rule(s) + else`;
     case "logic.loop": return `over ${s(c.over, 50)} (max ${c.maxIterations ?? 50})`;
     case "logic.merge": return c.mode === "any" ? "Continue when any branch succeeds" : "Wait for all branches";

@@ -25,7 +25,7 @@ import type { CauseListEntry, ListingMatch, MatterCaseIdentifier, SourceDocument
 import { advocateMatches, identifierCheckable, listingMatchHolds, normalizeIdentifier, suggestIdentifiers, validateTrackingInput, forumHasParsedLists } from "@/modules/matters/desk/tracking";
 import { buildActionItems, checkQuote, computeDeadline, nextDateFromQuote, parsePeriod, parseStatedDate, type OrderTextChunk } from "@/modules/matters/desk/order-actions";
 import { resolveRange } from "@/modules/matters/desk/dates";
-import { collectToolSources, expandNumberedRefs, resolveClaims } from "@/modules/matters/desk/brief-format";
+import { collectToolSources, composeBriefMarkdown, expandNumberedRefs, resolveClaims, type BriefInput } from "@/modules/matters/desk/brief-format";
 import { DeskUnavailableError, extractOrderActions, getTracking, listActionSets, matterListings, matterOrders, orderActionTaskId, putTracking, reviewActionSet } from "@/modules/matters/desk/server";
 import { generateHearingBrief, listBriefs } from "@/modules/matters/desk/brief";
 import type { BriefStreamEvent } from "@/modules/matters/desk/types";
@@ -256,6 +256,30 @@ describe("order action items (pure)", () => {
     expect(affidavit).toMatchObject({ flagged: false, deadline: { date: "2026-10-29" }, deadlineGap: null });
     expect(deposit).toMatchObject({ flagged: false, deadline: null, deadlineGap: "runs_from_event" });
     expect(costs).toMatchObject({ flagged: true, deadline: null, deadlineGap: "quote_not_found", check: { quoteFound: false } });
+  });
+});
+
+describe("brief record sections (pure)", () => {
+  const base: BriefInput = { matterName: "Hardik Chawda", preparedOn: "2026-10-02", version: 1, listing: null, manualHearing: null, orders: [], compliance: [], pendingReview: 0, claims: [], sources: [], notes: [] };
+
+  it("never states 'none found' for a lookup that could not be made or was not made", () => {
+    const failed = composeBriefMarkdown({ ...base, listingCheck: { state: "not_configured" }, ordersCheck: { state: "error" } });
+    expect(failed).toContain("Cause lists could not be checked (the official-sources database is not configured); whether the matter is listed is not known.");
+    expect(failed).toContain("Orders could not be checked (the lookup failed); whether there are orders is not known.");
+    expect(failed).not.toMatch(/No listing or hearing is recorded|No orders found/);
+    const untracked = composeBriefMarkdown({ ...base, listingCheck: { state: "ok", untracked: true }, ordersCheck: { state: "ok", untracked: true } });
+    expect(untracked).toContain("Cause lists were not checked: no case number or diary number the official sources can match is tracked for this matter.");
+    expect(untracked).toContain("Orders were not looked up: no case number or diary number the official sources can match is tracked for this matter.");
+    expect(untracked).not.toMatch(/No listing or hearing is recorded|No orders found/);
+    const ran = composeBriefMarkdown({ ...base, listingCheck: { state: "ok" }, ordersCheck: { state: "ok" } });
+    expect(ran).toContain("No listing or hearing is recorded for the next 30 days.");
+    expect(ran).toContain("No orders found for the tracked identifiers.");
+  });
+
+  it("keeps a hand-entered hearing but says the cause lists could not be checked", () => {
+    const md = composeBriefMarkdown({ ...base, manualHearing: { id: "hr_1", matterId: "m", date: "2026-10-05", createdAt: "", createdBy: "" }, listingCheck: { state: "not_available" } });
+    expect(md).toContain("- Date: 05-10-2026 (entered by hand)");
+    expect(md).toContain("- Cause lists could not be checked (cause lists and orders are not available on this deployment yet)");
   });
 });
 
@@ -670,6 +694,19 @@ describe("hearing brief", () => {
     expect((await call(briefRoute.POST, send(`/api/matters/${matterA}/brief`, { listingId: 5 }), p({ id: matterA }))).status).toBe(400);
   });
 
+  it("says orders could not be checked (not 'none found') when the orders lookup fails, in the brief and to the model", async () => {
+    let context = "";
+    const brief = await generateHearingBrief(matterA, {}, () => {}, undefined, {
+      listings, orders: async () => { throw new OfficialNotImplementedError("ordersForIdentifiers"); }, read, now: new Date("2026-10-02T06:00:00Z"),
+      agent: async (o) => { context = String(o.input); return { text: "", toolCalls: [], json: { summary: { text: "Listed on 5 October.", sources: [] }, points: [], authorities: [], questions: [] } }; },
+    });
+    expect(brief.status).toBe("partial");
+    expect(brief.markdown).toContain("## Last orders\nOrders could not be checked (cause lists and orders are not available on this deployment yet); whether there are orders is not known.");
+    expect(brief.markdown).not.toContain("No orders found");
+    expect(context).toContain("LAST ORDERS (supplied as sources): Orders could not be checked");
+    expect(context).not.toMatch(/LAST ORDERS[^\n]*: none/);
+  });
+
   it("marks an unsourced summary, and is partial when listings or orders could not be checked or research ran out of time", async () => {
     const answer = { text: "", toolCalls: [], json: { summary: "The matter is at the notice stage.", points: [], authorities: [], questions: [] } };
     const noLists = await generateHearingBrief(matterA, {}, () => {}, undefined, { listings: async () => { throw new OfficialNotConfiguredError(); }, orders, read, now: new Date("2026-10-02T06:00:00Z"), agent: async () => answer });
@@ -677,6 +714,8 @@ describe("hearing brief", () => {
     expect(noLists.notes.join(" ")).toMatch(/Cause lists could not be checked/);
     expect(noLists.claims).toEqual([{ section: "summary", text: "The matter is at the notice stage.", sources: [], status: "unsupported" }]);
     expect(noLists.markdown).toContain("The matter is at the notice stage. _(not source-linked: verify before use)_");
+    expect(noLists.markdown).toContain("Cause lists could not be checked (the official-sources database is not configured)");
+    expect(noLists.markdown).not.toContain("No listing or hearing is recorded");
     const slow = await generateHearingBrief(matterA, {}, () => {}, undefined, {
       listings, orders, read, now: new Date("2026-10-02T06:00:00Z"), researchBudgetMs: 30,
       agent: (o) => new Promise((_, reject) => o.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })))),

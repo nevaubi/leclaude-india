@@ -7,6 +7,7 @@ import { BytesCache, PRIORITY, processUnit, scrubIndexedDocuments, type StageCou
 import { officialSources, sourceEnabled } from "./registry";
 import type { IngestRunReport, SourceDef, SourceId } from "./types";
 import { isSourceId } from "./types";
+import { CAPTION_SCOPED_SOURCES } from "./causelist/query";
 import { claimUnit, dbSize, type ClaimFilter, enqueueUnits, getOfficialState, officialLimitBytes, officialStore, pgArray, setOfficialState, sweepExpiredUnits, unitId, UNIT_STAGES, type OfficialUnit, type UnitStage } from "./units";
 import { backfillCursor, parseCursor } from "./adapters/regulators/common";
 
@@ -54,6 +55,8 @@ export const DEFAULT_SCRUB_PER_RUN = 200;
 const EMBED_QUEUE_PER_RUN = 200;
 /** ocr_needed documents re-queued per run after the OCR cap was raised. */
 const OCR_REQUEUE_PER_RUN = 50;
+/** Orders parsed before caption scoping, re-parsed per run (from their stored text; no request to the publisher). */
+const CAPTION_REPARSE_PER_RUN = 200;
 const IDLE_WAIT_MS = 1_500;
 const BUDGET_CHECK_TTL_MS = 5_000;
 /** Stages that send requests to the publisher (bounded per source by OFFICIAL_SOURCE_INFLIGHT). */
@@ -257,6 +260,14 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
         result.notes.push(`embedding queue skipped: ${(e as Error).message.slice(0, 200)}`);
       }
     }
+    if (stages.includes("parse")) {
+      try {
+        const n = await requeueCaptionReparse(store, sourceIds, CAPTION_REPARSE_PER_RUN);
+        if (n) result.notes.push(`${n} order(s) parsed before caption scoping re-queued for parsing`);
+      } catch (e) {
+        result.notes.push(`caption re-parse skipped: ${(e as Error).message.slice(0, 200)}`);
+      }
+    }
     if (stages.includes("ocr")) {
       try {
         const n = await requeueCappedOcr(store, sourceIds, maxOcrPages, OCR_REQUEUE_PER_RUN);
@@ -398,6 +409,27 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
     if (unitCap != null && !claimable().length) result.notes.push(`limitPerSource (${unitCap}) reached for every source`);
     return finish("done");
   }
+}
+
+/**
+ * Indexed orders of caption-scoped sources (NCLAT, SEBI incl. SAT) parsed before captions were told apart from cited
+ * appeal numbers (no meta.caseKeysScope): their parse unit is re-queued once (payload.reparse), so the current parser
+ * replaces the stored keys. Until then orderBindingKeys binds only the caption's number. Bounded and idempotent: a
+ * document whose re-parse was already queued is not selected again, whatever its outcome.
+ */
+export async function requeueCaptionReparse(store: RemoteStore, sources: string[], limit: number): Promise<number> {
+  const scoped = sources.filter((s) => (CAPTION_SCOPED_SOURCES as readonly string[]).includes(s));
+  if (!scoped.length || limit <= 0) return 0;
+  const rows = await store.query({
+    query: `SELECT d.id, d.source, d.url FROM official_documents d
+      WHERE d.status = 'indexed' AND d.source = ANY($1::text[]) AND d.kind IN ('order', 'judgment') AND (d.meta->>'caseKeysScope') IS NULL
+        AND NOT EXISTS (SELECT 1 FROM official_units u WHERE u.id = 'parse:' || d.id AND u.payload->>'reparse' = 'caption-scope')
+      ORDER BY d.id LIMIT ${Math.max(1, Math.min(Math.floor(limit), 500))}`,
+    params: [pgArray(scoped)],
+  });
+  if (!rows.length) return 0;
+  await enqueueUnits(store, rows.map((r) => ({ id: unitId("parse", String(r.id)), source: String(r.source), stage: "parse" as const, key: String(r.url), documentId: String(r.id), priority: PRIORITY.parse, payload: { reparse: "caption-scope" } })), { requeue: true });
+  return rows.length;
 }
 
 /**

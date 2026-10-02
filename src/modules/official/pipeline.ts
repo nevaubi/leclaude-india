@@ -199,6 +199,9 @@ async function releaseInterrupted(store: RemoteStore, unit: OfficialUnit, payloa
   return { status: "released", counts: {}, note: "deadline" };
 }
 
+/** Discovery passes in a row whose cursor did not advance before the cursor is cleared (a fresh pass). */
+export const STUCK_PASSES_MAX = 3;
+
 /** Seconds a unit waits after our own host rate limit refused its request (spread so waiting units do not return together). */
 export const LOCAL_LIMIT_DEFER_SECONDS = 20;
 
@@ -448,18 +451,31 @@ async function processDiscover(unit: OfficialUnit, deps: PipelineDeps): Promise<
   }
   const inserted = await upsertDiscovered(store, def, items);
   // The adapter's cursor is kept whenever it returns one — also with `done` (a "last seen" mark the next pass resumes
-  // from, e.g. id walks). A cursor that does not move while more is promised would loop forever: the pass ends.
+  // from, e.g. id walks). A cursor that does not move while more is promised would loop forever: the pass ends, and
+  // the cursor (with its markers, floors and retry lists) is kept for the next pass, which usually moves on (e.g. the
+  // deadline cut the call before its first request). Only after STUCK_PASSES_MAX passes in a row at the same cursor is
+  // it cleared (a fresh pass).
   const nextCursor = typeof res.nextCursor === "string" && res.nextCursor ? res.nextCursor : null;
   const more = !res.done && nextCursor != null;
   const stuck = more && nextCursor === cursor;
-  await setOfficialState(store, cursorKey, stuck ? null : nextCursor);
+  const stuckKey = `official_cursor_stuck:${def.id}`;
+  let stuckPasses = 0;
+  if (stuck) {
+    const prev = await getOfficialState<number>(store, stuckKey);
+    stuckPasses = (typeof prev === "number" && Number.isFinite(prev) ? prev : 0) + 1;
+    await setOfficialState(store, stuckKey, stuckPasses);
+  } else {
+    await setOfficialState(store, stuckKey, null);
+  }
+  const cleared = stuck && stuckPasses >= STUCK_PASSES_MAX;
+  await setOfficialState(store, cursorKey, cleared ? null : nextCursor);
   await setOfficialState(store, `official_discover:${def.id}`, { at: new Date(deps.now()).toISOString(), found: items.length, inserted, rejected, done: !more || stuck, notes: (res.notes ?? []).slice(0, 10) });
   if (more && !stuck) {
     // More to list: the unit goes straight back to the queue for the next worker / run.
     await releaseUnit(store, unit.id, null, `continues at cursor ${nextCursor.slice(0, 80)}`);
     return { status: "released", counts: { discovered: inserted } };
   }
-  await completeUnit(store, unit.id, `${items.length} listed, ${inserted} new${rejected ? `, ${rejected} rejected` : ""}${stuck ? "; cursor did not advance (pass ended)" : ""}`);
+  await completeUnit(store, unit.id, `${items.length} listed, ${inserted} new${rejected ? `, ${rejected} rejected` : ""}${stuck ? (cleared ? `; cursor did not advance in ${stuckPasses} passes (cleared)` : "; cursor did not advance (pass ended; cursor kept)") : ""}`);
   return { status: "done", counts: { discovered: inserted } };
 }
 

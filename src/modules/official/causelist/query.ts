@@ -367,15 +367,21 @@ const META_KEYS_SQL = `(CASE WHEN jsonb_typeof(meta->'caseKeys') = 'array' THEN 
 const ORDER_PAGES = 5;
 
 /**
- * Keys of an order that may bind a matter: meta.caseKeys, except for NCLAT orders read before page-1 captions were told
- * apart from appeal numbers cited in the body (no meta.caseKeysScope): there only the first number printed — the
- * caption's — binds, until the document is parsed again.
+ * Keys of an order that may bind a matter: meta.caseKeys, except for orders read before captions were told apart from
+ * appeal numbers cited in the body (no meta.caseKeysScope), until the document is parsed again: an NCLAT order or a
+ * SAT order mirrored by SEBI binds only the first number printed (the caption's); any other SEBI order binds none (its
+ * appeal numbers are citations).
  */
 export function orderBindingKeys(doc: Pick<SourceDocument, "sourceId" | "meta">): string[] {
   const keys = Array.isArray(doc.meta.caseKeys) ? (doc.meta.caseKeys as unknown[]).filter((x): x is string => typeof x === "string") : [];
-  if (doc.sourceId === "nclat" && doc.meta.caseKeysScope !== CAPTION_SCOPE) return keys.slice(0, 1);
+  if (doc.meta.caseKeysScope === CAPTION_SCOPE) return keys;
+  if (doc.sourceId === "nclat") return keys.slice(0, 1);
+  if (doc.sourceId === "sebi-orders") return doc.meta.forum === "sat" ? keys.slice(0, 1) : [];
   return keys;
 }
+
+/** Sources whose orders bind only on caption numbers (see orderBindingKeys); older parses are re-run once. */
+export const CAPTION_SCOPED_SOURCES = ["nclat", "sebi-orders"] as const;
 
 /**
  * Orders / judgments whose published metadata carries one of these identifiers exactly (diary no., case keys). The
@@ -406,7 +412,7 @@ export async function ordersForIdentifiers(
       parts.push(`meta @> $${params.length}::jsonb`);
       params.push(i.value);
       const v = `$${params.length}`;
-      parts.push(`(source <> 'nclat' OR meta->>'caseKeysScope' = '${CAPTION_SCOPE}' OR meta->'caseKeys'->>0 = ${v})`);
+      parts.push(`(source NOT IN ('nclat', 'sebi-orders') OR meta->>'caseKeysScope' = '${CAPTION_SCOPE}' OR ((source = 'nclat' OR meta->>'forum' = 'sat') AND meta->'caseKeys'->>0 = ${v}))`);
       if (!i.value.includes("@")) {
         parts.push(`NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${META_KEYS_SQL}) ck WHERE ck <> ${v} AND split_part(ck, '@', 1) = ${v})`);
         if (!unqualifiedNcltListable(i.forum)) parts.push(NOT_NCLT_FORUM(DOC_FORUM_SQL));

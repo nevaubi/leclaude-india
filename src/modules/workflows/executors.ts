@@ -1147,12 +1147,20 @@ const logicReview: Executor = async (x) => {
   const overrides = new Set(((x.run as WorkflowRunRecord & RunTrustState).trustOverrides ?? []));
   const trust = upstreamTrust(x, { stepIds: ids.length ? ids : undefined, minConfidence: c.minConfidence != null && c.minConfidence !== "" ? num(c.minConfidence, CONFIDENCE_GATE) : undefined });
   const bad = trust.filter((t) => !t.trusted);
-  if (overrides.has(x.node.id) || !bad.length) {
+  // "Always ask a person": no automatic pass, however the steps verified (high-risk output such as dates and tasks).
+  const requireHuman = bool(c.requireHuman);
+  if (overrides.has(x.node.id) || (!bad.length && !requireHuman)) {
     const steps = trust.map(({ provenance: _p, ...rest }) => { void _p; return rest; });
-    x.log(bad.length ? `Gate lifted by reviewer for ${bad.map((t) => t.label ?? t.id).join(", ")}` : `All ${trust.length} AI step(s) trusted`);
+    x.log(overrides.has(x.node.id) ? (bad.length ? `Gate lifted by reviewer for ${bad.map((t) => t.label ?? t.id).join(", ")}` : "Approved by reviewer") : `All ${trust.length} AI step(s) trusted`);
     return { output: { trusted: true, approved: true, reasons: [], steps, decidedBy: overrides.has(x.node.id) ? "reviewer" : "automatic", comment: "" } };
   }
   const reasons = bad.map((t) => `"${t.label ?? t.id}": ${t.reason}`);
+  if (requireHuman) {
+    // Approving lifts the gate for every reviewed step (the engine records them as vouched for by the reviewer).
+    const note = str(c.message).trim();
+    const status = bad.length ? `${bad.length} of ${trust.length} AI step${trust.length > 1 ? "s" : ""} did not verify — ${reasons.join("; ")}` : trust.length ? `${trust.length} AI step${trust.length === 1 ? "" : "s"} verified; a person must still confirm before the workflow acts.` : "A person must confirm before the workflow acts.";
+    throw new TrustGateError(`${note ? `${note}\n\n` : ""}${status}`, bad.length ? reasons : ["A person must confirm this output before the workflow acts on it."], trust.map((t) => t.id));
+  }
   throw new TrustGateError(`${bad.length} of ${trust.length} AI step${trust.length > 1 ? "s" : ""} failed the trust review — ${reasons.join("; ")}`, reasons, bad.map((t) => t.id));
 };
 
@@ -1204,6 +1212,7 @@ export const EXECUTORS: Record<AnyNodeType, Executor> = {
   "logic.schedule_after": notImplemented("logic.schedule_after"),
   "ai.route": notImplemented("ai.route"),
   "ai.agent": notImplemented("ai.agent"),
+  "data.official_order": notImplemented("data.official_order"),
 };
 
 /** Plain-text digest helpers exposed to the engine for run outputs. */

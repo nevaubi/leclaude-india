@@ -4,7 +4,7 @@
  * from records, not by the model; only the summary, points, authorities and questions are model-written, and each
  * keeps the references it cites, resolved against what was supplied or returned by a tool in the same run.
  */
-import type { BriefClaim, BriefSource, BriefSourceState, CauseListEntry, ManualHearing, MatterCaseIdentifier } from "./types";
+import type { BriefClaim, BriefSource, BriefSourceState, CauseListEntry, ManualHearing, MatterCaseIdentifier, OfficialState } from "./types";
 
 const REF_RE = /^[a-z][a-z0-9+.-]{1,20}:\/\/\S{2,400}$/i;
 
@@ -107,6 +107,16 @@ export interface BriefListing {
   sourceUrl: string | null;
 }
 
+/**
+ * Whether a record lookup ran: `state` is the official-sources state (anything but "ok" means the lookup could not be
+ * made), `untracked` that the matter tracks no identifier the official sources can match (nothing was looked up).
+ * "Nothing found" is stated only when the lookup ran and returned nothing.
+ */
+export interface LookupCheck {
+  state: OfficialState;
+  untracked?: boolean;
+}
+
 export interface BriefInput {
   matterName: string;
   caption?: string;
@@ -116,13 +126,32 @@ export interface BriefInput {
   version: number;
   listing: BriefListing | null;
   manualHearing: ManualHearing | null;
+  /** How the cause-list lookup went (absent: it ran). */
+  listingCheck?: LookupCheck;
   orders: { title: string; date: string | null; url: string }[];
+  /** How the orders lookup went (absent: it ran). */
+  ordersCheck?: LookupCheck;
   compliance: { title: string; dueAt?: string }[];
   pendingReview: number;
   /** Model-written claims, the summary included (section "summary"), each with its resolved status. */
   claims: BriefClaim[];
   sources: BriefSource[];
   notes: string[];
+}
+
+/** Why a lookup could not be made, in words (never "none found"). */
+export function lookupFailure(state: OfficialState): string {
+  return state === "not_configured" ? "the official-sources database is not configured" : state === "not_available" ? "cause lists and orders are not available on this deployment yet" : "the lookup failed";
+}
+
+/**
+ * The record line for a lookup that produced nothing: unchecked (with the reason), not looked up (nothing tracked), or
+ * — only when the lookup ran — none found. Shared by the markdown and the model context so both say the same thing.
+ */
+export function emptyLookupLine(what: "listing" | "orders", check: LookupCheck | undefined): string {
+  if (check && check.state !== "ok") return what === "listing" ? `Cause lists could not be checked (${lookupFailure(check.state)}); whether the matter is listed is not known.` : `Orders could not be checked (${lookupFailure(check.state)}); whether there are orders is not known.`;
+  if (check?.untracked) return what === "listing" ? "Cause lists were not checked: no case number or diary number the official sources can match is tracked for this matter." : "Orders were not looked up: no case number or diary number the official sources can match is tracked for this matter.";
+  return what === "listing" ? "No listing or hearing is recorded for the next 30 days." : "No orders found for the tracked identifiers.";
 }
 
 const STATE_LABEL: Record<BriefSourceState, string> = { supplied: "order supplied from the record", read: "read", found: "search result only (not read)", unresolved: "unresolved: not returned by any tool or record in this run" };
@@ -171,13 +200,14 @@ export function composeBriefMarkdown(b: BriefInput): string {
     out.push(`- Date: ${inDate(h.date)}${h.time ? ` ${h.time}` : ""}${h.courtNo ? ` · Court ${md(h.courtNo)}` : ""}${h.itemNo ? ` · Item ${md(h.itemNo)}` : ""} (entered by hand)`);
     if (h.court) out.push(`- Court: ${md(h.court)}`);
     if (h.purpose) out.push(`- Purpose: ${md(h.purpose)}`);
+    if (b.listingCheck && b.listingCheck.state !== "ok") out.push(`- ${emptyLookupLine("listing", b.listingCheck)}`);
   } else {
-    out.push("No listing or hearing is recorded for the next 30 days.");
+    out.push(emptyLookupLine("listing", b.listingCheck));
   }
 
   out.push("", "## Last orders");
   if (b.orders.length) b.orders.forEach((o, i) => out.push(`${i + 1}. ${o.date ? inDate(o.date) : "date not printed"}: [${md(o.title)}](${o.url})`));
-  else out.push("No orders found for the tracked identifiers.");
+  else out.push(emptyLookupLine("orders", b.ordersCheck));
 
   out.push("", "## Pending compliance");
   if (b.compliance.length) for (const c of b.compliance) out.push(`- ${md(c.title)}${c.dueAt ? ` (due ${inDate(c.dueAt)})` : ""}`);

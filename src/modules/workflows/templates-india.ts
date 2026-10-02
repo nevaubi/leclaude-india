@@ -2,7 +2,11 @@
  * Indian practice workflow templates (the default gallery of LeClaude India): limitation check, hearing-date
  * preparation, cause-list watch, bail matter pack, cheque-dishonour (s.138 NI Act) pack, judgment digest in
  * Kannada / Telugu, and the official-sources templates (daily cause-list check, new order → action items, hearing
- * brief) that read published cause lists and orders through the official-sources agent tools. Pure data like ./templates; positions come from autoLayout at build time.
+ * brief) that read published cause lists and orders through the official-sources tools. Pure data like ./templates; positions come from autoLayout at build time.
+ *
+ * Which order belongs to a matter is decided in code, never by a model: the `data.official_order` step matches the
+ * matter's tracked identifiers exactly against the orders' published metadata and takes the latest by date; when no
+ * exact order exists it stops with an explicit status instead of reading another case's order.
  *
  * Dates that follow from a statute by simple counting (30 days for the s.138(b) notice, 15 days to pay) are computed
  * by the template expression filters (`add_days`), never by the model. Anything that needs judgment (which Article
@@ -47,7 +51,7 @@ const PURPOSES = ["Admission", "Arguments on interlocutory application", "Cross-
 const LISTING_SCHEMA = {
   type: "object",
   properties: {
-    status: { type: "string", enum: ["listed", "not_found_in_loaded_lists", "not_available"], description: "listed only when causelist_lookup returned entries" },
+    status: { type: "string", enum: ["listed", "not_found_in_loaded_lists", "unparsed_identifier", "not_available"], description: "listed only when causelist_lookup returned entries; unparsed_identifier when it could not normalise the number and ran no lookup" },
     listings: { type: "array", items: { type: "object", properties: { list_date: { type: "string" }, court_no: { type: "string" }, bench: { type: "string" }, item_no: { type: "string" }, list_type: { type: "string" }, page: { type: "string" }, source: { type: "string", description: "src:// reference returned by the tool" } }, required: ["list_date", "court_no", "bench", "item_no", "list_type", "page", "source"] } },
     summary: { type: "string", description: "One paragraph for the team, including the tool's caveat" },
     hearing_note: { type: "string", description: "Per listing: date, court, item and what to carry; empty when not listed" },
@@ -55,19 +59,20 @@ const LISTING_SCHEMA = {
   required: ["status", "listings", "summary", "hearing_note"],
 };
 
-/** Structured result of reading an order (every item quoted with its page; dates only as printed). */
+/**
+ * Structured result of reading an order (every item quoted with its page; dates only as printed). The order itself —
+ * which document, its date, source and URL — comes from the `data.official_order` step, not from the model.
+ */
 const ORDER_SCHEMA = {
   type: "object",
   properties: {
-    status: { type: "string", enum: ["found", "not_found", "not_available"] },
-    order: { type: "object", properties: { title: { type: "string" }, date: { type: "string" }, source: { type: "string", description: "src:// reference of the order read" }, url: { type: "string" }, ocr: { type: "boolean" } }, required: ["title", "date", "source", "url", "ocr"] },
     directions: { type: "array", items: { type: "object", properties: { direction: { type: "string" }, quote: { type: "string", description: "Verbatim words of the order" }, page: { type: "string" } }, required: ["direction", "quote", "page"] } },
     next_date: { type: "string", description: "YYYY-MM-DD exactly as fixed by the order, or empty" },
     next_date_quote: { type: "string" },
     compliance: { type: "array", items: { type: "object", properties: { task: { type: "string" }, by_whom: { type: "string" }, due_as_stated: { type: "string", description: "As the order states it (\"within four weeks\"); never computed" }, quote: { type: "string" }, page: { type: "string" } }, required: ["task", "by_whom", "due_as_stated", "quote", "page"] } },
     summary: { type: "string" },
   },
-  required: ["status", "order", "directions", "next_date", "next_date_quote", "compliance", "summary"],
+  required: ["directions", "next_date", "next_date_quote", "compliance", "summary"],
 };
 
 export const INDIA_TEMPLATES: TemplateDef[] = [
@@ -311,7 +316,7 @@ export const INDIA_TEMPLATES: TemplateDef[] = [
       N("schedule", "trigger.schedule", "Every evening 19:45", { schedule: { frequency: "daily", time: "19:45" }, enabled: true, presetInputs: {} }),
       N("lookup", "ai.agent", "Check the cause lists", {
         agent: "analyst", tools: ["causelist_lookup"], output: "json", jsonSchema: LISTING_SCHEMA, modelTier: "fast", maxSteps: 4,
-        brief: "Check whether {{matter.shortName | default:matter.name}} is listed from {{now | add_days:0}} to {{now | add_days:3}}. Call causelist_lookup with forum \"{{inputs.forum}}\", case_number \"{{inputs.case_number}}\", from {{now | add_days:0}} and to {{now | add_days:3}}. Supreme Court diary number: {{inputs.diary_no | default:\"none\"}} (pass it as diary_no only when one is given).\n\nCopy every returned entry exactly (list date, court number, bench, item number, list type, page, source). status: listed only when the tool returned entries; not_found_in_loaded_lists when it returned none — say, as the tool does, that this does not prove the matter is not listed; not_available when the tool is missing or reports the official corpus is not available. Never infer, complete or correct a listing the tool did not return.",
+        brief: "Check whether {{matter.shortName | default:matter.name}} is listed from {{now | add_days:0}} to {{now | add_days:3}}. Call causelist_lookup with forum \"{{inputs.forum}}\", case_number \"{{inputs.case_number}}\", from {{now | add_days:0}} and to {{now | add_days:3}}. Supreme Court diary number: {{inputs.diary_no | default:\"none\"}} (pass it as diary_no only when one is given).\n\nCopy every returned entry exactly (list date, court number, bench, item number, list type, page, source). status: listed only when the tool returned entries; not_found_in_loaded_lists when it returned none — say, as the tool does, that this does not prove the matter is not listed; unparsed_identifier when the tool returned status unparsed_identifier (the number could not be normalised and no lookup was run — say so, never that the matter was not found); not_available when the tool is missing or reports the official corpus is not available. Never infer, complete or correct a listing the tool did not return.",
         context: "Matter: {{matter.name}} ({{matter.caption | default:matter.shortName}}); court on file: {{matter.court | default:\"not recorded\"}}.",
       }),
       N("notify", "action.notify", "Post the result", { recipientIds: ["{{user.id}}"], kind: "update", message: "Cause list check — {{matter.shortName}} ({{inputs.case_number}}), {{now | add_days:0}} to {{now | add_days:3}}: {{steps.lookup.output.status}}\n\n{{steps.lookup.output.summary}}\n\n{{steps.lookup.output.hearing_note}}", matterId: "{{inputs.matter}}" }),
@@ -325,36 +330,43 @@ export const INDIA_TEMPLATES: TemplateDef[] = [
   {
     id: I.orderActions,
     name: "New order → action items",
-    description: "Read the latest published order in the matter from the official sources (court, tribunal or regulator), extract its directions, the next date and the compliance it requires — each with a page-cited verbatim quote — and, after a trust review, file the note, calendar the next date as printed and open the compliance task. Dates are taken only as the order prints them; limitation is computed by the advocate.",
+    description: "Take the matter's latest published order from the official sources (court, tribunal or regulator) — chosen in code by an exact match of the matter's tracked case or diary number, never by a search — extract its directions, the next date and the compliance it requires, each with a page-cited verbatim quote, and after an advocate's review file the note, calendar the next date as printed and open the compliance task. When no exact order exists the run says so and reads nothing. Dates are taken only as the order prints them; limitation is computed by the advocate.",
     category: "operations",
     tags: ["orders", "compliance", "next date", "official sources", "India"],
     inputs: [
       MATTER,
-      FORUM,
-      CASE_NO,
+      { key: "case_number", label: "Case number (as printed, optional)", type: "text", placeholder: "SLP(C) No. 1234/2026 · W.P.(C) 5812/2016 · CP(IB)/29(MP)2022" },
+      { key: "forum", label: "Court / tribunal (optional)", type: "text", placeholder: "sci · hc-delhi · nclt · nclat" },
       { key: "order_ref", label: "Specific order (src:// reference, optional)", type: "text", placeholder: "src://sci-orders_4d2e9a01bc" },
     ],
     nodes: [
       N("start", "trigger.manual", "Run when a new order is out"),
-      N("read", "ai.agent", "Read the latest order", {
-        agent: "analyst", tools: ["search_official_sources", "read_official_document"], output: "json", jsonSchema: ORDER_SCHEMA, modelTier: "primary", maxSteps: 8,
-        brief: "Find the most recent order in {{inputs.case_number}} before {{inputs.forum}}. Specific order requested: {{inputs.order_ref | default:\"none\"}} — when it is a src:// reference, read exactly that document; otherwise search with search_official_sources (kinds order and judgment; the case number as printed as the query) and pick the latest dated order for this case number only. Read it in full with read_official_document.\n\nFrom the order's own words only, return: order (title, date, the src:// source you read, the official url, ocr true when the text is flagged OCR); directions (each with its verbatim quote and page); next_date exactly as fixed by the order (YYYY-MM-DD) with next_date_quote, or empty when none is fixed; compliance (task, by whom, due as the order states it — never computed — with quote and page); summary. status not_found when no order for this case number is found (never another case's order); not_available when the official corpus is not available.",
-        context: "Matter: {{matter.name}} ({{matter.caption | default:matter.shortName}}).",
+      N("find", "data.official_order", "Find the matter's latest order", { caseNumber: "{{inputs.case_number | default:\"\"}}", forum: "{{inputs.forum | default:\"\"}}", orderRef: "{{inputs.order_ref | default:\"\"}}", maxChars: 60000 }),
+      N("found", "logic.branch", "Exact order found?", { rules: [{ id: "yes", label: "Order found", logic: "all", conditions: [{ left: "{{steps.find.output.status}}", op: "equals", right: "found" }] }], elseLabel: "No exact order" }),
+      N("none", "action.notify", "Report: no order read", { recipientIds: ["{{user.id}}"], kind: "update", message: "New order → action items — {{matter.shortName}}: no order was read ({{steps.find.output.status}}).\n\n{{steps.find.output.message}}", matterId: "{{inputs.matter}}" }),
+      N("read", "ai.prompt", "Extract directions and dates", {
+        output: "json", jsonSchema: ORDER_SCHEMA, modelTier: "primary", research: NO_RESEARCH,
+        instructions: "You read one order of an Indian court, tribunal or regulator and list what it directs, from the order's own words only. Every quote is copied character for character from the ORDER TEXT (no paraphrase, no ellipsis); page is the number in the [Page N] marker it appears under. next_date: the date the order fixes for the next listing, as YYYY-MM-DD, only when the order prints that date (with next_date_quote), otherwise empty. compliance: what a party must do, by whom, and the time allowed exactly as the order states it (\"within four weeks\") — never computed, never converted. If the order directs nothing, return empty lists.",
+        prompt: "ORDER: {{steps.find.output.order.title}}\nDate printed by the publisher: {{steps.find.output.order.date | default:\"not printed\"}}\nSource: {{steps.find.output.order.ref}}\nHow it was chosen: {{steps.find.output.message}} (if only part of the order was read, say so in the summary)\n\nORDER TEXT:\n{{steps.find.output.text}}",
       }),
-      N("review", "logic.review", "Trust review", { steps: "read", approverId: "{{user.id}}", title: "Order extraction needs a look", message: "Check the directions, next date and compliance against the order (pages are cited; OCR text must be checked against the PDF). Approve to file the note, calendar the next date and open the compliance task." }),
-      N("save", "output.file", "Save action note", OUT("docx", { content: "# Order — action items\n\n**Matter:** {{matter.name}}  \n**Order:** {{steps.read.output.order.title}}, dated {{steps.read.output.order.date}} ({{steps.read.output.order.source}}) {{steps.read.output.order.url}}\n\n## Summary\n\n{{steps.read.output.summary}}\n\n## Directions (verbatim, with page)\n\n{{steps.read.output.directions | json}}\n\n## Compliance\n\n{{steps.read.output.compliance | json}}\n\n## Next date\n\n{{steps.read.output.next_date | default:\"Not fixed in the order\"}} — \"{{steps.read.output.next_date_quote}}\" [VERIFY]", tags: ["order", "compliance"] })),
+      N("review", "logic.review", "Advocate review", {
+        steps: "read", requireHuman: true, approverId: "{{user.id}}", title: "Order action items need your review",
+        message: "Order: {{steps.find.output.order.title}}, dated {{steps.find.output.order.date | default:\"(not printed)\"}} ({{steps.find.output.order.ref}}), chosen because it carries {{steps.find.output.matchedOn.printed}} exactly.\nNext date: {{steps.read.output.next_date | default:\"not fixed\"}} — \"{{steps.read.output.next_date_quote}}\"\nCompliance: {{steps.read.output.compliance | json}}\n\nCheck the directions, the next date and each quote against the order (pages are cited; OCR text must be checked against the PDF). Approve to file the note, calendar the next date and open the compliance task; reject to stop.",
+      }),
+      N("save", "output.file", "Save action note", OUT("docx", { content: "# Order — action items\n\n**Matter:** {{matter.name}}  \n**Order:** {{steps.find.output.order.title}}, dated {{steps.find.output.order.date | default:\"(not printed)\"}} ({{steps.find.output.order.ref}}) {{steps.find.output.order.url}}  \n**Matched on:** {{steps.find.output.matchedOn.printed}} ({{steps.find.output.matchedOn.forum}}), exact match in the order's published metadata\n\n## Summary\n\n{{steps.read.output.summary}}\n\n## Directions (verbatim, with page)\n\n{{steps.read.output.directions | json}}\n\n## Compliance\n\n{{steps.read.output.compliance | json}}\n\n## Next date\n\n{{steps.read.output.next_date | default:\"Not fixed in the order\"}} — \"{{steps.read.output.next_date_quote}}\" [VERIFY]", tags: ["order", "compliance"] })),
       N("dated", "logic.branch", "Next date fixed?", { rules: [{ id: "yes", label: "Date fixed", logic: "all", conditions: [{ left: "{{steps.read.output.next_date}}", op: "not_empty" }] }], elseLabel: "No date" }),
-      N("event", "action.create_event", "Calendar the next date", { title: "Next date: {{matter.shortName}} ({{inputs.case_number}})", kind: "hearing", startsAt: "{{steps.read.output.next_date}}T10:30", durationMinutes: 60, location: "{{matter.court}}", notes: "As fixed in the order dated {{steps.read.output.order.date}}: \"{{steps.read.output.next_date_quote}}\" ({{steps.read.output.order.source}}). [VERIFY] against the order and the cause list.", attendeeIds: ["{{user.id}}"], ruleSource: "Order dated {{steps.read.output.order.date}}", matterId: "{{inputs.matter}}" }),
-      N("task", "action.create_task", "Comply with the order", { title: "Comply with order dated {{steps.read.output.order.date | default:\"(see note)\"}} — {{matter.shortName}}", description: "Directions requiring compliance (as stated in the order; compute any period yourself and confirm limitation):\n{{steps.read.output.compliance | json}}\n\n{{steps.save.output.href}}", assigneeId: "{{user.id}}", priority: "high", dueRule: "+1bd", matterId: "{{inputs.matter}}", tags: ["order", "compliance"] }),
+      N("event", "action.create_event", "Calendar the next date", { title: "Next date: {{matter.shortName}} ({{steps.find.output.matchedOn.printed}})", kind: "hearing", startsAt: "{{steps.read.output.next_date}}T10:30", durationMinutes: 60, location: "{{matter.court}}", notes: "As fixed in the order dated {{steps.find.output.order.date}}: \"{{steps.read.output.next_date_quote}}\" ({{steps.find.output.order.ref}}). [VERIFY] against the order and the cause list.", attendeeIds: ["{{user.id}}"], ruleSource: "Order dated {{steps.find.output.order.date}}", matterId: "{{inputs.matter}}" }),
+      N("comply", "logic.branch", "Compliance required?", { rules: [{ id: "yes", label: "Compliance", logic: "all", conditions: [{ left: "{{steps.read.output.compliance}}", op: "not_empty" }] }], elseLabel: "None" }),
+      N("task", "action.create_task", "Comply with the order", { title: "Comply with order dated {{steps.find.output.order.date | default:\"(see note)\"}} — {{matter.shortName}}", description: "Directions requiring compliance (as stated in the order; compute any period yourself and confirm limitation):\n{{steps.read.output.compliance | json}}\n\n{{steps.save.output.href}}", assigneeId: "{{user.id}}", priority: "high", dueRule: "+1bd", matterId: "{{inputs.matter}}", tags: ["order", "compliance"] }),
     ],
-    edges: [E("start", "read"), E("read", "review"), E("review", "save", "approved"), E("save", "dated"), E("dated", "event", "yes"), E("save", "task")],
+    edges: [E("start", "find"), E("find", "found"), E("found", "read", "yes"), E("found", "none", "else"), E("read", "review"), E("review", "save", "approved"), E("save", "dated"), E("dated", "event", "yes"), E("save", "comply"), E("comply", "task", "yes")],
   },
 
   // 9 ───────────────────────── Hearing brief (orders + authority + verification) ─────────────────────────
   {
     id: I.hearingBrief,
     name: "Hearing brief",
-    description: "Before a hearing, read the matter's latest published orders and the listing, research the points of law with a citator check, draft a hearing brief for counsel and verify every statement against the orders and authorities read; filed after a trust review.",
+    description: "Before a hearing, read the matter's latest published orders (matched exactly on its tracked case or diary number, never by a search) and the listing, research the points of law with a citator check, draft a hearing brief for counsel and verify every statement against the orders and authorities read; filed after a trust review.",
     category: "drafting",
     tags: ["hearing", "brief", "orders", "citator", "official sources", "India"],
     inputs: [
@@ -367,10 +379,11 @@ export const INDIA_TEMPLATES: TemplateDef[] = [
     ],
     nodes: [
       N("start", "trigger.manual", "Run before the hearing"),
+      N("find", "data.official_order", "Find the matter's orders", { caseNumber: "{{inputs.case_number}}", forum: "{{inputs.forum}}", orderRef: "", maxChars: 40000 }),
       N("orders", "ai.agent", "Orders and listing", {
-        agent: "analyst", tools: ["search_official_sources", "read_official_document", "causelist_lookup"], output: "text", modelTier: "primary", maxSteps: 10,
-        brief: "For {{matter.name}} ({{inputs.case_number}} before {{inputs.forum}}): (1) confirm the listing for {{inputs.hearing_date}} with causelist_lookup (date {{inputs.hearing_date}}, the case number as printed) and report it exactly as returned, or that no entry was found in the loaded lists; (2) find the latest orders in this case number with search_official_sources and read them with read_official_document. Write: Listing; Procedural history (date — what the order directed — verbatim quote with page and src:// source); Directions pending compliance. Use only orders of this case number; flag OCR text for checking against the PDF.",
-        context: "Matter: {{matter.name}} ({{matter.caption | default:matter.shortName}}); stage: {{inputs.purpose}}.",
+        agent: "analyst", tools: ["read_official_document", "causelist_lookup"], output: "text", modelTier: "primary", maxSteps: 10,
+        brief: "For {{matter.name}} ({{inputs.case_number}} before {{inputs.forum}}): (1) confirm the listing for {{inputs.hearing_date}} with causelist_lookup (date {{inputs.hearing_date}}, the case number as printed) and report it exactly as returned, or that no entry was found in the loaded lists; (2) write the procedural history from this matter's orders only: the latest order — chosen in code by an exact match of the matter's tracked identifier — is given below in full, and the earlier exact matches are listed by src:// reference (read those you need with read_official_document). Never search for orders and never use an order that is not listed below; when the lookup found none, state its status and reason instead of describing any order. Write: Listing; Procedural history (date — what the order directed — verbatim quote with page and src:// source); Directions pending compliance. Flag OCR text for checking against the PDF.",
+        context: "Matter: {{matter.name}} ({{matter.caption | default:matter.shortName}}); stage: {{inputs.purpose}}.\n\nORDERS LOOKUP: {{steps.find.output.status}} — {{steps.find.output.message}}\nEXACT MATCHES (newest first): {{steps.find.output.candidates | json}}\n\nLATEST ORDER ({{steps.find.output.order.ref | default:\"none read\"}}):\n{{steps.find.output.text | default:\"(no order read)\"}}",
       }),
       N("law", "ai.agent", "Points of law", {
         agent: "research", tools: [], output: "text", modelTier: "primary", maxSteps: 14,
@@ -387,7 +400,7 @@ export const INDIA_TEMPLATES: TemplateDef[] = [
       N("save", "output.file", "Save hearing brief", OUT("docx", { content: "{{steps.brief.output.text}}", tags: ["hearing", "brief"] })),
       N("task", "action.create_task", "Prepare for hearing", { title: "Hearing brief ready: {{matter.shortName}} — {{inputs.hearing_date | date:short}}", description: "Read the brief, check every [VERIFY] mark against the order or authority, and carry certified copies of the orders relied on.\n\n{{steps.save.output.href}}", assigneeId: "{{user.id}}", priority: "high", dueRule: "+1bd", matterId: "{{inputs.matter}}", tags: ["hearing"] }),
     ],
-    edges: [E("start", "orders"), E("orders", "law"), E("law", "brief"), E("brief", "verify"), E("verify", "review"), E("review", "save", "approved"), E("save", "task")],
+    edges: [E("start", "find"), E("find", "orders"), E("orders", "law"), E("law", "brief"), E("brief", "verify"), E("verify", "review"), E("review", "save", "approved"), E("save", "task")],
   },
 ];
 
@@ -438,8 +451,8 @@ export const INDIA_TEMPLATE_FRONTENDS: Record<string, WorkflowFrontend> = {
   },
   [I.orderActions]: {
     title: "Turn a new order into action items",
-    intro: "Reads the latest published order in the case, extracts the directions, the next date and the compliance it requires with page-cited quotes, and — after your review — files the note, calendars the next date and opens the compliance task.",
-    fields: [F.matter(), { key: "forum", label: "Court / tribunal", type: "text", required: true }, { key: "case_number", label: "Case number", type: "text", required: true }, { key: "order_ref", label: "Specific order (optional)", type: "text", help: "A src:// reference from the official sources; leave empty for the latest order." }],
+    intro: "Takes the matter's latest published order — matched exactly on the case or diary number tracked on the matter, never by a search — extracts the directions, the next date and the compliance it requires with page-cited quotes, and after your review files the note, calendars the next date and opens the compliance task. If no exact order is found, nothing is read and the run tells you why.",
+    fields: [F.matter(), { key: "case_number", label: "Case number (optional)", type: "text", help: "One of the matter's tracked identifiers, as printed; leave empty to use all of them." }, { key: "forum", label: "Court / tribunal (optional)", type: "text", help: "The forum the case number is tracked under (sci, hc-delhi, nclt, nclat)." }, { key: "order_ref", label: "Specific order (optional)", type: "text", help: "A src:// reference of one of the matter's orders; leave empty for the latest." }],
     submitLabel: "Read the order",
     output: { formats: ["docx", "pdf", "md"], defaultFormat: "docx", defaultLabel: "Order action items — {{now | date:short}}" },
   },

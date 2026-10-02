@@ -13,7 +13,7 @@ import { ServiceError } from "@/modules/workspace/errors";
 import { sourceRef } from "@/modules/official/types";
 import type { listingsForMatters, ordersForIdentifiers, readOfficialDocument } from "@/modules/official/service";
 import { formatCaseNumber, courtName } from "../india";
-import { composeBriefMarkdown, collectToolSources, expandNumberedRefs, resolveClaims, type RawBriefClaim } from "./brief-format";
+import { composeBriefMarkdown, collectToolSources, emptyLookupLine, expandNumberedRefs, resolveClaims, type LookupCheck, type RawBriefClaim } from "./brief-format";
 import { addDays, indiaToday } from "./dates";
 import { getTracking, listActionSets, listManualHearings, matterListings, matterOrders, readOrderText, requireMatter } from "./server";
 import type { BriefSource, BriefStreamEvent, HearingBrief, MatterListing } from "./types";
@@ -111,6 +111,7 @@ export async function generateHearingBrief(matterId: string, opts: { listingId?:
   } else {
     listing = listed.listings[0] ?? null;
   }
+  const listingCheck: LookupCheck = { state: listed.state, ...(listed.untracked ? { untracked: true } : {}) };
   if (listed.state !== "ok") { degraded = true; notes.push(`Cause lists could not be checked (${listed.state.replace("_", " ")}).`); }
   else if (listed.untracked) notes.push("No case number or diary number the official sources can match is tracked for this matter, so listings and orders were not looked up.");
   if (listed.unmatchable.length) notes.push(`Not checked against cause lists or orders (kept for reference only): ${listed.unmatchable.map((i) => i.printed).join("; ")}.`);
@@ -120,6 +121,7 @@ export async function generateHearingBrief(matterId: string, opts: { listingId?:
   const registry = new Map<string, BriefSource>();
   const evidence: SearchResultBlock[] = [];
   const ordersRes = await matterOrders(matterId, { orders: deps.orders }, { limit: 10 });
+  const ordersCheck: LookupCheck = { state: ordersRes.state, ...(ordersRes.untracked ? { untracked: true } : {}) };
   if (ordersRes.state !== "ok") { degraded = true; notes.push(`Orders could not be checked (${ordersRes.state.replace("_", " ")}).`); }
   const lastOrders = ordersRes.orders.slice(0, 3);
   for (const o of lastOrders) {
@@ -144,8 +146,8 @@ export async function generateHearingBrief(matterId: string, opts: { listingId?:
     `MATTER: ${matter.name}${matter.caption ? ` (${matter.caption})` : ""}`,
     `Court: ${court ?? "not recorded"} · Case no.: ${caseNumber ?? "not recorded"} · Stage: ${matter.stage ?? "not recorded"} · Client side: ${matter.clientSide}`,
     tracking?.identifiers.length ? `Tracked identifiers: ${tracking.identifiers.map((i) => `${i.printed} (${i.forum})`).join("; ")}` : "Tracked identifiers: none",
-    listing ? `NEXT LISTING: ${listing.entry.listDate}, court ${listing.entry.courtNo ?? "?"}, item ${listing.entry.itemNo ?? "?"}, bench ${listing.entry.bench ?? "not printed"}, ${listing.entry.listType} list. Entry as printed: ${listing.entry.raw.slice(0, 600)}` : manual ? `NEXT HEARING (entered by hand): ${manual.date}${manual.purpose ? `, ${manual.purpose}` : ""}` : "NEXT LISTING: none recorded in the next 30 days.",
-    `LAST ORDERS (supplied as sources): ${lastOrders.map((o) => `${o.document.docDate ?? "undated"} ${o.document.title}`).join("; ") || "none"}`,
+    listing ? `NEXT LISTING: ${listing.entry.listDate}, court ${listing.entry.courtNo ?? "?"}, item ${listing.entry.itemNo ?? "?"}, bench ${listing.entry.bench ?? "not printed"}, ${listing.entry.listType} list. Entry as printed: ${listing.entry.raw.slice(0, 600)}` : manual ? `NEXT HEARING (entered by hand): ${manual.date}${manual.purpose ? `, ${manual.purpose}` : ""}${listingCheck.state !== "ok" ? `. ${emptyLookupLine("listing", listingCheck)}` : ""}` : `NEXT LISTING: ${emptyLookupLine("listing", listingCheck)}`,
+    `LAST ORDERS (supplied as sources): ${lastOrders.map((o) => `${o.document.docDate ?? "undated"} ${o.document.title}`).join("; ") || emptyLookupLine("orders", ordersCheck)}`,
     `PENDING COMPLIANCE: ${compliance.map((t) => `${t.title}${t.dueAt ? ` (due ${t.dueAt})` : ""}`).join("; ") || "none recorded"}`,
     matter.description ? `NOTES: ${matter.description.slice(0, 2000)}` : "",
   ].filter(Boolean).join("\n");
@@ -193,8 +195,8 @@ export async function generateHearingBrief(matterId: string, opts: { listingId?:
   const markdown = composeBriefMarkdown({
     matterName: matter.shortName || matter.name, caption: matter.caption, caseNumber, court, preparedOn: today, version,
     listing: listing ? { entry: listing.entry, matchedOn: { ...listing.matchedOn, printed: tracking?.identifiers.find((i) => i.value === listing!.matchedOn.value && i.kind === listing!.matchedOn.kind)?.printed }, sourceUrl: listing.source?.url ?? null } : null,
-    manualHearing: manual,
-    orders: ordersRes.orders.slice(0, 5).map((o) => ({ title: o.document.title, date: o.document.docDate, url: o.document.fileUrl ?? o.document.url })),
+    manualHearing: manual, listingCheck,
+    orders: ordersRes.orders.slice(0, 5).map((o) => ({ title: o.document.title, date: o.document.docDate, url: o.document.fileUrl ?? o.document.url })), ordersCheck,
     compliance: compliance.map((t) => ({ title: t.title, dueAt: t.dueAt })), pendingReview,
     claims: resolved.claims, sources: resolved.sources, notes,
   });

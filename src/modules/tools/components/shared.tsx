@@ -5,12 +5,13 @@ import { AlertTriangle, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Chip, type ChipTone } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
 import { SAMPLE_CALENDAR, isValidIsoDate, type CourtCalendar } from "@/lib/india/holidays";
 import type { LimitationStep } from "@/lib/india/limitation";
-import { DECISION_SUPPORT_FOOTER, formatIsoDate, statusText } from "../lib";
+import { CALENDAR_CAVEAT, choiceForum, COURT_CALENDAR_FORUMS, DECISION_SUPPORT_FOOTER, describeCalendarChoice, fetchedDate, formatIsoDate, officialChoice, resolveCalendar, statusText, type CalendarChoice } from "../lib";
+import type { CourtCalendarsState } from "./use-court-calendars";
 
 /** Copy plain text to the clipboard with a toast either way. */
 export function CopyButton({ text, label = "Copy", disabled }: { text: string | null; label?: string; disabled?: boolean }) {
@@ -57,24 +58,79 @@ export function DateField({ id, label, value, onChange, hint, optional }: { id: 
   );
 }
 
-export type CalendarChoice = "none" | "sample";
-export const calendarFor = (c: CalendarChoice): CourtCalendar | undefined => (c === "sample" ? SAMPLE_CALENDAR : undefined);
-export const calendarLabel = (c: CalendarChoice) => (c === "sample" ? `Sample calendar "${SAMPLE_CALENDAR.id}" (illustrative; not a court's notified calendar)` : "None selected");
+export type { CalendarChoice } from "../lib";
 
-export function CalendarSelect({ id, value, onChange }: { id: string; value: CalendarChoice; onChange: (v: CalendarChoice) => void }) {
+/** The calendar a choice stands for (sample, a loaded official calendar, or none). */
+export function calendarFor(c: CalendarChoice, cals: Pick<CourtCalendarsState, "official">): CourtCalendar | undefined {
+  return resolveCalendar(c, cals.official);
+}
+
+/** Plain-text calendar line for copied results (source, fetched date and the ad-hoc caveat for official calendars). */
+export function calendarLabel(c: CalendarChoice, cals: Pick<CourtCalendarsState, "official">): string {
+  return describeCalendarChoice(c, cals.official);
+}
+
+function hostPath(url: string): string {
+  try { const u = new URL(url); return `${u.host}${u.pathname.length > 1 ? u.pathname : ""}`; } catch { return url; }
+}
+
+/**
+ * Court calendar picker: none, the illustrative sample, or a court's official calendar from the official-sources corpus
+ * (Supreme Court, Delhi HC, Karnataka HC, NCLT, NCLAT when loaded). An official calendar shows its source and fetched
+ * date and always carries the ad-hoc caveat.
+ */
+export function CalendarSelect({ id, value, onChange, cals, label = "Court calendar (Limitation Act, s.4)", allowNone = true }: { id: string; value: CalendarChoice; onChange: (v: CalendarChoice) => void; cals: CourtCalendarsState; label?: string; allowNone?: boolean }) {
+  const forum = choiceForum(value);
+  const loaded = forum ? cals.official[forum] : undefined;
+  const fState = forum ? cals.forums[forum] : undefined;
+  const showOfficial = cals.availability === "available" || cals.availability === "loading";
+  let hint: React.ReactNode;
+  if (value === "none") hint = "No court calendar selected. The result will say the court-closed adjustment was not checked.";
+  else if (value === "sample") hint = SAMPLE_CALENDAR.source;
+  else if (loaded?.calendar) {
+    hint = (
+      <span className="flex flex-col gap-1">
+        <span>
+          Official calendar for <span className="tabular">{loaded.calendar.years.join(", ")}</span>
+          {loaded.sources.length ? <> from {loaded.sources.map((s, k) => (
+            <React.Fragment key={s.documentId || s.url}>{k ? "; " : ""}<a href={s.url} target="_blank" rel="noopener noreferrer" className="break-all text-foreground/80 underline-offset-2 hover:underline">{hostPath(s.url)}</a>{fetchedDate(s.fetchedAt) ? <> (fetched {fetchedDate(s.fetchedAt)})</> : null}</React.Fragment>
+          ))}</> : null}.
+        </span>
+        {loaded.notes.length ? <span>{loaded.notes.join(" ")}</span> : null}
+      </span>
+    );
+  } else if (fState?.status === "loading") hint = "Loading the official calendar…";
+  else hint = "No official calendar for these years is loaded, so court holidays are not checked. Choose another calendar.";
   return (
-    <Field
-      id={id}
-      label="Court calendar (Limitation Act, s.4)"
-      hint={value === "none" ? "No notified court calendar is loaded. The result will say the court-closed adjustment was not checked." : SAMPLE_CALENDAR.source}
-    >
+    <Field id={id} label={label} hint={hint}>
       <Select value={value} onValueChange={(v) => onChange(v as CalendarChoice)}>
         <SelectTrigger id={id} size="sm" className="w-full sm:w-[320px]"><SelectValue /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="none">None: do not check court holidays</SelectItem>
+          {allowNone ? <SelectItem value="none">None: do not check court holidays</SelectItem> : null}
           <SelectItem value="sample">Sample: Sundays and three national holidays</SelectItem>
+          {showOfficial ? (
+            <SelectGroup>
+              <SelectLabel className="text-[11px] text-muted-foreground">Official court calendars</SelectLabel>
+              {COURT_CALENDAR_FORUMS.map((f) => {
+                const st = cals.forums[f.forum];
+                const ok = st?.status === "loaded" && Boolean(st.data.calendar);
+                const suffix = !st || st.status === "loading" ? " (loading…)" : st.status === "error" ? " (unavailable)" : ok ? ` (${st.data.calendar!.years.join(", ")})` : " (not loaded)";
+                return <SelectItem key={f.forum} value={officialChoice(f.forum)} disabled={!ok && value !== officialChoice(f.forum)}>{f.label}<span className="text-muted-foreground">{suffix}</span></SelectItem>;
+              })}
+            </SelectGroup>
+          ) : null}
         </SelectContent>
       </Select>
+      {forum ? (
+        <p role="note" className="flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/5 px-2 py-1 text-[11.5px] leading-snug text-foreground/85">
+          <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning-foreground dark:text-warning" aria-hidden />{CALENDAR_CAVEAT}
+        </p>
+      ) : !showOfficial && cals.availability !== "loading" ? (
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          {cals.availability === "not_configured" ? "Official court calendars are not set up on this workspace." : cals.availability === "not_available" ? "Official court calendars are not available yet." : cals.availability === "denied" ? "You do not have access to official court calendars." : "Official court calendars could not be loaded."}
+          {cals.availability === "error" ? <> <button type="button" className="text-primary hover:underline" onClick={cals.retry}>Retry</button></> : null}
+        </p>
+      ) : null}
     </Field>
   );
 }

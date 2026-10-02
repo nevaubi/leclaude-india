@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COURTS, courtById } from "@/lib/india/courts";
-import { CITIES, FORUMS, LOCAL_LAW, cityById, findCity, forumById, forumRecordForCourt, forumsForCity, highCourtForumFor, normaliseActTitle } from "@/lib/india/forums";
+import { CITIES, FORUMS, INDIA_CODE_CHECKED_AT, INDIA_CODE_HOME, LOCAL_LAW, cityById, findCity, forumById, forumRecordForCourt, forumsForCity, highCourtForumFor, normaliseActTitle } from "@/lib/india/forums";
 
 describe("city forum data integrity", () => {
   it("has unique forum and city ids", () => {
@@ -84,5 +84,21 @@ describe("city forum data integrity", () => {
     for (const c of CITIES) expect(LOCAL_LAW[c.state]?.length ?? 0, c.id).toBeGreaterThan(0);
     expect(normaliseActTitle("The KARNATAKA RENT ACT, 1999")).toBe(normaliseActTitle("Karnataka Rent Act 1999"));
     expect(normaliseActTitle("The Karnataka Rent Act, 1999")).not.toBe(normaliseActTitle("The Karnataka Rent Control Act, 1999"));
+  });
+
+  it("points India Code browse sources at indiacode.gov.in and never at a renumbered indiacode.nic.in browse handle", () => {
+    expect(INDIA_CODE_HOME).toBe("https://indiacode.gov.in/");
+    const sources = Object.values(LOCAL_LAW).flatMap((ptrs) => ptrs!.flatMap((p) => (p.source ? [{ ...p.source, act: p.title }] : [])));
+    const indiaCode = sources.filter((s) => /indiacode\.(gov|nic)\.in/.test(s.url));
+    expect(indiaCode.length).toBeGreaterThan(0);
+    for (const s of indiaCode) expect(s.url, s.act).not.toMatch(/indiacode\.nic\.in\/handle\/\d+\/\d+\/browse/);
+    const browse = indiaCode.filter((s) => s.url.startsWith("https://indiacode.gov.in/collections/"));
+    // Karnataka (rent, stamp) and Maharashtra (rent) browse pages moved to the new site's State collections.
+    expect(browse.map((s) => s.act).sort()).toEqual(["The Karnataka Rent Act, 1999", "The Karnataka Stamp Act, 1957", "The Maharashtra Rent Control Act, 1999"]);
+    for (const s of browse) {
+      expect(s.url).toMatch(/^https:\/\/indiacode\.gov\.in\/collections\/[0-9a-f-]{36}\?/);
+      expect(s.checkedAt).toBe(INDIA_CODE_CHECKED_AT);
+      expect(s.title).toMatch(/^India Code: (Karnataka|Maharashtra) State legislation/);
+    }
   });
 });

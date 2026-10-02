@@ -12,6 +12,7 @@ import { citationTitle, lawHref, type LawFacets, type LawFilters, type LawInstru
 import { asLawApiError, fetchLawJson, type LawApiError } from "./fetch";
 import { StatusText } from "./law-states";
 import { groupKeyActs, KEY_ACT_TITLES, NEW_CRIMINAL_LAWS } from "./law-subjects";
+import { MostCitedSections } from "./most-cited-sections";
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 
@@ -112,6 +113,7 @@ export function LawLanding({ facets, facetsLoading, facetsError, onRetryFacets, 
 
         <NewCriminalLaws keyActs={keyActs} />
         <KeyActsBySubject keyActs={keyActs} />
+        <MostCitedSections />
 
         {facets || facetsLoading ? (
           <section aria-labelledby="law-states">

@@ -19,12 +19,15 @@ Rules:
   `heading`, `chapter_title`.
 - A duplicate-marked chunk (`_d1`, `_d2`) whose text is identical to its base chunk is skipped and counted.
 - Every row keeps `source_url` (the publisher's page). Rows without one stay without one; none is invented.
+- Instruments record `status` (most common provision status), `status_counts` (the full mixture) and `in_force` (true only
+  when every recorded provision status is in_force); `amendment_count` is the largest value over the instrument's chunks.
+  Provisions keep their own `amendment_count`. Section-level repeal is not in the dataset and is never inferred.
+- law_datasets.sha256 comes from the snapshot's SHA256SUMS.json ("files" map); a file it does not list keeps NULL.
 """
 import json, os, re, sys, time, urllib.request
 from collections import Counter, defaultdict
 
-import duckdb
-import psycopg
+# duckdb and psycopg are imported in main() so the pure helpers (checksums, statuses) can be checked without them.
 
 VERSION = os.environ.get("LAW_DATASET_VERSION", "v2026.08.1")
 BASE = f"https://oss-data-in.vaquill.ai/{VERSION}/"
@@ -110,16 +113,64 @@ def db_mb(conn):
         return cur.fetchone()[0] / 1024 / 1024
 
 
+def parse_checksums(data):
+    """SHA256SUMS.json → {file name: sha256}.
+
+    v2026.08.1 nests the entries: {"version", "supersedes", "note", "files": {"in_x.parquet": {"sha256", "bytes"}}}.
+    Older snapshots used a flat {"in_x.parquet": "<sha256>"} map; both are accepted. Entries without a sha256 are left
+    out (never guessed)."""
+    if not isinstance(data, dict):
+        return {}
+    files = data.get("files", data)
+    if not isinstance(files, dict):
+        return {}
+    out = {}
+    for k, v in files.items():
+        sha = v if isinstance(v, str) else (v.get("sha256") if isinstance(v, dict) else None)
+        if isinstance(sha, str) and re.fullmatch(r"[0-9a-fA-F]{64}", sha):
+            out[str(k).split("/")[-1]] = sha.lower()
+    return out
+
+
 def checksums():
     try:
         req = urllib.request.Request(BASE + "SHA256SUMS.json", headers={"User-Agent": "leclaude-law-loader/1.0"})
         with urllib.request.urlopen(req, timeout=60) as r:
             data = json.load(r)
-        if isinstance(data, dict):
-            return {k.split("/")[-1]: (v if isinstance(v, str) else v.get("sha256")) for k, v in data.items()}
+        sums = parse_checksums(data)
+        print(f"checksums: {len(sums)} files listed in SHA256SUMS.json")
+        return sums
     except Exception as e:  # noqa: BLE001 - checksums are informative; the load does not depend on them
         print("checksums unavailable:", e)
     return {}
+
+
+def instrument_status(statuses):
+    """(status_counts, in_force) for an instrument from its provisions' dataset statuses.
+
+    status_counts counts every recorded status ("" is counted as "not_recorded"); in_force is True only when every
+    provision with a recorded status is in_force, False when any recorded status is something else, and None when no
+    provision records a status."""
+    counts = Counter()
+    for s in statuses:
+        counts[(s or "").strip() or "not_recorded"] += 1
+    recorded = [k for k in counts if k != "not_recorded"]
+    in_force = None if not recorded else all(k == "in_force" for k in recorded)
+    return dict(counts), in_force
+
+
+def max_amendment_count(values):
+    """Largest amendment_count over an instrument's chunks (the dataset repeats it per chunk; the first chunk can be
+    stale or empty). None when no chunk carries one."""
+    nums = []
+    for v in values:
+        if v is None:
+            continue
+        try:
+            nums.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    return max(nums) if nums else None
 
 
 def load_file(conn, duck, name, sums):
@@ -181,38 +232,42 @@ def load_file(conn, duck, name, sums):
                     subjects[str(s)] += 1
         chars = 0
         sections = set()
+        stored_statuses = []
         for ord_, (r, tail, variant, part) in enumerate(items):
             body, heading, chapter_title = strip_header(r[5] or "")
             if not body:
                 continue
             chars += len(body)
             sections.add(((r[4] or "").strip(), variant))
+            stored_statuses.append(r[6])
             prov_rows.append((
                 r[1], act_id, ord_, (r[4] or "").strip() or None, variant, part, heading, (r[3] or "").strip() or None,
                 chapter_title, r[8], r[9], r[6], r[7], r[11], r[12],
                 list(r[13]) if r[13] is not None else None, list(r[14]) if r[14] is not None else None,
-                body, r[17] or None,
+                body, r[17] or None, max_amendment_count([r[15]]),
             ))
         year = int(first[16]) if first[16] is not None else None
+        # Status mixture over the provisions actually stored (the instrument's `status` stays the most common value).
+        status_counts, inst_in_force = instrument_status(stored_statuses or [it[0][6] for it in items])
         inst_rows.append((
             act_id, kind, (first[2] or act_id).strip(), juris, state, state_code, regulator,
             pubs.most_common(1)[0][0] if pubs else None, year, statuses.most_common(1)[0][0] or None,
-            int(first[15]) if first[15] is not None else None,
+            max_amendment_count(it[0][15] for it in items),
             urls.most_common(1)[0][0] if urls else None, mirrors.most_common(1)[0][0] if mirrors else None,
             len(items), len(sections), chars, [s for s, _ in subjects.most_common(6) if s and s != "general"] or None,
-            file, VERSION,
+            file, VERSION, json.dumps(status_counts, sort_keys=True), inst_in_force,
         ))
 
     with conn.cursor() as cur:
         cur.execute("DELETE FROM law_instruments WHERE dataset_file = %s", (file,))
         with cur.copy("""COPY law_instruments (id, kind, title, jurisdiction, state, state_code, regulator, publisher, year,
                 status, amendment_count, source_url, mirror_url, provisions, sections, chars, subjects, dataset_file,
-                dataset_version) FROM STDIN""") as cp:
+                dataset_version, status_counts, in_force) FROM STDIN""") as cp:
             for row in inst_rows:
                 cp.write_row(row)
         with cur.copy("""COPY law_provisions (id, act_id, ord, section_number, variant, part, heading, chapter, chapter_title,
                 section_type, provision_type, status, in_force, has_proviso, has_non_obstante, defined_terms,
-                acts_referenced, text, source_url) FROM STDIN""") as cp:
+                acts_referenced, text, source_url, amendment_count) FROM STDIN""") as cp:
             for row in prov_rows:
                 cp.write_row(row)
         cur.execute(
@@ -232,6 +287,8 @@ def main():
     url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
     if not url:
         sys.exit("DATABASE_URL is not set")
+    import duckdb
+    import psycopg
     duck = duckdb.connect()
     duck.execute("INSTALL httpfs; LOAD httpfs;")
     sums = checksums()

@@ -1,11 +1,14 @@
 "use client";
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeftRight, Banknote, CalendarClock, Gavel, Receipt, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, Banknote, CalendarClock, CalendarDays, Gavel, Hourglass, ListChecks, Receipt, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TOOL_IDS, type ToolId } from "../ids";
 import { ArbitrationPanel, ChequePanel, LimitationPanel } from "./limitation-panel";
+import { CauseListPanel } from "./causelist-panel";
 import { CodePanel } from "./code-panel";
+import { CondonationPanel } from "./condonation-panel";
+import { CourtDaysPanel } from "./court-days-panel";
 import { FeePanel } from "./fee-panel";
 import { DecisionFooter } from "./shared";
 
@@ -13,6 +16,9 @@ const TOOLS: Record<ToolId, { label: string; hint: string; icon: LucideIcon; Pan
   limitation: { label: "Limitation", hint: "Last day under the Limitation Act", icon: CalendarClock, Panel: LimitationPanel },
   cheque: { label: "Cheque dishonour", hint: "s.138 NI Act timeline", icon: Banknote, Panel: ChequePanel },
   arbitration: { label: "Arbitration s.34", hint: "Set-aside timeline", icon: Gavel, Panel: ArbitrationPanel },
+  condonation: { label: "Condonation of delay", hint: "Days of delay to explain", icon: Hourglass, Panel: CondonationPanel },
+  "court-days": { label: "Court days", hint: "Working days on a court's calendar", icon: CalendarDays, Panel: CourtDaysPanel },
+  causelist: { label: "Cause list search", hint: "Published lists, exact matches", icon: ListChecks, Panel: CauseListPanel },
   codes: { label: "IPC ↔ BNS converter", hint: "IPC, CrPC, IEA and the new codes", icon: ArrowLeftRight, Panel: CodePanel },
   fees: { label: "Court fee", hint: "From your verified slab table", icon: Receipt, Panel: FeePanel },
 };

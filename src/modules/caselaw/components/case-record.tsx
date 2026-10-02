@@ -13,6 +13,7 @@ import { benchLabel, courtLabel } from "./case-labels";
 import { CaseApiError, fetchCaseJson } from "./fetch";
 import { JudgmentTextSection } from "./judgment-text";
 import { CitationsSection, NegativeSignalNotice, useCitator } from "./case-citations";
+import { ScOrdersCard } from "./sc-orders";
 import { CoramJudges } from "@/modules/judges/components/coram-judges";
 import { CoramAvatars } from "@/modules/judges/components/coram-avatars";
 import { PhotoBackdrop } from "@/components/corpus/visual-image";
@@ -265,6 +266,7 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
             ) : null}
             <SourceCard r={r} />
           </NarrowFields.Provider>
+          <ScOrdersCard r={r} />
           <SameCase items={data.sameCase} r={r} />
         </aside>
       </div>

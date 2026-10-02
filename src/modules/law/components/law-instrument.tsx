@@ -16,11 +16,12 @@ import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { displayChapterTitle, displayHeading, groupToc, lawBlocks, type LawBlock } from "../reader";
 import {
-  citationTitle, displayLawCitation, jurisdictionLabel, statusTone, LAW_ATTRIBUTION_LINE, LAW_DATASET, lawApiHref, lawHref, repeatedProvisionLabel, NO_SECTION, normSectionKey, normVariant, provisionUnit, publisherLabel, safeHttpUrl, snippetParts,
+  citationTitle, displayLawCitation, jurisdictionLabel, legacyIndiaCodeNote, statusTone, LAW_ATTRIBUTION_LINE, LAW_DATASET, lawApiHref, lawHref, repeatedProvisionLabel, NO_SECTION, normSectionKey, normVariant, provisionUnit, publisherLabel, safeHttpUrl, snippetParts,
   type LawInstrument, type LawInstrumentResponse, type LawProvisionHit, type LawSearchResponse, type LawSectionRef, type LawSectionResponse, type LawTocEntry,
 } from "../shared";
 import { asLawApiError, fetchLawJson, type LawApiError } from "./fetch";
 import { isUnavailable, LawErrorState, LawUnavailable, StatusText } from "./law-states";
+import { CodeCorrespondence, LegacyLinkNote, SectionStatusChip, StatusBreakdownLine } from "./section-insights";
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 const unitOf = (i: Pick<LawInstrument, "kind" | "title">) => provisionUnit(i).toLowerCase();
@@ -161,9 +162,10 @@ function OfficialLink({ i, url, size = "xs", variant = "outline", label }: { i: 
   const href = safeHttpUrl(url);
   if (!href) return <span className="text-[12px] text-muted-foreground">Official text link not available</span>;
   const publisher = publisherLabel({ ...i, source_url: href });
+  const legacy = legacyIndiaCodeNote(href);
   return (
     <Button asChild size={size} variant={variant} className="max-w-full">
-      <a href={href} target="_blank" rel="noopener noreferrer" title={publisher}>
+      <a href={href} target="_blank" rel="noopener noreferrer" title={legacy ? `${publisher}. ${legacy}.` : publisher}>
         <ExternalLink className="size-3.5" /><span className="truncate">{label ?? `Official text · ${publisher}`}</span>
       </a>
     </Button>
@@ -182,7 +184,7 @@ function SourcePopover({ i }: { i: LawInstrument }) {
           <dt className="text-muted-foreground">Published by</dt>
           <dd className="min-w-0 break-words">{i.publisher ?? publisherLabel(i)}</dd>
           <dt className="text-muted-foreground">Official text</dt>
-          <dd className="min-w-0">{official ? <a className="inline-flex items-center gap-1 break-words text-primary hover:underline" href={official} target="_blank" rel="noopener noreferrer">{publisherLabel(i)}<ExternalLink className="size-3" aria-hidden /></a> : <span className="text-muted-foreground">Not available</span>}</dd>
+          <dd className="min-w-0">{official ? <><a className="inline-flex items-center gap-1 break-words text-primary hover:underline" href={official} target="_blank" rel="noopener noreferrer">{publisherLabel(i)}<ExternalLink className="size-3" aria-hidden /></a><LegacyLinkNote url={official} className="mt-0.5" /></> : <span className="text-muted-foreground">Not available</span>}</dd>
           {i.amendment_count ? <><dt className="text-muted-foreground">Amendments</dt><dd className="tabular">{i.amendment_count}</dd></> : null}
           {i.subjects.length ? <><dt className="text-muted-foreground">Subjects</dt><dd className="min-w-0">{i.subjects.join(", ")}</dd></> : null}
         </dl>
@@ -210,10 +212,12 @@ function InstrumentHeader({ i, total }: { i: LawInstrument; total: number }) {
             <span>{kindLabel(i.kind)}{i.year ? <span className="tabular">, {i.year}</span> : null}</span>
             <span aria-hidden className="text-muted-foreground/50">·</span>
             <span className="tabular">{fmt(total || i.sections)} sections</span>
+            <StatusBreakdownLine i={i} className="basis-full sm:basis-auto" />
           </div>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1">
           <OfficialLink i={i} url={i.source_url} label={<>Official text<span className="hidden xl:inline"> · {publisherLabel(i)}</span></>} />
+          <LegacyLinkNote url={i.source_url} compact />
           <Button asChild size="xs" variant="ghost"><Link href={`/search?q=${encodeURIComponent(citationTitle(i))}`}><Search className="size-3.5" />Research</Link></Button>
           <SourcePopover i={i} />
         </div>
@@ -506,12 +510,14 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
           </>}
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {s.in_force === false ? <Chip tone="warning">Not in force</Chip> : null}
+          <SectionStatusChip status={s.status} inForce={s.in_force} />
           {s.has_proviso ? <Chip tone="muted">Proviso</Chip> : null}
           {s.has_non_obstante ? <Chip tone="muted">Non obstante clause</Chip> : null}
           {s.provision_type ? <Chip tone="muted">{s.provision_type.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())}</Chip> : null}
           <OfficialLink i={instrument} url={s.source_url ?? instrument.source_url} variant="ghost" label="Official text" />
         </div>
+        <LegacyLinkNote url={safeHttpUrl(s.source_url ?? instrument.source_url)} className="mt-1" />
+        <CodeCorrespondence instrument={instrument} section={s.section} />
         {data.variants.length ? (
           <p className="mt-3 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-[12px] text-foreground/85">This {unitOf(instrument)} number appears more than once in this instrument. Also see the{" "}
             {data.variants.map((v, k) => <React.Fragment key={v}>{k ? ", " : ""}<Link className="text-primary underline-offset-2 hover:underline" href={lawHref(instrument.id, section, v)} scroll={false}>{repeatedProvisionLabel(instrument, section, v)}</Link></React.Fragment>)}. Check the official text.

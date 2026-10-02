@@ -7,7 +7,8 @@
  */
 import type { ApplicableCode, CodeName, MapResult } from "@/lib/india/criminal-code-map";
 import type { CourtFeeResult, CourtFeeTable, FeeSlab } from "@/lib/india/court-fees";
-import { parseIsoDate, type IsoDate } from "@/lib/india/holidays";
+import { addCourtDays, addDays, compareIso, daysBetween, isCourtOpen, isValidIsoDate, nextOpenDay, parseIsoDate, SAMPLE_CALENDAR, type CourtCalendar, type IsoDate } from "@/lib/india/holidays";
+import { normalizeCaseNumber, normalizeDiaryNo } from "@/modules/official/case-numbers";
 import type { ChequeDishonourResult, LimitationResult, LimitationRule, LimitationStep } from "@/lib/india/limitation";
 
 export const DECISION_SUPPORT_FOOTER = "Decision support — verify against the Gazette text and the court's notified calendar.";
@@ -387,4 +388,219 @@ export function feeToText(amount: number, table: CourtFeeTable, r: CourtFeeResul
   if (r.fee !== undefined) lines.push(`Fee: ₹${r.fee.toLocaleString("en-IN")}`);
   if (r.steps.length) lines.push("", "Steps:", ...r.steps.map((s, i) => `${i + 1}. ${s}`));
   return tail(lines, [], r.notes);
+}
+
+/* ───────────────────────────── court calendars ───────────────────────────── */
+
+/** Forums whose notified calendars the official-sources corpus can hold (GET /api/official/calendars?forum=). */
+export const COURT_CALENDAR_FORUMS: { forum: string; label: string; short: string }[] = [
+  { forum: "sci", label: "Supreme Court of India", short: "Supreme Court" },
+  { forum: "hc-delhi", label: "High Court of Delhi", short: "Delhi HC" },
+  { forum: "hc-karnataka", label: "High Court of Karnataka", short: "Karnataka HC" },
+  { forum: "nclt", label: "National Company Law Tribunal", short: "NCLT" },
+  { forum: "nclat", label: "National Company Law Appellate Tribunal", short: "NCLAT" },
+];
+
+/** Shown whenever an official court calendar is used, and in every copied result that uses one. */
+export const CALENDAR_CAVEAT = "Ad-hoc holidays and shifted sittings are notified separately — check the court's notices.";
+
+/** A calendar source as returned by /api/official/calendars. */
+export interface CalendarSourceRef { documentId: string; url: string; fetchedAt: string | null; years: number[] }
+
+/** GET /api/official/calendars response. `calendar` is null when no official calendar is loaded for those years. */
+export interface OfficialCalendarResponse { calendar: CourtCalendar | null; sources: CalendarSourceRef[]; forum: string | null; notes: string[] }
+
+/** Calendar choice in the tools: none, the illustrative sample, or a forum's official calendar ("official:hc-delhi"). */
+export type CalendarChoice = "none" | "sample" | `official:${string}`;
+
+export function officialChoice(forum: string): CalendarChoice {
+  return `official:${forum}`;
+}
+
+/** The forum of an official choice ("official:sci" → "sci"); null for none / sample / anything else. */
+export function choiceForum(c: string): string | null {
+  const m = /^official:([a-z][a-z0-9-]{1,40})$/.exec(c);
+  return m ? m[1] : null;
+}
+
+/** Years to ask the calendar API for around `today` (the previous, current and next year). */
+export function calendarYears(today: IsoDate): number[] {
+  const y = Number(today.slice(0, 4));
+  return Number.isInteger(y) ? [y - 1, y, y + 1] : [];
+}
+
+/** The calendar behind a choice: the sample, a loaded official calendar, or undefined (none / not loaded). */
+export function resolveCalendar(c: CalendarChoice, official: Record<string, OfficialCalendarResponse | undefined>): CourtCalendar | undefined {
+  if (c === "sample") return SAMPLE_CALENDAR;
+  const forum = choiceForum(c);
+  return forum ? official[forum]?.calendar ?? undefined : undefined;
+}
+
+/** "fetched 3 Sep 2026" style date from an ISO timestamp (date part only); null when absent. */
+export function fetchedDate(ts: string | null | undefined): string | null {
+  const d = ts && /^\d{4}-\d{2}-\d{2}/.test(ts) ? ts.slice(0, 10) : null;
+  return d ? formatIsoDate(d).replace(/^\w{3}, /, "") : null;
+}
+
+/** Plain-text label of a choice for copied results: what calendar, from where, fetched when, and the caveat. */
+export function describeCalendarChoice(c: CalendarChoice, official: Record<string, OfficialCalendarResponse | undefined>): string {
+  if (c === "none") return "None selected";
+  if (c === "sample") return `Sample calendar "${SAMPLE_CALENDAR.id}" (illustrative; not a court's notified calendar)`;
+  const forum = choiceForum(c);
+  const f = COURT_CALENDAR_FORUMS.find((x) => x.forum === forum);
+  const r = forum ? official[forum] : undefined;
+  if (!forum || !r?.calendar) return `${f?.label ?? forum ?? "Court"}: official calendar not loaded (court holidays not checked)`;
+  const src = r.sources.map((s) => `${s.url}${fetchedDate(s.fetchedAt) ? ` (fetched ${fetchedDate(s.fetchedAt)})` : ""}`).join("; ");
+  return `${f?.label ?? forum} official calendar for ${r.calendar.years.join(", ")}${src ? ` from ${src}` : ""}. ${CALENDAR_CAVEAT}`;
+}
+
+/* ───────────────────────────── court working days ───────────────────────────── */
+
+export interface CourtDaysResult {
+  status: "computed" | "requires_verification" | "invalid_input";
+  /** Working days counted (null when the calendar could not answer for a day in the range). */
+  open: number | null;
+  /** Calendar days in the range. */
+  days: number;
+  closed: { date: IsoDate; reason: string }[];
+  /** First day the calendar cannot answer for (outside its years); counting stops there. */
+  unknown: { date: IsoDate; reason: string } | null;
+  notes: string[];
+}
+
+const MAX_COUNT_DAYS = 3 * 366;
+
+/**
+ * Court working days from `from` to `to`, both days included, under `cal`. A day the calendar cannot answer for
+ * (outside its years) stops the count: the result is "requires verification" with no number, never a guess.
+ */
+export function countCourtDays(from: IsoDate, to: IsoDate, cal: CourtCalendar): CourtDaysResult {
+  const notes: string[] = [];
+  if (!isValidIsoDate(from) || !isValidIsoDate(to)) return { status: "invalid_input", open: null, days: 0, closed: [], unknown: null, notes: ["Enter both dates in full."] };
+  if (compareIso(from, to) > 0) return { status: "invalid_input", open: null, days: 0, closed: [], unknown: null, notes: ["The start date is after the end date."] };
+  const days = daysBetween(from, to) + 1;
+  if (days > MAX_COUNT_DAYS) return { status: "invalid_input", open: null, days, closed: [], unknown: null, notes: [`Ranges are limited to ${MAX_COUNT_DAYS} days.`] };
+  const closed: { date: IsoDate; reason: string }[] = [];
+  let open = 0;
+  for (let i = 0, d = from; i < days; i++, d = addDays(d, 1)) {
+    const st = isCourtOpen(d, cal);
+    if (st.open === "unknown") return { status: "requires_verification", open: null, days, closed, unknown: { date: d, reason: st.reason }, notes: [`The calendar cannot answer for ${d} (${st.reason}); the count stops there.`] };
+    if (st.open) open++;
+    else closed.push({ date: d, reason: st.reason });
+  }
+  if (cal.sample) notes.push("Sample calendar: Sundays and three national holidays only. It is not the court's notified calendar.");
+  notes.push("Both the start and the end date are counted.");
+  return { status: cal.sample ? "requires_verification" : "computed", open, days, closed, unknown: null, notes };
+}
+
+export interface NextCourtDayResult { status: "computed" | "requires_verification" | "invalid_input"; date: IsoDate | null; skipped: { date: IsoDate; reason: string }[]; notes: string[] }
+
+/** The first day on or after `date` on which the court sits, under `cal` (null with the reason when it cannot say). */
+export function nextCourtDay(date: IsoDate, cal: CourtCalendar): NextCourtDayResult {
+  if (!isValidIsoDate(date)) return { status: "invalid_input", date: null, skipped: [], notes: ["Enter the date in full."] };
+  const r = nextOpenDay(date, cal);
+  if (!r.date) return { status: "requires_verification", date: null, skipped: r.skipped, notes: [r.unknown ? `The calendar cannot say: ${r.unknown}.` : "No working day found."] };
+  return { status: cal.sample ? "requires_verification" : "computed", date: r.date, skipped: r.skipped, notes: cal.sample ? ["Sample calendar: not the court's notified calendar."] : [] };
+}
+
+/** `date` plus `n` court working days (the start day is not counted); null with the reason when the calendar cannot say. */
+export function addWorkingDays(date: IsoDate, n: number, cal: CourtCalendar): { status: "computed" | "requires_verification" | "invalid_input"; date: IsoDate | null; notes: string[] } {
+  if (!isValidIsoDate(date)) return { status: "invalid_input", date: null, notes: ["Enter the date in full."] };
+  if (!Number.isInteger(n) || n < 1 || n > 500) return { status: "invalid_input", date: null, notes: ["Give a whole number of working days from 1 to 500."] };
+  const r = addCourtDays(date, n, cal);
+  if (!r) return { status: "requires_verification", date: null, notes: ["The calendar does not cover every day needed (check its years)."] };
+  return { status: cal.sample ? "requires_verification" : "computed", date: r, notes: ["The start day is not counted.", ...(cal.sample ? ["Sample calendar: not the court's notified calendar."] : [])] };
+}
+
+export function courtDaysToText(input: { from: IsoDate; to: IsoDate }, r: CourtDaysResult, calendarLabel: string): string {
+  const lines = [`Court working days: ${formatIsoDate(input.from)} to ${formatIsoDate(input.to)} (both included)`, `Status: ${statusText(r.status)}`, `Calendar: ${calendarLabel}`];
+  if (r.open != null) lines.push(`Working days: ${r.open} of ${r.days} calendar days`);
+  if (r.unknown) lines.push(`Not counted: the calendar cannot answer for ${r.unknown.date} (${r.unknown.reason})`);
+  if (r.closed.length) lines.push("", "Days the court does not sit:", ...r.closed.map((c) => `- ${c.date} ${formatIsoDate(c.date)}: ${c.reason}`));
+  return tail(lines, [], r.notes);
+}
+
+/* ───────────────────────────── condonation of delay ───────────────────────────── */
+
+export interface DelayResult {
+  status: "within_time" | "delayed" | "invalid_input";
+  /** Days after the last day of limitation (0 when filed on or before it). */
+  days: number;
+  notes: string[];
+}
+
+/**
+ * Delay in days between the last day of limitation and the filing date. Filing on the last day is within time; each
+ * later day adds one. Says nothing about whether the delay will be condoned.
+ */
+export function condonationDelay(lastDay: IsoDate, filedOn: IsoDate): DelayResult {
+  if (!isValidIsoDate(lastDay) || !isValidIsoDate(filedOn)) return { status: "invalid_input", days: 0, notes: ["Enter both dates in full."] };
+  const d = daysBetween(lastDay, filedOn);
+  if (d <= 0) return { status: "within_time", days: 0, notes: [d === 0 ? "Filed on the last day of limitation." : `Filed ${-d} day(s) before the last day of limitation.`] };
+  return { status: "delayed", days: d, notes: [] };
+}
+
+/** The plain-language note under a delay result; never a prediction. */
+export function delayNote(r: DelayResult, condonable?: boolean | "special"): string {
+  if (r.status === "invalid_input") return r.notes.join(" ");
+  if (r.status === "within_time") return "No delay to explain: the filing date is not after the last day of limitation (assuming that last day is right — check it, including any court-closed adjustment under s.4).";
+  const base = `The filing is ${r.days} day${r.days === 1 ? "" : "s"} late. An application for condonation must explain the whole period of delay, usually day by day for the period after the last day. Whether the cause shown is sufficient is for the court; this tool does not assess it or predict the outcome.`;
+  if (condonable === false) return `${base} For the selected proceeding, s.5 of the Limitation Act does not extend time.`;
+  if (condonable === "special") return `${base} For the selected proceeding, any extension is only as the special law provides.`;
+  return base;
+}
+
+export function delayToText(input: { lastDay: IsoDate; filedOn: IsoDate; proceeding?: string; authority?: string }, r: DelayResult, condonable?: boolean | "special"): string {
+  const lines = ["Delay in filing"];
+  if (input.proceeding) lines.push(`Proceeding: ${input.proceeding}${input.authority ? ` (${input.authority})` : ""}`);
+  lines.push(`Last day of limitation: ${formatIsoDate(input.lastDay)} (${input.lastDay})`, `Filed on: ${formatIsoDate(input.filedOn)} (${input.filedOn})`);
+  lines.push(r.status === "delayed" ? `Delay: ${r.days} day(s)` : r.status === "within_time" ? "Delay: none (within time)" : "Delay: not computed");
+  if (condonable !== undefined) lines.push(`Condonation: ${condonableText(condonable)}`);
+  lines.push("", delayNote(r, condonable));
+  return tail(lines, [], r.notes);
+}
+
+/* ───────────────────────────── cause lists ───────────────────────────── */
+
+/** Forums the cause-list search offers (GET /api/official/causelists?forum=). */
+export const CAUSE_LIST_FORUMS: { forum: string; label: string; diary: boolean }[] = [
+  { forum: "sci", label: "Supreme Court of India", diary: true },
+  { forum: "hc-delhi", label: "High Court of Delhi", diary: false },
+  { forum: "nclt", label: "NCLT (all benches)", diary: false },
+  { forum: "nclat", label: "NCLAT (both benches)", diary: false },
+];
+
+export interface CauseListSearch { forum: string; date: string; caseNumber: string; diary: string; advocate: string }
+
+/**
+ * Query string for /api/official/causelists, or the reason the search cannot be run. Case and diary numbers must read
+ * as one exact number (they are matched exactly, never fuzzily); a date or an identifier is required.
+ */
+export function causeListQuery(s: CauseListSearch): { qs: string | null; error: string | null } {
+  const sp = new URLSearchParams();
+  const forum = CAUSE_LIST_FORUMS.find((f) => f.forum === s.forum);
+  if (!forum) return { qs: null, error: "Choose a court or tribunal." };
+  sp.set("forum", forum.forum);
+  const date = s.date.trim();
+  if (date && !isValidIsoDate(date)) return { qs: null, error: "Enter the list date in full." };
+  if (date) sp.set("date", date);
+  const cn = s.caseNumber.trim();
+  if (cn) {
+    if (!normalizeCaseNumber(cn)) return { qs: null, error: `"${cn}" is not one recognisable case number (e.g. SLP(C) No. 1234/2026, W.P.(C) 5812/2016).` };
+    sp.set("case", cn);
+  }
+  const diary = s.diary.trim();
+  if (diary) {
+    if (!forum.diary) return { qs: null, error: "Diary numbers are used by the Supreme Court only." };
+    if (!normalizeDiaryNo(diary)) return { qs: null, error: `"${diary}" is not a diary number (e.g. 54583/2026).` };
+    sp.set("diary", diary);
+  }
+  const adv = s.advocate.replace(/\s+/g, " ").trim();
+  if (adv) {
+    if (adv.length < 3) return { qs: null, error: "Give the advocate's name as printed (at least 3 letters)." };
+    sp.set("advocate", adv.slice(0, 120));
+  }
+  if (!date && !cn && !diary) return { qs: null, error: "Give a list date, or a case or diary number." };
+  sp.set("limit", "200");
+  return { qs: sp.toString(), error: null };
 }

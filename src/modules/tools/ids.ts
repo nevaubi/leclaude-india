@@ -1,5 +1,5 @@
 /** Practice tool ids, in display order (client- and server-safe). */
-export const TOOL_IDS = ["limitation", "cheque", "arbitration", "codes", "fees"] as const;
+export const TOOL_IDS = ["limitation", "cheque", "arbitration", "condonation", "court-days", "causelist", "codes", "fees"] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 /** `?tool=` value → a known tool; anything else opens the first tool. */

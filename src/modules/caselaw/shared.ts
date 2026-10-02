@@ -7,6 +7,7 @@
  * record count is not inflated by them. Records from other datasets that describe the same case (same CNR or neutral
  * citation) are shown as separate, labelled records, never merged.
  */
+import { normalizeDiaryNo } from "@/modules/official/case-numbers";
 
 export type CaseSort = "newest" | "oldest" | "relevance";
 
@@ -206,6 +207,8 @@ export interface CaseRecord extends Omit<CaseHit, "match"> {
   bench: string | null;
   unit: CaseUnit | null;
   sourceInfo: SourceRegistryEntry;
+  /** Supreme Court diary number as printed in the source metadata, when the record carries one (not all do). */
+  diary_no?: string | null;
 }
 
 export interface SameCaseRecord extends CaseHit {
@@ -341,3 +344,26 @@ export const MATCH_LABEL: Record<CaseMatch, string> = {
   partial: "Some words",
   browse: "",
 };
+
+// ---------------------------------------------------------------------------
+// Supreme Court orders feed (official sources) for a case record
+// ---------------------------------------------------------------------------
+
+/**
+ * The diary number of a Supreme Court record, normalized "<number>/<year>", only when the metadata prints one: the
+ * record's `diary_no`, or a case number that explicitly reads "Diary No. …". A plain case number ("Civil Appeal No.
+ * 1234/2020") is never read as a diary number, and other courts' records return null.
+ */
+export function scDiaryNumberOf(r: Pick<CaseRecord, "court_id" | "case_number"> & { diary_no?: string | null }): string | null {
+  if (r.court_id !== "sci") return null;
+  if (r.diary_no) return normalizeDiaryNo(r.diary_no);
+  const cn = r.case_number ?? "";
+  return /\bdiary\s*(?:no\.?|number)/i.test(cn) ? normalizeDiaryNo(cn) : null;
+}
+
+/** Orders / judgments from the Supreme Court feed whose published diary number equals `diary` exactly, newest first. */
+export function exactDiaryOrders<T extends { sourceId: string; docDate: string | null; meta: Record<string, unknown> }>(docs: T[], diary: string): T[] {
+  return docs
+    .filter((d) => d.sourceId === "sci-orders" && typeof d.meta?.diaryNo === "string" && normalizeDiaryNo(d.meta.diaryNo) === diary)
+    .sort((a, b) => (b.docDate ?? "").localeCompare(a.docDate ?? ""));
+}

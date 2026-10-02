@@ -442,12 +442,26 @@ export interface LocalLawPointer {
 
 const IC = (url: string, title: string) => s(url, title);
 
+/**
+ * India Code moved to DSpace 9 at indiacode.gov.in and renumbered its handles, so the old indiacode.nic.in browse pages
+ * (/handle/123456789/<n>/browse?…) no longer resolve. Browse targets point at the State's collection on the new site, as
+ * linked from its home page (checked INDIA_CODE_CHECKED_AT). Document links on the old host are not rewritten to a
+ * guessed new handle.
+ */
+export const INDIA_CODE_HOME = "https://indiacode.gov.in/";
+export const INDIA_CODE_CHECKED_AT = "2026-10-02";
+const INDIA_CODE_STATE_COLLECTION: Partial<Record<StateCode, string>> = {
+  KA: "https://indiacode.gov.in/collections/960261cd-2b69-4ed0-916f-c52423f1253d?spc.sf=dc.date.issued&spc.sd=DESC",
+  MH: "https://indiacode.gov.in/collections/829fe264-6afa-4d1f-a0fa-ceb3f4d15477?spc.sf=dc.date.issued&spc.sd=DESC",
+};
+const ICS = (state: StateCode, name: string): ForumSource => ({ url: INDIA_CODE_STATE_COLLECTION[state]!, title: `India Code: ${name} State legislation (browse by Act number)`, checkedAt: INDIA_CODE_CHECKED_AT });
+
 /** Pointers per State / UT, keyed by the city's State code. */
 export const LOCAL_LAW: Partial<Record<StateCode, LocalLawPointer[]>> = {
   KA: [
-    { title: "The Karnataka Rent Act, 1999", topic: "rent", jurisdiction: "state", stateCode: "KA", source: IC("https://www.indiacode.nic.in/handle/123456789/2485/browse?type=actno&sort_by=3&order=ASC&rpp=5&etal=-1&value=34&starts_with=K", "India Code: Browsing \"Karnataka\" by Act Number 34") },
+    { title: "The Karnataka Rent Act, 1999", topic: "rent", jurisdiction: "state", stateCode: "KA", source: ICS("KA", "Karnataka") },
     { title: "The Karnataka Court-fees and Suits Valuation Act, 1958", topic: "court_fees", jurisdiction: "state", stateCode: "KA" },
-    { title: "The Karnataka Stamp Act, 1957", topic: "stamp", jurisdiction: "state", stateCode: "KA", source: IC("https://www.indiacode.nic.in/handle/123456789/2485/browse?type=actno&sort_by=3&order=ASC&rpp=5&etal=-1&value=34&starts_with=K", "India Code: Browsing \"Karnataka\" by Act Number 34") },
+    { title: "The Karnataka Stamp Act, 1957", topic: "stamp", jurisdiction: "state", stateCode: "KA", source: ICS("KA", "Karnataka") },
     { title: "The Karnataka Civil Courts Act, 1964", topic: "courts", jurisdiction: "state", stateCode: "KA" },
     { title: "The Karnataka Municipal Corporations Act, 1976", topic: "municipal", jurisdiction: "state", stateCode: "KA" },
     { title: "The Karnataka Land Revenue Act, 1964", topic: "land_revenue", jurisdiction: "state", stateCode: "KA" },
@@ -465,7 +479,7 @@ export const LOCAL_LAW: Partial<Record<StateCode, LocalLawPointer[]>> = {
     { title: "The Andhra Pradesh Municipal Corporations Act, 1994", topic: "municipal", jurisdiction: "state", stateCode: "AP" },
   ],
   MH: [
-    { title: "The Maharashtra Rent Control Act, 1999", topic: "rent", jurisdiction: "state", stateCode: "MH", source: IC("https://www.indiacode.nic.in/handle/123456789/2517/browse?type=actno&order=ASC&rpp=20&value=18", "India Code: Browsing \"Maharashtra\" by Act Number 18") },
+    { title: "The Maharashtra Rent Control Act, 1999", topic: "rent", jurisdiction: "state", stateCode: "MH", source: ICS("MH", "Maharashtra") },
     { title: "The Maharashtra Court-fees Act, 1959", topic: "court_fees", jurisdiction: "state", stateCode: "MH" },
     { title: "The Maharashtra Stamp Act", topic: "stamp", jurisdiction: "state", stateCode: "MH" },
     { title: "The Maharashtra Land Revenue Code, 1966", topic: "land_revenue", jurisdiction: "state", stateCode: "MH" },

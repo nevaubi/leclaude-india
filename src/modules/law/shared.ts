@@ -51,6 +51,13 @@ export interface LawInstrument {
   subjects: string[];
   dataset_file: string;
   dataset_version: string;
+  /**
+   * Provisions per dataset status ({"in_force": 412, "repealed": 3}; "not_recorded" for rows without one), when the
+   * loader recorded it (scripts/law-corpus, loader v2). Absent or null on older loads: then only `status` is known.
+   */
+  status_counts?: Record<string, number> | null;
+  /** True only when every provision with a recorded status is in force (loader v2); null/absent when not recorded. */
+  in_force?: boolean | null;
 }
 
 export interface LawInstrumentHit extends LawInstrument {
@@ -362,6 +369,7 @@ export function jurisdictionLabel(i: Pick<LawInstrument, "jurisdiction" | "state
 export const STATUS_LABEL: Record<string, string> = {
   in_force: "In force", repealed: "Repealed", spent: "Spent", superseded: "Superseded", omitted: "Omitted", expired: "Expired",
   lapsed: "Lapsed", not_in_force: "Not in force", report: "Report (not law)", partially_in_force: "Partly in force", amended: "Amended", rescinded: "Rescinded",
+  substituted: "Substituted", replaced: "Replaced", not_recorded: "Status not recorded",
 };
 
 export function statusLabel(s: string | null | undefined): string {
@@ -369,14 +377,63 @@ export function statusLabel(s: string | null | undefined): string {
   return STATUS_LABEL[s] ?? s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 }
 
-/** in_force → ok; repealed/spent/superseded/omitted/expired/lapsed/rescinded → off; anything else → unknown. */
+/** in_force → ok; repealed/spent/superseded/omitted/expired/lapsed/rescinded/substituted/replaced → off; anything else → unknown. */
 export function statusTone(s: string | null | undefined): "ok" | "off" | "unknown" {
   if (s === "in_force") return "ok";
-  if (s && /^(repealed|spent|superseded|omitted|expired|lapsed|rescinded|not_in_force)$/.test(s)) return "off";
+  if (s && /^(repealed|spent|superseded|omitted|expired|lapsed|rescinded|not_in_force|substituted|replaced)$/.test(s)) return "off";
   return "unknown";
 }
 
+export type StatusTone = ReturnType<typeof statusTone>;
+
+/** What the section badge says about a provision's recorded status. */
+export interface SectionStatusBadge { label: string; tone: StatusTone; title: string }
+
+export const SECTION_STATUS_NOTE = "Status recorded by Open India Law for this provision, taken from the status of its Act or regulation. Repeal, omission or substitution of a single section is not recorded in the dataset; check the official text.";
+
+/**
+ * The status badge for a section. Green ("ok") only when the recorded status is in force (or, with no status string,
+ * when the dataset's in_force flag is true) and the in_force flag does not contradict it; anything else is shown as
+ * recorded ("Repealed", "Superseded", "Spent", "Omitted", "Not in force") or "Status not recorded".
+ */
+export function sectionStatusBadge(s: { status: string | null | undefined; in_force: boolean | null | undefined }): SectionStatusBadge {
+  const status = s.status?.trim() || null;
+  if ((status === "in_force" || (!status && s.in_force === true)) && s.in_force !== false) return { label: STATUS_LABEL.in_force, tone: "ok", title: SECTION_STATUS_NOTE };
+  if (status === "in_force" && s.in_force === false) return { label: STATUS_LABEL.not_in_force, tone: "off", title: SECTION_STATUS_NOTE };
+  if (!status) return s.in_force === false ? { label: STATUS_LABEL.not_in_force, tone: "off", title: SECTION_STATUS_NOTE } : { label: statusLabel(null), tone: "unknown", title: SECTION_STATUS_NOTE };
+  return { label: statusLabel(status), tone: statusTone(status), title: SECTION_STATUS_NOTE };
+}
+
+/** An instrument's status mixture, largest first (empty when the loader did not record one). */
+export function statusBreakdown(counts: Record<string, number> | null | undefined): { status: string; label: string; tone: StatusTone; count: number }[] {
+  if (!counts || typeof counts !== "object") return [];
+  return Object.entries(counts)
+    .filter(([, n]) => typeof n === "number" && Number.isFinite(n) && n > 0)
+    .map(([status, count]) => ({ status, label: statusLabel(status === "not_recorded" ? null : status), tone: status === "not_recorded" ? "unknown" as const : statusTone(status), count }))
+    .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status));
+}
+
+/** True when the provisions of an instrument do not all share one recorded status. */
+export function hasMixedStatus(counts: Record<string, number> | null | undefined): boolean {
+  return statusBreakdown(counts).length > 1;
+}
+
+/** India Code's current host (DSpace 9; handles were renumbered when it moved from indiacode.nic.in). */
+export const INDIA_CODE_HOST = "indiacode.gov.in";
+export const INDIA_CODE_LEGACY_NOTE = "Link from the dataset (India Code moved to indiacode.gov.in; this handle may not resolve)";
+
+/**
+ * The note shown next to an India Code link on the old host (www.indiacode.nic.in). The link is shown as the dataset
+ * gives it; it is never rewritten to a guessed new handle. Null for any other URL.
+ */
+export function legacyIndiaCodeNote(url: string | null | undefined): string | null {
+  const host = urlHostOf(url);
+  if (!host || !/(^|\.)indiacode\.nic\.in$/.test(host)) return null;
+  return /\/handle\//.test(url ?? "") ? INDIA_CODE_LEGACY_NOTE : "Link from the dataset (India Code moved to indiacode.gov.in; this link may not resolve)";
+}
+
 const PUBLISHER_HOSTS: [RegExp, string][] = [
+  [/(^|\.)indiacode\.gov\.in$/, "India Code (Legislative Department)"],
   [/(^|\.)indiacode\.nic\.in$/, "India Code (Legislative Department)"],
   [/(^|\.)legislative\.gov\.in$/, "Legislative Department"],
   [/(^|\.)egazette\.(gov|nic)\.in$/, "e-Gazette of India"],

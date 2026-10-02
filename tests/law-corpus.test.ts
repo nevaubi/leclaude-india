@@ -83,7 +83,10 @@ describe("shared contracts", () => {
     expect(lawCitation({ kind: "act", title: "Karnataka Rent Act", year: 1999 }, "27")).toBe("Section 27, Karnataka Rent Act, 1999");
     expect(lawCitation({ kind: "regulation", title: "SEBI (Listing Obligations and Disclosure Requirements) Regulations, 2015", year: 2015 }, "23")).toBe("Regulation 23, SEBI (Listing Obligations and Disclosure Requirements) Regulations, 2015");
     expect(lawCitation({ kind: "act", title: "X Act, 2000", year: 2000 }, "5", 1)).toContain("variant 2");
+    // India Code moved to indiacode.gov.in; both hosts are labelled (dataset links still point at the old host).
+    expect(publisherLabel({ source_url: "https://indiacode.gov.in/handle/123456789/496549", regulator: null, publisher: null })).toBe("India Code (Legislative Department)");
     expect(publisherLabel({ source_url: "https://www.indiacode.nic.in/handle/1", regulator: null, publisher: null })).toBe("India Code (Legislative Department)");
+    expect(publisherLabel({ source_url: "https://indiacode.gov.in.example.com/x", regulator: null, publisher: null })).toBe("indiacode.gov.in.example.com");
     expect(publisherLabel({ source_url: "https://www.sebi.gov.in/legal/x.html", regulator: "sebi", publisher: null })).toBe("SEBI");
     expect(publisherLabel({ source_url: "javascript:alert(1)", regulator: "rbi", publisher: null })).toBe("RBI");
     expect(statusLabel("in_force")).toBe("In force");

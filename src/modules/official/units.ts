@@ -1,6 +1,7 @@
 import "server-only";
 import { remoteStore, type RemoteStore, type Row } from "@/lib/db/remote";
 import { ensureOfficialSchema } from "./schema";
+import { isProviderQuotaError, PROVIDER_QUOTA_RE, QUOTA_DEFER_SECONDS } from "@/lib/ai/quota";
 import { OfficialNotConfiguredError } from "./service";
 
 /**
@@ -159,6 +160,11 @@ export async function skipUnit(store: RemoteStore, id: string, note: string): Pr
  * exponential backoff (2^attempts minutes, at most 60).
  */
 export async function failUnit(store: RemoteStore, unit: Pick<OfficialUnit, "id" | "attempts">, error: string, opts: { permanent?: boolean } = {}): Promise<"failed" | "retry"> {
+  if (!opts.permanent && isProviderQuotaError(error)) {
+    // The model provider has no credit: wait (attempt given back), never fail the unit for it.
+    await deferUnit(store, unit.id, QUOTA_DEFER_SECONDS, `model provider has no credit; resumes later: ${error.slice(0, 300)}`);
+    return "retry";
+  }
   const final = opts.permanent || unit.attempts >= MAX_ATTEMPTS;
   const backoff = Math.min(60, 2 ** Math.max(0, unit.attempts));
   await store.query({
@@ -267,4 +273,18 @@ export async function getOfficialState<T>(store: RemoteStore, key: string): Prom
 
 export async function setOfficialState(store: RemoteStore, key: string, value: unknown): Promise<void> {
   await store.query({ query: `INSERT INTO corpus_state (key, value, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, params: [key, JSON.stringify(value)] });
+}
+
+/**
+ * Units that failed only because the model provider had no credit (before failUnit deferred such refusals) go back to
+ * the queue with fresh attempts. Idempotent; bounded to the given sources.
+ */
+export async function requeueQuotaFailures(store: RemoteStore, sources: string[]): Promise<number> {
+  if (!sources.length) return 0;
+  const r = await store.query({
+    query: `WITH s AS (UPDATE official_units SET status = 'pending', attempts = 0, run_after = NULL, finished_at = NULL, lease_until = NULL, updated_at = now()
+      WHERE status = 'failed' AND source = ANY($1::text[]) AND error ~* $2 RETURNING 1) SELECT count(*)::int AS n FROM s`,
+    params: [pgArray(sources), PROVIDER_QUOTA_RE.source],
+  });
+  return Number(r[0]?.n ?? 0);
 }

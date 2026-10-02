@@ -1,5 +1,6 @@
 import "server-only";
 import { float32ToBuffer } from "@/lib/ai/embeddings";
+import { isProviderQuotaError, PROVIDER_QUOTA_RE } from "@/lib/ai/quota";
 import type { RemoteStore, Row, SqlQuery } from "@/lib/db/remote";
 import { defaultEmbed, EMBED_DIMS, embeddingModel, vectorLiteral, type EmbedFn } from "@/modules/official/embed";
 
@@ -199,6 +200,8 @@ export async function runJudgmentEmbedding(store: RemoteStore, o: { deadline: nu
   out.vector = s.vector;
   if (!s.ready) return { ...out, error: s.error ?? "judgment text is not loaded" };
   out.queued = await seedEmbedQueue(store, { limit: o.seed ?? 200 });
+  // Rows that failed only because the provider had no credit (older runs) are tried again with fresh attempts.
+  await store.query({ query: `UPDATE corpus_embed_queue SET status = 'pending', attempts = 0, updated_at = now() WHERE status = 'failed' AND error ~* $1`, params: [PROVIDER_QUOTA_RE.source] }).catch(() => undefined);
   const embed = o.embed ?? defaultEmbed();
   let budget = Math.max(1, Math.floor(o.maxChunks ?? 2_000));
   const keyExpr = s.hc ? TEXT_KEY_SQL("t") : `t.neutral_citation`;
@@ -275,8 +278,11 @@ export async function runJudgmentEmbedding(store: RemoteStore, o: { deadline: nu
 }
 
 async function release(store: RemoteStore, key: string, attempts: unknown, error: string | null): Promise<void> {
-  const failed = error != null && Number(attempts) >= MAX_ATTEMPTS;
-  await store.query({ query: `UPDATE corpus_embed_queue SET status = $2, error = $3, lease_until = NULL, updated_at = now(), attempts = $4 WHERE text_key = $1`, params: [key, failed ? "failed" : "pending", error, Math.max(0, Number(attempts) || 0)] }).catch(() => undefined);
+  // A provider without credit is not this text's failure: the attempt is given back and the row waits.
+  const quota = error != null && isProviderQuotaError(error);
+  const n = Math.max(0, (Number(attempts) || 0) - (quota ? 1 : 0));
+  const failed = !quota && error != null && n >= MAX_ATTEMPTS;
+  await store.query({ query: `UPDATE corpus_embed_queue SET status = $2, error = $3, lease_until = NULL, updated_at = now(), attempts = $4 WHERE text_key = $1`, params: [key, failed ? "failed" : "pending", error, n] }).catch(() => undefined);
 }
 
 /** Queue and vector counts for status pages (bounded queries). */

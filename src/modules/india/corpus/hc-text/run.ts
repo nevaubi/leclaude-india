@@ -1,4 +1,5 @@
 import "server-only";
+import { PROVIDER_QUOTA_RE } from "@/lib/ai/quota";
 import { remoteStore, type RemoteStore } from "@/lib/db/remote";
 import { extractPdf } from "@/modules/official/extract";
 import { defaultOcrModel, ocrDocument, type OcrModel } from "@/modules/official/ocr";
@@ -162,6 +163,11 @@ export async function runHcTextIngest(o: HcRunOptions): Promise<HcRunResult> {
       if (!judgments) { result.notes.push("corpus_judgments does not exist: load High Court metadata first (corpus backfill)"); return finish("no_corpus"); }
       const swept = await repo.sweepExpired(MAX_ATTEMPTS);
       if (swept) result.notes.push(`${swept} unit(s) whose lease expired on the last attempt closed as failed`);
+      if (repo.requeueMatching) {
+        // Texts stored partial (or failed) only because the OCR provider had no credit are tried again.
+        const q = await repo.requeueMatching(PROVIDER_QUOTA_RE.source, 2_000);
+        if (q) result.notes.push(`${q} unit(s) left partial or failed for lack of OCR provider credit re-queued`);
+      }
       if (o.retryFailed) {
         const n = await repo.requeue(["failed", "partial"], 5_000);
         if (n) result.notes.push(`${n} failed or partial unit(s) re-queued`);

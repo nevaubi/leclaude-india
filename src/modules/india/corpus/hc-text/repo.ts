@@ -122,6 +122,8 @@ export interface HcTextRepo {
   finish(id: string, status: "done" | "skipped" | "failed", prov: Provenance): Promise<void>;
   /** Back to pending after a transient failure, not before `backoffMinutes`. */
   retry(id: string, error: string, backoffMinutes: number): Promise<void>;
+  /** Re-queue partial / failed units whose note or error matches `pattern` (e.g. the OCR provider had no credit). */
+  requeueMatching?(pattern: string, limit: number): Promise<number>;
   /** Hand a claimed unit back (deadline): the attempt is given back. */
   release(id: string, note: string, payload?: UnitPayload | null): Promise<void>;
   /** Wait (not a failure): not claimable for `seconds`; the attempt is given back. */
@@ -372,6 +374,19 @@ export class SqlHcTextRepo implements HcTextRepo {
     const r = await this.store.query({
       query: `WITH s AS (UPDATE hc_text_units SET status = 'failed', result = 'failed', error = coalesce(error, 'lease expired on the last attempt'), lease_until = NULL, finished_at = now(), updated_at = now()
         WHERE status = 'running' AND lease_until < now() AND attempts >= ${Math.max(1, Math.floor(maxAttempts))} RETURNING 1) SELECT count(*)::int AS n FROM s`,
+    });
+    return num(r[0]?.n);
+  }
+
+  async requeueMatching(pattern: string, limit: number): Promise<number> {
+    const r = await this.store.query({
+      query: `WITH u AS (UPDATE hc_text_units SET status = 'pending', attempts = 0, error = NULL, run_after = NULL, lease_until = NULL, finished_at = NULL, updated_at = now()
+        WHERE judgment_id IN (SELECT judgment_id FROM hc_text_units WHERE status IN ('done', 'failed') AND result IN ('partial', 'failed')
+          AND (coalesce(note, '') ~* $1 OR coalesce(error, '') ~* $1) ORDER BY priority LIMIT ${Math.max(1, Math.min(Math.floor(limit), 100_000))})
+        RETURNING judgment_id),
+        j AS (UPDATE corpus_judgments SET text_status = 'none', updated_at = now() WHERE id IN (SELECT judgment_id FROM u) AND text_status = 'failed' RETURNING 1)
+        SELECT (SELECT count(*) FROM u)::int AS n`,
+      params: [pattern],
     });
     return num(r[0]?.n);
   }

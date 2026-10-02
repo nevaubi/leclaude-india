@@ -2,6 +2,7 @@ import "server-only";
 import { AIConfigError } from "@/lib/ai/config";
 import { scrubPersonalData, sha256Hex } from "@/modules/official/chunk";
 import { EXTRACTOR_VERSION, type ExtractedDocument, type PageText } from "@/modules/official/extract";
+import { isProviderQuotaError, QUOTA_DEFER_SECONDS } from "@/lib/ai/quota";
 import { type OcrDocumentResult, type OcrModel, type OcrOptions } from "@/modules/official/ocr";
 import type { BlobStore } from "./blob-store";
 import { chunkJudgmentPages } from "./chunk";
@@ -171,6 +172,11 @@ export async function processHcUnit(unit: HcUnit, deps: ProcessDeps): Promise<Pr
           // ocrDocument stops starting requests near the deadline (or on abort): not a page failure, the rest resumes.
           for (const p of res.pages) progress.ocrDone![String(p.page)] = scrubText(p.text);
           await repo.defer(unit.judgmentId, afterDeadlineS(deps), `OCR stopped at the run deadline (${res.pages.length}/${wanted.length} page(s) done); resumes in a later run`, progress);
+          return { result: "released", ocrPages: res.pages.length };
+        } else if (res.failed.some((f) => isProviderQuotaError(f.error))) {
+          // The OCR provider has no credit: keep the pages done so far and wait; never store a partial text for it.
+          for (const p of res.pages) progress.ocrDone![String(p.page)] = scrubText(p.text);
+          await repo.defer(unit.judgmentId, QUOTA_DEFER_SECONDS, `OCR provider has no credit (${res.pages.length}/${wanted.length} page(s) done); resumes later`, progress);
           return { result: "released", ocrPages: res.pages.length };
         } else {
           ocrText = res.pages.filter((p) => p.text.trim());

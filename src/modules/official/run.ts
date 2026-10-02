@@ -8,7 +8,7 @@ import { officialSources, sourceEnabled } from "./registry";
 import type { IngestRunReport, SourceDef, SourceId } from "./types";
 import { isSourceId } from "./types";
 import { CAPTION_SCOPED_SOURCES } from "./causelist/query";
-import { claimUnit, dbSize, type ClaimFilter, enqueueUnits, getOfficialState, officialLimitBytes, officialStore, pgArray, releaseUnit, setOfficialState, sweepExpiredUnits, unitId, UNIT_STAGES, type OfficialUnit, type UnitStage } from "./units";
+import { claimUnit, dbSize, type ClaimFilter, enqueueUnits, getOfficialState, officialLimitBytes, officialStore, pgArray, releaseUnit, requeueQuotaFailures, setOfficialState, sweepExpiredUnits, unitId, UNIT_STAGES, type OfficialUnit, type UnitStage } from "./units";
 import { backfillCursor, parseCursor } from "./adapters/regulators/common";
 
 /**
@@ -234,6 +234,8 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
         const n = await retryFailedUnits(store, sourceIds, o.retryFailed ? undefined : o.redrive);
         if (n) result.notes.push(`${n} failed unit(s) re-queued`);
       }
+      const quota = await requeueQuotaFailures(store, sourceIds);
+      if (quota) result.notes.push(`${quota} unit(s) that failed only for lack of model-provider credit re-queued`);
       if (stages.includes("discover")) {
         const started = await startBackfills(store, enabled, o.backfill ?? backfillRequest());
         if (started.length) {

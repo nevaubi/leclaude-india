@@ -34,8 +34,8 @@ export function QueryBuilder({ query, onApply }: { query: string; onApply: (q: s
     <div className="w-[380px] space-y-3 text-xs">
       <div className="flex items-center gap-2"><PenLine className="size-3.5 text-muted-foreground" /><span className="text-[12.5px] font-semibold">Query builder</span><span className="text-[11px] text-muted-foreground">CourtListener syntax</span></div>
       <div className="grid grid-cols-[110px_1fr] items-center gap-x-2 gap-y-2">
-        <Label>All of these</Label><Input value={all} onChange={(e) => setAll(e.target.value)} placeholder="PFAS warning" className="h-7 text-xs" />
-        <Label>Any of these</Label><Input value={any} onChange={(e) => setAny(e.target.value)} placeholder="PFOA, PFOS, GenX" className="h-7 text-xs" />
+        <Label>All of these</Label><Input value={all} onChange={(e) => setAll(e.target.value)} placeholder="effluent warning" className="h-7 text-xs" />
+        <Label>Any of these</Label><Input value={any} onChange={(e) => setAny(e.target.value)} placeholder="benzene, toluene, xylene" className="h-7 text-xs" />
         <Label>None of these</Label><Input value={none} onChange={(e) => setNone(e.target.value)} placeholder="asbestos" className="h-7 text-xs" />
         <Label>Exact phrase(s)</Label><Input value={phrase} onChange={(e) => setPhrase(e.target.value)} placeholder="failure to warn, duty to warn" className="h-7 text-xs" />
         <Label>Proximity</Label>

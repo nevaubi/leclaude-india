@@ -23,8 +23,8 @@ export interface SeedClause {
 }
 
 const AK = "Aisha Khan";
-const DO = "Daniel Okafor";
-const JW = "Jordan Whitfield";
+const DO = "Dhruv Oberoi";
+const JW = "Arjun Mehra";
 const PR = "Priya Raman";
 
 export const SEED_CLAUSES: SeedClause[] = [
@@ -214,10 +214,10 @@ export const SEED_CLAUSES: SeedClause[] = [
     variables: [
       { name: "Section Number", example: "9.4" },
       { name: "Receiving Party", example: "Recipient" },
-      { name: "Disclosing Party", example: "Meridian Fluorochem Corp." },
+      { name: "Disclosing Party", example: "Meridian Fine Chemicals Ltd." },
       { name: "Notice Period", example: "ten (10) business days" },
     ],
-    notes: "Use for Meridian and other clients under active MDL preservation orders. Subsection (c) prevents a counterparty from arguing that destruction obligations under the NDA conflict with a court-ordered litigation hold.",
+    notes: "Use for Meridian and other clients under active preservation orders. Subsection (c) prevents a counterparty from arguing that destruction obligations under the NDA conflict with a court-ordered litigation hold.",
     lastReviewedAt: "2026-05-20",
     reviewedBy: JW,
     status: "approved",
@@ -437,23 +437,23 @@ export const SEED_CLAUSES: SeedClause[] = [
   },
 
   // -------------------------------------------------------------------------
-  // PFAS-specific discovery definitions
+  // Arbitration document-request definitions (fictional Valsara matter)
   // -------------------------------------------------------------------------
   {
-    id: "lib_clause_pfas_definitions",
-    name: "PFAS / AFFF definitions for requests for production",
+    id: "lib_clause_vls_definitions",
+    name: "MC-8 / Aqua-Guard definitions for document requests (Redfern schedule)",
     category: "discovery definitions",
     stance: "pro-client",
-    practiceArea: "Products Liability",
-    tags: ["PFAS", "AFFF", "definitions", "RFP", "MDL 2873", "discovery"],
-    description: "Definitions section for defense-side discovery requests in the AFFF MDL: PFAS, AFFF, fluorosurfactant, Site, Water System, Relevant Period, with CAS-number precision to avoid overbreadth objections.",
+    practiceArea: "Commercial",
+    tags: ["MC-8", "Aqua-Guard", "definitions", "Redfern", "arbitration", "discovery"],
+    description: "Definitions section for the Respondent's document requests in the fictional Valsara arbitration: MC-8, Aqua-Guard Product, Site, Wellfield, Relevant Period, with precise compound codes to avoid overbreadth objections.",
     variables: [
-      { name: "Site", description: "The facility or fire training area at issue", example: "the former fire training area at Joint Base Charleston" },
-      { name: "Water System", example: "the Bellwether Water Authority public water system, PWSID SC1234567" },
-      { name: "Relevant Period", example: "January 1, 1970 through the date of your response" },
-      { name: "Client", example: "Meridian Fluorochem Corp." },
+      { name: "Site", description: "The facility or processing unit at issue", example: "the Valsara Textile Park common effluent treatment area" },
+      { name: "Wellfield", example: "the Valsara Textile Park wellfield (Wells 9–12)" },
+      { name: "Relevant Period", example: "January 1, 1990 through the date of your response" },
+      { name: "Client", example: "Meridian Fine Chemicals Ltd." },
     ],
-    notes: "CAS numbers keep the PFAS definition objectively bounded (the plaintiffs' omnibus definition covers 'any per- or polyfluoroalkyl substance', which invites an overbreadth fight). Definition 5 ('Fluorosurfactant') tracks Meridian's product line so that requests can be aimed at what Meridian actually made. Coordinate with the ESI protocol before serving.",
+    notes: "Fictional demo clause. Compound codes keep the MC-8 definition objectively bounded (the Claimant's omnibus definition covers 'any organohalogen', which invites an overbreadth fight). Definition 5 ('Repellent Agent') tracks Meridian's product line so that requests can be aimed at what Meridian actually made. Coordinate with the ESI protocol before serving.",
     lastReviewedAt: "2026-09-18",
     reviewedBy: PR,
     status: "approved",
@@ -462,23 +462,23 @@ export const SEED_CLAUSES: SeedClause[] = [
     updatedAt: "2026-09-18T18:00:00Z",
     text: `**DEFINITIONS**
 
-1. "PFAS" means per- and polyfluoroalkyl substances, limited for purposes of these Requests to (a) perfluorooctanoic acid (PFOA, CAS No. 335-67-1) and its salts and precursors; (b) perfluorooctane sulfonic acid (PFOS, CAS No. 1763-23-1) and its salts and precursors; (c) perfluorohexane sulfonic acid (PFHxS, CAS No. 355-46-4); (d) perfluorononanoic acid (PFNA, CAS No. 375-95-1); (e) hexafluoropropylene oxide dimer acid (HFPO-DA, "GenX," CAS No. 13252-13-6); and (f) any other per- or polyfluoroalkyl substance that You contend was released at the Site or detected in the Water System.
+1. "MC-8" means the organohalogen ester identified in Meridian's records by internal code MC-8 and its sodium salt, together with (a) its degradation product MC-7 and (b) any other organohalogen that You contend was released at the Site or detected in the Wellfield.
 
-2. "AFFF" means aqueous film-forming foam and alcohol-resistant aqueous film-forming foam, whether or not manufactured to Military Specification MIL-F-24385 (any revision), including concentrate, premix and foam solution, and any product marketed as "Class B" firefighting foam containing PFAS.
+2. "Aqua-Guard Product" means the Aqua-Guard 3% and 6% Finish Concentrates and any premix or finishing bath prepared from them, whether or not supplied to Defence Textile Specification DTS-24385 (any revision).
 
-3. "Site" means {{Site}}, including all structures, training areas, drainage features, storage areas and adjacent property on which AFFF was stored, used, tested, discharged or disposed.
+3. "Site" means {{Site}}, including all structures, processing areas, drainage features, storage areas and adjacent property on which any Aqua-Guard Product was stored, used, tested, discharged or disposed.
 
-4. "Water System" means {{Water System}}, including its source wells, intakes, treatment facilities and distribution system.
+4. "Wellfield" means {{Wellfield}}, including its source wells, treatment facilities and distribution system.
 
-5. "Fluorosurfactant" means any surface-active agent containing a perfluorinated or polyfluorinated carbon chain that was sold for incorporation into AFFF concentrate, including the products manufactured or sold by {{Client}} under the trade names identified in Your Rule 26(a)(1) disclosures.
+5. "Repellent Agent" means MF-3 Repellent Finish Concentrate and any other finishing agent sold for incorporation into an Aqua-Guard Product, including the products manufactured or sold by {{Client}} under the trade names identified in Your statement of claim.
 
 6. "Relevant Period" means {{Relevant Period}}, unless a specific Request states otherwise.
 
-7. "Document" has the full meaning given in Federal Rule of Civil Procedure 34(a)(1)(A) and includes electronically stored information of every kind, including email and attachments, chat and instant messages, text messages, voicemail, calendar entries, databases, laboratory notebooks, analytical data files (including chromatograms and instrument output), and drafts.
+7. "Document" includes electronically stored information of every kind, including email and attachments, chat and instant messages, text messages, voicemail, calendar entries, databases, laboratory notebooks, analytical data files (including chromatograms and instrument output), and drafts.
 
-8. "Testing" means any sampling, analysis, monitoring or measurement of soil, sediment, surface water, groundwater, drinking water, biosolids or biological tissue for the presence or concentration of PFAS, including field notes, chain-of-custody records, laboratory reports, quality-assurance documents and data validation.
+8. "Testing" means any sampling, analysis, monitoring or measurement of soil, sediment, surface water, groundwater, drinking water or biological tissue for the presence or concentration of MC-8, including field notes, chain-of-custody records, laboratory reports, quality-assurance documents and data validation.
 
-9. "You" and "Your" mean the responding party and its present and former officers, employees, agents, consultants, contractors, attorneys and any other person acting on its behalf.
+9. "You" and "Your" mean the responding party and its present and former officers, employees, agents, consultants, contractors, advocates and any other person acting on its behalf.
 
 10. The singular includes the plural and vice versa; "and" and "or" shall be construed conjunctively or disjunctively as necessary to bring within the scope of a Request all responses that might otherwise be construed to be outside its scope; "including" means "including without limitation."`,
   },
@@ -488,15 +488,15 @@ export const SEED_CLAUSES: SeedClause[] = [
     category: "discovery definitions",
     stance: "neutral",
     practiceArea: "Litigation",
-    tags: ["ESI protocol", "TAR", "validation", "recall", "MDL 2873", "e-discovery"],
+    tags: ["ESI protocol", "TAR", "validation", "recall", "arbitration", "e-discovery"],
     description: "Negotiated ESI-protocol paragraph on the use of technology-assisted review: disclosure obligations, validation with an elusion sample, recall target and dispute process.",
     variables: [
       { name: "Paragraph Number", example: "14" },
-      { name: "Producing Party", example: "Meridian Fluorochem Corp." },
+      { name: "Producing Party", example: "Meridian Fine Chemicals Ltd." },
       { name: "Recall Target", example: "seventy-five percent (75%)" },
       { name: "Elusion Sample Size", example: "a statistically valid random sample sufficient for a 95% confidence level with a ±2.5% margin of error" },
     ],
-    notes: "Reflects the Tier 2 custodial review protocol in MDL 2873. Do not agree to disclose the seed set or coding decisions on individual training documents; disclosure of the method, validation statistics and the elusion sample results is the accepted middle ground.",
+    notes: "Reflects the Tier 2 custodial review protocol in the Valsara arbitration (Arb. Ref. 14/2024). Do not agree to disclose the seed set or coding decisions on individual training documents; disclosure of the method, validation statistics and the elusion sample results is the accepted middle ground.",
     lastReviewedAt: "2026-08-28",
     reviewedBy: JW,
     status: "approved",
@@ -526,7 +526,7 @@ export const SEED_CLAUSES: SeedClause[] = [
     tags: ["deposition", "stipulations", "objections", "Rule 30", "Rule 32"],
     description: "Firm-standard stipulations read onto the record at the start of a deposition: no 'usual stipulations', objections reserved except form and foundation, read-and-sign with 30 days, exhibit handling and confidentiality designation window.",
     variables: [
-      { name: "Witness", example: "Helen Voss" },
+      { name: "Witness", example: "Hema Vasudevan" },
       { name: "Signature Period", example: "thirty (30) days" },
       { name: "Designation Period", example: "twenty-one (21) days" },
       { name: "Protective Order Citation", example: "Case Management Order No. 4 (ECF No. 456)" },
@@ -552,7 +552,7 @@ Counsel for the parties stipulate on the record as follows:
 
 5. The transcript and all exhibits shall be treated as "Confidential" under {{Protective Order Citation}} until {{Designation Period}} after the final transcript is delivered, during which time any party may designate portions of the transcript under the protective order.
 
-6. Exhibits shall be marked sequentially with the witness's surname and a number (for example, "Voss 1"), and previously marked exhibits may be used with their original designations. Counsel shall exchange native files of any spreadsheet or database exhibit within three (3) business days.
+6. Exhibits shall be marked sequentially with the witness's surname and a number (for example, "Vasudevan 1"), and previously marked exhibits may be used with their original designations. Counsel shall exchange native files of any spreadsheet or database exhibit within three (3) business days.
 
 7. The deposition may be recorded stenographically and by videotape. If the video recording is used at trial or in any motion, the party offering it shall provide the corresponding transcript pages.
 

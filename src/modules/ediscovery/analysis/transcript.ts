@@ -26,7 +26,7 @@ export function qaEndLine(qa: DepositionQA): { page: number; line: number } {
   return { page, line };
 }
 
-/** Extract a "page:line" locator from a cite such as "Voss 84:12" or "Hale 46:07–46:20". */
+/** Extract a "page:line" locator from a cite such as "Vasudevan 84:12" or "Hegde 46:07–46:20". */
 export function pageLineOf(cite: string | undefined): string | null {
   const m = cite?.match(/(\d{1,4}):(\d{1,2})/);
   return m ? `${Number(m[1])}:${Number(m[2])}` : null;

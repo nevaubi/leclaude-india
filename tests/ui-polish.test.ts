@@ -21,25 +21,25 @@ function matter(over: Partial<MatterOverview> & { id: string }): MatterOverview 
 
 const events: CalendarEntry[] = [
   ev({ id: "e_today_meeting", title: "Team stand-up", startsAt: "2026-09-24T09:30:00", kind: "meeting" }),
-  ev({ id: "e_today_hearing", title: "Status conference", startsAt: "2026-09-24T14:00:00", kind: "hearing", matterId: "m_afff" }),
+  ev({ id: "e_today_hearing", title: "Status conference", startsAt: "2026-09-24T14:00:00", kind: "hearing", matterId: "m_vls" }),
   ev({ id: "e_allday", title: "Firm holiday", startsAt: "2026-09-24", allDay: true, kind: "internal" }),
-  ev({ id: "e_past_deadline", title: "Rule 26(a)(2) disclosures", startsAt: "2026-09-20", kind: "deadline", matterId: "m_afff" }),
-  ev({ id: "e_filing", title: "Opposition due", startsAt: "2026-10-02", kind: "filing", matterId: "m_afff" }),
-  ev({ id: "e_far", title: "Expert reports", startsAt: "2027-06-01", kind: "deadline", matterId: "m_afff" }),
+  ev({ id: "e_past_deadline", title: "Rule 26(a)(2) disclosures", startsAt: "2026-09-20", kind: "deadline", matterId: "m_vls" }),
+  ev({ id: "e_filing", title: "Opposition due", startsAt: "2026-10-02", kind: "filing", matterId: "m_vls" }),
+  ev({ id: "e_far", title: "Expert reports", startsAt: "2027-06-01", kind: "deadline", matterId: "m_vls" }),
   ev({ id: "e_derived", title: "Fact discovery closes", startsAt: "2026-10-15", kind: "deadline", matterId: "m_north", derived: { source: "matter-key-date", matterId: "m_north", label: "Fact discovery closes" } }),
   ev({ id: "e_other_matter", title: "Mediation", startsAt: "2026-09-28", kind: "hearing", matterId: "m_north" }),
 ];
 const tasks: Task[] = [
   task({ id: "t_overdue_low", title: "File notice of appearance", dueAt: "2026-09-22", priority: "low" }),
-  task({ id: "t_overdue_urgent", title: "Serve subpoena", dueAt: "2026-09-23", priority: "urgent", matterId: "m_afff" }),
-  task({ id: "t_today", title: "Prep Hale outline", dueAt: "2026-09-24", priority: "high" }),
+  task({ id: "t_overdue_urgent", title: "Serve subpoena", dueAt: "2026-09-23", priority: "urgent", matterId: "m_vls" }),
+  task({ id: "t_today", title: "Prep Hegde outline", dueAt: "2026-09-24", priority: "high" }),
   task({ id: "t_done", title: "Old task", dueAt: "2026-09-01", status: "done" }),
   task({ id: "t_not_mine", title: "Someone else's", dueAt: "2026-09-20", assigneeId: "other" }),
   task({ id: "t_no_due", title: "Read the file" , dueAt: undefined }),
   task({ id: "t_future", title: "Draft reply", dueAt: "2026-10-01" }),
 ];
 const overview: MatterOverview[] = [
-  matter({ id: "m_afff", keyDates: [{ label: "Opposition due", date: "2026-10-02", daysUntil: 8 }, { label: "Trial", date: "2026-12-07", daysUntil: 74 }] }),
+  matter({ id: "m_vls", keyDates: [{ label: "Opposition due", date: "2026-10-02", daysUntil: 8 }, { label: "Trial", date: "2026-12-07", daysUntil: 74 }] }),
   matter({ id: "m_north", keyDates: [{ label: "Fact discovery closes", date: "2026-10-15", daysUntil: 21 }] }),
 ];
 
@@ -69,9 +69,9 @@ describe("Today spine model", () => {
     expect(none).toEqual([]); // 2027-06-01 is beyond the 120-day horizon
   });
   it("honours the matter filter", () => {
-    const d = upcomingDeadlines({ now: NOW, userId: "me", matterFilter: "m_afff", events, tasks, matterOverview: overview }, 3);
-    expect(d.every((x) => x.matterId === "m_afff")).toBe(true);
-    expect(todaysEvents({ now: NOW, userId: "me", matterFilter: "m_afff", events, tasks, matterOverview: overview }).map((e) => e.id)).toEqual(["e_today_hearing"]);
+    const d = upcomingDeadlines({ now: NOW, userId: "me", matterFilter: "m_vls", events, tasks, matterOverview: overview }, 3);
+    expect(d.every((x) => x.matterId === "m_vls")).toBe(true);
+    expect(todaysEvents({ now: NOW, userId: "me", matterFilter: "m_vls", events, tasks, matterOverview: overview }).map((e) => e.id)).toEqual(["e_today_hearing"]);
   });
   it("orders today's events all-day first, then by time", () => {
     expect(todaysEvents({ now: NOW, userId: "me", events, tasks, matterOverview: overview }).map((e) => e.id)).toEqual(["e_allday", "e_today_meeting", "e_today_hearing"]);
@@ -114,9 +114,9 @@ describe("shell navigation", () => {
   it("groups palette hits by kind, matters first, with pluralised headings", () => {
     const hits: QuickSearchHit[] = [
       { id: "d1", kind: "document", title: "Memo", href: "/x" },
-      { id: "m1", kind: "matter", title: "AFFF", href: "/y" },
+      { id: "m1", kind: "matter", title: "Valsara v. Meridian", href: "/y" },
       { id: "d2", kind: "document", title: "Email", href: "/z" },
-      { id: "p1", kind: "person", title: "Hale", href: "/p" },
+      { id: "p1", kind: "person", title: "Hegde", href: "/p" },
     ];
     const g = groupHits(hits);
     expect(g.map((x) => x.kind)).toEqual(["matter", "document", "person"]);

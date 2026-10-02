@@ -97,7 +97,7 @@ export interface CrossExcerpt {
   kind: "deposition" | "document";
   id: string; // deposition id or edoc id
   label: string; // witness name or subject
-  cite: string; // "Voss 84:12" or Bates
+  cite: string; // "Vasudevan 84:12" or Bates
   date?: string;
   text: string;
   score: number;
@@ -179,7 +179,7 @@ export interface GraphEvidence {
   excerpt?: string;
   kind?: "document" | "deposition";
   date?: string;
-  /** Witness page:line when the evidence is testimony ("Voss 43:02"). */
+  /** Witness page:line when the evidence is testimony ("Vasudevan 43:02"). */
   cite?: string;
   depositionId?: string;
 }

@@ -81,15 +81,15 @@ describe("normalization", () => {
     expect(bluebookDate("2024-04-26")).toBe("Apr. 26, 2024");
   });
   it("normalizes dockets, CFR, Federal Register, statutes, library and e-discovery", () => {
-    const c = normalizeCfr({ cite: "40 C.F.R. § 141.61", title: "40", part: "141", section: "141.61", heading: "MCLs", excerpt: "PFOA <em>4.0</em> ng/L", effective: "2024-06-25", url: "https://www.ecfr.gov/current/title-40/section-141.61" });
+    const c = normalizeCfr({ cite: "40 C.F.R. § 141.61", title: "40", part: "141", section: "141.61", heading: "MCLs", excerpt: "Benzene <em>5.0</em> µg/L", effective: "2024-06-25", url: "https://www.ecfr.gov/current/title-40/section-141.61" });
     expect(c.readRef).toEqual({ kind: "cfr", title: 40, section: "141.61" });
-    expect(c.snippet).toBe("PFOA 4.0 ng/L");
+    expect(c.snippet).toBe("Benzene 5.0 µg/L");
     expect(formatBluebook(c)).toBe("40 C.F.R. § 141.61 (2024)");
 
-    const f = normalizeFederalRegister({ title: "PFAS NPDWR", type: "Rule", agencies: ["Environmental Protection Agency", undefined], published: "2024-04-26", citation: "89 FR 32532", document_number: "2024-07773", url: "https://www.federalregister.gov/d/2024-07773" });
+    const f = normalizeFederalRegister({ title: "Benzene NPDWR", type: "Rule", agencies: ["Environmental Protection Agency", undefined], published: "2024-04-26", citation: "89 FR 32532", document_number: "2024-07773", url: "https://www.federalregister.gov/d/2024-07773" });
     expect(f.readRef).toEqual({ kind: "fr", id: "2024-07773" });
     expect(f.fr?.agencies).toEqual(["Environmental Protection Agency"]);
-    expect(formatBluebook(f)).toBe("PFAS NPDWR, 89 FR 32532 (Apr. 26, 2024)");
+    expect(formatBluebook(f)).toBe("Benzene NPDWR, 89 FR 32532 (Apr. 26, 2024)");
 
     const s = normalizeStatute({ title: "15 U.S.C. 2607 - Reporting and retention of information", package_id: "USCODE-2023-title15", granule_id: "g1", date: "2023-01-03", collection: "USCODE", text_url: "https://www.govinfo.gov/x.htm" });
     expect(s.cite).toBe("15 U.S.C. § 2607");
@@ -102,7 +102,7 @@ describe("normalization", () => {
     const l2 = normalizeLibrary({ id: "lib2", name: "Memo", type: "docx", passage: "x", score: 0.5, office_doc_id: "od1" });
     expect(l2.url).toBe("/office/word/od1");
 
-    const e = normalizeEdoc({ id: "ed1", bates: "MFC-0041877", date: "2011-03-04", custodian: "Helen Voss", type: "Memo", subject: "Interim summary", passage: "rat liver", score: 0.9, ai_score: 88 });
+    const e = normalizeEdoc({ id: "ed1", bates: "MFC-0041877", date: "2011-03-04", custodian: "Hema Vasudevan", type: "Memo", subject: "Interim summary", passage: "rat liver", score: 0.9, ai_score: 88 });
     expect(e.cite).toBe("MFC-0041877");
     expect(formatBluebook(e)).toBe("MFC-0041877, Interim summary (4 March 2011)");
   });
@@ -120,27 +120,27 @@ describe("normalization", () => {
 
 describe("query builder", () => {
   it("builds boolean queries", () => {
-    expect(buildQuery({ phrases: ["failure to warn"], all: ["PFAS"], any: ["PFOA", "PFOS"], none: ["asbestos"] })).toBe('"failure to warn" AND PFAS AND (PFOA OR PFOS) NOT asbestos');
+    expect(buildQuery({ phrases: ["failure to warn"], all: ["benzene"], any: ["toluene", "xylene"], none: ["asbestos"] })).toBe('"failure to warn" AND benzene AND (toluene OR xylene) NOT asbestos');
     expect(buildQuery({ proximity: [{ a: "warning", b: "adequate", within: 10 }], fields: { caseName: "Meridian" } })).toBe('"warning adequate"~10 AND caseName:(Meridian)');
     expect(buildQuery({})).toBe("");
   });
   it("converts Westlaw operators to CourtListener syntax", () => {
     expect(toCourtListenerSyntax("warn /s adequate")).toBe('"warn adequate"~15');
-    expect(toCourtListenerSyntax('"duty to warn" /p PFAS')).toBe('"duty to warn PFAS"~50');
+    expect(toCourtListenerSyntax('"duty to warn" /p benzene')).toBe('"duty to warn benzene"~50');
     expect(toCourtListenerSyntax("indemnif! /5 hold")).toBe('"indemnif* hold"~5');
     expect(toCourtListenerSyntax("waiver & consequential % punitive")).toBe("waiver AND consequential NOT punitive");
     expect(toCourtListenerSyntax('"and now" and later or never')).toBe('"and now" AND later OR never');
   });
   it("extracts highlight terms and parses structure", () => {
-    expect(extractTerms('"failure to warn" AND (PFAS OR PFOA) NOT asbestos caseName:Meridian')).toEqual(["failure to warn", "asbestos", "meridian", "pfas", "pfoa"]);
-    const p = parseQuery('"failure to warn" AND PFAS AND (PFOA OR PFOS) NOT asbestos "warn adequate"~15');
+    expect(extractTerms('"failure to warn" AND (benzene OR toluene) NOT asbestos caseName:Meridian')).toEqual(["failure to warn", "asbestos", "meridian", "benzene", "toluene"]);
+    const p = parseQuery('"failure to warn" AND benzene AND (toluene OR xylene) NOT asbestos "warn adequate"~15');
     expect(p.phrases).toEqual(["failure to warn"]);
-    expect(p.all).toEqual(["PFAS"]);
-    expect(p.any).toEqual(["PFOA", "PFOS"]);
+    expect(p.all).toEqual(["benzene"]);
+    expect(p.any).toEqual(["toluene", "xylene"]);
     expect(p.none).toEqual(["asbestos"]);
     expect(p.proximity).toEqual([{ a: "warn", b: "adequate", within: 15 }]);
-    const segs = highlightSegments("The duty to warn arises when PFAS is known.", ["duty to warn", "pfas"]);
-    expect(segs.filter((s) => s.hit).map((s) => s.text)).toEqual(["duty to warn", "PFAS"]);
+    const segs = highlightSegments("The duty to warn arises when benzene is known.", ["duty to warn", "benzene"]);
+    expect(segs.filter((s) => s.hit).map((s) => s.text)).toEqual(["duty to warn", "benzene"]);
     expect(highlightSegments("plain", [])).toEqual([{ text: "plain", hit: false }]);
   });
   it("computes date presets", () => {
@@ -153,9 +153,9 @@ describe("query builder", () => {
 
 describe("precision aids", () => {
   it("suggests synonyms and spelling fixes", () => {
-    const syn = synonymSuggestions("PFAS failure to warn in the 4th circuit");
+    const syn = synonymSuggestions("liquidated damages and failure to warn in the 4th circuit");
     expect(syn.map((s) => s.term)).toContain("failure to warn");
-    expect(syn.find((s) => s.term === "pfas")?.synonyms).toContain("PFOA");
+    expect(syn.find((s) => s.term === "liquidated damages")?.synonyms).toContain("section 74");
     expect(editDistance("preemtion", "preemption")).toBe(1);
     const sp = spellingSuggestions("impossibility preemtion under Albrecht");
     expect(sp).toEqual([{ term: "preemtion", suggestion: "preemption" }]);
@@ -216,11 +216,11 @@ describe("service + seeds", () => {
     seedSearch(d);
     expect(saved.count()).toBe(before.s);
     expect(runs.count()).toBe(before.r);
-    expect(SEARCH_SEED_IDS.savedSearches).toContain("ss_pfas_ftw_ca4");
+    expect(SEARCH_SEED_IDS.savedSearches).toContain("ss_vls_liquidated_damages");
     expect(listSavedSearches()[0].pinned).toBe(true);
     const named = listSavedSearches().map((s) => s.name);
-    for (const n of ["PFAS failure to warn — 4th Cir.", "Consequential damages waiver enforceability — 7th Cir.", "TSCA 8(e) substantial risk", "PAGA manageability", "Meningioma DMPA"]) expect(named).toContain(n);
-    const run = listRuns(50).find((r) => r.id === "run_seed_pfas_ftw_01");
+    for (const n of ["Liquidated damages and penalty — Section 74 (India)", "Consequential damages waiver enforceability — 7th Cir.", "Contractual notice duty and indemnity (Clause 9.4 / 12)", "PAGA manageability", "Meningioma DMPA"]) expect(named).toContain(n);
+    const run = listRuns(50).find((r) => r.id === "run_seed_vls_ld_01");
     expect(run?.synthesis).toContain("## Answer");
     expect(run?.topHits?.length).toBeGreaterThan(3);
   });
@@ -251,13 +251,13 @@ describe("service + seeds", () => {
     expect(updateSavedSearch("missing", { name: "x" })).toBeNull();
   });
   it("records runs and bumps saved-search counters", () => {
-    const before = listSavedSearches().find((s) => s.id === "ss_tsca_8e")!.runCount ?? 0;
-    const run = recordRun({ id: "run_test_1", query: "substantial risk", settings: sanitizeSettings({ sources: ["caselaw", "statutes"] }), startedAt: Date.now() - 1500, outcome: { hits: { caselaw: [{ id: "caselaw:9", source: "caselaw", title: "X v. Y" }], statutes: [] }, totals: { caselaw: 10, statutes: 0 }, errors: [{ source: "statutes", message: "Provider unreachable (network). Retry when online." }], durationMs: 1200 }, synthesis: "## Answer\nok", aiStatus: "ok", savedSearchId: "ss_tsca_8e" });
+    const before = listSavedSearches().find((s) => s.id === "ss_vls_notice_clause")!.runCount ?? 0;
+    const run = recordRun({ id: "run_test_1", query: "substantial risk", settings: sanitizeSettings({ sources: ["caselaw", "statutes"] }), startedAt: Date.now() - 1500, outcome: { hits: { caselaw: [{ id: "caselaw:9", source: "caselaw", title: "X v. Y" }], statutes: [] }, totals: { caselaw: 10, statutes: 0 }, errors: [{ source: "statutes", message: "Provider unreachable (network). Retry when online." }], durationMs: 1200 }, synthesis: "## Answer\nok", aiStatus: "ok", savedSearchId: "ss_vls_notice_clause" });
     expect(run.counts).toEqual({ caselaw: 1, statutes: 0 });
     expect(run.errors?.length).toBe(1);
     expect(run.durationMs).toBeGreaterThanOrEqual(1500);
     expect(listRuns(1)[0].id).toBe("run_test_1");
-    expect(listSavedSearches().find((s) => s.id === "ss_tsca_8e")!.runCount).toBe(before + 1);
+    expect(listSavedSearches().find((s) => s.id === "ss_vls_notice_clause")!.runCount).toBe(before + 1);
   });
   it("parses read refs", () => {
     expect(parseReadRef({ kind: "opinion", id: "123" })).toEqual({ kind: "opinion", id: 123 });

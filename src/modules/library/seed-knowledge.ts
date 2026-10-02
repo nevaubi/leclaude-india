@@ -28,65 +28,65 @@ export const KNOWLEDGE_SUBFOLDERS = K;
 
 export const SEED_NOTES: SeedNote[] = [
   {
-    id: "lib_note_mdl2873_cmo26",
+    id: "lib_note_vls_po3",
     parentId: K.litigation,
-    name: "MDL 2873 — CMO 26 summary (Tier 2 personal-injury bellwether discovery)",
-    description: "Working summary of Case Management Order 26: custodial scope, production deadlines, expert sequencing and the meet-and-confer protocol for the Tier 2 personal-injury bellwether pool.",
-    tags: ["MDL 2873", "AFFF", "CMO", "bellwether", "discovery"],
-    practiceArea: "Products Liability",
-    matterId: "m_afff_2873",
+    name: "Arb. Ref. 14/2024 — Procedural Order No. 3 summary (document production and Tier 2 custodians)",
+    description: "Working summary of Procedural Order No. 3 in the fictional Valsara v. Meridian arbitration: custodial scope, production deadlines, expert sequencing and the meet-and-confer protocol.",
+    tags: ["Valsara", "arbitration", "procedural order", "document production", "discovery"],
+    practiceArea: "Commercial",
+    matterId: "m_valsara_arb",
     ownerId: "p_jwhitfield",
     version: 4,
     status: "approved",
     starred: true,
     createdAt: "2026-06-30T14:00:00Z",
     updatedAt: "2026-09-16T18:45:00Z",
-    content: `# CMO 26 — Tier 2 personal-injury bellwether discovery
+    content: `# Procedural Order No. 3 — document production (Tier 2)
 
-> Internal working summary. The operative text controls; cite the order itself (In re Aqueous Film-Forming Foams Prods. Liab. Litig., MDL No. 2:18-mn-2873-RMG, CMO 26) [VERIFY current ECF number] before relying on any deadline below.
+> Internal working summary of a fictional demo order. The operative text controls; cite the order itself (Valsara Textile Park Ltd. v. Meridian Fine Chemicals Ltd., Arb. Ref. 14/2024, Procedural Order No. 3) before relying on any deadline below.
 
 ## What the order does
 
-CMO 26 establishes the discovery schedule and protocol for the **Tier 2 personal-injury bellwether pool** (kidney cancer, testicular cancer, thyroid disease, ulcerative colitis) after the Tier 1 water-provider settlements. It supersedes the general discovery provisions of CMO 3 for the Tier 2 plaintiffs and defendants only.
+Procedural Order No. 3 sets the document-production schedule and protocol for the **Tier 2** requests (Redfern schedule, Claimant's Requests 3–31) after the Tier 1 exchange of contract and correspondence files. Procedural Order No. 4 later fixed the expert and hearing timetable.
 
 ## Key deadlines (as we track them)
 
 | Event | Date | Owner |
 | --- | --- | --- |
-| Plaintiff fact sheets (PFS) complete for pool plaintiffs | 2026-08-15 | PEC |
-| Defendant custodial productions (Tier 2 custodians) substantially complete | **2026-10-14** | Meridian / C&R (T. Bradley) |
-| Plaintiffs' general-causation expert reports | 2026-10-02 | PEC |
-| Defendants' rebuttal expert reports | **2026-11-06** | C&R (P. Raman) |
-| Expert depositions close | 2026-12-04 | All |
-| Daubert / Rule 702 motions | **2026-12-18** | All |
-| Bellwether Group C trial | 2027-03-08 | Court |
+| Claimant's damages particulars | 2026-08-15 | Claimant |
+| Respondent's custodial production (Tier 2 custodians) substantially complete | **2026-10-14** | Meridian / M&R (T. Bhatt) |
+| Claimant's toxicology and hydrogeology expert reports | 2026-10-02 | Claimant |
+| Respondent's rebuttal expert reports | **2026-11-06** | M&R (P. Raman) |
+| Expert technical conferencing session | 2026-11-13 | Tribunal |
+| Objections to expert evidence | **2026-12-18** | All |
+| Phase 1 evidentiary hearing | 2027-03-08 | Tribunal |
 
 ## Custodial scope for Meridian
 
-Paragraph 7 limits Tier 2 custodial discovery to **eight custodians per manufacturing defendant**, selected by plaintiffs from the defendant's Rule 26(a)(1) list, plus any custodian the defendant identifies as a Tier 1 carry-over. Our eight (agreed 2026-07-21): Hale, Voss, Brooks, Pryce, Kaine, Suarez, plus two legacy product-stewardship custodians (Whitmore, Okonkwo). Date range: **1985-01-01 to 2016-12-31**, with a rolling supplement for regulatory correspondence after 2016.
+Paragraph 7 limits Tier 2 custodial production to **eight custodians**, selected by the Claimant from the Respondent's list of persons with relevant knowledge. Our eight (agreed 2026-07-21): Hegde, Vasudevan, Bose, Prasad, Kapur, Sood, plus two legacy product-stewardship custodians. Date range: **1985-01-01 to 2016-12-31**, with a rolling supplement for regulatory correspondence after 2016.
 
-Search terms and TAR protocol are governed by the ESI Order (CMO 5) as modified by ¶ 9 of CMO 26: TAR is permitted with disclosure of the workflow and a validation elusion sample (see Clause bank → ESI protocol TAR disclosure). Target recall: 75%.
+Search terms and TAR are governed by the agreed ESI protocol as modified by ¶ 9: TAR is permitted with disclosure of the workflow and a validation elusion sample (see Clause bank → ESI protocol TAR disclosure). Target recall: 75%.
 
 ## Expert sequencing
 
-- General causation first (¶ 12): epidemiology, toxicology, exposure. Specific causation reports for the Group C plaintiffs follow 45 days after the general-causation rebuttal deadline.
-- ¶ 13 limits each side to **three general-causation experts per disease** in the pool. Rebuttal reports are limited to the subject matter of the report they rebut (Rule 26(a)(2)(D)(ii) applies; the order does not enlarge it).
-- Draft reports and attorney-expert communications are protected per Rule 26(b)(4)(B)–(C); the order expressly adopts that protection for consulting experts as well.
+- Liability experts first (¶ 12): toxicology and hydrogeology. Quantum experts follow 45 days after the liability rebuttal deadline.
+- ¶ 13 limits each side to **two liability experts per discipline**. Rebuttal reports are limited to the subject matter of the report they rebut.
+- Draft reports and counsel-expert communications are not to be disclosed; each expert files a declaration of independence.
 
 ## Meet-and-confer and dispute protocol
 
-Discovery disputes go to Special Master (¶ 15) by joint letter of no more than five pages, filed within seven days after the meet-and-confer. The Special Master's rulings are reviewable by Judge Gergel on a 14-day objection window. **No discovery motion may be filed without the Special Master's letter process first.**
+Production disputes go to the Presiding Arbitrator by joint letter of no more than five pages, filed within seven days after the meet-and-confer. **No production application may be made without the joint-letter process first.**
 
 ## Open issues we are tracking
 
-1. Whether the post-2016 rolling supplement covers TSCA § 8(e) correspondence after the 2016 EPA health advisory (plaintiffs say yes; we read ¶ 8(c) as limited to "regulatory submissions", not internal analysis).
-2. Plaintiffs' request to add a ninth custodian (Okonkwo's successor). Position: outside ¶ 7; offer a targeted search of the shared EHS drive instead.
-3. Timing of the Voss deposition (Vol. II) relative to rebuttal reports — we want it before 2026-11-06 so Dr. Whitfield can address it.
+1. Whether the post-2016 rolling supplement covers Clause 9.4 correspondence after CPCB's 2016 revised guidance value (the Claimant says yes; we read ¶ 8(c) as limited to "regulatory submissions", not internal analysis).
+2. The Claimant's request to add a ninth custodian. Position: outside ¶ 7; offer a targeted search of the shared EHS drive instead.
+3. Timing of the Vasudevan deposition (Vol. II) relative to rebuttal reports — we want it before 2026-11-06 so Dr. Sundaram can address it.
 
 ## Related items
 
-- Clause bank: PFAS / AFFF definitions for RFPs; ESI protocol — TAR disclosure; Protective order tiers; FRE 502(d) order.
-- Knowledge: Daubert / Rule 702 (2023 amendment) cheat sheet; TSCA § 8(e) substantial-risk reporting.`,
+- Clause bank: MC-8 / Aqua-Guard definitions for document requests; ESI protocol — TAR disclosure; Confidentiality order tiers.
+- Knowledge: Clause 9.4 substantial-risk notice — elements and defences.`,
   },
   {
     id: "lib_note_rule702_cheatsheet",
@@ -143,8 +143,8 @@ Federal Rule of Evidence 702, as amended effective December 1, 2023, provides th
     id: "lib_note_dsc_lr704",
     parentId: K.litigation,
     name: "D.S.C. Local Civ. Rule 7.04 — motion and briefing practice",
-    description: "How to brief a motion in the District of South Carolina: supporting memorandum requirement, response and reply timing, page limits, proposed orders, and Judge Gergel's MDL-specific practices.",
-    tags: ["D.S.C.", "local rules", "briefing", "motion practice", "MDL 2873"],
+    description: "How to brief a motion in the District of South Carolina: supporting memorandum requirement, response and reply timing, page limits, proposed orders, and MDL practice notes.",
+    tags: ["D.S.C.", "local rules", "briefing", "motion practice"],
     practiceArea: "Litigation",
     ownerId: "p_emarsh",
     version: 2,
@@ -185,12 +185,12 @@ Before filing a motion in a civil case, counsel must confer (or attempt to confe
 
 Proposed orders are not required for contested motions in D.S.C. but should be emailed to chambers when the motion is consented to. A motion to exceed page limits must be filed before the brief is due and must explain why the limit is inadequate.
 
-## MDL 2873-specific practice (Judge Gergel)
+## MDL practice (general)
 
-- CMO 3 and CMO 26 route discovery disputes through the Special Master's five-page joint-letter process before any motion is filed (see CMO 26 summary).
-- Judge Gergel decides most motions on the papers and issues short orders; he expects the introduction to state precisely what relief is sought and why.
-- Omnibus briefs (multiple defendants) require a coordination stipulation; the court has enforced the 35-page limit against omnibus filings unless leave is obtained in advance.
-- Hearings are set with little notice; keep the "argument in five minutes" outline current for every pending motion.
+- MDL case management orders commonly route discovery disputes through a special master's joint-letter process before any motion is filed; check the operative CMO.
+- Expect short orders on the papers; the introduction should state precisely what relief is sought and why.
+- Omnibus briefs (multiple defendants) usually require a coordination stipulation and leave to exceed page limits.
+- Hearings may be set with little notice; keep the "argument in five minutes" outline current for every pending motion.
 
 ## Internal checklist
 
@@ -372,7 +372,7 @@ Rule 30(e) permits changes "in form or substance" with reasons within 30 days af
 
 ## Exhibits
 
-Mark sequentially by witness (Voss 1, Voss 2). Read the Bates range into the record when introducing an exhibit. Give the witness time to read it; do not let the witness be examined on a document they have not seen in full.`,
+Mark sequentially by witness (Vasudevan 1, Vasudevan 2). Read the Bates range into the record when introducing an exhibit. Give the witness time to read it; do not let the witness be examined on a document they have not seen in full.`,
   },
   {
     id: "lib_note_bluebook_quick_guide",
@@ -394,7 +394,6 @@ Mark sequentially by witness (Voss 1, Voss 2). Read the Bates range into the rec
 - Celotex Corp. v. Catrett, 477 U.S. 317, 322–23 (1986).
 - Sardis v. Overhead Door Corp., 10 F.4th 268, 281 (4th Cir. 2021).
 - Razor v. Hyundai Motor Am., 222 Ill. 2d 75, 90 (2006).
-- In re Aqueous Film-Forming Foams Prods. Liab. Litig., No. 2:18-mn-2873-RMG, 2023 WL 1234567, at *4 (D.S.C. Jan. 12, 2023) [VERIFY].
 
 Case names: abbreviate per Table T6 in citations (Corp., Inc., Ass'n, Litig., Prods.); do not abbreviate the first word of a party name; omit "Inc." after "Co." Italicize (or underline) case names in briefs; use ordinary roman in law-review footnote style only.
 
@@ -403,7 +402,7 @@ Case names: abbreviate per Table T6 in citations (Corp., Inc., Ass'n, Litig., Pr
 - Named short form: Celotex, 477 U.S. at 324. Use when the full cite appeared in the same general discussion.
 - Never use *supra* for cases in court documents.
 
-**Parentheticals:** (holding that…), (en banc), (per curiam), (Gergel, J.), (quoting …), (citing …), (emphasis added), (internal quotation marks omitted).
+**Parentheticals:** (holding that…), (en banc), (per curiam), (Smith, J.), (quoting …), (citing …), (emphasis added), (internal quotation marks omitted).
 
 ## Signals (Rule 1.2)
 
@@ -421,17 +420,17 @@ Order within a string cite: signal groups in the order above; within a signal, b
 
 ## Statutes and regulations (Rules 12, 14)
 
-- 15 U.S.C. § 2607(e) (TSCA § 8(e)).
+- 15 U.S.C. § 1332(a) (diversity jurisdiction).
 - Cal. Lab. Code § 2699(f) (West 2025).
 - 810 ILCS 5/2-719(3).
-- 40 C.F.R. § 141.60 (2025).
+- 49 C.F.R. § 387.307 (2025).
 - Fed. R. Civ. P. 26(b)(4)(B); Fed. R. Evid. 702(d).
 - Section symbol with a non-breaking space; "§§" for multiple sections.
 
 ## Record and discovery cites (Bluepages B17)
 
-- (Compl. ¶ 42.) (Hale Dep. 112:4–15.) (Voss Rep. at 14.) (Ex. 7, MFC-0041877 at -879.)
-- In MDL 2873 briefs, cite ECF numbers: (ECF No. 456 at 3.)
+- (Compl. ¶ 42.) (Hegde Dep. 112:4–15.) (Vasudevan Rep. at 14.) (Ex. 7, MFC-0041877 at -879.)
+- In federal briefs, cite ECF numbers: (ECF No. 456 at 3.)
 
 ## Common mistakes in firm drafts
 
@@ -446,7 +445,7 @@ Order within a string cite: signal groups in the order above; within a signal, b
     id: "lib_note_firm_citation_style",
     parentId: K.style,
     name: "Firm citation and drafting style",
-    description: "Seeger Weiss house style for briefs, memos and transactional documents: citation formatting, record cites, defined terms, numbering, [VERIFY] convention and the drafting-agent review categories.",
+    description: "Mehra & Rao house style for briefs, memos and transactional documents: citation formatting, record cites, defined terms, numbering, [VERIFY] convention and the drafting-agent review categories.",
     tags: ["style", "citation", "drafting", "firm policy"],
     ownerId: "p_akhan",
     version: 7,
@@ -456,7 +455,7 @@ Order within a string cite: signal groups in the order above; within a signal, b
     updatedAt: "2026-09-01T12:00:00Z",
     content: `# Firm citation and drafting style
 
-This note governs every document produced at Seeger Weiss, including drafts generated by the Office agents. Where it departs from the Bluebook, this note controls.
+This note governs every document produced at Mehra & Rao, including drafts generated by the Office agents. Where it departs from the Bluebook, this note controls.
 
 ## 1. Citations in briefs
 
@@ -469,9 +468,9 @@ This note governs every document produced at Seeger Weiss, including drafts gene
 
 ## 2. Record cites
 
-- Depositions: (Hale Dep. 112:4–15.) Volume when more than one: (Voss Dep. Vol. II 44:2–9.)
+- Depositions: (Hegde Dep. 112:4–15.) Volume when more than one: (Vasudevan Dep. Vol. II 44:2–9.)
 - Documents: Bates prefix and number, with the ending number abbreviated: (MFC-0041877 at -879.) Attach as exhibits by letter: (Ex. C, MFC-0041877.)
-- Expert reports: (Whitfield Rebuttal Rep. ¶ 41.) (Patel Rep. at 12 & fig. 3.)
+- Expert reports: (Sundaram Rebuttal Rep. ¶ 41.) (Patel Rep. at 12 & fig. 3.)
 - Docket: (ECF No. 1204 at 6.) Use "Dkt." only in state court.
 - Transcript of hearing: (Hr'g Tr. 14:6–12, Sept. 9, 2026.)
 
@@ -502,58 +501,57 @@ Any authority, quotation, pincite, docket number or record cite that has not bee
 ## 7. Dates and names
 
 - Dates in prose: September 23, 2026. In tables and calendars: 2026-09-23.
-- Judges: "Judge Gergel" in prose; "Hon. Richard M. Gergel" in captions; "the Court" (capitalized) for the tribunal deciding the matter.
-- The firm: "Seeger Weiss LLP" on first use; "the Firm" thereafter in engagement letters; "C&R" only in internal notes.
+- Judges: "Judge [Surname]" in prose; the full name and title in captions; "the Court" (capitalized) for the court deciding the matter, "the Tribunal" for an arbitral tribunal.
+- The firm: "Mehra & Rao Advocates" on first use; "the Firm" thereafter in engagement letters; "M&R" only in internal notes.
 
 ## 8. Review categories used by the Office agents
 
 Citation · defined term · cross-reference · numbering · formatting · missing provision · risk · logic · style · formula · data · consistency · privilege. Findings at "high" or "critical" block a partner sign-off checkpoint.`,
   },
   {
-    id: "lib_note_tsca_8e",
+    id: "lib_note_vls_clause94",
     parentId: K.litigation,
-    name: "TSCA § 8(e) substantial-risk reporting — elements and defense themes",
-    description: "What TSCA § 8(e) requires, EPA's 2003 guidance on 'substantial risk' and 'corroborative' information, the 15-working-day clock, and how plaintiffs use § 8(e) history in the AFFF litigation.",
-    tags: ["TSCA", "8(e)", "regulatory", "PFAS", "MDL 2873", "knowledge timeline"],
-    practiceArea: "Regulatory",
-    matterId: "m_afff_2873",
+    name: "Clause 9.4 substantial-risk notice — elements and defence themes (Valsara)",
+    description: "What Clause 9.4 of the 1998 Supply and Technical Services Agreement requires, the Schedule 6 Notification Protocol on 'substantial risk' and 'corroborative' information, the 30-day clock, and how the Claimant uses the notice history in the fictional Valsara arbitration.",
+    tags: ["Clause 9.4", "contract", "notice", "Valsara", "knowledge timeline"],
+    practiceArea: "Commercial",
+    matterId: "m_valsara_arb",
     ownerId: "p_praman",
     version: 3,
     status: "approved",
     createdAt: "2025-10-06T14:00:00Z",
     updatedAt: "2026-09-14T15:45:00Z",
-    content: `# TSCA § 8(e) — substantial-risk information
+    content: `# Clause 9.4 — substantial-risk notice (fictional demo contract)
 
-## The statute
+## The clause
 
-15 U.S.C. § 2607(e): any person who manufactures, processes or distributes a chemical substance and who "obtains information which reasonably supports the conclusion that such substance or mixture presents a substantial risk of injury to health or the environment shall immediately inform the Administrator of such information unless such person has actual knowledge that the Administrator has been adequately informed of such information."
+Clause 9.4 of the 1998 Supply and Technical Services Agreement between Meridian Fine Chemicals Ltd. and Valsara Textile Park Ltd.: the Supplier, on obtaining "information which reasonably supports the conclusion that the Product presents a substantial risk of injury to health or the environment", shall give the Buyer written notice within 30 days, copied to the State Pollution Control Board as Schedule 6 requires.
 
-## EPA guidance (2003 revision of the 1978 policy statement) [VERIFY current guidance]
+## Schedule 6 Notification Protocol
 
-- **"Immediately"** means within **15 working days** after the person obtains the information (30 days for certain emergency incidents of environmental contamination reported orally).
-- **"Substantial risk"** is judged on the seriousness of the effect and the fact or probability of its occurrence; economic considerations are irrelevant. Effects listed include cancer, birth defects, mutagenicity, serious or prolonged incapacitation, and widespread environmental contamination.
-- **Corroborative information**: information that merely confirms a well-established adverse effect already known to EPA need not be reported; information that shows a **new** effect, a lower-dose effect, or contamination at a new location is reportable even if related to a known concern.
-- Preliminary or unvalidated study results are reportable if they "reasonably support" the conclusion; peer review or replication is not a precondition.
-- The obligation runs to the **company** once any officer or employee "capable of appreciating the significance" of the information obtains it; the company's internal reporting procedures do not extend the clock.
+- **"Within 30 days"** runs from the date any officer or employee capable of appreciating the significance of the information obtains it.
+- **"Substantial risk"** is judged on the seriousness of the effect and the fact or probability of its occurrence; commercial considerations are irrelevant.
+- **Corroborative information** (paragraph 4): information that merely confirms a well-established effect already known to the Buyer need not be notified; a new effect, a lower-dose effect, or contamination at a new location must be.
+- **Pronounced bioaccumulation** (paragraph 5(c)) combined with toxicity is notifiable even where the toxicity alone is not.
+- Liquidated damages under Clause 9.6 accrue per day of delay.
 
-## Why it matters in MDL 2873
+## Why it matters in the arbitration
 
-Plaintiffs use § 8(e) submissions (and the absence of them) to build the "knowledge timeline": each toxicology study a manufacturer had, when it had it, and whether it told EPA. Meridian's 2005–2016 stewardship files are the core of the Tier 2 custodial production, and the Voss and Hale depositions focused on:
+The Claimant uses the notice history to build its "knowledge timeline": each study Meridian had, when it had it, and whether the Park was told. The Vasudevan and Hegde depositions focused on:
 
-1. The August 2016 EHS memorandum (MFC-0041912) and whether its "no adverse findings" statement is consistent with the contemporaneous toxicology summary.
-2. Whether the 2011 rodent bioassay results were "corroborative" of information EPA already held from other manufacturers' submissions (our position) or a new lower-dose effect (plaintiffs' position).
-3. The 15-day clock for the 2014 groundwater monitoring results at the Wilmington formulation site.
+1. The March 2001 decision not to give notice after the 90-day study (MFC-0041930, MFC-0041936).
+2. Whether the hepatic findings were "corroborative" (our position) or the serum persistence was pronounced bioaccumulation (the Claimant's position).
+3. The 108 days between the July 2002 MW-7 results and the October 2002 letter to the Park.
 
-## Defense themes
+## Defence themes
 
-- § 8(e) creates a reporting duty to EPA, not a private right of action; a § 8(e) shortfall is not negligence per se in South Carolina or in most bellwether jurisdictions. [VERIFY per bellwether state]
-- The "actual knowledge that the Administrator has been adequately informed" exception applies where the information was part of the industry-wide submissions coordinated through the 2006 PFOA Stewardship Program.
-- Reporting decisions were made by regulatory counsel (Suarez) in good faith reliance on the corroborative-information guidance; document the decision trail rather than the outcome.
-- Do not let witnesses characterize § 8(e) as a "disclosure to the public" — it is a submission to EPA, and EPA's public posting practice is a separate question.
+- The March 2001 decision was made by regulatory counsel (Sood) in good faith on the corroborative-information paragraph and was conditioned on an active investigation; document the decision trail rather than the outcome.
+- Notice was given within 30 days of the 12-month interim (October 2002).
+- Do not let witnesses characterize a voluntary submission to CPCB as notice under Clause 9.4 — the obligation runs to the Park.
 
 ## Related record
 
-Timeline: TSCA knowledge events are tagged "regulatory" in the E-Discovery chronology. Deposition digests: Voss Vol. I (2026-06-11), Hale Vol. I (2026-07-30). Conflict C-07 (Hale testimony vs. MFC-0041912) is open.`,
+Timeline: notice events are tagged "regulatory" in the E-Discovery chronology. Deposition digests: Vasudevan Vol. I (2026-06-17), Hegde Vol. I (2026-05-13). Conflict cf_vls_003 (Hegde EHS memo final vs. draft) is open.`,
   },
   {
     id: "lib_note_fre502d_practice",
@@ -592,7 +590,7 @@ Rule 26(b)(5)(B) already requires a receiving party to return, sequester or dest
 
 ## Negotiation points
 
-- **Time to return:** 5–10 business days is standard; plaintiffs' committees in MDLs sometimes ask for 30 to allow their vendor to purge. Agree to 10 with an obligation to confirm purge from the review platform.
+- **Time to return:** 5–10 business days is standard; plaintiffs' committees in large MDLs sometimes ask for 30 to allow their vendor to purge. Agree to 10 with an obligation to confirm purge from the review platform.
 - **Notes and summaries:** insist that work product reflecting the contents of the clawed-back document is also sequestered.
 - **Challenge window:** 21 days after the log entry. Without a deadline, challenges accumulate at the end of discovery.
 - **Attorney's own recollection:** some orders bar a receiving attorney from using their recollection of the clawed-back document; courts split. Ask for it, expect to lose it.
@@ -628,7 +626,7 @@ Non-retained experts (treating physicians, in-house engineers) require only the 
 
 Absent a stipulation or court order: at least **90 days** before trial; **rebuttal** disclosures within **30 days** after the other party's disclosure, and only for evidence "intended solely to contradict or rebut evidence on the same subject matter" identified by the other party.
 
-In MDL 2873, CMO 26 sets the schedule (plaintiffs' general-causation reports 2026-10-02; defense rebuttal 2026-11-06). The order does not enlarge the rebuttal scope.
+A case management order may set a different schedule; it does not enlarge the rebuttal scope unless it says so. (In the Valsara arbitration the Tribunal's Procedural Order No. 4 governs instead; see the Procedural Order No. 3 summary.)
 
 ## What a rebuttal report may contain
 
@@ -636,7 +634,7 @@ In MDL 2873, CMO 26 sets the schedule (plaintiffs' general-causation reports 202
 - New analyses that respond to those opinions (e.g., re-running the opposing expert's model with corrected inputs).
 - Not: affirmative opinions on subjects the opposing expert did not address; those are untimely initial opinions and are excluded under Rule 37(c)(1) unless substantially justified or harmless.
 
-For Dr. Whitfield's rebuttal to plaintiffs' toxicology expert, the report should be organized opinion-by-opinion against the report it rebuts, with a short "scope" paragraph up front stating that each section responds to an identified opinion.
+For a rebuttal to an opposing toxicology expert, the report should be organized opinion-by-opinion against the report it rebuts, with a short "scope" paragraph up front stating that each section responds to an identified opinion.
 
 ## Draft reports and attorney communications — 26(b)(4)(B)–(C)
 
@@ -650,7 +648,7 @@ The duty to supplement extends to the report and to deposition testimony, and mu
 
 ## Daubert interaction
 
-Motions under Rule 702 are due 2026-12-18 in MDL 2873. Build the record for the motion at the expert's deposition: methodology, data considered, whether the opinion is stated with the certainty the method supports (702(d)). See Knowledge → Daubert / Rule 702 cheat sheet.`,
+Build the record for any Rule 702 motion at the expert's deposition: methodology, data considered, whether the opinion is stated with the certainty the method supports (702(d)). See Knowledge → Daubert / Rule 702 cheat sheet.`,
   },
   {
     id: "lib_note_hsr_basics",
@@ -752,6 +750,6 @@ Based on the transaction value tier (approx. $30,000 for the $184M tier) [VERIFY
 
 ## Vendor coordination
 
-Tom Bradley owns the vendor relationship. Before agreeing to any production spec, confirm with the vendor that the platform exports the field list exactly as named in the protocol; renaming fields after the fact costs more than the negotiation.`,
+Tanmay Bhatt owns the vendor relationship. Before agreeing to any production spec, confirm with the vendor that the platform exports the field list exactly as named in the protocol; renaming fields after the fact costs more than the negotiation.`,
   },
 ];

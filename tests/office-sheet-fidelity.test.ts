@@ -391,7 +391,7 @@ describe("xlsx writer — package-preserving round trip", () => {
 describe("xlsx writer — new workbooks", () => {
   function featureWorkbook(): Workbook {
     let wb = wbWith([
-      { type: "build_table", anchor: "A1", headers: ["Claimant", "Amount", "Settled", "Status"], rows: [["Okafor", 125000, "2026-07-02", "Open"], ["Alvarez", 350000, "2026-08-14", "Closed"], ["Nguyen", -4200.25, "2026-09-01", "Open"]], total_row: true, number_format: "$#,##0.00" },
+      { type: "build_table", anchor: "A1", headers: ["Claimant", "Amount", "Settled", "Status"], rows: [["Oberoi", 125000, "2026-07-02", "Open"], ["Alvarez", 350000, "2026-08-14", "Closed"], ["Nguyen", -4200.25, "2026-09-01", "Open"]], total_row: true, number_format: "$#,##0.00" },
       { type: "set_cells", cells: [{ ref: "F1", value: "Rate" }, { ref: "G1", value: 0.075, style: { numFmt: "0.00%" } }, { ref: "F2", value: "Interest" }, { ref: "G2", formula: "=B5*G1" }, { ref: "F3", value: "Flag" }, { ref: "G3", value: true }, { ref: "F4", value: "Line\nbreak & <tag>" }, { ref: "G4", formula: "=XLOOKUP(\"Nguyen\",A2:A4,B2:B4)" }, { ref: "H1", formula: "=SUM(B2:B4*1)" }] },
       { type: "style_range", range: "F1:F4", style: { italic: true, color: "#9F1239", fill: "#FDE2E1", align: "right", valign: "top", wrap: true, fontSize: 13, fontFamily: "Georgia", underline: true, strike: true } },
       { type: "style_range", range: "A7", style: { borders: { top: { style: "dashed", color: "#1F3A5F" }, bottom: { style: "double" } }, indent: 1, locked: false, hideFormula: true, rotation: 45 } },

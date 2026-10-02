@@ -43,17 +43,17 @@ const now = Math.floor(Date.now() / 1000);
 describe("dev mode", () => {
   it("maps the demo persona to a partner with tenant-wide access", async () => {
     const p = await resolvePrincipal(req());
-    expect(p).toMatchObject({ id: PEOPLE.jordanWhitfield, name: "Jordan Whitfield", tenantId: DEFAULT_TENANT_ID, roles: ["partner"], matterIds: "*", source: "dev" });
-    expect(p.email).toBe("jwhitfield@seegerweiss.com");
+    expect(p).toMatchObject({ id: PEOPLE.arjunMehra, name: "Arjun Mehra", tenantId: DEFAULT_TENANT_ID, roles: ["partner"], matterIds: "*", source: "dev" });
+    expect(p.email).toBe("amehra@mehrarao.example");
   });
   it("honours LECLAUDE_TENANT_ID and LECLAUDE_USER_ID with roles from the person record", () => {
-    setEnv({ LECLAUDE_TENANT_ID: "acme", LECLAUDE_USER_ID: PEOPLE.mariaLopez });
-    expect(devPrincipal()).toMatchObject({ id: PEOPLE.mariaLopez, tenantId: "acme", roles: ["paralegal"] });
-    setEnv({ LECLAUDE_USER_ID: PEOPLE.tomBradley });
+    setEnv({ LECLAUDE_TENANT_ID: "acme", LECLAUDE_USER_ID: PEOPLE.meeraLobo });
+    expect(devPrincipal()).toMatchObject({ id: PEOPLE.meeraLobo, tenantId: "acme", roles: ["paralegal"] });
+    setEnv({ LECLAUDE_USER_ID: PEOPLE.tanmayBhatt });
     expect(devPrincipal().roles).toEqual(["litigation_support"]);
     setEnv({ LECLAUDE_USER_ID: PEOPLE.aishaKhan });
     expect(devPrincipal().roles).toEqual(["admin"]);
-    setEnv({ LECLAUDE_USER_ID: PEOPLE.elenaMarsh });
+    setEnv({ LECLAUDE_USER_ID: PEOPLE.eshaMathur });
     expect(devPrincipal().roles).toEqual(["associate"]);
     setEnv({ LECLAUDE_USER_ID: "p_nobody_here" });
     expect(devPrincipal().roles).toEqual(["associate"]);
@@ -84,9 +84,9 @@ describe("header mode", () => {
   });
   it("accepts JSON or base64url JSON and filters unknown roles and malformed matter ids", async () => {
     setEnv({ AUTH_MODE: "header", AUTH_TRUST_HEADER: "true" });
-    const asserted = { id: "u_ext", name: "External Reviewer", email: "r@example.com", tenantId: "acme", roles: ["reviewer", "superuser"], matterIds: ["m_afff_2873", "bad id with spaces", 42] };
+    const asserted = { id: "u_ext", name: "External Reviewer", email: "r@example.com", tenantId: "acme", roles: ["reviewer", "superuser"], matterIds: ["m_valsara_arb", "bad id with spaces", 42] };
     const p = await resolvePrincipal(req({ [AUTH_HEADER_USER]: JSON.stringify(asserted) }));
-    expect(p).toMatchObject({ id: "u_ext", name: "External Reviewer", tenantId: "acme", roles: ["reviewer"], matterIds: ["m_afff_2873"], source: "header" });
+    expect(p).toMatchObject({ id: "u_ext", name: "External Reviewer", tenantId: "acme", roles: ["reviewer"], matterIds: ["m_valsara_arb"], source: "header" });
     const p2 = await resolvePrincipal(req({ [AUTH_HEADER_USER]: Buffer.from(JSON.stringify({ id: "u2", roles: ["partner"], matterIds: "*" })).toString("base64url") }));
     expect(p2).toMatchObject({ id: "u2", roles: ["partner"], matterIds: "*", tenantId: DEFAULT_TENANT_ID });
   });
@@ -101,12 +101,12 @@ describe("header mode", () => {
 
 describe("jwt mode", () => {
   const SECRET = "test-secret-with-enough-entropy";
-  const claims = { sub: "u_jwt", name: "Token User", email: "t@example.com", tenant: "acme", roles: ["associate"], matters: ["m_afff_2873"], iss: "https://idp.example.com", aud: "leclaude", exp: now + 600, iat: now, sid: "sess-1" };
+  const claims = { sub: "u_jwt", name: "Token User", email: "t@example.com", tenant: "acme", roles: ["associate"], matters: ["m_valsara_arb"], iss: "https://idp.example.com", aud: "leclaude", exp: now + 600, iat: now, sid: "sess-1" };
 
   it("verifies HS256 and maps claims to a principal", () => {
     setEnv({ AUTH_MODE: "jwt", AUTH_JWT_SECRET: SECRET, AUTH_JWT_ISSUER: "https://idp.example.com", AUTH_JWT_AUDIENCE: "leclaude" });
     const p = jwtPrincipal(req({ authorization: `Bearer ${hs256(claims, SECRET)}` }));
-    expect(p).toMatchObject({ id: "u_jwt", name: "Token User", email: "t@example.com", tenantId: "acme", roles: ["associate"], matterIds: ["m_afff_2873"], source: "jwt", sessionId: "sess-1" });
+    expect(p).toMatchObject({ id: "u_jwt", name: "Token User", email: "t@example.com", tenantId: "acme", roles: ["associate"], matterIds: ["m_valsara_arb"], source: "jwt", sessionId: "sess-1" });
     expect(p.expiresAt).toBe(new Date(claims.exp * 1000).toISOString());
   });
   it("verifies RS256 with a PEM public key and rejects tampering", async () => {

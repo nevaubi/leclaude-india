@@ -20,7 +20,7 @@ export const PDF_SUGGESTIONS: OfficeAgentSuggestions = {
   ask: [
     "Summarize this with page citations",
     "What does paragraph 12 require? Quote it",
-    "Which pages mention the §8(e) notice?",
+    "Which pages mention the substantial-risk notice?",
     "Extract the table on page 3",
   ],
 };

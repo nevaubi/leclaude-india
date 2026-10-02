@@ -2,29 +2,29 @@ import type { Person } from "@/lib/types/domain";
 
 /** External people referenced in seeded email headers and testimony (stable ids). */
 export const EXTRA_PEOPLE_IDS = {
-  merrick: "x_afff_pmerrick",
-  liu: "x_afff_kliu",
-  ferris: "x_afff_dferris",
-  whitcomb: "x_afff_dwhitcomb",
-  rourke: "x_afff_jrourke",
-  ferrante: "x_afff_lferrante",
-  duffy: "x_afff_rduffy",
-  feld: "x_afff_mfeld",
-  nunez: "x_afff_cnunez",
-  bello: "x_afff_ybello",
+  merrick: "x_vls_pmerrick",
+  liu: "x_vls_kliu",
+  ferris: "x_vls_dferris",
+  whitcomb: "x_vls_dwhitcomb",
+  rourke: "x_vls_jrourke",
+  ferrante: "x_vls_lferrante",
+  duffy: "x_vls_rduffy",
+  feld: "x_vls_mfeld",
+  nunez: "x_vls_cnunez",
+  bello: "x_vls_ybello",
 } as const;
 
 const X = EXTRA_PEOPLE_IDS;
 
 export const EXTRA_PEOPLE: Person[] = [
-  { id: X.merrick, name: "Paul Merrick", title: "SVP Operations", organization: "Meridian Fluorochem Corp.", role: "witness", tags: ["non-custodian"] },
-  { id: X.liu, name: "Karen Liu", title: "Director of Marketing, Fire Suppression", organization: "Meridian Fluorochem Corp.", role: "witness", tags: ["non-custodian"] },
-  { id: X.ferris, name: "Douglas Ferris", title: "Chief Executive Officer (2001)", organization: "Meridian Fluorochem Corp.", role: "witness", tags: ["non-custodian"] },
-  { id: X.whitcomb, name: "Cmdr. Dale Whitcomb", title: "NAVSEA qualification program", organization: "U.S. Navy (NAVSEA)", role: "other" },
-  { id: X.rourke, name: "Janet Rourke", title: "Bureau of Water", organization: "Illinois EPA", role: "other" },
-  { id: X.ferrante, name: "Lisa Ferrante", title: "Director, Water Management Services", organization: "City of Decatur", role: "other" },
-  { id: X.duffy, name: "Chief Raymond Duffy", title: "Fire Chief", organization: "Macon County Fire Protection District", role: "other" },
-  { id: X.feld, name: "Marcus Feld", title: "Office of Pollution Prevention and Toxics", organization: "U.S. EPA", role: "other" },
-  { id: X.nunez, name: "Carla Nunez", title: "Project hydrogeologist", organization: "Beacon Environmental", role: "other" },
-  { id: X.bello, name: "Dr. Yusuf Bello", title: "Study pathologist", organization: "Whitfield Laboratories", role: "expert" },
+  { id: X.merrick, name: "Pankaj Malhotra", title: "SVP Operations", organization: "Meridian Fine Chemicals Ltd.", role: "witness", tags: ["non-custodian"] },
+  { id: X.liu, name: "Kavita Lal", title: "Director of Marketing, Textile Chemicals", organization: "Meridian Fine Chemicals Ltd.", role: "witness", tags: ["non-custodian"] },
+  { id: X.ferris, name: "Dinesh Pherwani", title: "Chief Executive Officer (2001)", organization: "Meridian Fine Chemicals Ltd.", role: "witness", tags: ["non-custodian"] },
+  { id: X.whitcomb, name: "Col. Devendra Wadhwa", title: "DQA-T qualification program", organization: "Defence qualification authority (DQA-T)", role: "other" },
+  { id: X.rourke, name: "Jyoti Rathore", title: "Regional Office (Water)", organization: "Gujarat Pollution Control Board", role: "other" },
+  { id: X.ferrante, name: "Lata Fernandes", title: "Director, Water Management Services", organization: "Valsara Textile Park Ltd.", role: "other" },
+  { id: X.duffy, name: "Raghav Dutta", title: "Secretary", organization: "Sarangpur Processors' Co-operative", role: "other" },
+  { id: X.feld, name: "Mahesh Phadke", title: "Hazardous Substances Management Division", organization: "Central Pollution Control Board", role: "other" },
+  { id: X.nunez, name: "Charu Nair", title: "Project hydrogeologist", organization: "Beacon Enviro Services", role: "other" },
+  { id: X.bello, name: "Dr. Yusuf Bilgrami", title: "Study pathologist", organization: "Sundaram Laboratories", role: "expert" },
 ];

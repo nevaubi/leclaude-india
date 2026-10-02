@@ -58,11 +58,11 @@ describe("agent personas", () => {
     for (const id of IDS) expect(AGENT_PERSONAS[id].tools.includes("handoff")).toBe(AGENT_PERSONAS[id].handoffs.length > 0);
   });
   it("assembles instructions with the contract, style rules, matter and run context", () => {
-    const text = personaInstructions(AGENT_PERSONAS.drafter, { matter: { id: "m1", name: "Northgate v. Apex", shortName: "Northgate", client: "Northgate", clientSide: "plaintiff", court: "S.D.N.Y.", stage: "discovery" }, user: { id: "p1", name: "Jordan Whitfield" }, workflowName: "Meet-and-confer letter", nodeId: "draft", extra: "Evidence ids: NG-000123" });
+    const text = personaInstructions(AGENT_PERSONAS.drafter, { matter: { id: "m1", name: "Northgate v. Apex", shortName: "Northgate", client: "Northgate", clientSide: "plaintiff", court: "S.D.N.Y.", stage: "discovery" }, user: { id: "p1", name: "Arjun Mehra" }, workflowName: "Meet-and-confer letter", nodeId: "draft", extra: "Evidence ids: NG-000123" });
     expect(text).toContain("Drafter agent");
     expect(text).toContain("Output contract: Markdown document");
     expect(text).toContain("Matter context: Northgate v. Apex");
-    expect(text).toContain("Requested by Jordan Whitfield");
+    expect(text).toContain("Requested by Arjun Mehra");
     expect(text).toContain('workflow "Meet-and-confer letter" (step draft)');
     expect(text).toContain("Evidence ids: NG-000123");
     expect(text).toContain("handoff tool, once");
@@ -100,7 +100,7 @@ describe("handoff tool and toolsets", () => {
   });
   it("searches the intelligence store from the tool (keyword-only, no key)", async () => {
     const { ctx: c, events } = ctx();
-    const r = (await searchIntelTool.execute({ query: "AFFF MDL 2873 Gergel", kinds: ["mdl", "docket", "opinion", "bogus"], limit: 5 }, c)) as { count: number; results: Record<string, unknown>[] };
+    const r = (await searchIntelTool.execute({ query: "Depo-Provera MDL 3140 Rodgers", kinds: ["mdl", "docket", "opinion", "bogus"], limit: 5 }, c)) as { count: number; results: Record<string, unknown>[] };
     expect(r.count).toBeGreaterThan(0);
     expect(r.results[0]).toMatchObject({ id: expect.stringMatching(/^idoc_/), kind: expect.any(String), title: expect.any(String) });
     expect(events.filter((e) => e.type === "citation").length).toBeGreaterThan(0);

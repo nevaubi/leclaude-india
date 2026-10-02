@@ -604,7 +604,7 @@ function OutlineDialog({ open, onOpenChange, matterId, depositions, aiConfigured
                   <SelectItem value="__custom">Other witness…</SelectItem>
                 </SelectContent>
               </Select>
-              {witnessId === "__custom" && <Input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Witness name, e.g. Paul Merrick" />}
+              {witnessId === "__custom" && <Input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Witness name, e.g. Pankaj Malhotra" />}
             </div>
             <div className="grid gap-1.5">
               <Label>Topics (one per line; optional)</Label>

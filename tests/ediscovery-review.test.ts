@@ -27,7 +27,7 @@ import { PATCH as docPATCH } from "@/app/api/ediscovery/docs/[id]/route";
 import { POST as searchPOST } from "@/app/api/ediscovery/search/route";
 import { GET as privExportGET } from "@/app/api/ediscovery/privilege-log/export/route";
 
-const AFFF = MATTERS.afff;
+const VALSARA = MATTERS.valsara;
 const req = (url: string, init?: { method?: string; json?: unknown }) => new NextRequest(`http://localhost${url}`, { method: init?.method ?? "GET", ...(init?.json !== undefined ? { body: JSON.stringify(init.json), headers: { "Content-Type": "application/json" } } : {}) });
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 
@@ -36,9 +36,9 @@ beforeAll(() => { resetSqlite(); db(); });
 // ---------------------------------------------------------------------------
 describe("query extensions: proximity and fielded lists", () => {
   const doc = toSearchable({
-    id: "x", matterId: AFFF, bates: "MFC-0041880", date: "2001-03-14", custodianId: PEOPLE.helenVoss, custodianName: "Helen Voss", type: "Email", subject: "Whitfield final — 90-day rat study",
-    from: "Helen Voss", to: ["Gregory Hale"], cc: ["Alan Pryce"], text: "The liver effects are real and the rat study confirms serum concentration in the recovery group.", pages: 3,
-    coding: { responsive: true, privileged: true, privilegeBasis: "work-product", hot: true, issues: ["TOX-01"], reviewerId: PEOPLE.elenaMarsh }, hash: "abc123", tags: ["key-doc"],
+    id: "x", matterId: VALSARA, bates: "MFC-0041880", date: "2001-03-14", custodianId: PEOPLE.hemaVasudevan, custodianName: "Hema Vasudevan", type: "Email", subject: "Sundaram final — 90-day rat study",
+    from: "Hema Vasudevan", to: ["Girish Hegde"], cc: ["Anil Prasad"], text: "The liver effects are real and the rat study confirms serum concentration in the recovery group.", pages: 3,
+    coding: { responsive: true, privileged: true, privilegeBasis: "work-product", hot: true, issues: ["TOX-01"], reviewerId: PEOPLE.eshaMathur }, hash: "abc123", tags: ["key-doc"],
     family: { parentId: "parent1", threadId: "t_rat" }, nearDuplicateIds: ["y"],
   } as EDocument);
   it("finds terms within N words in either order (w/N) and ordered (pre/N)", () => {
@@ -74,37 +74,37 @@ describe("query extensions: proximity and fielded lists", () => {
     expect(matchesQuery(doc, parseQuery("dupes:exact").ast)).toBe(false);
     expect(matchesQuery(doc, parseQuery("pages:>2").ast)).toBe(true);
     expect(matchesQuery(doc, parseQuery("pages:2..2").ast)).toBe(false);
-    expect(matchesQuery(doc, parseQuery(`reviewer:${PEOPLE.elenaMarsh}`).ast)).toBe(true);
+    expect(matchesQuery(doc, parseQuery(`reviewer:${PEOPLE.eshaMathur}`).ast)).toBe(true);
     expect(matchesQuery(doc, parseQuery("thread:t_rat").ast)).toBe(true);
     expect(matchesQuery(doc, parseQuery("family:parent1").ast)).toBe(true);
   });
   it("resolves family: and thread: by Bates server-side", async () => {
-    const fam = await searchDocuments({ matterId: AFFF, q: "family:MFC-0041877" });
-    expect(fam.hits.map((h) => h.id).sort()).toEqual(["ed_afff_0001", "ed_afff_0002", "ed_afff_0007"]);
-    const th = await searchDocuments({ matterId: AFFF, q: "thread:MFC-0041880" });
+    const fam = await searchDocuments({ matterId: VALSARA, q: "family:MFC-0041877" });
+    expect(fam.hits.map((h) => h.id).sort()).toEqual(["ed_vls_0001", "ed_vls_0002", "ed_vls_0007"]);
+    const th = await searchDocuments({ matterId: VALSARA, q: "thread:MFC-0041880" });
     expect(th.total).toBeGreaterThanOrEqual(4);
-    const uncoded = await searchDocuments({ matterId: AFFF, q: "responsive:none" });
+    const uncoded = await searchDocuments({ matterId: VALSARA, q: "responsive:none" });
     expect(uncoded.hits.every((h) => h.coding.responsive == null)).toBe(true);
-    const prox = await searchDocuments({ matterId: AFFF, q: "liver w/8 serum" });
+    const prox = await searchDocuments({ matterId: VALSARA, q: "liver w/8 serum" });
     expect(prox.total).toBeGreaterThan(0);
   });
   it("pages, groups by family and reports months", async () => {
-    const p2 = await searchDocuments({ matterId: AFFF, page: 2, limit: 10 });
+    const p2 = await searchDocuments({ matterId: VALSARA, page: 2, limit: 10 });
     expect(p2.offset).toBe(10);
     expect(p2.page).toBe(2);
     expect(p2.pages).toBeGreaterThan(5);
     expect(p2.facets.months.length).toBeGreaterThan(3);
-    const grouped = await searchDocuments({ matterId: AFFF, groupBy: "family", limit: 5000 });
-    const head = grouped.hits.find((h) => h.id === "ed_afff_0002")!;
-    expect(head.groupKey).toBe("ed_afff_0002");
+    const grouped = await searchDocuments({ matterId: VALSARA, groupBy: "family", limit: 5000 });
+    const head = grouped.hits.find((h) => h.id === "ed_vls_0002")!;
+    expect(head.groupKey).toBe("ed_vls_0002");
     expect(head.groupIndex).toBe(0);
     expect(head.groupSize).toBe(3);
     const idx = grouped.hits.indexOf(head);
-    expect(grouped.hits.slice(idx, idx + 3).map((h) => h.id).sort()).toEqual(["ed_afff_0001", "ed_afff_0002", "ed_afff_0007"]);
-    const threads = await searchDocuments({ matterId: AFFF, groupBy: "thread", limit: 5000 });
+    expect(grouped.hits.slice(idx, idx + 3).map((h) => h.id).sort()).toEqual(["ed_vls_0001", "ed_vls_0002", "ed_vls_0007"]);
+    const threads = await searchDocuments({ matterId: VALSARA, groupBy: "thread", limit: 5000 });
     expect(threads.hits.some((h) => h.groupSize && h.groupSize > 1)).toBe(true);
-    const byBatch = await searchDocuments({ matterId: AFFF, batchId: REVIEW_SEED_IDS.batches.kaineSecondPass });
-    expect(byBatch.hits.every((h) => h.custodianId === PEOPLE.robertKaine)).toBe(true);
+    const byBatch = await searchDocuments({ matterId: VALSARA, batchId: REVIEW_SEED_IDS.batches.kaineSecondPass });
+    expect(byBatch.hits.every((h) => h.custodianId === PEOPLE.rohitKapur)).toBe(true);
     expect(byBatch.hits[0].aiRationale ?? byBatch.hits[0].aiScore).toBeDefined();
   });
 });
@@ -135,13 +135,13 @@ describe("near-duplicate detection", () => {
     expect(big.pairs.some((p) => (p.a === "a" && p.b === "b") || (p.a === "b" && p.b === "a"))).toBe(true);
   });
   it("populates nearDuplicateIds and scores on seeded documents and keeps hand links", () => {
-    const seeded = db().edocs.get("ed_afff_0011")!;
-    expect(seeded.nearDuplicateIds).toContain("ed_afff_0034");
-    expect(seeded.nearDuplicateScores?.["ed_afff_0034"]).toBeGreaterThan(0);
-    const r = refreshNearDuplicates(AFFF, { threshold: 0.5 });
+    const seeded = db().edocs.get("ed_vls_0011")!;
+    expect(seeded.nearDuplicateIds).toContain("ed_vls_0034");
+    expect(seeded.nearDuplicateScores?.["ed_vls_0034"]).toBeGreaterThan(0);
+    const r = refreshNearDuplicates(VALSARA, { threshold: 0.5 });
     expect(r.pairs).toBeGreaterThanOrEqual(1);
-    const dup = db().edocs.get("ed_afff_0024")!; // exact duplicate is not a near-dup
-    expect(dup.nearDuplicateIds ?? []).not.toContain("ed_afff_0002");
+    const dup = db().edocs.get("ed_vls_0024")!; // exact duplicate is not a near-dup
+    expect(dup.nearDuplicateIds ?? []).not.toContain("ed_vls_0002");
   });
 });
 
@@ -166,7 +166,7 @@ describe("batch logic", () => {
     expect(nextUncoded(["d0", "d1"], "d0", c)).toBeNull();
   });
   it("computes progress, status and disagreement reports", () => {
-    const batch: ReviewBatch = { id: "b", matterId: AFFF, name: "b", docIds: ["d0", "d1", "d2"], source: { kind: "all" }, priority: "normal", status: "open", qcSamplePercent: 50, qcSampleIds: ["d0", "d1"], secondPass: false, qcDecisions: {}, createdBy: "p", createdAt: "t", updatedAt: "t" };
+    const batch: ReviewBatch = { id: "b", matterId: VALSARA, name: "b", docIds: ["d0", "d1", "d2"], source: { kind: "all" }, priority: "normal", status: "open", qcSamplePercent: 50, qcSampleIds: ["d0", "d1"], secondPass: false, qcDecisions: {}, createdBy: "p", createdAt: "t", updatedAt: "t" };
     const coding: Record<string, { responsive: boolean | null; privileged?: boolean; hot?: boolean; issues?: string[]; reviewerId?: string }> = { d0: { responsive: true, hot: true, issues: ["A"], reviewerId: "r1" }, d1: { responsive: false, reviewerId: "r2" }, d2: { responsive: null } };
     let p = batchProgress(batch, (id) => coding[id]);
     expect(p).toMatchObject({ total: 3, coded: 2, remaining: 1, pct: 67, responsive: 1, hot: 1, qcSampled: 2, qcDone: 0 });
@@ -185,18 +185,18 @@ describe("batch logic", () => {
     expect(deriveBatchStatus(batch, batchProgress(batch, (id) => coding[id]))).toBe("complete");
   });
   it("creates batches from a search, splits by size, walks them and records QC decisions", async () => {
-    const seeded = listBatches(AFFF);
+    const seeded = listBatches(VALSARA);
     expect(seeded.length).toBeGreaterThanOrEqual(3);
     const hot = getBatch(REVIEW_SEED_IDS.batches.hotQc)!;
     expect(hot.progress.qcDone).toBeGreaterThan(0);
     expect(hot.disagreements.disagree).toBe(1);
-    const created = await createBatches({ matterId: AFFF, name: "Kaine chunks", q: "custodian:kaine", uncodedOnly: false, size: 3, assigneeId: PEOPLE.elenaMarsh, qcSamplePercent: 34, priority: "high" });
+    const created = await createBatches({ matterId: VALSARA, name: "Kapur chunks", q: "custodian:kapur", uncodedOnly: false, size: 3, assigneeId: PEOPLE.eshaMathur, qcSamplePercent: 34, priority: "high" });
     expect(created.length).toBeGreaterThan(1);
-    expect(created[0].name).toBe("Kaine chunks 01");
+    expect(created[0].name).toBe("Kapur chunks 01");
     expect(created.every((b) => b.docIds.length <= 3)).toBe(true);
     expect(created[0].qcSampleIds.length).toBe(1);
-    const [u1, u2] = db().edocs.find((d) => d.matterId === AFFF && d.coding.responsive == null).map((d) => d.id);
-    const sel = await createBatches({ matterId: AFFF, name: "Selection", ids: [u1, u2] });
+    const [u1, u2] = db().edocs.find((d) => d.matterId === VALSARA && d.coding.responsive == null).map((d) => d.id);
+    const sel = await createBatches({ matterId: VALSARA, name: "Selection", ids: [u1, u2] });
     expect(sel[0].source.kind).toBe("selection");
     expect(sel[0].docIds).toEqual([u1, u2]);
     const first = nextInBatch(sel[0].id, null);
@@ -207,7 +207,7 @@ describe("batch logic", () => {
     const qc = recordQcDecision(sel[0].id, u1, { responsive: false }, PEOPLE.priyaRaman);
     expect(qc.qcDecisions[u1].agree).toBe(false);
     expect(nextInBatch(sel[0].id, null, true).id).toBe(u2);
-    await expect(createBatches({ matterId: AFFF, name: "empty", q: "zzzz-never" })).rejects.toThrow(/No documents/);
+    await expect(createBatches({ matterId: VALSARA, name: "empty", q: "zzzz-never" })).rejects.toThrow(/No documents/);
   });
 });
 
@@ -223,19 +223,19 @@ describe("Bates assignment and load files", () => {
     expect(nextBatesNumber([], "X", 100)).toBe(100);
   });
   it("orders families together and writes DAT/OPT load files", () => {
-    const docs = db().edocs.find((d) => ["ed_afff_0001", "ed_afff_0002", "ed_afff_0007", "ed_afff_0057"].includes(d.id));
+    const docs = db().edocs.find((d) => ["ed_vls_0001", "ed_vls_0002", "ed_vls_0007", "ed_vls_0057"].includes(d.id));
     const ordered = productionOrder(docs);
-    expect(ordered.map((d) => d.id)).toEqual(["ed_afff_0002", "ed_afff_0001", "ed_afff_0007", "ed_afff_0057"]);
+    expect(ordered.map((d) => d.id)).toEqual(["ed_vls_0002", "ed_vls_0001", "ed_vls_0007", "ed_vls_0057"]);
     const { bates } = assignBates(ordered, { prefix: "MER", padding: 6, startNumber: 10 });
     const production = { volume: "VOL001", bates, docIds: ordered.map((d) => d.id), stampText: "CONFIDENTIAL" };
-    const dat = generateDat({ production, docs, redactedIds: new Set(["ed_afff_0057"]) });
+    const dat = generateDat({ production, docs, redactedIds: new Set(["ed_vls_0057"]) });
     const lines = dat.trim().split("\r\n");
     expect(lines.length).toBe(5);
     expect(lines[0].startsWith(`${DAT_QUOTE}BEGBATES${DAT_QUOTE}${DAT_SEP}${DAT_QUOTE}ENDBATES${DAT_QUOTE}`)).toBe(true);
     const cols = lines[1].split(DAT_SEP).map((c) => c.replace(new RegExp(DAT_QUOTE, "g"), ""));
     expect(cols[0]).toBe("MER-000010");
     expect(cols[2]).toBe("MER-000010"); // BEGATTACH = family begin
-    expect(cols[3]).toBe(bates.ed_afff_0007.end); // ENDATTACH = last attachment end
+    expect(cols[3]).toBe(bates.ed_vls_0007.end); // ENDATTACH = last attachment end
     expect(cols[4]).toBe("VOL001");
     const last = lines[4].split(DAT_SEP).map((c) => c.replace(new RegExp(DAT_QUOTE, "g"), ""));
     expect(last[14]).toBe("Y"); // REDACTED
@@ -245,7 +245,7 @@ describe("Bates assignment and load files", () => {
     expect(parsed.length).toBe(4);
     expect(parsed[0]).toEqual({ bates: "MER-000010", volume: "VOL001", pages: 1 });
     expect(opt.split("\r\n").filter(Boolean).length).toBe(Object.values(bates).reduce((n, b) => n + b.pages, 0));
-    const p3 = parsed.find((x) => x.bates === bates.ed_afff_0001.begin)!;
+    const p3 = parsed.find((x) => x.bates === bates.ed_vls_0001.begin)!;
     expect(p3.pages).toBe(3);
   });
 });
@@ -255,7 +255,7 @@ describe("redactions", () => {
   it("merges ranges and applies text redactions keeping line breaks", () => {
     expect(mergeRanges([{ start: 5, end: 10, label: "A" }, { start: 8, end: 12, label: "B" }, { start: 20, end: 22, label: "C" }, { start: 30, end: 30, label: "D" }], 25)).toEqual([{ start: 5, end: 12, label: "A" }, { start: 20, end: 22, label: "C" }]);
     const text = "Call 555-0100 for Jane\nDoe at once.";
-    const r = (start: number, end: number, label = "REDACTED — PII"): Redaction => ({ id: "r", matterId: AFFF, docId: "d", kind: "text", start, end, reason: "pii", label, createdBy: "p", createdAt: "t" });
+    const r = (start: number, end: number, label = "REDACTED — PII"): Redaction => ({ id: "r", matterId: VALSARA, docId: "d", kind: "text", start, end, reason: "pii", label, createdBy: "p", createdAt: "t" });
     const out = applyTextRedactions(text, [r(5, 13), r(18, 26)]);
     expect(out.applied).toBe(2);
     expect(out.text).toBe("Call [REDACTED — PII] for [REDACTED — PII]\n at once.");
@@ -267,11 +267,11 @@ describe("redactions", () => {
     expect(validateRedaction({ kind: "page", page: 3, rect: { x: 0, y: 0, w: 1, h: 1 } }, 100, 2)).toMatch(/Page/);
   });
   it("creates, lists and removes redactions through the service and reflects them in the redacted text", () => {
-    const doc = db().edocs.get("ed_afff_0057")!;
-    const i = doc.text.indexOf("Decatur");
+    const doc = db().edocs.get("ed_vls_0057")!;
+    const i = doc.text.indexOf("Valsara");
     const red = createRedaction({ docId: doc.id, kind: "text", start: i, end: i + 7, reason: "confidential" });
     expect(red.label).toBe("REDACTED — CONFIDENTIAL");
-    expect(red.quote).toBe("Decatur");
+    expect(red.quote).toBe("Valsara");
     expect(redactedText(doc).text).toContain("[REDACTED — CONFIDENTIAL]");
     expect(() => createRedaction({ docId: doc.id, kind: "text", start: -1, end: 4, reason: "pii" })).toThrow();
     expect(deleteRedaction(red.id)).toBe(true);
@@ -283,7 +283,7 @@ describe("redactions", () => {
 // ---------------------------------------------------------------------------
 describe("production QC and status workflow", () => {
   it("flags privileged documents, missing family members, PII and uncoded documents", () => {
-    const docs = db().edocs.find((d) => d.matterId === AFFF);
+    const docs = db().edocs.find((d) => d.matterId === VALSARA);
     const priv = docs.find((d) => d.coding.privileged === true)!;
     const parentWithKids = docs.find((d) => (d.family?.attachmentIds?.length ?? 0) > 0)!;
     const uncoded = docs.find((d) => d.coding.responsive == null)!;
@@ -297,7 +297,7 @@ describe("production QC and status workflow", () => {
     expect(report.uncoded.map((x) => x.docId)).toContain(uncoded.id);
     expect(report.unredactedPii.filter((x) => x.docId === "pii_doc").map((x) => x.pattern)).toEqual(expect.arrayContaining(["Social Security number", "Payment card number"]));
     expect(report.unredactedPii[0].sample).not.toContain("6789");
-    const redactedPii = qcProduction({ production: { docIds: ["pii_doc"], bates }, docs: [pii], redactions: [{ id: "r", matterId: AFFF, docId: "pii_doc", kind: "text", start: 13, end: 24, reason: "pii", label: "REDACTED", createdBy: "p", createdAt: "t" }, { id: "r2", matterId: AFFF, docId: "pii_doc", kind: "text", start: 34, end: 53, reason: "pii", label: "REDACTED", createdBy: "p", createdAt: "t" }] });
+    const redactedPii = qcProduction({ production: { docIds: ["pii_doc"], bates }, docs: [pii], redactions: [{ id: "r", matterId: VALSARA, docId: "pii_doc", kind: "text", start: 13, end: 24, reason: "pii", label: "REDACTED", createdBy: "p", createdAt: "t" }, { id: "r2", matterId: VALSARA, docId: "pii_doc", kind: "text", start: 34, end: 53, reason: "pii", label: "REDACTED", createdBy: "p", createdAt: "t" }] });
     expect(redactedPii.unredactedPii).toEqual([]);
     expect(findUnredactedPii("DOB: 04/12/1971 MRN 0012345")).toHaveLength(2);
     expect(canTransition("draft", "final")).toMatchObject({ ok: false });
@@ -306,11 +306,11 @@ describe("production QC and status workflow", () => {
     expect(canTransition("final", "draft").ok).toBe(false);
   });
   it("creates a production, runs QC, moves through the workflow and exports load files and a zip", async () => {
-    const seeded = listProductions(AFFF);
+    const seeded = listProductions(VALSARA);
     expect(seeded.length).toBeGreaterThanOrEqual(1);
     expect(seeded[0].bates[seeded[0].docIds[0]].begin).toBe("MERIDIAN-0000001");
-    const p = await createProduction({ matterId: AFFF, name: "Test vol", prefix: "MERIDIAN", ids: ["ed_afff_0002", "ed_afff_0001", "ed_afff_0007", "ed_afff_0003"] });
-    expect(p.docIds[0]).toBe("ed_afff_0002");
+    const p = await createProduction({ matterId: VALSARA, name: "Test vol", prefix: "MERIDIAN", ids: ["ed_vls_0002", "ed_vls_0001", "ed_vls_0007", "ed_vls_0003"] });
+    expect(p.docIds[0]).toBe("ed_vls_0002");
     expect(p.startNumber).toBeGreaterThan(1); // continues the seeded MERIDIAN sequence
     expect(p.status).toBe("draft");
     const qc = runProductionQc(p.id);
@@ -324,7 +324,7 @@ describe("production QC and status workflow", () => {
     const { dat, opt } = productionLoadFiles(p.id);
     expect(dat.split("\r\n").filter(Boolean).length).toBe(5);
     expect(parseOpt(opt).length).toBe(4);
-    const pdf = await renderProductionPdf(db().edocs.get("ed_afff_0001")!, p.bates.ed_afff_0001, [{ id: "r", matterId: AFFF, docId: "ed_afff_0001", kind: "page", page: 1, rect: { x: 0.1, y: 0.2, w: 0.5, h: 0.1 }, reason: "privilege", label: "REDACTED", createdBy: "p", createdAt: "t" }], "CONFIDENTIAL");
+    const pdf = await renderProductionPdf(db().edocs.get("ed_vls_0001")!, p.bates.ed_vls_0001, [{ id: "r", matterId: VALSARA, docId: "ed_vls_0001", kind: "page", page: 1, rect: { x: 0.1, y: 0.2, w: 0.5, h: 0.1 }, reason: "privilege", label: "REDACTED", createdBy: "p", createdAt: "t" }], "CONFIDENTIAL");
     expect(pdf.byteLength).toBeGreaterThan(1000);
     expect(new TextDecoder().decode(pdf.slice(0, 5))).toBe("%PDF-");
     const zip = await buildProductionZip(p.id, { maxPdfDocs: 2 });
@@ -343,16 +343,16 @@ describe("production QC and status workflow", () => {
 // ---------------------------------------------------------------------------
 describe("saved searches, search-term reports, layouts, history, privilege export", () => {
   it("stores saved searches with sharing and validates the query", () => {
-    const mine = listSavedSearches(AFFF, PEOPLE.jordanWhitfield);
+    const mine = listSavedSearches(VALSARA, PEOPLE.arjunMehra);
     expect(mine.map((s) => s.id)).toContain(REVIEW_SEED_IDS.savedSearches.eightE);
     expect(mine.map((s) => s.id)).not.toContain(REVIEW_SEED_IDS.savedSearches.privReview); // private to Raman
-    expect(listSavedSearches(AFFF, PEOPLE.priyaRaman).map((s) => s.id)).toContain(REVIEW_SEED_IDS.savedSearches.privReview);
-    const s = createSavedSearch({ matterId: AFFF, name: "Wells", q: '"monitoring well" w/5 plume', shared: false });
-    expect(s.ownerId).toBe(PEOPLE.jordanWhitfield);
-    expect(() => createSavedSearch({ matterId: AFFF, name: "bad", q: 'liver AND ("serum' })).toThrow(/Query problems/);
+    expect(listSavedSearches(VALSARA, PEOPLE.priyaRaman).map((s) => s.id)).toContain(REVIEW_SEED_IDS.savedSearches.privReview);
+    const s = createSavedSearch({ matterId: VALSARA, name: "Wells", q: '"monitoring well" w/5 plume', shared: false });
+    expect(s.ownerId).toBe(PEOPLE.arjunMehra);
+    expect(() => createSavedSearch({ matterId: VALSARA, name: "bad", q: 'liver AND ("serum' })).toThrow(/Query problems/);
   });
   it("counts hits, unique documents and families per term and exports CSV", () => {
-    const r = searchTermReport({ matterId: AFFF, terms: ["bioassay", '"monitoring well"', "liver w/5 study", "zzzz-nothing"] });
+    const r = searchTermReport({ matterId: VALSARA, terms: ["bioassay", '"monitoring well"', "liver w/5 study", "zzzz-nothing"] });
     expect(r.rows.length).toBe(4);
     expect(r.rows[0].uniqueDocs).toBeGreaterThan(0);
     expect(r.rows[0].hits).toBeGreaterThanOrEqual(r.rows[0].uniqueDocs);
@@ -370,20 +370,20 @@ describe("saved searches, search-term reports, layouts, history, privilege expor
     const list = listLayouts();
     expect(list.filter((l) => l.name.toLowerCase() === "privilege pass").length).toBe(1);
     expect(list[0].hiddenColumns).toEqual(["score", "type"]);
-    expect(listLayouts(PEOPLE.elenaMarsh)).toEqual([]);
+    expect(listLayouts(PEOPLE.eshaMathur)).toEqual([]);
   });
   it("reads per-document audit history from the audit log", () => {
-    updateCoding("ed_afff_0050", { hot: true, issues: ["CUS-01"] }, PEOPLE.elenaMarsh);
-    const h = docHistory("ed_afff_0050");
+    updateCoding("ed_vls_0050", { hot: true, issues: ["CUS-01"] }, PEOPLE.eshaMathur);
+    const h = docHistory("ed_vls_0050");
     expect(h.length).toBeGreaterThan(0);
     expect(h[0].summary).toMatch(/Coded: /);
-    expect(h[0].actorName).toBe("Elena Marsh");
+    expect(h[0].actorName).toBe("Esha Mathur");
     expect(h[0].fields).toEqual(expect.arrayContaining(["hot"]));
   });
   it("fills description templates and builds the xlsx workbook", () => {
     const t = DESCRIPTION_TEMPLATES.find((x) => x.id === "wp-anticipation")!;
-    expect(fillTemplate(t, { type: "Memorandum", author: "Martin Suarez (counsel)", recipients: "", topic: "regulatory reporting obligations" })).toMatch(/^Memorandum prepared by or at the direction of Martin Suarez/);
-    const wb = privilegeLogWorkbook([{ id: "pl", matterId: AFFF, docId: "d", bates: "MFC-0041921 – MFC-0041922", date: "2001-03-19", author: "Robert Kaine", recipients: ["Alan Pryce"], docType: "Email", basis: "Attorney-client", description: "Email providing legal advice.", status: "review", subject: "s", custodianName: "Robert Kaine" }], { matterName: "AFFF" });
+    expect(fillTemplate(t, { type: "Memorandum", author: "Manish Sood (counsel)", recipients: "", topic: "regulatory reporting obligations" })).toMatch(/^Memorandum prepared by or at the direction of Manish Sood/);
+    const wb = privilegeLogWorkbook([{ id: "pl", matterId: VALSARA, docId: "d", bates: "MFC-0041921 – MFC-0041922", date: "2001-03-19", author: "Rohit Kapur", recipients: ["Anil Prasad"], docType: "Email", basis: "Attorney-client", description: "Email providing legal advice.", status: "review", subject: "s", custodianName: "Rohit Kapur" }], { matterName: "Valsara v. Meridian" });
     expect(wb.SheetNames).toEqual(["Privilege log", "Legend"]);
     const sheet = wb.Sheets["Privilege log"];
     expect(sheet.B2.v).toBe("MFC-0041921");
@@ -395,19 +395,19 @@ describe("saved searches, search-term reports, layouts, history, privilege expor
 // ---------------------------------------------------------------------------
 describe("route handlers", () => {
   it("lists and creates batches, walks them and patches", async () => {
-    const list = await batchesGET(req(`/api/ediscovery/batches?matter=${AFFF}`));
+    const list = await batchesGET(req(`/api/ediscovery/batches?matter=${VALSARA}`));
     expect(list.status).toBe(200);
     const j = (await list.json()) as { batches: { id: string; progress: { total: number } }[] };
     expect(j.batches.length).toBeGreaterThanOrEqual(3);
-    const created = await batchesPOST(req("/api/ediscovery/batches", { method: "POST", json: { matterId: AFFF, name: "Route batch", ids: ["ed_afff_0051", "ed_afff_0052"], qcSamplePercent: 50 } }));
+    const created = await batchesPOST(req("/api/ediscovery/batches", { method: "POST", json: { matterId: VALSARA, name: "Route batch", ids: ["ed_vls_0051", "ed_vls_0052"], qcSamplePercent: 50 } }));
     expect(created.status).toBe(201);
     const { batches } = (await created.json()) as { batches: { id: string }[] };
     const one = await batchGET(req("/x"), params(batches[0].id));
     expect(((await one.json()) as { batch: { progress: { total: number } } }).batch.progress.total).toBe(2);
     const next = await nextGET(req(`/x?current=`), params(batches[0].id));
     expect(((await next.json()) as { id: string | null }).id).toBeTruthy();
-    const patched = await batchPATCH(req("/x", { method: "PATCH", json: { priority: "low", assigneeId: PEOPLE.mariaLopez } }), params(batches[0].id));
-    expect(((await patched.json()) as { batch: { priority: string; assigneeName: string } }).batch).toMatchObject({ priority: "low", assigneeName: "Maria Lopez" });
+    const patched = await batchPATCH(req("/x", { method: "PATCH", json: { priority: "low", assigneeId: PEOPLE.meeraLobo } }), params(batches[0].id));
+    expect(((await patched.json()) as { batch: { priority: string; assigneeName: string } }).batch).toMatchObject({ priority: "low", assigneeName: "Meera Lobo" });
     expect((await batchGET(req("/x"), params("nope"))).status).toBe(404);
     // QC decision through the document PATCH
     const b = (await ((await batchGET(req("/x"), params(batches[0].id))).json() as Promise<{ batch: { qcSampleIds: string[] } }>)).batch;
@@ -417,19 +417,19 @@ describe("route handlers", () => {
     expect(((await res.json()) as { qc: { agree: boolean } }).qc).toBeDefined();
   });
   it("serves saved searches, redactions, productions, term reports, history and search paging", async () => {
-    expect((await savedGET(req(`/api/ediscovery/saved-searches?matter=${AFFF}`))).status).toBe(200);
-    const bad = await savedPOST(req("/x", { method: "POST", json: { matterId: AFFF, name: "x", q: "(unbalanced" } }));
+    expect((await savedGET(req(`/api/ediscovery/saved-searches?matter=${VALSARA}`))).status).toBe(200);
+    const bad = await savedPOST(req("/x", { method: "POST", json: { matterId: VALSARA, name: "x", q: "(unbalanced" } }));
     expect(bad.status).toBe(422);
-    const red = await redPOST(req("/x", { method: "POST", json: { docId: "ed_afff_0003", kind: "page", page: 1, rect: { x: 0.1, y: 0.1, w: 0.3, h: 0.1 }, reason: "phi" } }));
+    const red = await redPOST(req("/x", { method: "POST", json: { docId: "ed_vls_0003", kind: "page", page: 1, rect: { x: 0.1, y: 0.1, w: 0.3, h: 0.1 }, reason: "phi" } }));
     expect(red.status).toBe(201);
     const { redaction } = (await red.json()) as { redaction: { id: string; label: string } };
     expect(redaction.label).toBe("REDACTED — PHI");
-    const listed = (await (await redGET(req("/x?doc=ed_afff_0003"))).json()) as { redactions: unknown[] };
+    const listed = (await (await redGET(req("/x?doc=ed_vls_0003"))).json()) as { redactions: unknown[] };
     expect(listed.redactions.length).toBe(1);
     expect((await redDELETE(req(`/x?id=${redaction.id}`))).status).toBe(200);
-    const prods = (await (await prodGET(req(`/x?matter=${AFFF}`))).json()) as { productions: { id: string; docCount: number; batesRange: { begin: string } }[] };
+    const prods = (await (await prodGET(req(`/x?matter=${VALSARA}`))).json()) as { productions: { id: string; docCount: number; batesRange: { begin: string } }[] };
     expect(prods.productions.find((p) => p.id === REVIEW_SEED_IDS.production)!.docCount).toBeGreaterThan(20);
-    const made = await prodPOST(req("/x", { method: "POST", json: { matterId: AFFF, name: "Route prod", prefix: "RT", ids: ["ed_afff_0003", "ed_afff_0004"] } }));
+    const made = await prodPOST(req("/x", { method: "POST", json: { matterId: VALSARA, name: "Route prod", prefix: "RT", ids: ["ed_vls_0003", "ed_vls_0004"] } }));
     expect(made.status).toBe(201);
     const { production } = (await made.json()) as { production: { id: string } };
     const detail = (await (await prodOneGET(req("/x"), params(production.id))).json()) as { rows: { begin: string }[] };
@@ -439,13 +439,13 @@ describe("route handlers", () => {
     const dat = await prodExportGET(req("/x?format=dat"), params(production.id));
     expect(dat.headers.get("Content-Disposition")).toContain(".dat");
     expect(await dat.text()).toContain("RT-0000001");
-    const terms = await termsPOST(req("/x?format=csv", { method: "POST", json: { matterId: AFFF, terms: ["bioassay", "liver"] } }));
+    const terms = await termsPOST(req("/x?format=csv", { method: "POST", json: { matterId: VALSARA, terms: ["bioassay", "liver"] } }));
     expect(terms.headers.get("Content-Type")).toContain("text/csv");
-    const hist = (await (await historyGET(req("/x"), params("ed_afff_0050"))).json()) as { history: unknown[]; batches: unknown[] };
+    const hist = (await (await historyGET(req("/x"), params("ed_vls_0050"))).json()) as { history: unknown[]; batches: unknown[] };
     expect(hist.history.length).toBeGreaterThan(0);
-    const page = (await (await searchPOST(req("/x", { method: "POST", json: { matterId: AFFF, page: 3, limit: 5, groupBy: "thread" } }))).json()) as { page: number; offset: number; groupBy: string };
+    const page = (await (await searchPOST(req("/x", { method: "POST", json: { matterId: VALSARA, page: 3, limit: 5, groupBy: "thread" } }))).json()) as { page: number; offset: number; groupBy: string };
     expect(page).toMatchObject({ page: 3, offset: 10, groupBy: "thread" });
-    const xlsx = await privExportGET(req(`/x?matter=${AFFF}&format=xlsx`));
+    const xlsx = await privExportGET(req(`/x?matter=${VALSARA}&format=xlsx`));
     expect(xlsx.headers.get("Content-Type")).toContain("spreadsheetml");
     expect(Number(xlsx.headers.get("Content-Length"))).toBeGreaterThan(2000);
   });

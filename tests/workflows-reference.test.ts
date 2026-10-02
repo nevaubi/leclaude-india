@@ -26,7 +26,7 @@ import { startRun } from "@/modules/workflows/engine";
 
 const DEMO_IDS = new Set<string>([...Object.values(PEOPLE), ...Object.values(MATTERS)]);
 /** Names from the demo dataset that must not appear in reference content. */
-const DEMO_NAMES = /\b(AFFF|Depo-Provera|Meridian|Fluorochem|Harborline|Bluewater|Snowfield|Aurora Health|Northgate|Sterling Medical|Gergel|Whitfield|Okafor|Priya Raman|Elena Marsh|Samuel Chen|Maria Lopez|Aisha Khan|Kaine|Hale|Pryce|MDL 2873|CMO 26)\b/;
+const DEMO_NAMES = /\b(VALSARA|Depo-Provera|Meridian|Fine Chemicals|Harborline|Bluewater|Snowfield|Aurora Health|Northgate|Sterling Medical|Rangan|Sundaram|Oberoi|Priya Raman|Esha Mathur|Sameer Chawla|Meera Lobo|Aisha Khan|Kapur|Hegde|Prasad|Arb\. Ref\. 14\/2024|Procedural Order No\. 5)\b/;
 
 function collectStrings(v: unknown, out: string[] = []): string[] {
   if (typeof v === "string") out.push(v);

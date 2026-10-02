@@ -15,8 +15,8 @@ vi.mock("@/lib/ai/openai", () => ({
             { type: "response.created" },
             { type: "response.output_item.added", output_index: 0, item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "lookup", arguments: "" } },
             { type: "response.function_call_arguments.delta", item_id: "fc_1", delta: '{"q":' },
-            { type: "response.function_call_arguments.done", item_id: "fc_1", arguments: '{"q":"pfas","limit":null}' },
-            { type: "response.output_item.done", output_index: 0, item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "lookup", arguments: '{"q":"pfas","limit":null}' } },
+            { type: "response.function_call_arguments.done", item_id: "fc_1", arguments: '{"q":"solvent","limit":null}' },
+            { type: "response.output_item.done", output_index: 0, item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "lookup", arguments: '{"q":"solvent","limit":null}' } },
             { type: "response.completed", response: { id: "resp_1", usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }, output: [] } },
           ]);
         }
@@ -46,9 +46,9 @@ describe("runAgent", () => {
       parameters: { type: "object", properties: { q: { type: "string" }, limit: { type: "integer" } }, required: ["q"] },
       execute: async (args) => { executed.push(args); return { count: 2 }; },
     });
-    const result = await runAgent({ instructions: "test", input: "find pfas", tools: [lookup as never], onEvent: (e) => events.push(e), model: "gpt-5.4" });
+    const result = await runAgent({ instructions: "test", input: "find solvent", tools: [lookup as never], onEvent: (e) => events.push(e), model: "gpt-5.4" });
 
-    expect(executed).toEqual([{ q: "pfas" }]); // null stripped by normalizeArgs
+    expect(executed).toEqual([{ q: "solvent" }]); // null stripped by normalizeArgs
     expect(result.text).toBe("Found 2 results.");
     expect(result.responseId).toBe("resp_2");
     expect(result.usage.total).toBe(43);
@@ -69,7 +69,7 @@ describe("runAgent", () => {
     expect(types).toContain("text.delta");
     expect(types).toContain("citation");
     expect(types.at(-1)).toBe("done");
-    expect(events.find((e) => e.type === "tool.call")).toMatchObject({ name: "lookup", args: { q: "pfas" } });
+    expect(events.find((e) => e.type === "tool.call")).toMatchObject({ name: "lookup", args: { q: "solvent" } });
   });
 });
 

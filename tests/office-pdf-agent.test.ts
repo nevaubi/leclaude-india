@@ -26,19 +26,19 @@ async function memoPdf(opts: { imagePage?: boolean } = {}): Promise<Uint8Array> 
   const doc = await PDFDocument.create();
   const helv = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  doc.setAuthor("Gregory Hale");
+  doc.setAuthor("Girish Hegde");
   doc.setTitle("MW-7 results");
   const p1 = doc.addPage([612, 792]);
   const lines = [
-    "From: Gregory Hale <g.hale@meridianfluorochem.com>",
-    "To: Nadia Brooks <n.brooks@meridianfluorochem.com>",
-    "Cc: Robert Kaine, Esq. <r.kaine@kainelaw.com>",
+    "From: Girish Hegde <g.hegde@meridianfinechem.example>",
+    "To: Nandini Bose <n.bose@meridianfinechem.example>",
+    "Cc: Rohit Kapur, Esq. <r.kapur@kapurlegal.example>",
     "Date: April 11, 2006",
     "Subject: MW-7 quarterly results",
     "",
     "The MW-7 result is the third consecutive quarter above the action level.",
     "Contractor SSN 412-55-8367, DOB: 03/14/1971, phone (843) 555-0192.",
-    "Please send the lab invoice to billing@lowcountryenv.com today.",
+    "Please send the lab invoice to billing@konkanenv.example today.",
   ];
   lines.forEach((t, i) => { if (t) p1.drawText(t, { x: 72, y: 720 - i * 16, size: 11, font: helv }); });
   const p2 = doc.addPage([612, 792]);
@@ -58,7 +58,7 @@ async function memoPdf(opts: { imagePage?: boolean } = {}): Promise<Uint8Array> 
 async function setup(mode: "draft" | "review" | "ask" = "draft", opts: { imagePage?: boolean; deps?: Parameters<typeof pdfAgentTools>[1] } = {}) {
   const bytes = await memoPdf(opts);
   const ex = await extractPdf(bytes);
-  const model: PdfModel = buildModel({ sourceBlobId: "blob_src_1", pageSizes: ex.pages, textIndex: ex.pages.map((p) => (p.needsOcr ? { page: p.page, text: p.text, needsOcr: true } : { page: p.page, text: p.text })), meta: { docInfo: { author: "Gregory Hale", title: "MW-7 results" } } });
+  const model: PdfModel = buildModel({ sourceBlobId: "blob_src_1", pageSizes: ex.pages, textIndex: ex.pages.map((p) => (p.needsOcr ? { page: p.page, text: p.text, needsOcr: true } : { page: p.page, text: p.text })), meta: { docInfo: { author: "Girish Hegde", title: "MW-7 results" } } });
   const proposals: EditProposal[] = [];
   const snapshot: PdfSnapshot = { model, title: "MW-7 results", docId: "doc_t", comments: [] };
   const ctx: OfficeAgentContext<PdfSnapshot> = {
@@ -137,14 +137,14 @@ describe("redaction and production tools", () => {
     const { run, ctx, proposals } = await setup();
     const prev = (await run("redact_pattern")({ presets: ["ssn", "dob", "email", "phone"] })) as { action: string; total: number; matches: { id: string; kind: string; text: string }[] };
     expect(prev.action).toBe("preview");
-    expect(prev.matches.map((m) => m.text)).toEqual(expect.arrayContaining(["412-55-8367", "DOB: 03/14/1971", "(843) 555-0192", "billing@lowcountryenv.com"]));
+    expect(prev.matches.map((m) => m.text)).toEqual(expect.arrayContaining(["412-55-8367", "DOB: 03/14/1971", "(843) 555-0192", "billing@konkanenv.example"]));
     expect(proposals).toHaveLength(0); // preview proposes nothing
     const ids = prev.matches.filter((m) => m.kind !== "Email addresses").map((m) => m.id);
     const applied = (await run("redact_pattern")({ action: "apply", match_ids: ids, reason: "PII" })) as { added: number; note: string };
     expect(applied.added).toBe(ids.length);
     expect(applied.note).toMatch(/REMOVED/);
     expect(proposals[0].risk).toBe("high");
-    expect(ctx.snapshot.model.annotations.filter((a) => a.type === "redaction").map((a) => a.quote)).not.toContain("billing@lowcountryenv.com");
+    expect(ctx.snapshot.model.annotations.filter((a) => a.type === "redaction").map((a) => a.quote)).not.toContain("billing@konkanenv.example");
     // custom regex
     const custom = (await run("redact_pattern")({ regex: "SC\\d{7}" })) as { matches: { text: string }[] };
     expect(custom.matches.map((m) => m.text)).toEqual(["SC0001234"]);
@@ -206,8 +206,8 @@ describe("privilege log entry", () => {
     const { model } = await setup();
     const r = privilegeLogEntry(model, "MW-7 results");
     expect(r.entry.docType).toBe("Email");
-    expect(r.entry.author).toContain("Gregory Hale");
-    expect(r.entry.cc).toContain("Kaine");
+    expect(r.entry.author).toContain("Girish Hegde");
+    expect(r.entry.cc).toContain("Kapur");
     expect(r.entry.basis).toBeNull();
     expect(r.status).toBe("requires_review");
     expect(r.warnings.join(" ")).toMatch(/only in CC/);

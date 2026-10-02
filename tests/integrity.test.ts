@@ -35,7 +35,7 @@ describe("integrity scans", () => {
   });
   it("links unlinked duplicate documents", () => {
     const d = db();
-    const base = { matterId: "m_afff_2873", date: "2020-01-01", custodianId: "c_ghale", custodianName: "Gregory Hale", type: "Email" as const, subject: "Dup", text: "Identical body text for duplicate detection.", coding: {} };
+    const base = { matterId: "m_valsara_arb", date: "2020-01-01", custodianId: "c_ghale", custodianName: "Girish Hegde", type: "Email" as const, subject: "Dup", text: "Identical body text for duplicate detection.", coding: {} };
     d.edocs.put({ id: "ed_dup_a", bates: "MFC-DUP-0001", ...base });
     d.edocs.put({ id: "ed_dup_b", bates: "MFC-DUP-0002", ...base });
     const report = runScans("manual", ["duplicate-documents"]);

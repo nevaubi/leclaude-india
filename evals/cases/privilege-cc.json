@@ -3,7 +3,7 @@
   "category": "privilege",
   "title": "Attorney merely copied on a business email",
   "constitution": "§24 privilege is high-risk; §44 privilege cc → no automatic privilege; §22 sensitivity gates on export",
-  "input": { "matterId": "m_afff_2873", "ccDocument": "ed_afff_0020", "privilegedDocument": "ed_afff_0018", "exporters": ["paralegal", "litigation_support", "associate"] },
+  "input": { "matterId": "m_valsara_arb", "ccDocument": "ed_vls_0020", "privilegedDocument": "ed_vls_0018", "exporters": ["paralegal", "litigation_support", "associate"] },
   "expected": "A document with counsel on cc but no privilege coding is 'normal' sensitivity; a document coded privileged is hidden from a paralegal export and from a litigation-support production, and only exportable by an attorney under the log-export obligation.",
   "passCriteria": [
     "sensitivityOf(ccDocument) === 'normal' (cc list is never consulted)",

@@ -48,7 +48,7 @@ beforeAll(() => {
     configSchema: z.object({ pages: z.number().int().default(2), fail: z.boolean().default(false) }), defaults: { pages: 2, fail: false },
     async run(ctx) {
       if (ctx.config.fail) throw new Error("fetch failed: ECONNRESET");
-      for (let i = 0; i < ctx.config.pages; i++) await ctx.ingest({ kind: "web_page", title: `Local rule page ${i}`, dates: { published: "2026-09-01" }, externalId: `wf:${ctx.source.id}:${i}`, court: "D.S.C.", courtId: "dsc", text: `Page ${i}. Judge Richard M. Gergel presides over MDL 2873. ` + "Local rules of the District of South Carolina govern motion practice. ".repeat(40) });
+      for (let i = 0; i < ctx.config.pages; i++) await ctx.ingest({ kind: "web_page", title: `Local rule page ${i}`, dates: { published: "2026-09-01" }, externalId: `wf:${ctx.source.id}:${i}`, court: "N.D. Fla.", courtId: "flnd", text: `Page ${i}. Judge M. Casey Rodgers presides over MDL 3140. ` + "Local rules of the Northern District of Florida govern motion practice. ".repeat(40) });
     },
   }));
 });
@@ -122,15 +122,15 @@ describe("intel executors", () => {
     expect(r3.status).toBe("failed");
     expect(r3.error).toMatch(/source id or an adapter/);
     // Uploads: a blob becomes a local_file document.
-    const blob = db().blobs.put(new TextEncoder().encode("Deposition of Gregory Hale. Page 12 line 4: Q. Did you read the memo? A. Yes. ".repeat(20)), "text/plain", { name: "hale.txt" });
+    const blob = db().blobs.put(new TextEncoder().encode("Deposition of Girish Hegde. Page 12 line 4: Q. Did you read the memo? A. Yes. ".repeat(20)), "text/plain", { name: "hegde.txt" });
     const up = wf("wf_x_upload", [N("start", "trigger.manual"), N("extract", "intel.extract", { docIds: "", blobIds: "{{inputs.files | pluck:blobId}}" })], [E("start", "extract")]);
-    const r4 = await startRun(up, { inputs: { files: [{ blobId: blob.id, name: "hale.txt", mime: "text/plain", size: blob.size }] }, matterId: MATTERS.afff, wait: true });
+    const r4 = await startRun(up, { inputs: { files: [{ blobId: blob.id, name: "hegde.txt", mime: "text/plain", size: blob.size }] }, matterId: MATTERS.valsara, wait: true });
     expect(r4.status, r4.error).toBe("succeeded");
     const ex = out(r4, "extract");
     expect((ex.uploaded as string[]).length).toBe(1);
     const doc = intelDocuments().get((ex.uploaded as string[])[0])!;
     expect(doc.kind).toBe("local_file");
-    expect(doc.matterIds).toContain(MATTERS.afff);
+    expect(doc.matterIds).toContain(MATTERS.valsara);
     expect(doc.externalId).toBe(`blob:${blob.id}`);
   });
 
@@ -139,16 +139,16 @@ describe("intel executors", () => {
     setIntelAnalysisProvider(async (req): Promise<AnalysisResult> => {
       calls.push(req.analysis);
       const now = req.now.toISOString();
-      const insight = { id: `iins_test_${req.analysis}`, kind: "trend" as const, scope: { matterId: req.scope.matterId, entityIds: [] }, title: `Fake ${req.analysis}`, summary: "Two filings a week in MDL 2873.", data: { series: [1, 2] }, evidence: [], provenance: { surface: "test", model: "fake", generatedAt: now, sources: [], confidence: 0.9, verification: { status: "verified" as const, checkedAt: now } }, confidence: 0.9, status: "draft" as const, flags: [], createdAt: now, updatedAt: now };
+      const insight = { id: `iins_test_${req.analysis}`, kind: "trend" as const, scope: { matterId: req.scope.matterId, entityIds: [] }, title: `Fake ${req.analysis}`, summary: "Two filings a week in MDL 3140.", data: { series: [1, 2] }, evidence: [], provenance: { surface: "test", model: "fake", generatedAt: now, sources: [], confidence: 0.9, verification: { status: "verified" as const, checkedAt: now } }, confidence: 0.9, status: "draft" as const, flags: [], createdAt: now, updatedAt: now };
       intelInsights().put(insight as never);
       return { analysis: req.analysis, insightIds: [insight.id], insights: [{ id: insight.id, kind: "trend", title: insight.title, summary: insight.summary, confidence: 0.9, status: "draft" }], data: { series: [1, 2] }, docCount: 12, text: "Two filings a week." };
     });
     try {
       const w = wf("wf_x_analyze", [
         N("start", "trigger.manual"),
-        N("trends", "intel.analyze", { analysis: "trends", scope: { matterId: MATTERS.afff, kinds: ["docket_entry"], entityIds: "", court: "", jurisdiction: "", dateFrom: "-90d", dateTo: "", q: "" }, title: "AFFF filings" }),
+        N("trends", "intel.analyze", { analysis: "trends", scope: { matterId: MATTERS.valsara, kinds: ["docket_entry"], entityIds: "", court: "", jurisdiction: "", dateFrom: "-90d", dateTo: "", q: "" }, title: "Valsara filings" }),
         N("verify", "intel.verify", { target: "insights", insightIds: "{{steps.trends.output.insightIds}}", limit: 5 }),
-        N("publish", "intel.publish", { to: "library", insightIds: "{{steps.trends.output.insightIds}}", title: "AFFF trend note", matterId: MATTERS.afff, requireVerified: false }),
+        N("publish", "intel.publish", { to: "library", insightIds: "{{steps.trends.output.insightIds}}", title: "Valsara trend note", matterId: MATTERS.valsara, requireVerified: false }),
         N("home", "intel.publish", { to: "home", insightIds: "{{steps.trends.output.insightIds}}" }),
       ], [E("start", "trends"), E("trends", "verify"), E("verify", "publish"), E("publish", "home")]);
       const run = await startRun(w, { inputs: {}, wait: true });
@@ -166,7 +166,7 @@ describe("intel executors", () => {
       expect((p.itemIds as string[]).length).toBe(1);
       const item = db().library.get((p.itemIds as string[])[0])!;
       expect(item.type).toBe("note");
-      expect(item.matterId).toBe(MATTERS.afff);
+      expect(item.matterId).toBe(MATTERS.valsara);
       expect(item.content).toContain("Fake trends");
       expect(run.deliverables!.some((d) => d.kind === "library" && d.libraryItemId === item.id)).toBe(true);
       expect(run.deliverables!.some((d) => d.kind === "insight" && d.meta?.insightId === "iins_test_trends")).toBe(true);
@@ -202,29 +202,29 @@ describe("intel executors", () => {
   });
 
   it("intel.publish builds a personal digest and notifies the person", async () => {
-    const w = wf("wf_x_digest", [N("start", "trigger.manual"), N("digest", "intel.publish", { to: "digest", userId: PEOPLE.elenaMarsh, title: "Morning brief" })], [E("start", "digest")]);
+    const w = wf("wf_x_digest", [N("start", "trigger.manual"), N("digest", "intel.publish", { to: "digest", userId: PEOPLE.eshaMathur, title: "Morning brief" })], [E("start", "digest")]);
     const run = await startRun(w, { inputs: {}, wait: true });
     expect(run.status, run.error).toBe("succeeded");
     const d = out(run, "digest");
     expect(d.published).toBe(1);
-    expect(d.notified).toEqual([PEOPLE.elenaMarsh]);
+    expect(d.notified).toEqual([PEOPLE.eshaMathur]);
     const ins = intelInsights().get((d.insightIds as string[])[0])!;
     expect(ins.kind).toBe("digest");
-    expect(ins.scope.userId).toBe(PEOPLE.elenaMarsh);
-    expect(db().collection<{ id: string; recipientIds: string[] }>("workflow_notifications").find((n) => n.recipientIds.includes(PEOPLE.elenaMarsh)).length).toBeGreaterThan(0);
+    expect(ins.scope.userId).toBe(PEOPLE.eshaMathur);
+    expect(db().collection<{ id: string; recipientIds: string[] }>("workflow_notifications").find((n) => n.recipientIds.includes(PEOPLE.eshaMathur)).length).toBeGreaterThan(0);
   });
 });
 
 describe("data.query", () => {
   it("queries e-discovery, intel documents, entities, library, tasks and people with filters", () => {
-    const ed = queryRecords({ source: "ediscovery", filters: { privileged: "true" }, matterId: MATTERS.afff, limit: 10 });
+    const ed = queryRecords({ source: "ediscovery", filters: { privileged: "true" }, matterId: MATTERS.valsara, limit: 10 });
     expect(ed.count).toBeGreaterThan(0);
     expect(ed.rows.every((r) => (r.coding as { privileged?: boolean }).privileged === true)).toBe(true);
     expect(ed.text).toContain(String(ed.rows[0].bates ?? ed.rows[0].id));
     const docs = queryRecords({ source: "intel_documents", filters: { kinds: "mdl, docket" }, limit: 5, sort: "date", direction: "desc" });
     expect(docs.count).toBeGreaterThan(0);
     expect(docs.rows.every((r) => r.kind === "mdl" || r.kind === "docket")).toBe(true);
-    const judges = queryRecords({ source: "intel_entities", q: "Gergel", filters: { type: "judge" }, limit: 3 });
+    const judges = queryRecords({ source: "intel_entities", q: "Rodgers", filters: { type: "judge" }, limit: 3 });
     expect(judges.count).toBeGreaterThan(0);
     expect(judges.ids[0]).toMatch(/^ient_/);
     const lib = queryRecords({ source: "library", filters: { type: "docx" }, limit: 3 });
@@ -235,7 +235,7 @@ describe("data.query", () => {
     expect(() => queryRecords({ source: "nope" })).toThrow();
   });
   it("runs as a step and fails on an unknown source", async () => {
-    const w = wf("wf_x_query", [N("start", "trigger.manual"), N("q", "data.query", { source: "tasks", filters: { status: "todo" }, matterId: MATTERS.afff, limit: 5 })], [E("start", "q")]);
+    const w = wf("wf_x_query", [N("start", "trigger.manual"), N("q", "data.query", { source: "tasks", filters: { status: "todo" }, matterId: MATTERS.valsara, limit: 5 })], [E("start", "q")]);
     const run = await startRun(w, { inputs: {}, wait: true });
     expect(run.status).toBe("succeeded");
     expect(out(run, "q").source).toBe("tasks");
@@ -247,28 +247,28 @@ describe("data.query", () => {
 
 describe("output.file", () => {
   it("renders docx, xlsx, csv, md and pdf deliverables through the office generators and files them in the library", async () => {
-    const md = "# Memo\n\n## Facts\n\nThe pump failed on **March 3**.\n\n- one\n- two\n\n| Bates | Custodian |\n|---|---|\n| MFC-1 | Hale |\n";
-    const docx = await renderOutputFile({ format: "docx", title: "Test memo", markdown: md, matterId: MATTERS.afff, tags: ["t"] });
+    const md = "# Memo\n\n## Facts\n\nThe pump failed on **March 3**.\n\n- one\n- two\n\n| Bates | Custodian |\n|---|---|\n| MFC-1 | Hegde |\n";
+    const docx = await renderOutputFile({ format: "docx", title: "Test memo", markdown: md, matterId: MATTERS.valsara, tags: ["t"] });
     expect(docx).toMatchObject({ format: "docx", kind: "word", filename: "Test memo.docx" });
     expect(docx.size).toBeGreaterThan(1000);
     expect(db().library.get(docx.libraryItemId!)?.officeDocId).toBe(docx.docId);
     expect(db().blobs.get(docx.blobId)).toBeTruthy();
-    const xlsx = await renderOutputFile({ format: "xlsx", title: "Rows", rows: [{ bates: "MFC-1", custodian: "Hale" }, { bates: "MFC-2", custodian: "Pryce" }], matterId: MATTERS.afff });
+    const xlsx = await renderOutputFile({ format: "xlsx", title: "Rows", rows: [{ bates: "MFC-1", custodian: "Hegde" }, { bates: "MFC-2", custodian: "Prasad" }], matterId: MATTERS.valsara });
     expect(xlsx.kind).toBe("sheet");
     expect(xlsx.href).toMatch(/^\/office\/sheet\//);
     const csv = await renderOutputFile({ format: "csv", title: "Rows", rows: [{ a: 1, b: "x,y" }], addToLibrary: false });
     expect(new TextDecoder().decode(db().blobs.get(csv.blobId)!.bytes)).toBe('a,b\n1,"x,y"');
     expect(csv.libraryItemId).toBeUndefined();
-    const mdf = await renderOutputFile({ format: "md", title: "Note", markdown: "Plain text body", matterId: MATTERS.afff });
+    const mdf = await renderOutputFile({ format: "md", title: "Note", markdown: "Plain text body", matterId: MATTERS.valsara });
     expect(db().library.get(mdf.libraryItemId!)?.content).toContain("# Note");
-    const pdf = await renderOutputFile({ format: "pdf", title: "Test memo", markdown: md, matterId: MATTERS.afff });
+    const pdf = await renderOutputFile({ format: "pdf", title: "Test memo", markdown: md, matterId: MATTERS.valsara });
     expect(pdf.mime).toBe("application/pdf");
     expect(pdf.docId).toBeTruthy();
     expect(pdf.size).toBeGreaterThan(500);
     await expect(renderOutputFile({ format: "xlsx", title: "Empty", rows: [] })).rejects.toThrow(/Nothing tabular/);
     await expect(renderOutputFile({ format: "docx", title: "Empty", markdown: "" })).rejects.toThrow(/Nothing to write/);
     expect(safeFilename("A/B: memo?", "docx")).toBe("A-B- memo-.docx");
-    expect(safeSheetName("Hot documents — AFFF / PFAS — 2026-09-24")).toBe("Hot documents — AFFF - PFAS — 2");
+    expect(safeSheetName("Hot documents — MC-8 / AOX — 2026-09-24")).toBe("Hot documents — MC-8 - AOX — 20");
     expect(safeSheetName("   ")).toBe("Sheet1");
     const spec = markdownToDocSpec(md, "Memo");
     expect(spec.blocks.map((b) => b.type)).toEqual(["heading", "paragraph", "bullets", "table"]);
@@ -276,18 +276,18 @@ describe("output.file", () => {
   it("as a step: honours the front end's format, label template and folder, records a deliverable with provenance and an artifact", async () => {
     const w = wf("wf_x_output", [
       N("start", "trigger.manual"),
-      N("q", "data.query", { source: "ediscovery", filters: { hot: "true" }, matterId: MATTERS.afff, limit: 5 }),
+      N("q", "data.query", { source: "ediscovery", filters: { hot: "true" }, matterId: MATTERS.valsara, limit: 5 }),
       N("file", "output.file", { format: "{{inputs.output_format | default:\"docx\"}}", label: "{{inputs.output_label | default:\"\"}}", content: "# Hot documents\n\n{{steps.q.output.text}}", rows: "{{steps.q.output.rows}}", libraryFolderId: "{{inputs.output_folder | default:\"\"}}", matterId: "{{matter.id}}", addToLibrary: true, tags: ["qc"] }),
     ], [E("start", "q"), E("q", "file")], { frontend: { title: "Hot docs", fields: [{ key: "matter", label: "Matter", type: "matter", required: true }], output: { formats: ["docx", "xlsx"], defaultFormat: "xlsx", defaultLabel: "Hot documents — {{matter.shortName}} — {{now | date:date}}" } } });
-    const run = await startRun(w, { inputs: { matter: MATTERS.afff, output_format: "xlsx" }, matterId: MATTERS.afff, wait: true });
+    const run = await startRun(w, { inputs: { matter: MATTERS.valsara, output_format: "xlsx" }, matterId: MATTERS.valsara, wait: true });
     expect(run.status, run.error).toBe("succeeded");
     const o = out(run, "file");
     expect(o.format).toBe("xlsx");
-    expect(String(o.label)).toMatch(/^Hot documents — AFFF/);
+    expect(String(o.label)).toMatch(/^Hot documents — Valsara v\. Meridian/);
     expect(String(o.label)).toMatch(/\d{4}-\d{2}-\d{2}$/);
     expect(o.docId).toBeTruthy();
     const d = run.deliverables!.find((x) => x.nodeId === "file")!;
-    expect(d).toMatchObject({ kind: "document", format: "xlsx", docId: o.docId, matterId: MATTERS.afff });
+    expect(d).toMatchObject({ kind: "document", format: "xlsx", docId: o.docId, matterId: MATTERS.valsara });
     expect(d.downloadHref).toMatch(/^\/api\/blobs\//);
     expect(d.meta?.source).toBe("output.file"); // no AI upstream: provenance stays undefined rather than claiming trust
     expect(run.artifacts!.filter((a) => a.nodeId === "file").map((a) => a.kind).sort()).toEqual(["document", "file", "library"]);
@@ -362,7 +362,7 @@ describe("review.auto (steward)", () => {
   });
   it("escalateStep registers a pending provenance sidecar", () => {
     const existing = db().workflowRuns.all()[0];
-    const run = { id: existing.id, matterId: MATTERS.afff } as WorkflowRunRecord;
+    const run = { id: existing.id, matterId: MATTERS.valsara } as WorkflowRunRecord;
     escalateStep({ run, workflow: { id: "wf_x", name: "Esc" } } as never, "n1", "Node one", "parse: bad payload", PEOPLE.aishaKhan);
     const q = listReviewQueue({ kind: "workflow.step", status: "pending" }).find((x) => x.id === `${existing.id}:n1`);
     expect(q).toBeTruthy();
@@ -395,15 +395,15 @@ describe("logic.schedule_after and after-run settings", () => {
   it("executes the front end's after-run task and chained workflow once the run succeeds", async () => {
     const chained = wf("wf_x_chained", [N("start", "trigger.manual"), N("n", "action.notify", { message: "chained from {{inputs.parent_workflow}}" })], [E("start", "n")]);
     const w = wf("wf_x_after", [N("start", "trigger.manual"), N("file", "output.file", { format: "md", label: "Deliverable", content: "body" })], [E("start", "file")], {
-      frontend: { title: "After", fields: [{ key: "topic", label: "Topic", type: "text", required: true }], output: { notifyPeopleIds: [PEOPLE.priyaRaman] }, after: { createTask: { title: "Read {{inputs.topic}} output", assigneeId: PEOPLE.elenaMarsh, dueRule: "+2d" }, triggerWorkflowIds: [chained.id] } },
+      frontend: { title: "After", fields: [{ key: "topic", label: "Topic", type: "text", required: true }], output: { notifyPeopleIds: [PEOPLE.priyaRaman] }, after: { createTask: { title: "Read {{inputs.topic}} output", assigneeId: PEOPLE.eshaMathur, dueRule: "+2d" }, triggerWorkflowIds: [chained.id] } },
     });
-    const run = await startRun(w, { inputs: { topic: "PFAS" }, wait: true });
+    const run = await startRun(w, { inputs: { topic: "AOX" }, wait: true });
     expect(run.status, run.error).toBe("succeeded");
     expect(run.followUps).toBeTruthy();
     expect(run.followUps!.taskIds).toHaveLength(1);
     const task = db().tasks.get(run.followUps!.taskIds[0])!;
-    expect(task.title).toBe("Read PFAS output");
-    expect(task.assigneeId).toBe(PEOPLE.elenaMarsh);
+    expect(task.title).toBe("Read AOX output");
+    expect(task.assigneeId).toBe(PEOPLE.eshaMathur);
     expect(task.description).toContain("Deliverable");
     expect(run.followUps!.triggered).toHaveLength(1);
     expect(run.followUps!.triggered[0].workflowId).toBe(chained.id);

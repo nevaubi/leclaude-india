@@ -104,7 +104,7 @@ export function CiteCheckTable({ result, className }: { result: CiteCheckRespons
   );
 }
 
-const SAMPLE = `The pleading standard requires factual allegations that raise a right to relief above the speculative level. Bell Atl. Corp. v. Twombly, 550 U.S. 544, 555 (2007); Ashcroft v. Iqbal, 556 U.S. 662, 678 (2009). A manufacturer's duty to report substantial-risk information arises under 15 U.S.C. § 2607(e); see also 68 Fed. Reg. 33129 (June 3, 2003). The government contractor defense is governed by Boyle v. United Technologies Corp., 487 U.S. 500, 512 (1988), and removal by 28 U.S.C. § 1442(a)(1). See Sawyer v. Foster Wheeler LLC, 860 F.3d 249, 255 (4th Cir. 2017). The PFAS drinking-water MCLs appear at 40 C.F.R. § 141.61(c). But see Doe v. Meridian Fluorochem, 999 F.3d 1234 (4th Cir. 2021).`;
+const SAMPLE = `The pleading standard requires factual allegations that raise a right to relief above the speculative level. Bell Atl. Corp. v. Twombly, 550 U.S. 544, 555 (2007); Ashcroft v. Iqbal, 556 U.S. 662, 678 (2009). A manufacturer's duty to report substantial-risk information arises under 15 U.S.C. § 2607(e); see also 68 Fed. Reg. 33129 (June 3, 2003). The government contractor defense is governed by Boyle v. United Technologies Corp., 487 U.S. 500, 512 (1988), and removal by 28 U.S.C. § 1442(a)(1). See Sawyer v. Foster Wheeler LLC, 860 F.3d 249, 255 (4th Cir. 2017). The benzene drinking-water MCL appears at 40 C.F.R. § 141.61(a). But see Doe v. Acme Chemical Corp., 999 F.3d 1234 (4th Cir. 2021).`;
 
 export function CiteChecker({ initialText, matterId }: { initialText?: string; matterId?: string | null }) {
   const router = useRouter();

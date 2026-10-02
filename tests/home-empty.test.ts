@@ -17,7 +17,7 @@ import { firstRunSteps } from "@/modules/home/components/first-run-model";
 import { dueText } from "@/modules/home/time";
 
 const NOW = new Date(2026, 8, 23, 9, 30);
-const SAMPLE = /AFFF|Northgate|Whitfield|Jordan|MDL 2873|Gergel|Douglas & London|Depo-Provera/i;
+const SAMPLE = /VALSARA|Northgate|Sundaram|Arjun Mehra|Arb\. Ref\. 14\/2024|Rangan|Kale & Associates|Depo-Provera/i;
 
 beforeAll(() => { resetSqlite(); db(); setWorkspaceUser(null); });
 afterAll(() => { resetSqlite(); });

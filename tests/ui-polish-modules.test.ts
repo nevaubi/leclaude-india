@@ -7,7 +7,7 @@ import { CODING_COLUMN_MIN_WIDTH, codingColumnWidth } from "@/modules/ediscovery
 import { artifactProvenance, outputWithoutProvenance, stepDotTone, stepProvenance, stepSummary } from "@/modules/workflows/components/run/timeline-helpers";
 
 const item = (over: Partial<ReviewQueueItem> = {}): ReviewQueueItem => ({
-  kind: "timeline.event", id: "tl_1", title: "Board briefed on PFOS persistence", matterId: "m_afff", surface: "ediscovery.timeline", confidence: 0.4,
+  kind: "timeline.event", id: "tl_1", title: "Board briefed on MC-8 persistence", matterId: "m_vls", surface: "ediscovery.timeline", confidence: 0.4,
   generatedAt: "2026-09-20T10:00:00Z", model: "gpt-5.4", sources: 2, review: { status: "pending", note: "Below confidence gate" }, ...over,
 });
 
@@ -46,8 +46,8 @@ describe("review queue helpers", () => {
   });
   it("summarises pending rows by matter, busiest first", () => {
     const rows = [item({ matterId: "m1" }), item({ matterId: "m2", id: "x" }), item({ matterId: "m1", id: "y", kind: "conflict" }), item({ matterId: undefined, id: "z", kind: "home.brief" })];
-    const s = summarizeByMatter(rows, (id) => ({ m1: "AFFF", m2: "Northgate" } as Record<string, string>)[id ?? ""]);
-    expect(s[0]).toMatchObject({ matterId: "m1", matterName: "AFFF", pending: 2, kinds: ["Conflict", "Timeline event"] });
+    const s = summarizeByMatter(rows, (id) => ({ m1: "Valsara v. Meridian", m2: "Northgate" } as Record<string, string>)[id ?? ""]);
+    expect(s[0]).toMatchObject({ matterId: "m1", matterName: "Valsara v. Meridian", pending: 2, kinds: ["Conflict", "Timeline event"] });
     expect(s[1]).toMatchObject({ matterId: "m2", matterName: "Northgate", pending: 1 });
     expect(s[2]).toMatchObject({ matterId: undefined, matterName: "Firm-wide", pending: 1 });
   });

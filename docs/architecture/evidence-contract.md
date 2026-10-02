@@ -41,21 +41,21 @@ Constitution §23 (legal evidence contract), §24 (high-risk fields), §25 (veri
 | `resolved` | exactly one record exists in scope **and** the cited location is valid in it (Bates inside the document's range; page within the transcript's page count and lines 1–25; exhibit marked in that deposition; docket entry number present; authority in the local record) |
 | `unresolved` | no record in scope, or the location is invalid (page beyond the transcript, Bates outside every range); `reason` says which |
 | `requires_review` | more than one candidate matches (two documents covering a Bates number, a witness with several volumes that both contain the page, a bare "Ex. 3" marked by several witnesses); the candidates are listed in `reason` and none is picked |
-| `excluded` | the token is not a citation (a case-number prefix such as `MDL-2873`, a clock time) |
+| `excluded` | the token is not a citation (a case-number prefix such as `MDL-3140`, a clock time) |
 | `retried` | a second attempt (`retryCitation`) still found nothing |
 
 ### Resolution rules
 
-- **Bates** (`MFC-0041877`, `AFFF-0001234–0001240`, `DEF_00012`, `MFC-0041877 – MFC-0041880`): the prefix must
+- **Bates** (`MFC-0041877`, `ABC-0001234–0001240`, `DEF_00012`, `MFC-0041877 – MFC-0041880`): the prefix must
   match a document in scope and the number (or the whole range) must lie inside that document's `bates…batesEnd`
   or inside a production set's assigned range for that document; the ref carries the page offset within the
   document. Years and case numbers are not Bates.
-- **Deposition page:line** (`Smith Dep. 45:12–46:3`, `Deposition of Helen Voss, 45:12`, `Voss Tr. Vol. 2, 12:4`):
+- **Deposition page:line** (`Smith Dep. 45:12–46:3`, `Deposition of Hema Vasudevan, 45:12`, `Vasudevan Tr. Vol. 2, 12:4`):
   the surname (or full name) must match a witness in scope; the page must be ≤ the transcript page count (or
   present in the transcript when no page count is recorded); a volume narrows the candidates. A bare `45:12` needs
   explicit context (`defaultDepositionId`, e.g. when checking a digest of one transcript) and is otherwise
   unresolved — the deposition is never guessed.
-- **Exhibits** (`Ex. 12`, `Exhibit Voss-3`, `Voss Ex. 3`): matched against the exhibits marked in depositions in
+- **Exhibits** (`Ex. 12`, `Exhibit Vasudevan-3`, `Vasudevan Ex. 3`): matched against the exhibits marked in depositions in
   scope; a bare number marked by several witnesses is `requires_review`.
 - **Docket entries** (`ECF No. 2600`, `Dkt. 15`, `D.E. 12`): `intel_documents` of kind `docket_entry` whose
   `meta.entryNumber` matches and whose `matterIds` overlap the scope.

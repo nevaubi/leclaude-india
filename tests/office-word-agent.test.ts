@@ -17,7 +17,7 @@ const DOC_MD = `# Supply Agreement
 
 This Supply Agreement (the "Agreement") is entered into by Acme Corp. (the "Company") and Beta LLC (the "Supplier").
 
-"Products" means the AFFF concentrates listed in Schedule A.
+"Products" means the MF-3 finish concentrates listed in Schedule A.
 
 The Company shall purchase the Products. The Effective Date is the date the Company signs. The Effective Date controls the term.
 
@@ -282,7 +282,7 @@ describe("structural tools", () => {
     const r1 = (await run(wordAgentTools(none.ctx), "legal_caption", { id: none.snapshot.blocks[0].id })) as { placeholders: string[]; from_matter: boolean };
     expect(r1.from_matter).toBe(false);
     expect(r1.placeholders).toEqual(expect.arrayContaining(["[PLAINTIFF]", "[DEFENDANT]"]));
-    const matter = { id: "m1", name: "Rivera v. Acme Corp.", client: "Acme Corp.", clientSide: "defendant", court: "U.S. District Court for the District of South Carolina", caption: "Case No. 2:24-cv-01234", judge: "Richard M. Gergel", stage: "discovery" } as unknown as Matter;
+    const matter = { id: "m1", name: "Rivera v. Acme Corp.", client: "Acme Corp.", clientSide: "defendant", court: "U.S. District Court for the District of South Carolina", caption: "Case No. 2:24-cv-01234", judge: "Eleanor K. Whitlock", stage: "discovery" } as unknown as Matter;
     const member: Principal = { id: "u1", name: "Associate", tenantId: "t1", roles: ["associate"] as Principal["roles"], matterIds: ["m1"], source: "dev" as Principal["source"] };
     const outsider: Principal = { ...member, id: "u2", matterIds: ["m_other"] };
     // Fail closed: no principal, or a principal without access to the matter, gets placeholders, not matter data.
@@ -298,7 +298,7 @@ describe("structural tools", () => {
     const text = JSON.stringify(withM.proposals[0].payload.blocks);
     expect(text).toContain("Rivera");
     expect(text).toContain("Case No. 2:24-cv-01234");
-    expect(text).toContain("Gergel");
+    expect(text).toContain("Whitlock");
     const sig = (await run(wordAgentTools(withM.ctx), "signature_block", { id: withM.snapshot.blocks[0].id })) as { placeholders: string[] };
     expect(sig.placeholders).toContain("[ATTORNEY NAME]");
   });

@@ -169,8 +169,8 @@ describe("sweep", () => {
     const enabled = createSource({ adapter: "web-list", name: "sweep src A", config: {}, schedule: { every: "daily", at: "06:00" } });
     const other = createSource({ adapter: "court-rules", name: "sweep src B", config: {}, schedule: { every: "daily", at: "06:00" } });
     const old = new Date(Date.now() - 400 * 86400_000);
-    const a = await ingestDocument({ sourceId: enabled.id, adapter: "web-list", kind: "docket", title: "AFFF docket (A)", docketNumber: "2:18-mn-02873", dates: { filed: "2018-12-07" }, externalId: "sw:a", text: "Docket A text. ".repeat(20), url: "https://example.test/gone" }, { embed: false, now: old });
-    const b = await ingestDocument({ sourceId: other.id, adapter: "court-rules", kind: "docket", title: "AFFF docket (B)", docketNumber: "2:18-MN-2873", dates: { filed: "2018-12-08" }, externalId: "sw:b", text: "Docket B text. ".repeat(20), url: "https://example.test/ok" }, { embed: false });
+    const a = await ingestDocument({ sourceId: enabled.id, adapter: "web-list", kind: "docket", title: "Depo-Provera docket (A)", docketNumber: "3:25-md-03140", dates: { filed: "2018-12-07" }, externalId: "sw:a", text: "Docket A text. ".repeat(20), url: "https://example.test/gone" }, { embed: false, now: old });
+    const b = await ingestDocument({ sourceId: other.id, adapter: "court-rules", kind: "docket", title: "Depo-Provera docket (B)", docketNumber: "3:25-MD-3140", dates: { filed: "2018-12-08" }, externalId: "sw:b", text: "Docket B text. ".repeat(20), url: "https://example.test/ok" }, { embed: false });
     intelDocuments().update(a.doc.id, (d) => ({ ...d, fetchedAt: old.toISOString() }));
     expect(staleDocuments(new Date()).map((d) => d.id)).toContain(a.doc.id);
     expect(findContradictions([a.doc, intelDocuments().get(b.doc.id)!])).toHaveLength(1);
@@ -193,7 +193,7 @@ describe("sweep", () => {
     intelDocuments().update(a.doc.id, (d) => ({ ...d, fetchedAt: new Date().toISOString() }));
     await sweep({ providers: p, network: false });
     expect(hasFlag(intelDocuments().get(a.doc.id)!, "stale")).toBe(false);
-    intelInsights().put({ id: "iins_test", kind: "alert", scope: { entityIds: [] }, title: "3M settled", summary: "3M agreed to pay $10.3 billion.", data: {}, evidence: [{ docId: "idoc_seed_news_3m_settlement" }], provenance: makeProvenance({ surface: "test", confidence: 0.9 }), confidence: 0.9, status: "verified", flags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    intelInsights().put({ id: "iins_test", kind: "alert", scope: { entityIds: [] }, title: "MDL created", summary: "The JPML created MDL No. 3140.", data: {}, evidence: [{ docId: "idoc_seed_news_jpml_depo" }], provenance: makeProvenance({ surface: "test", confidence: 0.9 }), confidence: 0.9, status: "verified", flags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     // Target the test insight by id: the analysis seed also stores its own insights, which would widen the candidate set.
     const v = await verifyInsights({ insightIds: ["iins_test"] });
     expect(v).toMatchObject({ checked: 0, skipped: 1, reason: "no_api_key" });

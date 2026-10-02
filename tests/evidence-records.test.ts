@@ -40,7 +40,7 @@ describe("artifact hashing", () => {
   });
 });
 
-const SOURCE: EvidenceRef = { kind: "document", id: "ed_afff_0001", matterId: MATTERS.afff, bates: "MFC-0041877" };
+const SOURCE: EvidenceRef = { kind: "document", id: "ed_vls_0001", matterId: MATTERS.valsara, bates: "MFC-0041877" };
 const verdict = (hash: string, status: VerificationVerdict["status"]): VerificationVerdict => ({ artifactHash: hash, verifiedAt: new Date().toISOString(), method: "claims", status, claims: [{ id: "c1", text: "x", citations: [], support: status === "verified" ? "supported" : "unsupported", evidence: status === "verified" ? [SOURCE] : [] }], supported: status === "verified" ? 1 : 0, unsupported: status === "verified" ? 0 : 1, contradicted: 0, score: status === "verified" ? 1 : 0 });
 const check = (hash: string, unresolved = 0): CitationCheck => ({ artifactHash: hash, checkedAt: new Date().toISOString(), citations: [], resolved: 1, unresolved, excluded: 0, requiresReview: 0 });
 
@@ -90,25 +90,25 @@ describe("trust records", () => {
 describe("substitution guard", () => {
   const resolved: Citation = { raw: "MFC-0041877", state: "resolved", ref: SOURCE };
   it("returns the resolved ref only for the exact record the citation resolved to", () => {
-    expect(assertNoSubstitution(resolved, { kind: "document", id: "ed_afff_0001", matterId: MATTERS.afff })).toBe(SOURCE);
-    expect(() => assertNoSubstitution(resolved, { kind: "document", id: "ed_afff_0002" })).toThrow(/not document ed_afff_0002/);
-    expect(() => assertNoSubstitution(resolved, { kind: "deposition", id: "ed_afff_0001" })).toThrow(EvidenceSubstitutionError);
-    expect(() => assertNoSubstitution(resolved, { kind: "document", id: "ed_afff_0001", matterId: MATTERS.northgate })).toThrow(/resolved in matter/);
+    expect(assertNoSubstitution(resolved, { kind: "document", id: "ed_vls_0001", matterId: MATTERS.valsara })).toBe(SOURCE);
+    expect(() => assertNoSubstitution(resolved, { kind: "document", id: "ed_vls_0002" })).toThrow(/not document ed_vls_0002/);
+    expect(() => assertNoSubstitution(resolved, { kind: "deposition", id: "ed_vls_0001" })).toThrow(EvidenceSubstitutionError);
+    expect(() => assertNoSubstitution(resolved, { kind: "document", id: "ed_vls_0001", matterId: MATTERS.northgate })).toThrow(/resolved in matter/);
   });
   it("refuses unresolved, review-pending, excluded and retried citations", () => {
     for (const state of ["unresolved", "requires_review", "excluded", "retried"] as const) {
       const c: Citation = { raw: "MFC-9999999", state, reason: "test" };
-      expect(() => assertNoSubstitution(c, { kind: "document", id: "ed_afff_0001" })).toThrow(EvidenceSubstitutionError);
-      try { assertNoSubstitution(c, { kind: "document", id: "ed_afff_0001" }); } catch (e) { expect((e as EvidenceSubstitutionError).attempted).toEqual({ kind: "document", id: "ed_afff_0001", matterId: undefined }); }
+      expect(() => assertNoSubstitution(c, { kind: "document", id: "ed_vls_0001" })).toThrow(EvidenceSubstitutionError);
+      try { assertNoSubstitution(c, { kind: "document", id: "ed_vls_0001" }); } catch (e) { expect((e as EvidenceSubstitutionError).attempted).toEqual({ kind: "document", id: "ed_vls_0001", matterId: undefined }); }
     }
   });
 });
 
 describe("sensitivity", () => {
   it("is a coded decision: an attorney on cc does not make a document privileged", () => {
-    const cc = { id: "ed_x", matterId: MATTERS.afff, cc: ["Robert Kaine <r.kaine@meridianfluorochem.com>"], coding: { privileged: null } };
+    const cc = { id: "ed_x", matterId: MATTERS.valsara, cc: ["Rohit Kapur <r.kapur@meridianfinechem.example>"], coding: { privileged: null } };
     expect(sensitivityOf(cc)).toBe("normal");
     expect(sensitivityOf({ ...cc, coding: { privileged: true, privilegeBasis: "attorney-client" } })).toBe("privileged");
-    expect(documentResource(cc)).toEqual({ kind: "document", id: "ed_x", matterId: MATTERS.afff, sensitivity: "normal" });
+    expect(documentResource(cc)).toEqual({ kind: "document", id: "ed_x", matterId: MATTERS.valsara, sensitivity: "normal" });
   });
 });

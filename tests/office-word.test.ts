@@ -256,14 +256,14 @@ describe("tracked-change diff builder", () => {
 
 describe("inline find/replace/mark helpers", () => {
   it("replaceInInline preserves marks and counts", () => {
-    const content = [{ type: "text", text: "Meridian " }, { type: "text", text: "Fluorochem", marks: [{ type: "bold" }] }, { type: "text", text: " and Meridian Corp." }];
+    const content = [{ type: "text", text: "Meridian " }, { type: "text", text: "Fine Chemicals", marks: [{ type: "bold" }] }, { type: "text", text: " and Meridian Corp." }];
     const r = replaceInInline(content, "Meridian", "MFC", { wholeWord: true, caseSensitive: true });
     expect(r.count).toBe(2);
-    expect(r.content.map((n) => n.text).join("")).toBe("MFC Fluorochem and MFC Corp.");
-    expect(r.content.find((n) => n.text === "Fluorochem")?.marks?.[0].type).toBe("bold");
-    const m = markInInline(content, "Fluorochem", [{ type: "italic" }]);
+    expect(r.content.map((n) => n.text).join("")).toBe("MFC Fine Chemicals and MFC Corp.");
+    expect(r.content.find((n) => n.text === "Fine Chemicals")?.marks?.[0].type).toBe("bold");
+    const m = markInInline(content, "Fine Chemicals", [{ type: "italic" }]);
     expect(m.count).toBe(1);
-    expect(m.content.find((n) => n.text === "Fluorochem")?.marks?.map((x) => x.type).sort()).toEqual(["bold", "italic"]);
+    expect(m.content.find((n) => n.text === "Fine Chemicals")?.marks?.map((x) => x.type).sort()).toEqual(["bold", "italic"]);
   });
   it("citation and placeholder detection", () => {
     const text = "See Celotex Corp. v. Catrett, 477 U.S. 317, 322 (1986); 15 U.S.C. § 2607(e); 40 C.F.R. § 720.3; Fed. R. Civ. P. 56(a). [VERIFY] [CLIENT NAME]";
@@ -330,15 +330,15 @@ describe("templates", () => {
   it("has at least 10 templates producing docs with ids", () => {
     expect(WORD_TEMPLATES.length).toBeGreaterThanOrEqual(10);
     for (const t of WORD_TEMPLATES) {
-      const doc = t.build({ matterId: "m_afff_2873" }) as PMNode;
+      const doc = t.build({ matterId: "m_valsara_arb" }) as PMNode;
       expect(doc.type).toBe("doc");
       const { blocks } = flattenBlocks(doc);
       expect(blocks.every((b) => b.id.length === 8)).toBe(true);
     }
-    const motion = WORD_TEMPLATES.find((t) => t.id === "word-motion-brief")!.build({ matterId: "m_afff_2873" }) as PMNode;
+    const motion = WORD_TEMPLATES.find((t) => t.id === "word-motion-brief")!.build({ matterId: "m_depo_provera_3140" }) as PMNode;
     const text = docToPlainText(motion);
     for (const h of ["INTRODUCTION", "FACTUAL BACKGROUND", "LEGAL STANDARD", "ARGUMENT", "CONCLUSION", "CERTIFICATE OF SERVICE", "Respectfully submitted"]) expect(text).toContain(h);
-    expect(text).toContain("DISTRICT OF SOUTH CAROLINA");
+    expect(text).toContain("NORTHERN DISTRICT OF FLORIDA");
     expect(motion.content?.some((b) => b.type === "pageBreak")).toBe(true);
   });
   it("buildDoc directives set attrs", () => {
@@ -356,9 +356,9 @@ describe("DOCX export", () => {
   it("exports a seeded document to a valid zip with document.xml containing the text", async () => {
     const d = db();
     seedWord(d);
-    const doc = d.officeDocs.get("wd_afff_motion_brief");
+    const doc = d.officeDocs.get("wd_depo_motion_brief");
     expect(doc).toBeTruthy();
-    const comments = d.officeComments.find((c) => c.docId === "wd_afff_motion_brief");
+    const comments = d.officeComments.find((c) => c.docId === "wd_depo_motion_brief");
     expect(comments.length).toBeGreaterThanOrEqual(2);
     const buf = await exportDocx(doc!.content as PMNode, { title: doc!.title, comments, settings: { pageSize: "letter", margins: "court", lineSpacing: 2 } });
     expect(buf.byteLength).toBeGreaterThan(5000);
@@ -407,7 +407,7 @@ describe("seed", () => {
       expect(d.library.find((l) => l.officeDocId === doc.id).length).toBe(1);
       expect(flattenBlocks(doc.content as PMNode).blocks.length).toBeGreaterThan(10);
     }
-    const motion = d.officeDocs.get("wd_afff_motion_brief")!;
+    const motion = d.officeDocs.get("wd_depo_motion_brief")!;
     expect(d.officeVersions.find((v) => v.docId === motion.id).some((v) => v.summary?.startsWith("Agent edit:"))).toBe(true);
     expect(d.officeComments.find((c) => c.docId === motion.id).some((c) => c.body.startsWith("Placeholder case citations"))).toBe(true);
     expect(collectTrackedChanges(motion.content as PMNode).length).toBeGreaterThan(0);

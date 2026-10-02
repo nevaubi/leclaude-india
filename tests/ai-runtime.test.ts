@@ -86,11 +86,11 @@ describe("infer routing and fallback", () => {
   });
 
   it("renders evidence as numbered text for providers without search_result blocks and drops previous_response_id elsewhere", () => {
-    const evidence = [{ type: "search_result" as const, source: "matter://m1/document/d1/page/3", title: "Whitfield report p.3", content: ["The tests showed contamination."] }];
+    const evidence = [{ type: "search_result" as const, source: "matter://m1/document/d1/page/3", title: "Sundaram report p.3", content: ["The tests showed contamination."] }];
     const openai = prepareForProvider({ ...req, evidence, previousResponseId: "resp_1" }, descriptor("openai", "gpt-5.4"));
     expect(openai.evidence).toBeUndefined();
     expect(openai.previousResponseId).toBe("resp_1");
-    expect(openai.messages[0].content[0]).toEqual({ type: "text", text: expect.stringContaining("[1] Whitfield report p.3\nsource: matter://m1/document/d1/page/3\nThe tests showed contamination.") });
+    expect(openai.messages[0].content[0]).toEqual({ type: "text", text: expect.stringContaining("[1] Sundaram report p.3\nsource: matter://m1/document/d1/page/3\nThe tests showed contamination.") });
     const anthropic = prepareForProvider({ ...req, evidence, previousResponseId: "resp_1", tools: [{ name: "t", description: "d", parameters: {}, callers: ["code_execution"] }] }, descriptor("bedrock", "x"));
     expect(anthropic.evidence).toEqual(evidence);
     expect(anthropic.previousResponseId).toBeNull();
@@ -111,8 +111,8 @@ describe("agent boundary", () => {
     const anthropic = fakeProvider("anthropic", [descriptor("anthropic", "claude-opus-4-6")], async (r, onEvent) => {
       seen.push(r);
       if (seen.length === 1) {
-        onEvent({ type: "tool.call", id: "toolu_1", name: "lookup", args: { q: "pfas", limit: null } });
-        return ok("anthropic", "claude-opus-4-6", "", { stopReason: "tool_calls", toolCalls: [{ id: "toolu_1", name: "lookup", args: { q: "pfas", limit: null } }], assistantTurn: { role: "assistant", content: [{ type: "tool_call", id: "toolu_1", name: "lookup", args: { q: "pfas", limit: null } }], raw: { provider: "anthropic", content: [{ type: "thinking", thinking: "…", signature: "s" }, { type: "tool_use", id: "toolu_1", name: "lookup", input: { q: "pfas", limit: null } }] } } });
+        onEvent({ type: "tool.call", id: "toolu_1", name: "lookup", args: { q: "solvent", limit: null } });
+        return ok("anthropic", "claude-opus-4-6", "", { stopReason: "tool_calls", toolCalls: [{ id: "toolu_1", name: "lookup", args: { q: "solvent", limit: null } }], assistantTurn: { role: "assistant", content: [{ type: "tool_call", id: "toolu_1", name: "lookup", args: { q: "solvent", limit: null } }], raw: { provider: "anthropic", content: [{ type: "thinking", thinking: "…", signature: "s" }, { type: "tool_use", id: "toolu_1", name: "lookup", input: { q: "solvent", limit: null } }] } } });
       }
       onEvent({ type: "text.delta", delta: "Found 2 results." });
       return ok("anthropic", "claude-opus-4-6", "Found 2 results.", { usage: { input: 20, output: 8, total: 28, cacheRead: 12, cacheWrite: 0 } });
@@ -121,9 +121,9 @@ describe("agent boundary", () => {
     const events: AgentEvent[] = [];
     const executed: unknown[] = [];
     const lookup = defineTool<{ q: string; limit?: number }>({ name: "lookup", description: "test", parameters: { type: "object", properties: { q: { type: "string" }, limit: { type: "integer" } }, required: ["q"] }, execute: async (args) => { executed.push(args); return { count: 2 }; } });
-    const result = await runAgent({ instructions: "test", input: "find pfas", tools: [lookup as never], onEvent: (e) => events.push(e), previousResponseId: "resp_stale" });
+    const result = await runAgent({ instructions: "test", input: "find solvent", tools: [lookup as never], onEvent: (e) => events.push(e), previousResponseId: "resp_stale" });
 
-    expect(executed).toEqual([{ q: "pfas" }]);
+    expect(executed).toEqual([{ q: "solvent" }]);
     expect(result.text).toBe("Found 2 results.");
     expect(result.responseId).toBeNull(); // no server-side continuation on Anthropic → the client keeps sending history
     expect(result.usage).toEqual({ input: 30, output: 13, total: 43, cacheRead: 12, cacheWrite: 0 });
@@ -138,7 +138,7 @@ describe("agent boundary", () => {
     // tools.ts's runTool additionally emits `trace` events around each execution; they are pass-through here.
     const types = events.map((e) => e.type).filter((t) => t !== "trace");
     expect(types).toEqual(["start", "step", "tool.call", "tool.result", "step", "text.delta", "text.done", "done"]);
-    expect(events.find((e) => e.type === "tool.call")).toMatchObject({ name: "lookup", args: { q: "pfas" }, label: "lookup" });
+    expect(events.find((e) => e.type === "tool.call")).toMatchObject({ name: "lookup", args: { q: "solvent" }, label: "lookup" });
   });
 
   it("treats an unknown stop reason as failure and a refusal as an explicit status", async () => {

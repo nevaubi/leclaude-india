@@ -1,7 +1,7 @@
 import type { DepositionQA } from "@/lib/types/domain";
 
-export const KLEIN = "Rebecca Klein";
-export const WHITFIELD = "Jordan Whitfield";
+export const KALE = "Radhika Kale";
+export const MEHRA = "Arjun Mehra";
 export const RAMAN = "Priya Raman";
 
 type Extra = Partial<Pick<DepositionQA, "objection" | "exhibit" | "flags" | "note">>;

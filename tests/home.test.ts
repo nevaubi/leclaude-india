@@ -122,9 +122,9 @@ describe("seed", () => {
     for (const t of d.tasks.all()) if (t.assigneeId) expect(d.people.has(t.assigneeId)).toBe(true);
     for (const u of d.updates.all()) expect(d.people.has(u.authorId)).toBe(true);
     // Filing deadlines match matter key dates.
-    const afff = d.matters.get(MATTERS.afff)!;
-    for (const k of afff.keyDates ?? []) {
-      const covered = d.events.findOne((e) => e.matterId === afff.id && e.startsAt.startsWith(k.date)) || keyDateEntries().some((e) => e.matterId === afff.id && e.startsAt === k.date);
+    const valsara = d.matters.get(MATTERS.valsara)!;
+    for (const k of valsara.keyDates ?? []) {
+      const covered = d.events.findOne((e) => e.matterId === valsara.id && e.startsAt.startsWith(k.date)) || keyDateEntries().some((e) => e.matterId === valsara.id && e.startsAt === k.date);
       expect(covered, k.label).toBeTruthy();
     }
   });
@@ -133,9 +133,9 @@ describe("seed", () => {
     const derived = entries.filter((e) => e.derived);
     expect(derived.length).toBeGreaterThan(0);
     expect(derived.every((e) => e.kind === "deadline" && e.allDay)).toBe(true);
-    // Bellwether trial (no stored event) is derived; Tier 2 production (stored filing) is not duplicated.
-    expect(derived.some((e) => e.derived!.label.startsWith("Bellwether"))).toBe(true);
-    expect(entries.filter((e) => e.matterId === MATTERS.afff && e.startsAt.startsWith("2026-10-14")).length).toBe(1);
+    // The evidentiary hearing (no stored event) is derived; Tier 2 production (stored filing) is not duplicated.
+    expect(derived.some((e) => e.derived!.label.startsWith("Evidentiary hearing"))).toBe(true);
+    expect(entries.filter((e) => e.matterId === MATTERS.valsara && e.startsAt.startsWith("2026-10-14")).length).toBe(1);
     expect(listEvents({ matterId: MATTERS.harbor }).every((e) => e.matterId === MATTERS.harbor)).toBe(true);
   });
 });
@@ -145,14 +145,14 @@ describe("task service", () => {
     const t = createTask({ title: "  Draft Rule 26(f) report  ", matterId: MATTERS.northgate, priority: "high", dueAt: "2026-09-30", tags: ["discovery"] });
     expect(t.id.startsWith("t_")).toBe(true);
     expect(t.title).toBe("Draft Rule 26(f) report");
-    expect(t.assigneeId).toBe(PEOPLE.jordanWhitfield);
+    expect(t.assigneeId).toBe(PEOPLE.arjunMehra);
     expect(t.status).toBe("todo");
     expect(t.source).toBe("manual");
     expect(listTasks({ matterId: MATTERS.northgate, now: NOW }).some((x) => x.id === t.id)).toBe(true);
-    const u = updateTask(t.id, { status: "in_progress", dueAt: null, assigneeId: PEOPLE.elenaMarsh })!;
+    const u = updateTask(t.id, { status: "in_progress", dueAt: null, assigneeId: PEOPLE.eshaMathur })!;
     expect(u.status).toBe("in_progress");
     expect(u.dueAt).toBeUndefined();
-    expect(u.assigneeId).toBe(PEOPLE.elenaMarsh);
+    expect(u.assigneeId).toBe(PEOPLE.eshaMathur);
     expect(u.updatedAt >= t.updatedAt).toBe(true);
     expect(u.createdAt).toBe(t.createdAt);
     expect(deleteTask(t.id)).toBe(true);
@@ -163,9 +163,9 @@ describe("task service", () => {
     const overdue = listTasks({ overdue: true, now: NOW });
     expect(overdue.length).toBeGreaterThanOrEqual(3);
     expect(overdue.every((t) => t.status !== "done" && t.dueAt! < "2026-09-23")).toBe(true);
-    const mine = listTasks({ assigneeId: PEOPLE.jordanWhitfield, now: NOW, includeDone: false });
+    const mine = listTasks({ assigneeId: PEOPLE.arjunMehra, now: NOW, includeDone: false });
     expect(mine.length).toBeGreaterThan(0);
-    expect(mine.every((t) => t.assigneeId === PEOPLE.jordanWhitfield && t.status !== "done")).toBe(true);
+    expect(mine.every((t) => t.assigneeId === PEOPLE.arjunMehra && t.status !== "done")).toBe(true);
     const all = listTasks({ now: NOW });
     const dues = all.map((t) => t.dueAt ?? "9999");
     expect([...dues].sort()).toEqual(dues);
@@ -177,7 +177,7 @@ describe("task service", () => {
 
 describe("event service", () => {
   it("creates, updates and deletes events; key dates are protected", () => {
-    const e = createEvent({ title: "Rule 16 conference", startsAt: "2026-10-20T10:00:00", endsAt: "2026-10-20T11:00:00", kind: "hearing", matterId: MATTERS.northgate, attendeeIds: [PEOPLE.danielOkafor] });
+    const e = createEvent({ title: "Rule 16 conference", startsAt: "2026-10-20T10:00:00", endsAt: "2026-10-20T11:00:00", kind: "hearing", matterId: MATTERS.northgate, attendeeIds: [PEOPLE.dhruvOberoi] });
     expect(e.allDay).toBe(false);
     const allDay = createEvent({ title: "Expert disclosure", startsAt: "2026-11-02" });
     expect(allDay.allDay).toBe(true);
@@ -188,7 +188,7 @@ describe("event service", () => {
     expect(listEvents({ from: "2026-10-20", to: "2026-10-20" }).some((x) => x.id === e.id)).toBe(true);
     expect(deleteEvent(e.id)).toBe(true);
     expect(deleteEvent(allDay.id)).toBe(true);
-    expect(updateEvent("kd_m_afff_2873_3", { title: "x" })).toBeNull();
+    expect(updateEvent("kd_m_valsara_arb_3", { title: "x" })).toBeNull();
     expect(eventCreateSchema.safeParse({ title: "x", startsAt: "2026-10-20", kind: "party" }).success).toBe(false);
   });
 });
@@ -196,7 +196,7 @@ describe("event service", () => {
 describe("team updates", () => {
   it("posts, reacts, replies and deletes", () => {
     const u = createUpdate({ body: "Filed the reply brief.", kind: "win", matterId: MATTERS.northgate });
-    expect(u.authorId).toBe(PEOPLE.jordanWhitfield);
+    expect(u.authorId).toBe(PEOPLE.arjunMehra);
     const r1 = toggleReaction(u.id, "🎉")!;
     expect(r1.reactions?.["🎉"]).toBe(1);
     expect(r1.myReactions).toEqual(["🎉"]);
@@ -225,7 +225,7 @@ describe("news", () => {
     const newest = listNews({ sort: "newest" }).map((n) => n.publishedAt);
     expect([...newest].sort().reverse()).toEqual(newest);
     expect(listNews({ practiceArea: "Employment" }).every((n) => n.practiceAreas?.includes("Employment"))).toBe(true);
-    expect(listNews({ matterId: MATTERS.afff }).length).toBeGreaterThanOrEqual(8);
+    expect(listNews({ matterId: MATTERS.valsara }).length).toBeGreaterThanOrEqual(8);
     expect(listNews({ query: "PAGA" }).length).toBeGreaterThanOrEqual(2);
     const item = saveNewsToLibrary("news_fr_npdwr")!;
     expect(item.type).toBe("link");
@@ -240,12 +240,12 @@ describe("matters overview", () => {
   it("computes next key date countdowns and task counts", () => {
     const rows = matterOverview(NOW);
     expect(rows.length).toBe(5);
-    const afff = rows.find((r) => r.id === MATTERS.afff)!;
-    expect(afff.nextKeyDate?.label).toBe("Tier 2 production deadline");
-    expect(afff.nextKeyDate?.daysUntil).toBe(21);
-    expect(afff.openTasks).toBeGreaterThan(3);
-    expect(afff.overdueTasks).toBeGreaterThanOrEqual(1);
-    expect(afff.upcomingEvents).toBeGreaterThan(3);
+    const valsara = rows.find((r) => r.id === MATTERS.valsara)!;
+    expect(valsara.nextKeyDate?.label).toBe("Tier 2 production deadline");
+    expect(valsara.nextKeyDate?.daysUntil).toBe(21);
+    expect(valsara.openTasks).toBeGreaterThan(3);
+    expect(valsara.overdueTasks).toBeGreaterThanOrEqual(1);
+    expect(valsara.upcomingEvents).toBeGreaterThan(3);
     expect(rows[0].nextKeyDate!.daysUntil).toBeLessThanOrEqual(rows[1].nextKeyDate!.daysUntil);
   });
 });
@@ -297,8 +297,8 @@ describe("dialog form state (regression: edit dialogs opened empty)", () => {
     expect(form.assigneeId).toBe(task.assigneeId ?? "");
     expect(form.status).toBe(task.status);
     expect(form.tags).toBe((task.tags ?? []).join(", "));
-    const fresh = taskFormFor(null, { title: "Prefilled" }, { userId: "p_me", matterFilter: "m_afff_2873" });
-    expect(fresh).toMatchObject({ title: "Prefilled", assigneeId: "p_me", matterId: "m_afff_2873", status: "todo", priority: "medium" });
+    const fresh = taskFormFor(null, { title: "Prefilled" }, { userId: "p_me", matterFilter: "m_valsara_arb" });
+    expect(fresh).toMatchObject({ title: "Prefilled", assigneeId: "p_me", matterId: "m_valsara_arb", status: "todo", priority: "medium" });
   });
   it("initialises the event form from the event being edited and splits times", () => {
     const form = eventFormFor({ id: "ev_x", title: "Hearing on MSJ", kind: "hearing", startsAt: "2026-10-09T09:30:00", endsAt: "2026-10-09T11:00:00", matterId: "m_northgate_v_apex", attendeeIds: ["p_jwhitfield"], location: "Courtroom 6" }, null, NOW);

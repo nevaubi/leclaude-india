@@ -18,8 +18,8 @@ import type { Claim } from "@/lib/evidence/types";
 beforeAll(() => { resetSqlite(); db(); });
 
 const SOURCES: GuardedSource[] = [
-  { ref: { kind: "deposition", id: "dep_afff_voss_v1", matterId: MATTERS.afff, witness: "Helen Voss", page: 45 }, text: "Q. Was the study complete? A. Yes, the ninety-day study was complete by March 2001. We reported it internally." },
-  { ref: { kind: "document", id: "ed_afff_0001", matterId: MATTERS.afff, bates: "MFC-0041877" }, text: "Final report summary: the 90-day rat study showed liver weight changes at the mid dose. Distribution: Hale, Brooks." },
+  { ref: { kind: "deposition", id: "dep_vls_voss_v1", matterId: MATTERS.valsara, witness: "Hema Vasudevan", page: 45 }, text: "Q. Was the study complete? A. Yes, the ninety-day study was complete by March 2001. We reported it internally." },
+  { ref: { kind: "document", id: "ed_vls_0001", matterId: MATTERS.valsara, bates: "MFC-0041877" }, text: "Final report summary: the 90-day rat study showed liver weight changes at the mid dose. Distribution: Hegde, Bose." },
 ];
 
 describe("quote guard", () => {
@@ -32,7 +32,7 @@ describe("quote guard", () => {
   });
   it("demotes a supported claim whose quote does not appear in its source, and one with no source", () => {
     const claims: RawClaim[] = [
-      { id: "c1", text: "Voss testified the 90-day study was complete by March 2001.", fields: [], citations: ["Voss Dep. 45:12"] },
+      { id: "c1", text: "Vasudevan testified the 90-day study was complete by March 2001.", fields: [], citations: ["Vasudevan Dep. 45:12"] },
       { id: "c2", text: "The report was sent to regulators.", fields: [], citations: [] },
       { id: "c3", text: "Liver weight changes appeared at the mid dose.", fields: ["scientific_fact"], citations: ["MFC-0041877"] },
       { id: "c4", text: "The witness recanted.", fields: [], citations: [] },
@@ -45,8 +45,8 @@ describe("quote guard", () => {
     ];
     const out = applyQuoteGuard(claims, verdicts, SOURCES);
     expect(out.map((c) => c.support)).toEqual(["supported", "unsupported", "unsupported", "unsupported"]);
-    expect(out[0].evidence[0]).toMatchObject({ kind: "deposition", id: "dep_afff_voss_v1", citation: "the ninety-day study was complete by March 2001" });
-    expect(out[1].notes).toMatch(/demoted from supported: the quoted passage does not appear in document ed_afff_0001/);
+    expect(out[0].evidence[0]).toMatchObject({ kind: "deposition", id: "dep_vls_voss_v1", citation: "the ninety-day study was complete by March 2001" });
+    expect(out[1].notes).toMatch(/demoted from supported: the quoted passage does not appear in document ed_vls_0001/);
     expect(out[2].notes).toMatch(/named no source/);
     expect(out[3].notes).toMatch(/demoted from contradicted/);
     expect(out[2].highRisk).toBe(true);
@@ -64,7 +64,7 @@ describe("high-risk tagging", () => {
     expect(tagHighRisk("The claim is time-barred under the two-year statute of limitations.")).toEqual(expect.arrayContaining(["limitations"]));
     expect(tagHighRisk("The memo is protected by attorney-client privilege.")).toContain("privilege");
     expect(tagHighRisk("The court held that the defense fails.")).toContain("holding");
-    expect(tagHighRisk("Voss admitted the study was complete.")).toContain("admission");
+    expect(tagHighRisk("Vasudevan admitted the study was complete.")).toContain("admission");
     expect(tagHighRisk("The weather was mild.")).toEqual([]);
   });
 });
@@ -87,7 +87,7 @@ describe("verdict arithmetic", () => {
 });
 
 describe("verifyClaims (server)", () => {
-  const scope = { tenantId: "default", matterIds: [MATTERS.afff] };
+  const scope = { tenantId: "default", matterIds: [MATTERS.valsara] };
   it("refuses sources outside the scope before any model call", async () => {
     await expect(verifyClaims({ artifactText: "x", artifactHash: "h", scope, sources: [{ kind: "document", id: "ed_ng", matterId: MATTERS.northgate, text: "t" }] })).rejects.toBeInstanceOf(AuthError);
   });
@@ -98,6 +98,6 @@ describe("verifyClaims (server)", () => {
   });
   it("needs a configured model provider for claim extraction", async () => {
     expect(canVerifyWithModel()).toBe(false);
-    await expect(verifyClaims({ artifactText: "Voss said yes.", artifactHash: "h", scope, sources: [{ ...SOURCES[0].ref, text: SOURCES[0].text }] })).rejects.toThrow(/OPENAI_API_KEY|not configured/i);
+    await expect(verifyClaims({ artifactText: "Vasudevan said yes.", artifactHash: "h", scope, sources: [{ ...SOURCES[0].ref, text: SOURCES[0].text }] })).rejects.toThrow(/OPENAI_API_KEY|not configured/i);
   });
 });

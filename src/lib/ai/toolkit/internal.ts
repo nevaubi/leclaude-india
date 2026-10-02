@@ -358,8 +358,8 @@ export const searchEdiscoveryTool = defineTool<{ query: string; matter_id?: stri
     required: ["query"],
   },
   examples: [
-    { query: "Whitfield 90-day rat study hepatic effects", matter_id: "m_afff_2873", custodian: "Voss", date_after: "2001-01-01", date_before: "2001-12-31", limit: 8 },
-    { query: "monitoring well MW-7 groundwater PFOA", doc_type: "Report", limit: 5 },
+    { query: "Sundaram 90-day rat study hepatic effects", matter_id: "m_valsara_arb", custodian: "Vasudevan", date_after: "2001-01-01", date_before: "2001-12-31", limit: 8 },
+    { query: "monitoring well MW-7 groundwater MC-8", doc_type: "Report", limit: 5 },
   ],
   timeoutMs: 20_000,
   maxResultChars: 24_000,
@@ -393,7 +393,7 @@ export const getEdiscoveryDocumentTool = defineTool<{ id_or_bates: string; max_c
   parameters: { type: "object", properties: { id_or_bates: { type: "string", description: "Document id (ed_…) or Bates number such as MFC-0041877" }, max_chars: { type: "integer", description: "Window size, default 30000" }, offset: { type: "integer", description: "Character offset of the window (from window.next_offset of the previous call)" } }, required: ["id_or_bates"] },
   examples: [
     { id_or_bates: "MFC-0041877" },
-    { id_or_bates: "ed_afff_0057", max_chars: 20000, offset: 20000 },
+    { id_or_bates: "ed_vls_0057", max_chars: 20000, offset: 20000 },
   ],
   timeoutMs: 10_000,
   maxResultChars: 36_000,
@@ -438,7 +438,7 @@ export const searchLibraryTool = defineTool<{ query: string; type?: string; matt
   parameters: { type: "object", properties: { query: { type: "string" }, type: { type: "string", description: "folder | docx | xlsx | pptx | pdf | template | clause | link | note" }, matter_id: { type: "string", description: "Only this matter's work product plus firm-wide items" }, limit: { type: "integer", description: "Default 8, max 25" } }, required: ["query"] },
   examples: [
     { query: "limitation of liability cap carve-outs", type: "clause", limit: 5 },
-    { query: "Rule 30(b)(6) deposition outline", matter_id: "m_afff_2873" },
+    { query: "Rule 30(b)(6) deposition outline", matter_id: "m_valsara_arb" },
   ],
   timeoutMs: 20_000,
   maxResultChars: 24_000,
@@ -463,7 +463,7 @@ export const getLibraryItemTool = defineTool<{ id: string; max_chars?: number; o
   name: "get_library_item",
   description: "Read a library item (clause, template, note, matter work product) in full, including its text content when available. Returns a text window with `window.next_offset` for the next window.",
   parameters: { type: "object", properties: { id: { type: "string", description: "Library item id (lib_…)" }, max_chars: { type: "integer", description: "Window size, default 30000" }, offset: { type: "integer", description: "Character offset of the window" } }, required: ["id"] },
-  examples: [{ id: "lib_clause_lol_cap" }, { id: "lib_note_afff_voss_admissions", max_chars: 8000, offset: 8000 }],
+  examples: [{ id: "lib_clause_lol_cap" }, { id: "lib_note_vls_voss_admissions", max_chars: 8000, offset: 8000 }],
   timeoutMs: 10_000,
   maxResultChars: 36_000,
   label: (a) => `Reading library item ${a.id}`,
@@ -488,8 +488,8 @@ export const getLibraryItemTool = defineTool<{ id: string; max_chars?: number; o
 export const matterContextTool = defineTool<{ matter_id?: string; query?: string }>({
   name: "get_matter_context",
   description: "Get the firm's matter context for matters in the current scope: caption, client, posture, court, judge, team, key dates, open tasks and upcoming events. Call with matter_id, or with a query to find matters by name; without either it lists every matter in scope.",
-  parameters: { type: "object", properties: { matter_id: { type: "string", description: "Matter id such as m_afff_2873" }, query: { type: "string", description: "Name, client or caption fragment" } }, required: [] },
-  examples: [{ matter_id: "m_afff_2873" }, { query: "Harbor" }],
+  parameters: { type: "object", properties: { matter_id: { type: "string", description: "Matter id such as m_valsara_arb" }, query: { type: "string", description: "Name, client or caption fragment" } }, required: [] },
+  examples: [{ matter_id: "m_valsara_arb" }, { query: "Harbor" }],
   timeoutMs: 10_000,
   label: () => "Loading matter context",
   async execute({ matter_id, query }, ctx) {
@@ -517,8 +517,8 @@ export const matterContextTool = defineTool<{ matter_id?: string; query?: string
 export const findPeopleTool = defineTool<{ name: string; matter_id?: string; limit?: number }>({
   name: "find_people",
   description: "Resolve a person by name inside the current matter scope: team members, custodians and deposition witnesses linked to the scoped matters, with the matters and documents they are linked to. A person who only appears in another matter is never returned, and the same surname in two matters is never merged.",
-  parameters: { type: "object", properties: { name: { type: "string", description: "Full or partial name, e.g. 'Voss' or 'Helen Voss'" }, matter_id: { type: "string", description: "Restrict to one matter id inside the scope" }, limit: { type: "integer", description: "Default 20" } }, required: ["name"] },
-  examples: [{ name: "Helen Voss", matter_id: "m_afff_2873" }, { name: "Kaine" }],
+  parameters: { type: "object", properties: { name: { type: "string", description: "Full or partial name, e.g. 'Vasudevan' or 'Hema Vasudevan'" }, matter_id: { type: "string", description: "Restrict to one matter id inside the scope" }, limit: { type: "integer", description: "Default 20" } }, required: ["name"] },
+  examples: [{ name: "Hema Vasudevan", matter_id: "m_valsara_arb" }, { name: "Kapur" }],
   timeoutMs: 10_000,
   label: (a) => `Resolving ${a.name}`,
   async execute({ name, matter_id, limit }, ctx) {
@@ -534,7 +534,7 @@ export const searchDepositionsTool = defineTool<{ query: string; matter_id?: str
   name: "search_depositions",
   description: "Keyword search over deposition transcripts in the current matter scope. Each hit is one question/answer segment with an exact page:line `source` (depo://<matterId>/<depositionId>/p/<page>/l/<line>), the witness, date and any flags (admission, contradiction, evasive, objection). Quote only what the segment says.",
   parameters: { type: "object", properties: { query: { type: "string" }, matter_id: { type: "string", description: "Restrict to one matter id inside the scope" }, witness: { type: "string", description: "Witness name filter" }, limit: { type: "integer", description: "Default 10, max 30" } }, required: ["query"] },
-  examples: [{ query: "hepatic effects rat study aware", witness: "Voss", limit: 10 }, { query: "monitoring well results", matter_id: "m_afff_2873" }],
+  examples: [{ query: "hepatic effects rat study aware", witness: "Vasudevan", limit: 10 }, { query: "monitoring well results", matter_id: "m_valsara_arb" }],
   timeoutMs: 15_000,
   maxResultChars: 24_000,
   label: (a) => `Searching depositions: ${a.query}`,
@@ -591,7 +591,7 @@ export const getIntelContextTool = defineTool<{ matter_id?: string; user_id?: st
     },
     required: [],
   },
-  examples: [{ matter_id: "m_afff_2873", query: "government contractor defense specifications", limit: 6 }, { entity_id: "ie_judge_gergel" }, {}],
+  examples: [{ matter_id: "m_valsara_arb", query: "Clause 9.4 notice knowledge timeline", limit: 6 }, { entity_id: "ient_seed_judge_rodgers" }, {}],
   timeoutMs: 20_000,
   maxResultChars: 24_000,
   label: (a) => (a.query ? `Searching intelligence: ${a.query}` : a.matter_id ? "Loading matter intelligence" : "Loading intelligence context"),

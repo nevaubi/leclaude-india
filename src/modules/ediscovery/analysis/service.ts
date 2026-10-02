@@ -130,7 +130,7 @@ export function setObjectionRuling(depositionId: string, index: number, ruling: 
   return rec;
 }
 
-/** Resolve an exhibit reference ("Voss-3") or Bates number to an e-discovery document id. */
+/** Resolve an exhibit reference ("Vasudevan-3") or Bates number to an e-discovery document id. */
 export function resolveExhibit(dep: Deposition, ref: string): { docId?: string; bates?: string; description?: string } {
   const ex = dep.exhibits?.find((e) => e.id.toLowerCase() === ref.toLowerCase() || (canonicalExhibit(e.id) != null && canonicalExhibit(e.id) === canonicalExhibit(ref)));
   // Indian exhibit marks (Ex.P7, M.O.2) resolve to the one document of THIS matter carrying exactly that mark (§23).

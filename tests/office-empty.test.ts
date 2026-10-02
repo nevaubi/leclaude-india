@@ -34,7 +34,7 @@ import * as slidesExport from "@/app/api/office/slides/export/route";
 import * as pdfExport from "@/app/api/office/pdf/export/route";
 import * as importRoute from "@/app/api/office/import/route";
 
-const DEMO = /\b(AFFF|Meridian|Fluorochem|Whitfield|Hale|Pryce|Kaine|Voss|Raman|Okafor|Northgate|Apex Freight|Project Harbor|Bluewater|Sterling Medical|Gergel|MDL No\. 2873|Depo-Provera|Seeger|seegerweiss|Lowcountry|MFC-\d)/;
+const DEMO = /\b(VALSARA|Meridian|Fine Chemicals|Sundaram|Hegde|Prasad|Kapur|Vasudevan|Raman|Oberoi|Northgate|Apex Freight|Project Harbor|Bluewater|Sterling Medical|Rangan|Arb\. Ref\. 14\/2024|Depo-Provera|Mehra & Rao|mehrarao|Konkan Environmental|MFC-\d)/;
 
 const post = (url: string, body: unknown) => new NextRequest(`http://localhost${url}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });

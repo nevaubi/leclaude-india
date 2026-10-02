@@ -42,7 +42,7 @@ describe("chunking", () => {
     expect(chunks.every((c) => c.startChar >= 0 && c.endChar <= norm.length && c.endChar >= c.startChar)).toBe(true);
   });
   it("handles a single long paragraph by sentences and empty input", () => {
-    const long = "This is a sentence about PFAS. ".repeat(200);
+    const long = "This is a sentence about groundwater. ".repeat(200);
     const chunks = chunkIntelText(long, { size: 1200, overlap: 150 });
     expect(chunks.length).toBeGreaterThan(3);
     expect(chunks.every((c) => c.text.length <= 1400)).toBe(true);
@@ -58,13 +58,13 @@ describe("chunking", () => {
 
 describe("mentions", () => {
   it("cleans names and extracts parties, judges and counsel", () => {
-    expect(cleanPersonName("Hon. Richard M. Gergel, USDJ")).toBe("Richard M. Gergel");
-    expect(canonicalKey("Richard M. Gergel")).toBe("richard m gergel");
-    expect(mentionsFromCaption("City of Stuart v. 3M Company, et al.").map((m) => m.name)).toEqual(["City of Stuart", "3M Company"]);
-    expect(mentionsFromJudgeField("Gergel; Richard Mark Gergel")).toHaveLength(2);
-    const counsel = mentionsFromCounselString("Baron & Budd, P.C. (Scott Summy)");
-    expect(counsel.find((m) => m.type === "firm")?.name).toBe("Baron & Budd, P.C.");
-    expect(counsel.find((m) => m.type === "attorney")?.name).toBe("Scott Summy");
+    expect(cleanPersonName("Hon. M. Casey Rodgers, USDJ")).toBe("M. Casey Rodgers");
+    expect(canonicalKey("M. Casey Rodgers")).toBe("m casey rodgers");
+    expect(mentionsFromCaption("Harbor County Water Authority v. Corvane Chemical Company, et al.").map((m) => m.name)).toEqual(["Harbor County Water Authority", "Corvane Chemical Company"]);
+    expect(mentionsFromJudgeField("Rodgers; Margaret Catharine Rodgers")).toHaveLength(2);
+    const counsel = mentionsFromCounselString("Example & Partners, P.C. (Jane Q. Example)");
+    expect(counsel.find((m) => m.type === "firm")?.name).toBe("Example & Partners, P.C.");
+    expect(counsel.find((m) => m.type === "attorney")?.name).toBe("Jane Q. Example");
     expect(courtIdFromName("U.S. District Court for the District of South Carolina")).toBe("dsc");
   });
 });
@@ -90,7 +90,7 @@ describe("seeds", () => {
   it("seeds eighteen system sources (twelve sample, six India), a sample corpus with chunks and a keyword index, and entities", () => {
     expect(intelSources().count()).toBe(18);
     const docs = intelDocuments().all();
-    expect(docs.length).toBeGreaterThanOrEqual(40);
+    expect(docs.length).toBeGreaterThanOrEqual(38);
     expect(docs.every((d) => d.meta?.seeded === true && d.chunkCount > 0 && d.textBlobId)).toBe(true);
     expect(intelChunks().count()).toBeGreaterThan(docs.length);
     expect(indexStats(INTEL_VECTOR_NAMESPACE).chunks).toBe(intelChunks().count());
@@ -151,24 +151,24 @@ describe("store", () => {
     expect(hits.length).toBeGreaterThan(0);
     expect(hits.slice(0, 3).map((h) => h.doc.id)).toContain("idoc_seed_op_boyle");
     expect(hits[0].chunk.text.length).toBeGreaterThan(20);
-    const opinionsOnly = await searchIntel({ q: "PFAS", kinds: ["opinion"], limit: 20 });
+    const opinionsOnly = await searchIntel({ q: "preemption", kinds: ["opinion"], limit: 20 });
     expect(opinionsOnly.every((h) => h.doc.kind === "opinion")).toBe(true);
-    const dsc = await searchIntel({ q: "AFFF", court: "dsc", limit: 20 });
-    expect(dsc.length).toBeGreaterThan(0);
-    expect(dsc.every((h) => intelDocuments().get(h.doc.id)?.courtId === "dsc")).toBe(true);
+    const flnd = await searchIntel({ q: "meningioma", court: "flnd", limit: 20 });
+    expect(flnd.length).toBeGreaterThan(0);
+    expect(flnd.every((h) => intelDocuments().get(h.doc.id)?.courtId === "flnd")).toBe(true);
     const dated = await searchIntel({ q: "settlement", dateFrom: "2024-01-01", dateTo: "2024-12-31", limit: 20 });
     expect(dated.every((h) => { const d = h.doc.dates; const p = d.decided ?? d.filed ?? d.published ?? d.effective ?? d.event ?? d.modified; return p! >= "2024-01-01" && p! <= "2024-12-31"; })).toBe(true);
     const matter = await searchIntel({ q: "meningioma", matterId: "m_depo_provera_3140", limit: 20 });
     expect(matter.length).toBeGreaterThan(0);
     expect(matter.every((h) => intelDocuments().get(h.doc.id)?.matterIds.includes("m_depo_provera_3140"))).toBe(true);
     const perDoc = new Map<string, number>();
-    for (const h of await searchIntel({ q: "PFAS drinking water", limit: 30 })) perDoc.set(h.doc.id, (perDoc.get(h.doc.id) ?? 0) + 1);
+    for (const h of await searchIntel({ q: "meningioma labeling warning", limit: 30 })) perDoc.set(h.doc.id, (perDoc.get(h.doc.id) ?? 0) + 1);
     expect(Math.max(...perDoc.values())).toBeLessThanOrEqual(2);
-    const noQuery = await searchIntel({ q: "", kinds: ["news"], limit: 3 });
+    const noQuery = await searchIntel({ q: "", kinds: ["opinion"], limit: 3 });
     expect(noQuery.length).toBe(3);
   });
   it("flags, lists with filters and paging, and reports stats", () => {
-    const id = "idoc_seed_news_3m_settlement";
+    const id = "idoc_seed_news_bmj_meningioma";
     flagDocument(id, { kind: "needs_review", note: "check figure", by: "test" });
     expect(intelDocuments().get(id)!.flags.some((f) => f.kind === "needs_review")).toBe(true);
     flagDocument(id, { kind: "needs_review", note: "replaced", by: "test" });
@@ -182,8 +182,8 @@ describe("store", () => {
     expect(page1.items).toHaveLength(5);
     expect(page1.items.map((d) => d.id)).not.toEqual(page2.items.map((d) => d.id));
     expect(listDocuments({ q: "boyle" }).items.map((d) => d.id)).toContain("idoc_seed_op_boyle");
-    expect(listDocuments({ matterId: "m_afff_2873", kinds: ["docket_entry"] }).total).toBeGreaterThan(3);
-    expect(listDocuments({ entityId: "ient_seed_judge_gergel" }).total).toBeGreaterThan(3);
+    expect(listDocuments({ matterId: "m_depo_provera_3140", kinds: ["docket_entry"] }).total).toBeGreaterThanOrEqual(3);
+    expect(listDocuments({ entityId: "ient_seed_judge_rodgers" }).total).toBeGreaterThan(3);
     expect(listDocuments({ flagged: true }).items.every((d) => d.flags.length > 0)).toBe(true);
     const stats = intelStats();
     expect(stats.documents).toBe(intelDocuments().count());
@@ -192,13 +192,13 @@ describe("store", () => {
     expect(documentsMissingEmbeddings(5).length).toBe(5);
   });
   it("upserts entities by canonical name and alias", () => {
-    const e = upsertEntity({ type: "judge", name: "Judge Richard M. Gergel", docId: "idoc_seed_afff_docket" });
-    expect(e.id).toBe("ient_seed_judge_gergel");
-    const alias = upsertEntity({ type: "judge", name: "Richard Mark Gergel", docId: "idoc_seed_op_lipitor" });
+    const e = upsertEntity({ type: "judge", name: "Judge M. Casey Rodgers", docId: "idoc_seed_depo_docket" });
+    expect(e.id).toBe("ient_seed_judge_rodgers");
+    const alias = upsertEntity({ type: "judge", name: "Margaret Catharine Rodgers", docId: "idoc_seed_op_albrecht" });
     expect(alias.id).toBe(e.id);
-    expect(alias.docIds).toContain("idoc_seed_op_lipitor");
-    const fresh = upsertEntity({ type: "party", name: "Tyco Fire Products LP", attributes: { role: "defendant" } });
+    expect(alias.docIds).toContain("idoc_seed_op_albrecht");
+    const fresh = upsertEntity({ type: "party", name: "Corvane Chemical Company", attributes: { role: "defendant" } });
     expect(fresh.id.startsWith("ient_party_")).toBe(true);
-    expect(intelEntities().get(fresh.id)?.canonical).toBe("tyco fire products lp");
+    expect(intelEntities().get(fresh.id)?.canonical).toBe("corvane chemical company");
   });
 });

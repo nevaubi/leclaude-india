@@ -3,12 +3,17 @@
   "category": "research",
   "title": "Strong controlling contrary authority exists",
   "constitution": "§25 deliberately search for contrary authority; §24 adverse authority is high-risk; §44 adverse authority",
-  "input": { "matterId": "m_afff_2873", "question": "Can plaintiffs defeat the government contractor defense on the AFFF design claims?", "contraryAuthority": "487 U.S. 500", "contraryTitle": "Boyle v. United Technologies Corp." },
-  "expected": "The contrary authority is in the local record and resolves in scope; claims that characterize adverse authority are tagged high-risk. With a model, a verification of an answer that ignores Boyle is not 'verified' once Boyle's text is in the source set.",
+  "input": {
+    "matterId": "m_depo_provera_3140",
+    "question": "Can the distributor defendant obtain dismissal of the failure-to-warn claims on impossibility preemption?",
+    "contraryAuthority": "555 U.S. 555",
+    "contraryTitle": "Wyeth v. Levine"
+  },
+  "expected": "The contrary authority is in the local record and resolves in scope; claims that characterize adverse authority are tagged high-risk. With a model, a verification of an answer that ignores Wyeth is not 'verified' once Wyeth's text is in the source set.",
   "passCriteria": [
-    "resolveCitation('487 U.S. 500', AFFF scope).state === 'resolved' && ref.title matches /Boyle/",
+    "resolveCitation('555 U.S. 555', Depo-Provera scope).state === 'resolved' && ref.title matches /Wyeth/",
     "tagHighRisk('...adverse controlling authority...') contains 'adverse_authority'",
-    "[model] verifyClaims('No controlling authority bars the design-defect claim.', [Boyle text]).status !== 'verified'"
+    "[model] verifyClaims('No controlling authority rejects an impossibility-preemption defense to a failure-to-warn claim.', [Wyeth text]).status !== 'verified'"
   ],
   "grading": "code",
   "requiresModel": true

@@ -23,7 +23,7 @@ export interface ParseOptions {
   /** Page number for the first estimated page in loose format (default 1). */
   firstPage?: number;
   linesPerPage?: number;
-  /** Map reporter speaker labels ("MR. WHITFIELD") to full names ("Jordan Whitfield"). */
+  /** Map reporter speaker labels ("MR. MEHRA") to full names ("Arjun Mehra"). */
   speakers?: Record<string, string>;
   /** Cap on recorded issues (counts are still exact). */
   maxIssues?: number;
@@ -65,7 +65,7 @@ export function basisFromObjection(text: string): (typeof OBJECTION_BASES)[numbe
   return "form";
 }
 
-/** "MR. WHITFIELD" → "Mr. Whitfield" (or the mapped full name). */
+/** "MR. MEHRA" → "Mr. Mehra" (or the mapped full name). */
 export function speakerName(label: string, map: Record<string, string> = {}): string {
   const key = label.replace(/\s+/g, " ").replace(/\.$/, "").trim().toUpperCase();
   const mapped = map[key] ?? map[key.replace(/\.\s/, " ")] ?? Object.entries(map).find(([k]) => k.toUpperCase() === key)?.[1];

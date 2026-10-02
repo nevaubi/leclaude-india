@@ -184,13 +184,14 @@ describe("official run route gate", () => {
   it("validates the body: unknown sources or stages, bad numbers → 400; the deadline is clamped to 10s–280s", async () => {
     const env = { OFFICIAL_INGEST_TOKEN: "t" };
     const h = { "x-official-token": "t" };
-    for (const bad of [{ sources: ["nope"] }, { stages: ["publish"] }, { concurrency: 0 }, { concurrency: 17 }, { limitPerSource: 1.5 }, { deadlineMs: "fast" }, { forceDiscover: "yes" }]) {
+    for (const bad of [{ sources: ["nope"] }, { stages: ["publish"] }, { concurrency: 0 }, { concurrency: 17 }, { limitPerSource: 1.5 }, { deadlineMs: "fast" }, { forceDiscover: "yes" }, { retryFailed: 1 }]) {
       const r = await handleRunRequest(post(bad, h), { principal: () => person, run: async () => fakeResult, env });
       expect(r.status).toBe(400);
     }
     expect(parseRunBody({ deadlineMs: 999_999 }).deadlineMs).toBe(280_000);
     expect(parseRunBody({}).deadlineMs).toBe(240_000);
     expect(parseRunBody(null)).toEqual({ deadlineMs: 240_000 });
+    expect(parseRunBody({ retryFailed: true })).toEqual({ deadlineMs: 240_000, retryFailed: true });
   });
 
   it("maps a missing database to 503 and runner bugs to 502", async () => {

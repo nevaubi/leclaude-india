@@ -44,6 +44,8 @@ export interface RunBody {
   deadlineMs: number;
   limitPerSource?: number;
   forceDiscover?: boolean;
+  /** Re-queue documents whose last attempt failed (never those the publisher answered 404/410 for). */
+  retryFailed?: boolean;
 }
 
 /** Validate the JSON body; RangeError with a precise message for anything malformed. */
@@ -73,6 +75,10 @@ export function parseRunBody(raw: unknown): RunBody {
   if (b.forceDiscover !== undefined) {
     if (typeof b.forceDiscover !== "boolean") throw new RangeError("forceDiscover must be a boolean");
     out.forceDiscover = b.forceDiscover;
+  }
+  if (b.retryFailed !== undefined) {
+    if (typeof b.retryFailed !== "boolean") throw new RangeError("retryFailed must be a boolean");
+    out.retryFailed = b.retryFailed;
   }
   return out;
 }

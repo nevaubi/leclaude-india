@@ -147,6 +147,40 @@ describe("runOfficialIngest end to end (fake adapter, fake fetch, fake store)", 
     expect(store.chunks.length).toBe(before);
   });
 
+  it("retryFailed re-queues failed documents after a fix but never one the publisher answered 404 for", async () => {
+    const goodUrl = "https://www.sci.gov.in/sci-get-pdf/?diary_no=7&type=o&order_date=2026-10-01";
+    const missingUrl = "https://api.sci.gov.in/jonew/missing-7.pdf";
+    const pdf = await makePdf([ORDER_P1, ORDER_P2]);
+    const items: DiscoveredDoc[] = [
+      { sourceId: "sci-orders", kind: "order", url: goodUrl, title: "Order 7", docDate: "2026-10-01" },
+      { sourceId: "sci-orders", kind: "order", url: missingUrl, title: "Missing order 7", docDate: "2026-10-01" },
+    ];
+    setOfficialAdaptersForTests({ "sci-orders": adapter(() => items) });
+    const store = new OfficialFakeStore();
+    // First run: the publisher's file cannot be read (a transient-looking failure that exhausts the attempts).
+    const broken = fakeHttp({}, []);
+    broken.fetchFile = async (url) => {
+      if (url === missingUrl) throw new ProviderError("official:sci-orders", "http", "official:sci-orders: HTTP 404 (not found)", false, 404, url);
+      return { url, finalUrl: url, status: 200, mime: "application/pdf", bytes: new TextEncoder().encode("%PDF-1.7 broken"), provenance: { via: "direct" as const, proxy: null, timezone: null, status: 200, finalUrl: url } };
+    };
+    await runOfficialIngest({ store, deadlineMs: 120_000, concurrency: 1, sleep: tick, http: () => broken, embedModel: "test-embed", embed: fakeEmbed, log: () => undefined });
+    const good = store.docs.get(documentIdFor("sci-orders", goodUrl))!;
+    const missing = store.docs.get(documentIdFor("sci-orders", missingUrl))!;
+    for (const u of store.units.values()) if (u.document_id === good.id && u.status === "pending") Object.assign(u, { status: "failed", error: "Could not read PDF" });
+    if (good.status !== "failed") Object.assign(good, { status: "failed", error: "Could not read PDF" });
+    expect(missing).toMatchObject({ status: "failed" });
+    expect(missing.error).toMatch(/^not published/);
+
+    // Second run after the fix, with retryFailed: the readable document is indexed; the 404 stays failed.
+    const fixed = fakeHttp({ [goodUrl]: { bytes: pdf, mime: "application/pdf" } }, []);
+    const r = await runOfficialIngest({ store, deadlineMs: 120_000, concurrency: 1, sleep: tick, retryFailed: true, http: () => fixed, embedModel: "test-embed", embed: fakeEmbed, log: () => undefined });
+    expect(r.notes.some((n) => /re-queued/.test(n))).toBe(true);
+    expect(store.docs.get(good.id)).toMatchObject({ status: "indexed" });
+    expect(store.docs.get(missing.id)).toMatchObject({ status: "failed" });
+    expect(store.docs.get(missing.id)!.error).toMatch(/^not published/);
+    expect(store.units.get(`fetch:${missing.id}`)).toMatchObject({ status: "failed" });
+  });
+
   it("changed bytes at the same URL become version 2 with the previous hash in history", async () => {
     const url = "https://www.sci.gov.in/sci-get-pdf/?diary_no=2";
     const files = { [url]: { bytes: await makePdf([ORDER_P1]), mime: "application/pdf" } };

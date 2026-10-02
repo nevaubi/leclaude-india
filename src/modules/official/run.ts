@@ -40,6 +40,8 @@ export interface OfficialRunOptions {
   limitPerSource?: number;
   /** Run discovery now even when the source's cadence has not elapsed. */
   forceDiscover?: boolean;
+  /** Re-queue failed fetch/ocr/index/parse units of the requested sources (not "not published" 404/410 failures). */
+  retryFailed?: boolean;
   store?: RemoteStore | null;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -151,6 +153,10 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
 
   try {
     await sweepExpiredUnits(store);
+    if (o.retryFailed) {
+      const n = await retryFailedUnits(store, enabled.map((d) => d.id));
+      if (n) result.notes.push(`${n} failed unit(s) re-queued`);
+    }
     if (stages.includes("discover")) {
       const queued = await scheduleDiscovery(store, enabled, o.forceDiscover === true);
       if (queued) result.notes.push(`${queued} discovery unit(s) scheduled`);
@@ -258,4 +264,24 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
   }
   if (unitCap != null && !claimable().length) result.notes.push(`limitPerSource (${unitCap}) reached for every source`);
   return finish("done");
+}
+
+/**
+ * Re-queue failed units (and reset their documents) for a fresh attempt, e.g. after a deployment fixed the cause.
+ * Units whose document the publisher answered "not published" (404/410) stay failed: that is a fact, not an error.
+ */
+export async function retryFailedUnits(store: RemoteStore, sources: string[]): Promise<number> {
+  if (!sources.length) return 0;
+  const r = await store.query({
+    query: `WITH u AS (
+        UPDATE official_units SET status = 'pending', attempts = 0, error = NULL, run_after = NULL, lease_until = NULL, finished_at = NULL, updated_at = now()
+        WHERE status = 'failed' AND stage IN ('fetch', 'ocr', 'index', 'parse') AND source = ANY($1::text[])
+          AND NOT EXISTS (SELECT 1 FROM official_documents d WHERE d.id = official_units.document_id AND d.error LIKE 'not published%')
+        RETURNING document_id),
+      d AS (UPDATE official_documents SET status = 'discovered', error = NULL, updated_at = now()
+        WHERE id IN (SELECT document_id FROM u WHERE document_id IS NOT NULL) AND status = 'failed' RETURNING 1)
+      SELECT (SELECT count(*) FROM u)::int AS n, (SELECT count(*) FROM d)::int AS docs`,
+    params: [pgArray(sources)],
+  });
+  return Number(r[0]?.n ?? 0);
 }

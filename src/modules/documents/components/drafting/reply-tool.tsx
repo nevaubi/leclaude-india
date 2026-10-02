@@ -52,7 +52,12 @@ export function ReplyTool({ setId, setName, matterId, aiReady, fileCount, onView
 
   const view = load.status === "ready" ? load.view : null;
   const state = view?.state ?? null;
-  const set = (v: ParawiseView) => setLoad({ status: "ready", view: v });
+  // The latest stored version this tool has seen: requests send it, not the version captured when a control rendered.
+  const versionRef = React.useRef<number | null>(null);
+  React.useEffect(() => { versionRef.current = state?.version ?? null; }, [state?.version]);
+  // Edits are sent one at a time (a blur followed by a click must not race on the same version).
+  const queue = React.useRef<Promise<void>>(Promise.resolve());
+  const set = (v: ParawiseView) => { versionRef.current = v.state?.version ?? null; setLoad({ status: "ready", view: v }); };
   const fail = (e: unknown) => {
     if (isAbort(e)) return;
     if (errorKind(e) === "conflict") { toast.error("This reply changed elsewhere. Reloaded the latest version."); setReload((n) => n + 1); return; }
@@ -66,16 +71,17 @@ export function ReplyTool({ setId, setName, matterId, aiReady, fileCount, onView
     ctrl.current?.abort();
     const ac = new AbortController();
     ctrl.current = ac;
-    let version = state.version;
     const total = ns?.length ?? state.paras.filter((p) => p.status !== "proposed").length;
     const acc = { running: true, done: 0, total, failed: 0 };
     setRun({ ...acc });
     try {
       let lastRemaining = Infinity;
       for (let guard = 0; guard < 40; guard++) {
-        const r = await parawiseApi.propose(setId, fileId, version, ac.signal, ns);
+        // Wait for queued edits, then propose from the latest version (an edit made while the model runs keeps its change).
+        await queue.current;
+        const r = await parawiseApi.propose(setId, fileId, versionRef.current ?? state.version, ac.signal, ns);
         set(r);
-        version = r.state!.version;
+        if (r.superseded) toast.info(`${r.superseded} proposal${r.superseded === 1 ? " was" : "s were"} not applied`, { description: "Those paragraphs were changed while the replies were being proposed; your changes were kept." });
         acc.failed = r.failed;
         acc.done = ns ? total : total - r.remaining;
         setRun({ ...acc });
@@ -86,9 +92,15 @@ export function ReplyTool({ setId, setName, matterId, aiReady, fileCount, onView
     } catch (e) { fail(e); } finally { setRun((x) => (x ? { ...x, running: false } : x)); ctrl.current = null; }
   };
 
-  const update = async (p: ParaReply, patch: { stance?: string; reply?: string; approve?: boolean }) => {
-    if (!fileId || !state) return;
-    try { set(await parawiseApi.update(setId, { fileId, version: state.version, n: p.n, ...patch })); } catch (e) { fail(e); }
+  const update = (p: ParaReply, patch: { stance?: string; reply?: string; approve?: boolean }): Promise<void> => {
+    if (!fileId || !state) return Promise.resolve();
+    const next = queue.current.then(async () => {
+      const version = versionRef.current;
+      if (version == null) return;
+      try { set(await parawiseApi.update(setId, { fileId, version, n: p.n, ...patch })); } catch (e) { fail(e); }
+    });
+    queue.current = next;
+    return next;
   };
 
   const blockers = state ? exportBlockers(state.paras, { stale: view?.stale }) : null;

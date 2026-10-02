@@ -8,6 +8,7 @@ import { classify, docsApi, setUrl } from "../api";
 
 export interface DatesView { state: DatesState; rows: DateRow[]; extracted: number; total: number }
 export interface ParawiseView { state: ParawiseState | null; stale: boolean; paragraphs: number; textHash: string; file: DocFile }
+/** GET: every stored translation of the file into `to`. POST (translate): only the records that call wrote. */
 export interface TranslationView { file: DocFile; to: string; records: (TranslationRecord & { stale: boolean })[] }
 
 export const datesApi = {
@@ -19,7 +20,7 @@ export const datesApi = {
 export const parawiseApi = {
   get: (setId: string, fileId: string, signal?: AbortSignal) => docsApi<ParawiseView>(setUrl(setId, `/parawise?file=${encodeURIComponent(fileId)}`), { signal }),
   start: (setId: string, fileId: string, restart = false) => docsApi<ParawiseView>(setUrl(setId, "/parawise"), { json: { fileId, action: restart ? "restart" : "start" } }),
-  propose: (setId: string, fileId: string, version: number, signal?: AbortSignal, ns?: string[]) => docsApi<ParawiseView & { remaining: number; failed: number }>(setUrl(setId, "/parawise"), { json: { fileId, action: "propose", version, ns }, signal }),
+  propose: (setId: string, fileId: string, version: number, signal?: AbortSignal, ns?: string[]) => docsApi<ParawiseView & { remaining: number; failed: number; superseded?: number }>(setUrl(setId, "/parawise"), { json: { fileId, action: "propose", version, ns }, signal }),
   update: (setId: string, body: { fileId: string; version: number; n: string; stance?: string; reply?: string; approve?: boolean }) => docsApi<ParawiseView>(setUrl(setId, "/parawise"), { method: "PATCH", json: body }),
 };
 

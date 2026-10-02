@@ -18,7 +18,9 @@ import { EXPORT_IMAGE_LIMITS, exportDocx, loadExportImages } from "@/modules/off
 import { readDocx } from "@/modules/office/word/ooxml/reader";
 import { aiSurfacesFromMeta, appendixBlocks, checkLine, checkStateOf, declarationBlocks, exportCustomProps, DECLARATION_HEADING, type CheckState } from "@/modules/office/word/provenance";
 import { loadExportImage } from "@/modules/office/word/export-images";
-import { docBodyHash, exportCheckState, filingCheckFor, resetFilingCacheForTests } from "@/modules/office/word/filing-check-server";
+import { docBodyHash, exportCheckState, filingCheckFor, judgmentTextForQuotes, resetFilingCacheForTests, serverFilingDeps } from "@/modules/office/word/filing-check-server";
+import { resetTextTableCacheForTests, type JudgmentTextChunk } from "@/modules/india/corpus/text";
+import type { RemoteStore, Row, SqlQuery } from "@/lib/db/remote";
 import { createOfficeDoc } from "@/modules/office/shared/docs-service";
 import { settingsForTemplate } from "@/modules/office/word/constants";
 import { listAudit } from "@/lib/integrity/audit";
@@ -395,5 +397,68 @@ describe("India templates page setup", () => {
   it("uses A4 and Indian English for word-in-* templates only", () => {
     expect(settingsForTemplate("word-in-plaint")).toMatchObject({ pageSize: "a4", language: "en-IN" });
     expect(settingsForTemplate("word-motion-brief")).toMatchObject({ pageSize: "letter", language: "en-US" });
+  });
+});
+
+describe("filing check: a quote is 'not found' only against the whole judgment text", () => {
+  const chunk = (index: number, text: string, page: number | null = index + 1): JudgmentTextChunk => ({ index, pageStart: page, pageEnd: page, section: null, text });
+  const crossing = "a contract without consideration is void ab initio";
+
+  it("compares against chunk text without page markers, and calls text complete only from chunk 0 to the last, with no gap", () => {
+    const two = [chunk(0, "The court held that a contract without consideration", 4), chunk(1, "is void ab initio and cannot be enforced.", 5)];
+    const whole = judgmentTextForQuotes({ chunks: two, nextChunk: null, totalChunks: 2 });
+    expect(whole.complete).toBe(true);
+    expect(whole.text).not.toMatch(/\[p\./);
+    expect(quoteInText(crossing, whole.text!)).toBe(true); // runs across the page break
+    expect(judgmentTextForQuotes({ chunks: two, nextChunk: 2, totalChunks: 3 }).complete).toBe(false); // more to read
+    expect(judgmentTextForQuotes({ chunks: two, nextChunk: null, totalChunks: 5 }).complete).toBe(false); // corpus records 5 chunks
+    expect(judgmentTextForQuotes({ chunks: [chunk(0, "a"), chunk(2, "c")], nextChunk: null, totalChunks: 0 }).complete).toBe(false); // gap
+    expect(judgmentTextForQuotes({ chunks: [chunk(1, "b"), chunk(2, "c")], nextChunk: null, totalChunks: 3 }).complete).toBe(false); // not from the start
+    expect(judgmentTextForQuotes({ chunks: [], nextChunk: null, totalChunks: 0 })).toEqual({ text: null, complete: false });
+  });
+
+  /** A corpus store holding one Supreme Court judgment's chunks (answers only the statements readJudgmentText runs). */
+  function fakeCorpus(chunks: { index: number; text: string; page: number }[], totalChunks: number | null): RemoteStore {
+    const query = async (q: SqlQuery): Promise<Row[]> => {
+      if (q.query.includes("to_regclass")) return [{ ok: "true", hc: "false" }];
+      if (q.query.includes("FROM corpus_judgments")) return [{ id: "sc:2024_735", title: "Corpus Judgment v. State" }];
+      if (q.query.includes("FROM corpus_texts")) {
+        const from = Number(q.params?.[1] ?? 0);
+        return chunks.filter((c) => c.index >= from).slice(0, 400).map((c) => ({ chunk_index: String(c.index), total_chunks: totalChunks == null ? null : String(totalChunks), page_start: String(c.page), page_end: String(c.page), section_type: null, text: c.text }));
+      }
+      throw new Error(`unexpected query: ${q.query.slice(0, 60)}`);
+    };
+    return { query, transaction: async (qs) => Promise.all(qs.map(query)) };
+  }
+  const citecheck = fakeCitecheck({ "2024 INSC 735": { state: "unresolved" } });
+
+  it("reports a quote beyond the 400 chunks read as unchecked (text_incomplete), never as not found", async () => {
+    resetTextTableCacheForTests();
+    // 401 short chunks and no total recorded: the reader's 400-row limit is reached with nothing saying more exists.
+    const chunks = Array.from({ length: 401 }, (_, i) => ({ index: i, text: i === 400 ? "the quoted words appear only in the very last chunk of the judgment" : `Paragraph ${i} of the judgment.`, page: Math.floor(i / 10) + 1 }));
+    const deps = { ...serverFilingDeps({ store: fakeCorpus(chunks, null) }), citecheck, citator: undefined };
+    const j = await deps.corpusJudgment!("2024 INSC 735");
+    expect(j).toMatchObject({ id: "sc:2024_735", complete: false });
+    const r = await runFilingCheck(docOf(para("In 2024 INSC 735 the Court said “the quoted words appear only in the very last chunk of the judgment”.")), "h", deps);
+    expect(r.citations[0].quotes[0].state).toBe("text_incomplete");
+    expect(r.counts).toMatchObject({ quotesNotFound: 0, quotesUnchecked: 1 });
+    expect(r.issues.some((i) => i.kind === "quote_not_found")).toBe(false);
+    expect(r.issues.find((i) => i.kind === "quote_unchecked")?.message).toMatch(/only part of the judgment text was read/);
+  });
+
+  it("does not call a quote across a page break 'not found', and reports a missing chunk as partial text", async () => {
+    resetTextTableCacheForTests();
+    const doc = docOf(para(`In 2024 INSC 735 the Court said “${crossing}”.`));
+    const pages = [{ index: 0, text: "The court held that a contract without consideration", page: 4 }, { index: 1, text: "is void ab initio and cannot be enforced.", page: 5 }];
+    const whole = await runFilingCheck(doc, "h", { ...serverFilingDeps({ store: fakeCorpus(pages, 2) }), citecheck, citator: undefined });
+    expect(whole.citations[0]).toMatchObject({ state: "resolved", resolvedBy: "official_corpus" });
+    expect(whole.citations[0].quotes[0].state).toBe("found");
+    // The corpus records 3 chunks but only 2 are stored: a quote missing from them is unchecked, not "not found".
+    const missing = await runFilingCheck(docOf(para("In 2024 INSC 735 the Court said “words that may be in the chunk that is missing from the store”.")), "h", { ...serverFilingDeps({ store: fakeCorpus(pages, 3) }), citecheck, citator: undefined });
+    expect(missing.citations[0].quotes[0].state).toBe("text_incomplete");
+    // Against the whole text, a quote that is not there is "not found".
+    const absent = await runFilingCheck(docOf(para("In 2024 INSC 735 the Court said “words that appear nowhere in this short judgment text”.")), "h", { ...serverFilingDeps({ store: fakeCorpus(pages, 2) }), citecheck, citator: undefined });
+    expect(absent.citations[0].quotes[0].state).toBe("not_found");
+    expect(absent.issues.find((i) => i.kind === "quote_not_found")?.message).toMatch(/^Quoted words not found in the full judgment text/);
   });
 });

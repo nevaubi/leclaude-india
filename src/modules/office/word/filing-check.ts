@@ -10,7 +10,8 @@
  *    labelled as text cues, never as verified treatment. A judgment the citator was not consulted for (no official
  *    corpus record, citator not built or unreachable) is counted and listed as such, never as "no negative signal";
  *  - quotations: a quoted passage attributed (deterministically, by position) to a resolved judgment whose text is
- *    available is checked word for word against that text. A quote is "not found" only when the whole text was read.
+ *    available is checked word for word against that text. A quote is "not found" only when the whole text was read and
+ *    compared (the server says so per judgment); against partial text it is "text_incomplete" (not checked).
  *
  * The result binds to a hash of the document body; a changed document makes the check stale. `coverage` says whether
  * the check ran fully ("complete"), only in part ("partial": resolver or corpus down, more citations than the limit) or
@@ -325,7 +326,7 @@ export async function runFilingCheck(doc: PMNode, docHash: string, deps: FilingC
     if (c.state === "ambiguous") issues.push({ key: c.key, kind: "ambiguous", citation: c.citation, message: `Ambiguous: ${c.candidates.length ? `could be ${c.candidates.join("; ")}` : c.reason ?? "several judgments match"}. None was chosen.` });
     if (c.negative.length) issues.push({ key: c.key, kind: "negative", citation: c.citation, message: `Negative text cue in ${c.negative.length} citing judgment${c.negative.length === 1 ? "" : "s"} (${c.negative.map((n) => n.cue).filter(Boolean).slice(0, 3).join(", ") || "see citator"}). Not a verified treatment: read the citing passage.` });
     for (const q of c.quotes) {
-      if (q.state === "not_found") issues.push({ key: `${c.key}#q:${norm(q.quote).slice(0, 60)}`, kind: "quote_not_found", citation: c.citation, message: `Quoted words not found in the judgment text: “${q.quote.slice(0, 160)}${q.quote.length > 160 ? "…" : ""}”` });
+      if (q.state === "not_found") issues.push({ key: `${c.key}#q:${norm(q.quote).slice(0, 60)}`, kind: "quote_not_found", citation: c.citation, message: `Quoted words not found in the full judgment text (as extracted from the court's PDF; verify against the PDF): “${q.quote.slice(0, 160)}${q.quote.length > 160 ? "…" : ""}”` });
       else if (q.state === "text_incomplete" || (q.state === "text_unavailable" && c.state === "resolved")) issues.push({ key: `${c.key}#q:${norm(q.quote).slice(0, 60)}`, kind: "quote_unchecked", citation: c.citation, message: `Quotation not checked (${q.state === "text_incomplete" ? "only part of the judgment text was read" : "judgment text not available"}): “${q.quote.slice(0, 120)}${q.quote.length > 120 ? "…" : ""}”` });
     }
   }

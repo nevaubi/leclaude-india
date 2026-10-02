@@ -9,7 +9,7 @@ vi.hoisted(() => {
 });
 
 /** Scripted model runtime: no network, every call recorded. */
-const ai = vi.hoisted(() => ({ json: [] as Array<Record<string, unknown>>, text: [] as Array<Record<string, unknown>>, synopsis: "", fail: false }));
+const ai = vi.hoisted(() => ({ json: [] as Array<Record<string, unknown>>, text: [] as Array<Record<string, unknown>>, synopsis: "", fail: false, onPropose: null as null | (() => Promise<void>) }));
 
 vi.mock("@/lib/ai/agent", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/ai/agent")>();
@@ -27,6 +27,8 @@ vi.mock("@/lib/ai/agent", async (importOriginal) => {
       }
       if (opts.name === "parawise_replies") {
         if (ai.fail) throw new Error("model down");
+        // A person editing the reply while the model runs.
+        if (ai.onPropose) { const edit = ai.onPropose; ai.onPropose = null; await edit(); }
         // Paragraph numbers in this batch, with the passage numbers offered for each.
         const paras = [...input.matchAll(/PARAGRAPH (\d+)[^\n]*\n[\s\S]*?Passages for this paragraph: ([^\n]*)/g)].map((m) => ({ n: m[1], passages: [...m[2].matchAll(/\[(\d+)\]/g)].map((x) => Number(x[1])) }));
         return { replies: paras.map((p) => (p.n === "2"
@@ -60,13 +62,14 @@ import {
   ruleCategory, splitDefects, synopsisForExport, synopsisSentences, TRANSLATION_LABEL, writtenStatementMarkdown, type ParaReply,
 } from "@/modules/documents/drafting";
 import type { DocEvent } from "@/modules/documents/types";
-import { setDocStoreForTests } from "@/modules/documents/server/store";
+import { docStore, setDocStoreForTests } from "@/modules/documents/server/store";
+import { recentAudit } from "@/lib/auth/audit";
 import { DocsError } from "@/modules/documents/server/access";
 import { createSet, deleteFile, deleteSet, resetStorageCacheForTests } from "@/modules/documents/server/sets";
 import { uploadBrowserPdf, uploadServerFile } from "@/modules/documents/server/ingest";
 import { runExtraction } from "@/modules/documents/server/extract";
 import { createDefectNotice, draftSynopsis, getDates, getParawise, listDefectNotices, listTranslations, proposeReplies, saveDates, startParawise, translatePages, updateDefect, updateReply } from "@/modules/documents/server/drafting";
-import { buildPaperbook, describeUnprintable, pngSize, unprintableChars } from "@/modules/documents/server/paperbook";
+import { buildPaperbook, describeUnprintable, pngSize, TYPED_PAGE_LABEL, unprintableChars } from "@/modules/documents/server/paperbook";
 import { workStore } from "@/modules/documents/server/work-store";
 import { extractPdf } from "@/modules/office/pdf/extract";
 import { NextRequest } from "next/server";
@@ -95,7 +98,7 @@ beforeAll(() => {
   setDocStoreForTests("sqlite");
   resetStorageCacheForTests();
 });
-beforeEach(() => { ai.json = []; ai.text = []; ai.fail = false; });
+beforeEach(() => { ai.json = []; ai.text = []; ai.fail = false; ai.onPropose = null; });
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Pure helpers
@@ -362,13 +365,32 @@ describe("drafting services on SQLite", () => {
     expect(r.state!.paras[0]).toMatchObject({ status: "failed" });
   });
 
+  it("keeps an edit made while replies are being proposed: that paragraph's proposal is dropped, the others land (no 409)", async () => {
+    const fresh = await startParawise(alice, setId, plaintId, { restart: true });
+    ai.onPropose = async () => {
+      const cur = (await getParawise(alice, setId, plaintId)).state!;
+      await updateReply(alice, setId, plaintId, { version: cur.version, n: "3", stance: "denied", reply: "It is denied that any notice was received; typed by the advocate." });
+    };
+    const r = await proposeReplies(alice, setId, plaintId, { version: fresh.state!.version });
+    expect(r.superseded).toBe(1);
+    expect(r.state!.paras[2]).toMatchObject({ stance: "denied", reply: "It is denied that any notice was received; typed by the advocate.", edited: true, status: "pending" });
+    expect(r.state!.paras[1]).toMatchObject({ status: "proposed", proposed: expect.objectContaining({ stance: "admitted" }) });
+    expect(r.state!.version).toBe(fresh.state!.version + 2); // the edit, then the merged proposals
+    expect((await getParawise(alice, setId, plaintId)).state).toEqual(r.state);
+  });
+
   it("stores page translations with the source hash and the working-translation label; reuses current ones", async () => {
+    const ws = await workStore();
+    const reads = vi.spyOn(ws, "get");
     const out = await translatePages(alice, setId, { fileId: loanId, from: "en", to: "hi" });
+    expect(reads.mock.calls.filter((c) => c[1] === "translation")).toHaveLength(0); // one listing, not one read per page
+    reads.mockRestore();
     expect(out.translated).toBe(1);
     expect(out.records[0]).toMatchObject({ to: "hi", label: TRANSLATION_LABEL, stale: false });
     expect(String(ai.text[0].instructions)).toContain("plaintiff → वादी");
     const again = await translatePages(alice, setId, { fileId: loanId, from: "en", to: "hi" });
     expect(again).toMatchObject({ translated: 0, skipped: 1 });
+    expect(again.records).toEqual([]); // only this call's translations come back; GET lists them all
     expect((await listTranslations(alice, setId, loanId, "hi")).records).toHaveLength(1);
     await expectStatus(translatePages(alice, setId, { fileId: loanId, from: "hi", to: "kn" }), 422);
     await expectStatus(listTranslations(bob, setId, loanId), 404);
@@ -401,8 +423,16 @@ describe("drafting services on SQLite", () => {
   it("deletes a file's work items with the file, and every item with the set", async () => {
     const ws = await workStore();
     expect(await ws.list(setId, "translation", { prefix: `${loanId}:` })).toHaveLength(1);
+    // A notice read from a set file holds a copy of its text: it goes with the file; pasted notices stay.
+    const fromFile = await createDefectNotice(alice, setId, { forum: "hc", fileId: loanId, useAi: false });
+    expect(fromFile).toMatchObject({ sourceFileId: loanId, text: expect.stringContaining("LOAN AGREEMENT") });
+    expect(fromFile.id.startsWith(`${loanId}:`)).toBe(true);
+    expect(await listDefectNotices(alice, setId)).toHaveLength(3);
     await deleteFile(alice, setId, loanId);
     expect(await ws.list(setId, "translation")).toHaveLength(0);
+    const left = await listDefectNotices(alice, setId);
+    expect(left).toHaveLength(2);
+    expect(left.some((x) => x.text.includes("LOAN AGREEMENT"))).toBe(false);
     await deleteSet(alice, setId);
     expect(await ws.list(setId, "defects")).toHaveLength(0);
     expect(await ws.get(setId, "parawise", plaintId)).toBeNull();
@@ -487,13 +517,76 @@ describe("paperbook builder", () => {
     const ex = await extractPdf(built.pdf);
     expect(ex.pages[0].text).toMatch(/INDEX/);
     expect(ex.pages[0].text).toMatch(/Impugned order/);
-    expect(ex.pages[1].text).toMatch(/Typed from the extracted text of order\.txt\. Not a facsimile/);
+    expect(ex.pages[1].text).toMatch(/Typed from the extracted text of order\.txt\. Not a facsimile of the original; not compared with it\./);
+    // Typed pages are labelled as typed, never TRUE COPY; the embedded original carries the requested TRUE COPY line.
+    for (const pg of ex.pages.slice(1, 1 + typed)) { expect(pg.text).toContain(TYPED_PAGE_LABEL.extracted); expect(pg.text).not.toMatch(/TRUE COPY/); }
     const annexPage = ex.pages[1 + typed].text;
     expect(annexPage).toMatch(/ANNEXURE P-1/);
     expect(annexPage).toMatch(/TRUE COPY/);
+    expect(annexPage).not.toContain(TYPED_PAGE_LABEL.extracted);
     expect(annexPage).toMatch(/Original page 1/);
     expect(ex.pages.at(-1)!.text).toMatch(new RegExp(`\\b${3 + typed}\\b`));
     expect(ex.outline?.map((o: { title: string }) => o.title)).toEqual(["Index", "Impugned order", "ANNEXURE P-1 — Loan agreement"]);
+  });
+
+  it("never prints TRUE COPY unless asked, and never on pages typed by software (even for an annexure when asked)", async () => {
+    const entries = [{ fileId: textId, title: "Typed annexure", annexure: true }, { fileId: pdfId, uploadKey: "o", title: "Loan agreement", annexure: true }];
+    const uploads = [{ key: "o", name: "agreement.pdf", mime: "application/pdf", bytes: original }];
+    // Off by default: nothing on any page says TRUE COPY.
+    const plain = await buildPaperbook(alice, setId, { title: "No certification", indexPage: false, entries }, uploads);
+    const plainText = (await extractPdf(plain.pdf)).pages.map((p) => p.text);
+    expect(plainText.some((t) => /TRUE COPY/.test(t))).toBe(false);
+    expect(plainText.filter((t) => t.includes(TYPED_PAGE_LABEL.extracted)).length).toBe(plainText.length - 2); // every typed page labelled
+    // Asked for: only the embedded original's pages carry it; the typed annexure's pages do not, and the preview says so.
+    const spec = { title: "With certification", indexPage: false, trueCopy: true, entries };
+    const preview = await buildPaperbook(alice, setId, spec, uploads, { preview: true });
+    expect(preview.index.map((r) => [r.annexure, r.source?.kind, r.trueCopy])).toEqual([["ANNEXURE P-1", "typed", false], ["ANNEXURE P-2", "original", true]]);
+    const built = await buildPaperbook(alice, setId, spec, uploads);
+    const pages = (await extractPdf(built.pdf)).pages.map((p) => p.text);
+    const typedPages = preview.index[0].pages;
+    for (const t of pages.slice(0, typedPages)) { expect(t).not.toMatch(/TRUE COPY/); expect(t).toContain(TYPED_PAGE_LABEL.extracted); }
+    for (const t of pages.slice(typedPages)) expect(t).toMatch(/TRUE COPY/);
+    // A spec that asks for TRUE COPY on typed entries only: no page carries it.
+    const typedOnly = await buildPaperbook(alice, setId, { title: "Typed only", indexPage: false, trueCopy: true, entries: [entries[0]] });
+    expect((await extractPdf(typedOnly.pdf)).pages.some((p) => /TRUE COPY/.test(p.text))).toBe(false);
+  });
+
+  it("labels pages typed from OCR text as OCR text", async () => {
+    const r = await uploadServerFile(alice, setId, { name: "scanned-notice.txt", mime: "text/plain", bytes: bytes("Notice under Section 80 CPC served on the defendant.") });
+    if (r.status !== "created") throw new Error("upload failed");
+    const store = await docStore();
+    const f = (await store.getFile(setId, r.file.id))!;
+    await store.updateFile({ ...f, method: "ocr-ai", ocrDonePages: [1] });
+    const spec = { title: "OCR", indexPage: false, trueCopy: true, entries: [{ fileId: r.file.id, title: "Notice", annexure: true }] };
+    const preview = await buildPaperbook(alice, setId, spec, [], { preview: true });
+    expect(preview.index[0]).toMatchObject({ source: { kind: "typed", ocr: true }, trueCopy: false });
+    const text = (await extractPdf((await buildPaperbook(alice, setId, spec)).pdf)).pages[0].text;
+    expect(text).toMatch(/Typed from the OCR \(machine-read\) text of scanned-notice\.txt/);
+    expect(text).toContain(TYPED_PAGE_LABEL.ocr);
+    expect(text).not.toMatch(/TRUE COPY/);
+  });
+
+  it("building the PDF is an export: refused (403, audited) for roles without export; the index preview still works", async () => {
+    const spec = { title: "Export check", indexPage: false, entries: [{ fileId: textId, title: "Order", annexure: false }] };
+    for (const role of ["paralegal", "reviewer", "litigation_support", "client_guest"] as const) {
+      const who = person(`u_${role}`, { roles: [role] });
+      await expect(buildPaperbook(who, setId, spec)).rejects.toMatchObject({ status: 403, code: "forbidden" });
+      const preview = await buildPaperbook(who, setId, spec, [], { preview: true });
+      expect(preview.index).toHaveLength(1);
+      expect(recentAudit({ principalId: who.id, action: "export", decision: "deny" }).some((e) => e.via === "documents.paperbook" && e.resource.kind === "matter" && e.resource.id === MATTER)).toBe(true);
+    }
+    // No read access at all: still a 404 (unknown and unreadable sets are indistinguishable), before any export check.
+    await expectStatus(buildPaperbook(bob, setId, spec), 404);
+    // Partner / associate may export; the allow is audited too.
+    const built = await buildPaperbook(person("u_partner", { roles: ["partner"] }), setId, spec);
+    expect(built.pdf.byteLength).toBeGreaterThan(0);
+    expect(recentAudit({ principalId: "u_partner", action: "export", decision: "allow" }).some((e) => e.via === "documents.paperbook")).toBe(true);
+    // A personal set (no matter) is exported by its owner.
+    const para = person("u_para_owner", { roles: ["paralegal"] });
+    const mine = await createSet(para, { name: "My notes" });
+    const up = await uploadServerFile(para, mine.id, { name: "note.txt", mime: "text/plain", bytes: bytes("A personal note.") });
+    if (up.status !== "created") throw new Error("upload failed");
+    expect((await buildPaperbook(para, mine.id, { title: "Mine", indexPage: false, entries: [{ fileId: up.file.id, title: "Note", annexure: false }] })).pdf.byteLength).toBeGreaterThan(0);
   });
 
   it("refuses an attached original whose SHA-256 differs, and text the PDF fonts cannot print (never '?')", async () => {

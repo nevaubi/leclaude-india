@@ -1,10 +1,8 @@
 import "server-only";
 import * as XLSX from "xlsx";
-import { can } from "@/lib/auth/policy";
-import { refs } from "@/lib/auth/resources";
 import type { Principal } from "@/lib/auth/types";
 import { CODING_LABEL, type CellStatus, type DocReviewRow, type ReviewCell } from "../review-types";
-import { DocsError, loadSet } from "./access";
+import { authorizeSetExport, loadSet } from "./access";
 import { allRowPages, loadReview } from "./review";
 import { recordAudit } from "./sets";
 import { docStore, type StoredReview } from "./store";
@@ -103,7 +101,7 @@ export function exportFilename(review: StoredReview, format: ExportFormat): stri
 
 export async function exportReview(principal: Principal, setId: string, reviewId: string, format: ExportFormat): Promise<{ body: Uint8Array | string; contentType: string; filename: string }> {
   const set = await loadSet(principal, setId, "read");
-  if (set.matterId && !can(principal, "export", { ...refs.matter(set.matterId), tenantId: set.tenantId })) throw new DocsError("You may not export from this matter", 403, "forbidden");
+  authorizeSetExport(principal, set, "documents.review_export");
   const store = await docStore();
   const review = await loadReview(store, set, reviewId);
   const rows: DocReviewRow[] = [];

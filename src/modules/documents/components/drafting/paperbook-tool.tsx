@@ -29,7 +29,8 @@ export function PaperbookTool({ setId, setName, fileCount }: DraftingProps) {
   const [prefix, setPrefix] = React.useState<AnnexurePrefix>("P");
   const [startPage, setStartPage] = React.useState("1");
   const [indexPage, setIndexPage] = React.useState(true);
-  const [trueCopy, setTrueCopy] = React.useState(true);
+  // Off by default: a "TRUE COPY" line is the advocate's certification, never the software's (and never on typed pages).
+  const [trueCopy, setTrueCopy] = React.useState(false);
   const [entries, setEntries] = React.useState<Entry[]>([]);
   const [preview, setPreview] = React.useState<{ index: PaperbookIndexRow[]; totalPages: number } | null>(null);
   const [busy, setBusy] = React.useState<"preview" | "build" | null>(null);
@@ -39,7 +40,7 @@ export function PaperbookTool({ setId, setName, fileCount }: DraftingProps) {
   const ctrl = React.useRef<AbortController | null>(null);
   React.useEffect(() => () => ctrl.current?.abort(), []);
   // Any change to the plan invalidates a shown index.
-  React.useEffect(() => { setPreview(null); }, [entries, prefix, startPage, indexPage]);
+  React.useEffect(() => { setPreview(null); }, [entries, prefix, startPage, indexPage, trueCopy]);
 
   const labels = annexureLabels(entries, prefix);
   const attachedBytes = entries.reduce((n, e) => n + (e.attachment?.size ?? 0), 0);
@@ -98,8 +99,9 @@ export function PaperbookTool({ setId, setName, fileCount }: DraftingProps) {
             <span className="flex items-center gap-1.5 text-muted-foreground">Annexure prefix <SegmentedControl size="xs" ariaLabel="Annexure prefix" value={prefix} onChange={(v: AnnexurePrefix) => setPrefix(v)} options={[{ value: "P", label: "P", title: "Petitioner" }, { value: "R", label: "R", title: "Respondent" }, { value: "A", label: "A", title: "Applicant / Appellant" }]} /></span>
             <label className="flex items-center gap-1.5 text-muted-foreground">First page no. <Input size="xs" className="w-16" inputMode="numeric" value={startPage} onChange={(e) => setStartPage(e.target.value.replace(/\D/g, "").slice(0, 4))} /></label>
             <label className="flex items-center gap-1.5"><Checkbox size="sm" checked={indexPage} onCheckedChange={(v) => setIndexPage(v === true)} /> Index page</label>
-            <label className="flex items-center gap-1.5"><Checkbox size="sm" checked={trueCopy} onCheckedChange={(v) => setTrueCopy(v === true)} /> “TRUE COPY” on annexure pages</label>
+            <label className="flex items-center gap-1.5"><Checkbox size="sm" checked={trueCopy} onCheckedChange={(v) => setTrueCopy(v === true)} /> “TRUE COPY” line on attached originals</label>
           </div>
+          {trueCopy && <p className="text-[11.5px] leading-snug text-muted-foreground sm:col-span-2">Printed only on annexure pages embedded from an attached PDF or image, never on pages typed from extracted or OCR text (those are labelled as typed). Certifying a true copy is the advocate’s act: check each page against the original and sign it before filing.</p>}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -120,7 +122,7 @@ export function PaperbookTool({ setId, setName, fileCount }: DraftingProps) {
                 <label className="flex items-center gap-1.5 text-[12px]"><Checkbox size="sm" checked={e.annexure} onCheckedChange={(v) => patch(e.key, { annexure: v === true })} /> Annexure</label>
                 <span className="w-[104px] text-[11.5px] font-medium tabular">{labels[i] ?? <span className="text-muted-foreground">—</span>}</span>
                 {(() => {
-                  const what = e.fileId ? (e.attachment ? `Original attached: ${e.attachment.name} (${formatBytes(e.attachment.size)}) · hash checked on preview / build` : `${e.fileName ?? "Set file"} · typed from stored text`) : `Attachment: ${e.attachment?.name} (${formatBytes(e.attachment?.size ?? 0)})`;
+                  const what = e.fileId ? (e.attachment ? `Original attached: ${e.attachment.name} (${formatBytes(e.attachment.size)}) · hash checked on preview / build` : `${e.fileName ?? "Set file"} · typed from stored text (never TRUE COPY)`) : `Attachment: ${e.attachment?.name} (${formatBytes(e.attachment?.size ?? 0)})`;
                   return <span className="w-full min-w-0 text-[11.5px] text-muted-foreground sm:order-none sm:w-auto sm:max-w-[260px] sm:truncate" title={e.fileId && e.attachment ? `${what}: its SHA-256 is compared with the hash recorded for the set file; the index preview says whether that hash was computed on the server or declared by the browser at upload.` : what}>{what}</span>;
                 })()}
                 <div className="ms-auto flex items-center gap-0.5">
@@ -156,6 +158,7 @@ export function PaperbookTool({ setId, setName, fileCount }: DraftingProps) {
                   <td className="px-2 py-1">
                     <div>{r.title}</div>
                     {r.source && <div className={cn("text-[11px]", r.source.kind === "original" && r.source.hash === "browser_declared" ? "text-warning-foreground dark:text-warning" : "text-muted-foreground")}>{paperbookSourceLabel(r.source)}</div>}
+                    {trueCopy && r.annexure && <div className="text-[11px] text-muted-foreground">{r.trueCopy ? "“TRUE COPY” line printed (for the advocate to certify)" : "No “TRUE COPY” line: pages typed by software"}</div>}
                   </td>
                   <td className="px-2 py-1 tabular">{r.annexure ?? "—"}</td>
                   <td className="px-3 py-1 text-right tabular">{pageRangeLabel(r)}</td>

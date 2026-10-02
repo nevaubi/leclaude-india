@@ -162,7 +162,8 @@ function useTranslations(setId: string, fileId: string | null, page: number | nu
     try {
       for (let i = 0; i < 30; i++) {
         const r = await translationsApi.translate(setId, { fileId, from, to, ...(page ? { pageFrom: page, pageTo: page } : {}), force }, ac.signal);
-        setByPage(new Map(r.records.map((x) => [x.page ?? 0, x])));
+        // A call returns only the pages it translated: merge them into the listed ones.
+        if (r.records.length) setByPage((cur) => { const next = new Map(cur); for (const x of r.records) next.set(x.page ?? 0, x); return next; });
         if (!r.remaining || !r.translated) break;
       }
     } catch (e) {

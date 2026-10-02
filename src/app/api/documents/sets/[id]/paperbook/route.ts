@@ -39,8 +39,11 @@ async function readLimited(req: NextRequest, max: number): Promise<Uint8Array | 
 /**
  * POST (JSON PaperbookSpec, or multipart: `spec` = JSON + `upload:<key>` files) → application/pdf.
  * POST ?preview=1 → { index: PaperbookIndexRow[] (with each entry's source), totalPages, firstPage } without building.
- * Authorization: read access to the set. Set files are typed from their stored text unless an original whose SHA-256
- * matches the stored hash is attached; attachments outside the set may be PDF, PNG or JPEG.
+ * Authorization: the preview needs read access to the set; building the PDF is an export, so it also needs the matter's
+ * `export` permission (a personal set: its owner). The set-level check runs in buildPaperbook, after the set is
+ * resolved (unknown and unreadable sets stay 404), and the decision is written to the authorization audit. Set files
+ * are typed from their stored text unless an original whose SHA-256 matches the stored hash is attached; attachments
+ * outside the set may be PDF, PNG or JPEG.
  */
 async function handlePOST(req: NextRequest, { params }: Params) {
   const { id } = await params;

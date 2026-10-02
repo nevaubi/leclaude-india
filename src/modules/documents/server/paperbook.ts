@@ -4,14 +4,22 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFP
 import type { Principal } from "@/lib/auth/types";
 import { drawAnchoredText, sanitizeWinAnsi, setOutline, wrapLine, type OutlineSpec } from "@/modules/office/pdf/pdf-lib-utils";
 import { annexureLabels, computePaperbookIndex, PAPERBOOK_LIMITS, pageRangeLabel, type AnnexurePrefix, type PaperbookIndexRow, type PaperbookSource, type PaperbookSpec } from "../drafting";
-import { DocsError, loadSet } from "./access";
+import { authorizeSetExport, DocsError, loadSet } from "./access";
 import { pagesFromChunks } from "./extract";
 import { recordAudit } from "./sets";
 import { docStore } from "./store";
 
 /**
  * Paperbook builder: the chosen files in order, an index page, continuous page numbers stamped on every page, an
- * annexure marker on the first page of each annexure, optional "TRUE COPY" on annexure pages, and a bookmark per entry.
+ * annexure marker on the first page of each annexure, and a bookmark per entry.
+ *
+ * Building the PDF is an export of the set's documents: a matter set needs the matter's `export` permission (a personal
+ * set: its owner), checked and audited before anything is read. The index preview needs read access only.
+ *
+ * "TRUE COPY" is off unless the request turns it on, and is then printed only on annexure pages whose original bytes are
+ * embedded (an attached PDF or image). A page typed by software from extracted or OCR text is never marked TRUE COPY: it
+ * carries "TYPED FROM EXTRACTED TEXT" (or "TYPED FROM OCR TEXT") and a header saying it is not a facsimile. The line
+ * is a place for the advocate's certification, which is the advocate's act, not the software's.
  *
  * Sources, never substituted:
  *  - an original attached for a set file is used only when its SHA-256 equals the hash stored for that file. The index
@@ -48,7 +56,7 @@ const TEXT_PAGE_BYTES = 6 * 1024;
 type Source =
   | { kind: "pdf"; upload: string; pages: number }
   | { kind: "image"; upload: string }
-  | { kind: "typed"; fileName: string; pages: { page: number | null; lines: string[]; rupee: boolean }[] };
+  | { kind: "typed"; fileName: string; pages: { page: number | null; lines: string[]; rupee: boolean; ocr: boolean }[] };
 
 interface LoadedUpload { up: PaperbookUpload; type: "pdf" | "png" | "jpg"; doc: PDFDocument | null; pixels: number; uses: number }
 
@@ -230,8 +238,12 @@ async function loadSources(setId: string, spec: PaperbookSpec, uploadList: Map<s
     const all = pages.map((p) => p.text).join("\n");
     const bad = unprintableChars(all);
     if (bad) { skip(`${label}: “${file!.name}” contains ${bad} character${bad === 1 ? "" : "s"} the paperbook's built-in PDF fonts cannot print (${describeUnprintable(all)}); attach the original PDF for this file`); continue; }
-    sources.push({ kind: "typed", fileName: file!.name, pages: pages.map((p) => ({ page: p.page, lines: typedLines(font, p.text), rupee: p.text.includes("₹") })) });
-    info.push({ kind: "typed" });
+    // Pages whose stored text was machine-read from an image (OCR) are labelled as such.
+    const ocrPages = new Set(file!.ocrDonePages ?? []);
+    const isOcr = (page: number | null) => file!.method === "ocr-ai" || (page != null && ocrPages.has(page));
+    const typedPages = pages.map((p) => ({ page: p.page, lines: typedLines(font, p.text), rupee: p.text.includes("₹"), ocr: isOcr(p.page) }));
+    sources.push({ kind: "typed", fileName: file!.name, pages: typedPages });
+    info.push(typedPages.some((p) => p.ocr) ? { kind: "typed", ocr: true } : { kind: "typed" });
   }
   // Titles and headings are printed in the index and bookmarks: refused, never printed as "?".
   const printable = (t: string, what: string) => { if (unprintableChars(t)) problems.push(`${what} contains ${describeUnprintable(t)}, which the index font cannot print; write it in English (Latin script)`); };
@@ -262,11 +274,22 @@ function estimateBytes(sources: Source[], uploads: Map<string, LoadedUpload>, dr
   return n;
 }
 
-function stamp(page: PDFPage, font: PDFFont, bold: PDFFont, o: { number: number; marker: string | null; trueCopy: boolean }) {
+/** Footer label of a page typed by software (never "TRUE COPY"). */
+export const TYPED_PAGE_LABEL = { extracted: "TYPED FROM EXTRACTED TEXT", ocr: "TYPED FROM OCR TEXT" } as const;
+
+/**
+ * Page number, annexure marker and the bottom-right line: "TRUE COPY" (only ever passed for embedded original bytes) or,
+ * on a page typed by software, its typed-text label. The two are exclusive.
+ */
+function stamp(page: PDFPage, font: PDFFont, bold: PDFFont, o: { number: number; marker: string | null; trueCopy: boolean; typed?: "extracted" | "ocr" | null }) {
   drawAnchoredText(page, { text: String(o.number), font: bold, size: 10, anchor: "bottom-center", margin: 22, background: true });
   if (o.marker) drawAnchoredText(page, { text: o.marker, font: bold, size: 11, anchor: "top-right", margin: 26, background: true });
-  if (o.trueCopy) drawAnchoredText(page, { text: "TRUE COPY", font, size: 9, anchor: "bottom-right", margin: 22, background: true });
+  if (o.typed) drawAnchoredText(page, { text: TYPED_PAGE_LABEL[o.typed], font, size: 8, anchor: "bottom-right", margin: 22, background: true, color: rgb(0.3, 0.3, 0.3) });
+  else if (o.trueCopy) drawAnchoredText(page, { text: "TRUE COPY", font, size: 9, anchor: "bottom-right", margin: 22, background: true });
 }
+
+/** Whether an entry's pages may carry the "TRUE COPY" line: requested, an annexure, and its original bytes embedded. */
+const mayCarryTrueCopy = (spec: PaperbookSpec, src: Source, marker: string | null) => spec.trueCopy && !!marker && (src.kind === "pdf" || src.kind === "image");
 
 interface IndexLayout { pages: number[][]; titleLines: string[][]; court: string[]; title: string[] }
 
@@ -321,11 +344,15 @@ function drawIndex(out: PDFDocument, font: PDFFont, bold: PDFFont, rows: Paperbo
   return pages;
 }
 
-/** Header lines above a typed page (wrapped, at most three; a very long file name is shortened in the header only). */
-function typedHeader(small: PDFFont, fileName: string, page: number | null, contd: boolean, rupee: boolean): string[] {
-  const name = fileName.length > 120 ? `${fileName.slice(0, 117)}…` : fileName;
-  const text = `Typed from the extracted text of ${name}${page != null ? `, page ${page}` : ""}${contd ? " (contd.)" : ""}. Not a facsimile of the original.${rupee ? " The rupee sign is printed as Rs." : ""}`;
-  return wrapHard(small, 7.5, text, HEADER_WIDTH).slice(0, 3);
+/**
+ * Header lines above a typed page: what it was typed from (wrapped, at most three lines; a very long file name is
+ * shortened in the header only), then the rupee note on a line of its own when it applies (at most four lines).
+ */
+function typedHeader(small: PDFFont, fileName: string, page: number | null, contd: boolean, rupee: boolean, ocr: boolean): string[] {
+  const name = fileName.length > 80 ? `${fileName.slice(0, 77)}…` : fileName;
+  const text = `Typed from the ${ocr ? "OCR (machine-read) text" : "extracted text"} of ${name}${page != null ? `, page ${page}` : ""}${contd ? " (contd.)" : ""}. Not a facsimile of the original; not compared with it.`;
+  const lines = wrapHard(small, 7.5, text, HEADER_WIDTH).slice(0, 3);
+  return rupee ? [...lines, "The rupee sign is printed as Rs."] : lines;
 }
 
 export interface PaperbookBuild { pdf: Uint8Array; index: PaperbookIndexRow[]; totalPages: number; firstPage: number; fileName: string }
@@ -333,6 +360,8 @@ export interface PaperbookBuild { pdf: Uint8Array; index: PaperbookIndexRow[]; t
 /** Build (or, with `preview`, only lay out and index) a paperbook from a set. */
 export async function buildPaperbook(principal: Principal, setId: string, rawSpec: unknown, uploadList: PaperbookUpload[] = [], opts: { preview?: boolean } = {}): Promise<PaperbookBuild> {
   const set = await loadSet(principal, setId, "read");
+  // The built PDF is an export of the set's documents (the index preview is not): refused before anything is read.
+  if (!opts.preview) authorizeSetExport(principal, set, "documents.paperbook");
   const spec = cleanSpec(rawSpec);
   const total = uploadList.reduce((n, u) => n + u.bytes.byteLength, 0);
   if (total > PAPERBOOK_LIMITS.maxUploadBytes) throw new DocsError(`Attachments are limited to ${Math.round(PAPERBOOK_LIMITS.maxUploadBytes / 1024 / 1024)} MB per paperbook request`, 413, "too_large");
@@ -348,7 +377,8 @@ export async function buildPaperbook(principal: Principal, setId: string, rawSpe
   const layout = spec.indexPage ? layoutIndex(font, bold, spec, titles) : null;
   const computed = computePaperbookIndex(entries, counts, { ...spec, indexPages: layout?.pages.length });
   const { indexPages, totalPages, firstPage } = computed;
-  const rows = computed.rows.map((r, i) => ({ ...r, source: info[i] }));
+  const labels = annexureLabels(spec.entries, spec.prefix);
+  const rows = computed.rows.map((r, i) => ({ ...r, source: info[i], trueCopy: mayCarryTrueCopy(spec, sources[i], labels[i]) }));
   if (totalPages > PAPERBOOK_LIMITS.maxPages) throw new DocsError(`The paperbook would have ${totalPages} pages; the limit is ${PAPERBOOK_LIMITS.maxPages}`, 422, "too_many_pages");
   const drawn = indexPages + sources.reduce((n, s, i) => n + (s.kind === "typed" ? counts[i] : 0), 0);
   const estimate = estimateBytes(sources, loaded, drawn);
@@ -356,21 +386,21 @@ export async function buildPaperbook(principal: Principal, setId: string, rawSpe
   const fileName = `${spec.title.replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 80) || "Paperbook"}.pdf`;
   if (opts.preview) return { pdf: new Uint8Array(), index: rows, totalPages, firstPage, fileName };
 
-  const labels = annexureLabels(spec.entries, spec.prefix);
   const indexPagesList = layout ? drawIndex(out, font, bold, rows, layout) : [];
   let number = firstPage;
   for (const p of indexPagesList) stamp(p, small, bold, { number: number++, marker: null, trueCopy: false });
   const outline: OutlineSpec[] = indexPages ? [{ title: "Index", page: 1 }] : [];
+  let trueCopyPages = 0;
   const images = new Map<string, PDFImage>();
   for (const [i, src] of sources.entries()) {
     const startIndex = out.getPageCount() + 1;
     const marker = labels[i];
-    const trueCopy = spec.trueCopy && !!marker;
-    const added: PDFPage[] = [];
+    const trueCopy = mayCarryTrueCopy(spec, src, marker);
+    const added: { page: PDFPage; typed: "extracted" | "ocr" | null }[] = [];
     if (src.kind === "pdf") {
       const doc = loaded.get(src.upload)!.doc!;
       const copied = await out.copyPages(doc, doc.getPageIndices());
-      for (const pg of copied) added.push(out.addPage(pg));
+      for (const pg of copied) added.push({ page: out.addPage(pg), typed: null });
     } else if (src.kind === "image") {
       let img = images.get(src.upload);
       if (!img) {
@@ -381,24 +411,25 @@ export async function buildPaperbook(principal: Principal, setId: string, rawSpe
       const page = out.addPage([A4.w, A4.h]);
       const s = Math.min((A4.w - MARGIN * 2) / img.width, (A4.h - MARGIN * 2 - 20) / img.height, 1.5);
       page.drawImage(img, { x: (A4.w - img.width * s) / 2, y: (A4.h - img.height * s) / 2, width: img.width * s, height: img.height * s });
-      added.push(page);
+      added.push({ page, typed: null });
     } else {
       for (const sp of src.pages) {
         const chunks = Math.max(1, Math.ceil(sp.lines.length / LINES_PER_PAGE));
         for (let c = 0; c < chunks; c++) {
           const page = out.addPage([A4.w, A4.h]);
-          const head = typedHeader(small, src.fileName, sp.page, c > 0, sp.rupee);
+          const head = typedHeader(small, src.fileName, sp.page, c > 0, sp.rupee, sp.ocr);
           head.forEach((l, k) => page.drawText(l, { x: MARGIN, y: A4.h - MARGIN + 8 + (head.length - 1 - k) * 9, size: 7.5, font: small, color: rgb(0.4, 0.4, 0.4) }));
           let y = A4.h - MARGIN - 20;
           for (const l of sp.lines.slice(c * LINES_PER_PAGE, (c + 1) * LINES_PER_PAGE)) {
             if (l) page.drawText(l, { x: MARGIN, y, size: BODY_SIZE, font });
             y -= LINE;
           }
-          added.push(page);
+          added.push({ page, typed: sp.ocr ? "ocr" : "extracted" });
         }
       }
     }
-    added.forEach((p, k) => stamp(p, small, bold, { number: number++, marker: k === 0 ? marker : null, trueCopy }));
+    added.forEach((p, k) => stamp(p.page, small, bold, { number: number++, marker: k === 0 ? marker : null, trueCopy, typed: p.typed }));
+    if (trueCopy) trueCopyPages += added.length;
     outline.push({ title: marker ? `${marker} — ${titles[i]}` : titles[i], page: startIndex });
   }
   if (outline.length) setOutline(out, outline);
@@ -409,6 +440,6 @@ export async function buildPaperbook(principal: Principal, setId: string, rawSpe
   const pdf = await out.save();
   if (pdf.byteLength > PAPERBOOK_LIMITS.maxOutputBytes) throw new DocsError(`The paperbook came to ${Math.ceil(pdf.byteLength / 1024 / 1024)} MB; the limit is ${PAPERBOOK_LIMITS.maxOutputBytes / 1024 / 1024} MB. Split it into volumes.`, 413, "too_large");
   const basis = { typed: info.filter((s) => s.kind === "typed").length, originalServerHash: info.filter((s) => s.kind === "original" && s.hash === "server").length, originalBrowserHash: info.filter((s) => s.kind === "original" && s.hash === "browser_declared").length, attachments: info.filter((s) => s.kind === "attachment").length };
-  recordAudit(principal, "export", { kind: "document_set", id: set.id, label: set.name, matterId: set.matterId ?? undefined }, { surface: "documents.paperbook", entries: spec.entries.length, pages: totalPages, attached: uploadList.length, sources: basis, sha256: sha256(pdf) });
+  recordAudit(principal, "export", { kind: "document_set", id: set.id, label: set.name, matterId: set.matterId ?? undefined }, { surface: "documents.paperbook", entries: spec.entries.length, pages: totalPages, attached: uploadList.length, sources: basis, trueCopyRequested: spec.trueCopy, trueCopyPages, sha256: sha256(pdf) });
   return { pdf, index: rows, totalPages, firstPage, fileName };
 }

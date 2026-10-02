@@ -1,10 +1,10 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { aiConfig } from "@/lib/ai/config";
-import { remoteStore } from "@/lib/db/remote";
+import { remoteStore, type RemoteStore } from "@/lib/db/remote";
 import { listProvenance } from "@/lib/integrity/store";
 import { citatorFor } from "@/modules/india/citator/read";
-import { chunksToText, readJudgmentText } from "@/modules/india/corpus/text";
+import { cleanJudgmentText, readJudgmentText, type JudgmentText } from "@/modules/india/corpus/text";
 import { checkCitations } from "@/modules/search/service";
 import type { PMNode } from "./doc-model";
 import { filingText, runFilingCheck, textBlocks, type FilingCheckDeps, type FilingCheckReport } from "./filing-check";
@@ -22,17 +22,44 @@ export function docBodyHash(doc: PMNode): string {
 }
 
 const JUDGMENT_TEXT_MAX = 400_000;
+/** Rows readJudgmentText reads per call (its LIMIT): a read that returned this many chunks may have stopped there. */
+const CORPUS_ROWS_PER_READ = 400;
 
-export function serverFilingDeps(): FilingCheckDeps {
+/**
+ * The judgment text a quotation is compared with, and whether it is the WHOLE judgment. Chunk texts are joined without
+ * the reader's "[p. N]" page markers, so a quotation running across a page break still matches. `complete` holds only
+ * when the chunks run from the first (index 0) to the last one the corpus records (total_chunks) with no gap and nothing
+ * left unread (nextChunk null). A quotation is reported "not found" only against complete text; otherwise it is
+ * "text_incomplete" (not checked), never "not found".
+ */
+export function judgmentTextForQuotes(t: Pick<JudgmentText, "chunks" | "nextChunk" | "totalChunks">): { text: string | null; complete: boolean } {
+  const chunks = t.chunks;
+  if (!chunks.length) return { text: null, complete: false };
+  const text = chunks.map((c) => cleanJudgmentText(c.text)).join("\n");
+  const contiguous = chunks.every((c, i) => c.index === (i === 0 ? 0 : chunks[i - 1].index + 1));
+  const last = chunks[chunks.length - 1].index;
+  const complete = t.nextChunk == null && contiguous && (!(t.totalChunks > 0) || last + 1 >= t.totalChunks);
+  return { text: text.trim() ? text : null, complete };
+}
+
+/** `store`: injectable for tests (default: the configured remote store, resolved per call). */
+export function serverFilingDeps(opts: { store?: RemoteStore | null } = {}): FilingCheckDeps {
   return {
     citecheck: (text, signal) => checkCitations(text.slice(0, 120_000), signal),
     corpusJudgment: async (citation) => {
-      const store = remoteStore();
+      const store = "store" in opts ? opts.store ?? null : remoteStore();
       if (!store) return "unavailable";
       try {
         const t = await readJudgmentText(citation, { maxChars: JUDGMENT_TEXT_MAX }, store);
         if (!t || !t.judgmentId) return null;
-        return { id: t.judgmentId, title: t.title, text: t.chunks.length ? chunksToText(t.chunks) : null, complete: t.nextChunk == null };
+        const r = judgmentTextForQuotes(t);
+        let complete = r.complete;
+        // The read may have stopped at its row limit with nothing to say so: read on from the last chunk to confirm.
+        if (complete && t.chunks.length >= CORPUS_ROWS_PER_READ) {
+          const more = await readJudgmentText(citation, { fromChunk: t.chunks[t.chunks.length - 1].index + 1, maxChars: 2000 }, store);
+          if (!more || more.chunks.length > 0) complete = false;
+        }
+        return { id: t.judgmentId, title: t.title, text: r.text, complete: complete && r.text != null };
       } catch {
         return "unavailable";
       }

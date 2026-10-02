@@ -1,7 +1,8 @@
 import "server-only";
-import { can } from "@/lib/auth/policy";
+import { auditDecision } from "@/lib/auth/audit";
+import { authorize, can } from "@/lib/auth/policy";
 import { refs } from "@/lib/auth/resources";
-import type { Action, Principal } from "@/lib/auth/types";
+import type { Action, PolicyDecision, Principal, ResourceRef } from "@/lib/auth/types";
 import type { DocSet } from "../types";
 import { docStore, type DocStore } from "./store";
 
@@ -36,6 +37,25 @@ export async function loadSet(principal: Principal, setId: string, action: SetAc
   if (!set || !canAccessSet(principal, set, "read")) throw setNotFound();
   if (action !== "read" && !canAccessSet(principal, set, action)) throw new DocsError("You may not change this document set", 403, "forbidden");
   return set;
+}
+
+/**
+ * Export from a set the caller can already read (a download or bundle of its documents: review CSV/XLSX, paperbook PDF).
+ * A matter set needs the matter's `export` permission (policy EXPORT roles + matter access); a personal set is exported
+ * by its owner only (loadSet already admits nobody else). The decision, allow or deny, is written to the authorization
+ * audit. Throws 403 when refused.
+ */
+export function authorizeSetExport(principal: Principal, set: DocSet, via: string): void {
+  const resource: ResourceRef = set.matterId ? { ...refs.matter(set.matterId), tenantId: set.tenantId } : { kind: "research", id: `document_set:${set.id}`, tenantId: set.tenantId };
+  const decision: PolicyDecision = set.matterId
+    ? authorize({ principal, action: "export", resource, via })
+    : canAccessSet(principal, set, "read") ? { allow: true, reason: "owner of a personal document set (no matter)" } : { allow: false, reason: "not the owner of this personal document set" };
+  try {
+    auditDecision({ principal, action: "export", resource, decision, via });
+  } catch (e) {
+    console.warn("[documents] export audit write failed", (e as Error).message);
+  }
+  if (!decision.allow) throw new DocsError(set.matterId ? "You may not export from this matter" : "You may not export this document set", 403, "forbidden");
 }
 
 /** Sets the principal may read, newest first. */

@@ -255,7 +255,7 @@ export function FilesTab({ setId, uploads, aiReady, storageFull, onView, onChang
         <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Delete this file?</DialogTitle>
-            <DialogDescription>“{toDelete?.name}”, its text and the facts and events taken from it will be removed from this set.</DialogDescription>
+            <DialogDescription>“{toDelete?.name}”, its text, the facts and events taken from it, and drafting work made from it (para-wise reply, translations, a defect notice read from it) will be removed from this set.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button size="sm" variant="ghost" onClick={() => setToDelete(null)}>Cancel</Button>

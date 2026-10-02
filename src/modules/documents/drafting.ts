@@ -301,18 +301,24 @@ export interface PaperbookSpec {
   /** First page number (continuous numbering across the whole paperbook). */
   startPage: number;
   indexPage: boolean;
+  /**
+   * Print a "TRUE COPY" line (off unless asked for). Only annexure pages whose original bytes are embedded (an attached
+   * PDF or image) carry it; pages typed by software from extracted or OCR text never do. Certifying a true copy is the
+   * advocate's act: the line is where the advocate signs after checking the page against the original.
+   */
   trueCopy: boolean;
   entries: PaperbookEntryIn[];
 }
 
 /**
- * Where an entry's pages come from: typed from the set file's stored text; an attached original of a set file whose
- * SHA-256 matched the hash recorded for it (computed on the server, or only declared by the uploading browser); or an
- * attachment that is not in the set.
+ * Where an entry's pages come from: typed by software from the set file's stored text (`ocr`: some of that text was
+ * machine-read from page images); an attached original of a set file whose SHA-256 matched the hash recorded for it
+ * (computed on the server, or only declared by the uploading browser); or an attachment that is not in the set.
  */
-export type PaperbookSource = { kind: "typed" } | { kind: "original"; hash: "server" | "browser_declared" } | { kind: "attachment" };
+export type PaperbookSource = { kind: "typed"; ocr?: boolean } | { kind: "original"; hash: "server" | "browser_declared" } | { kind: "attachment" };
 
-export interface PaperbookIndexRow { sl: number; title: string; annexure: string | null; from: number; to: number; pages: number; source?: PaperbookSource }
+/** One index row; `trueCopy`: whether the built pages of this entry carry the "TRUE COPY" line. */
+export interface PaperbookIndexRow { sl: number; title: string; annexure: string | null; from: number; to: number; pages: number; source?: PaperbookSource; trueCopy?: boolean }
 
 export const PAPERBOOK_LIMITS = {
   maxEntries: 200, maxPages: 2000, maxUploadBytes: 4 * 1024 * 1024, maxTitle: 200,
@@ -328,7 +334,7 @@ export const PAPERBOOK_LIMITS = {
 
 export function paperbookSourceLabel(s: PaperbookSource | undefined): string {
   if (!s) return "";
-  if (s.kind === "typed") return "Typed from stored text (not a facsimile)";
+  if (s.kind === "typed") return s.ocr ? "Typed by software from OCR text (not a facsimile; never marked TRUE COPY)" : "Typed by software from extracted text (not a facsimile; never marked TRUE COPY)";
   if (s.kind === "attachment") return "Attachment (not a set file)";
   return s.hash === "server" ? "Original: SHA-256 matches the hash computed on the server" : "Original: SHA-256 matches the hash the browser declared at upload (not computed on the server)";
 }
@@ -675,6 +681,8 @@ export interface DefectNotice {
   version: number;
   /** Whether the AI classification ran (false: keyword rules only). */
   aiClassified: boolean;
+  /** The set file the notice text was read from (the notice is deleted with that file); null when pasted. */
+  sourceFileId?: string | null;
 }
 
 const ROMAN = /^(?:i{1,3}|iv|vi{0,3}|ix|x{1,2}|xi{1,3}|xiv|xv)$/i;

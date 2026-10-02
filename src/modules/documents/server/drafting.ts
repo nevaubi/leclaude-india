@@ -250,7 +250,7 @@ interface RawReply { n?: unknown; stance?: unknown; reply?: unknown; reasoning?:
  * gets passages retrieved from the set's OTHER files; the model may only cite those passages, and every quote is checked
  * against the passage text in code (unknown passage numbers are dropped and counted, never re-bound).
  */
-export async function proposeReplies(principal: Principal, setId: string, fileId: string, opts: { ns?: unknown; version?: unknown; signal?: AbortSignal; budgetMs?: number } = {}): Promise<ParawiseView & { remaining: number; failed: number }> {
+export async function proposeReplies(principal: Principal, setId: string, fileId: string, opts: { ns?: unknown; version?: unknown; signal?: AbortSignal; budgetMs?: number } = {}): Promise<ParawiseView & { remaining: number; failed: number; superseded: number }> {
   const set = await loadSet(principal, setId, "write");
   const { file, hash } = await filePages(set.id, fileId);
   const ws = await workStore();
@@ -322,11 +322,43 @@ export async function proposeReplies(principal: Principal, setId: string, fileId
       for (const p of batch) { failed++; results.set(p.n, { ...p, status: "failed", error: str((e as Error)?.message ?? "failed", 300) }); }
     }
   }
-  // Compare-and-set against the version read before the model calls: an edit or approval made meanwhile wins (409).
-  const next: ParawiseState = { ...state, paras: state.paras.map((p) => results.get(p.n) ?? p), updatedAt: now(), version: state.version + 1 };
-  await commit<ParawiseState>({ setId: set.id, kind: "parawise", key: file.id, data: next, textHash: hash, createdBy: principal.id, updatedAt: next.updatedAt }, stored);
-  recordAudit(principal, "ai.generate", { kind: "document_file", id: file.id, label: file.name, matterId: set.matterId ?? undefined }, { surface: "documents.parawise", proposed: results.size - failed, failed });
-  return { state: next, stale: false, paragraphs: next.paras.length, textHash: hash, file, remaining: next.paras.filter((p) => p.status !== "proposed").length, failed };
+  // Merge per paragraph with an atomic compare-and-set: a paragraph edited, approved or proposed elsewhere while the
+  // model ran keeps that change (its proposal from this run is dropped and counted); the others take this run's result.
+  const { next, superseded } = await mergeProposals(ws, set.id, file.id, hash, principal.id, { data: state, version: stored }, results);
+  recordAudit(principal, "ai.generate", { kind: "document_file", id: file.id, label: file.name, matterId: set.matterId ?? undefined }, { surface: "documents.parawise", proposed: results.size - failed - superseded, failed, superseded });
+  return { state: next, stale: false, paragraphs: next.paras.length, textHash: hash, file, remaining: next.paras.filter((p) => p.status !== "proposed").length, failed, superseded };
+}
+
+/** Same paragraph state (everything a user or another run can change), compared as stored JSON. */
+const sameParagraph = (a: ParaReply | undefined, b: ParaReply | undefined) => !!a && !!b && JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Write a proposal run's results onto the latest stored state. Starting from the snapshot the run read, a result is
+ * applied only to a paragraph that is still exactly as it was in that snapshot; a paragraph changed meanwhile keeps the
+ * change. Each attempt is an atomic compare-and-set on the stored version; a lost race re-reads and merges again (at
+ * most three attempts, then 409). A pleading whose text changed meanwhile is refused (stale).
+ */
+async function mergeProposals(ws: Awaited<ReturnType<typeof workStore>>, setId: string, fileId: string, hash: string, by: string, snapshot: { data: ParawiseState; version: number }, results: Map<string, ParaReply>): Promise<{ next: ParawiseState; superseded: number }> {
+  const before = new Map(snapshot.data.paras.map((p) => [p.n, p]));
+  let latest: { data: ParawiseState; version: number } | null = snapshot;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      const item = await ws.get<ParawiseState>(setId, "parawise", fileId);
+      latest = item ? { data: item.data, version: item.version ?? 0 } : null;
+    }
+    if (!latest) throw new DocsError("The para-wise reply was removed while replies were being proposed", 409, "conflict");
+    if (latest.data.textHash !== hash) throw new DocsError("The pleading's text changed since its paragraphs were detected. Restart the reply.", 409, "stale");
+    let superseded = 0;
+    const paras = latest.data.paras.map((p) => {
+      const r = results.get(p.n);
+      if (!r) return p;
+      if (!sameParagraph(before.get(p.n), p)) { superseded++; return p; }
+      return r;
+    });
+    const next: ParawiseState = { ...latest.data, paras, updatedAt: now(), version: latest.data.version + 1 };
+    if (await ws.putIfVersion<ParawiseState>({ setId, kind: "parawise", key: fileId, data: next, textHash: hash, createdBy: by, updatedAt: next.updatedAt }, latest.version)) return { next, superseded };
+  }
+  throw conflict();
 }
 
 /**
@@ -397,7 +429,11 @@ export async function listTranslations(principal: Principal, setId: string, file
   return { file, to: to ?? "", records };
 }
 
-/** Translate pages [from, to] of a file (bounded per call); each page stored with its source hash. */
+/**
+ * Translate pages [from, to] of a file (bounded per call); each page stored with its source hash. The file's stored
+ * translations are read once (one listing, not one read per page), and only the records written by this call are
+ * returned in `records` (the client merges them into what it listed; GET lists them all).
+ */
 export async function translatePages(principal: Principal, setId: string, input: { fileId?: unknown; from?: unknown; to?: unknown; pageFrom?: unknown; pageTo?: unknown; force?: unknown }, signal?: AbortSignal): Promise<TranslationView & { translated: number; skipped: number; remaining: number }> {
   const set = await loadSet(principal, setId, "write");
   const target = typeof input.to === "string" && LANG_CODES.has(input.to) ? input.to : null;
@@ -416,13 +452,14 @@ export async function translatePages(principal: Principal, setId: string, input:
   const glossary = glossaryHints(source === "auto" ? "en" : source, target);
   let translated = 0, skipped = 0;
   const started = Date.now();
+  const stored = new Map((await ws.list<TranslationRecord>(set.id, "translation", { prefix: `${file.id}:`, limit: 3000 })).map((i) => [i.key, i.data]));
   const todo: typeof inRange = [];
   for (const p of inRange) {
-    const key = translationKey(file.id, p.page, target);
-    const existing = await ws.get<TranslationRecord>(set.id, "translation", key);
-    if (existing && existing.data.sourceHash === sha(p.text) && input.force !== true) { skipped++; continue; }
+    const existing = stored.get(translationKey(file.id, p.page, target));
+    if (existing && existing.sourceHash === sha(p.text) && input.force !== true) { skipped++; continue; }
     todo.push(p);
   }
+  const written: TranslationRecord[] = [];
   let done = 0;
   for (const p of todo.slice(0, TRANSLATE_MAX_PAGES)) {
     if (signal?.aborted || Date.now() - started > 200_000) break;
@@ -438,11 +475,11 @@ export async function translatePages(principal: Principal, setId: string, input:
     if (!out) continue;
     const rec: TranslationRecord = { fileId: file.id, page: p.page, from: source, to: target, text: out + (p.text.length > TRANSLATE_PAGE_CHARS ? "\n\n[Translation covers the first part of this page only.]" : ""), sourceHash: sha(p.text), model: null, createdAt: now(), createdBy: principal.name || principal.id, label: TRANSLATION_LABEL };
     await ws.put<TranslationRecord>({ setId: set.id, kind: "translation", key: translationKey(file.id, p.page, target), data: rec, textHash: rec.sourceHash, createdBy: principal.id, updatedAt: rec.createdAt });
+    written.push(rec);
     translated++; done++;
   }
   if (translated) recordAudit(principal, "ai.generate", { kind: "document_file", id: file.id, label: file.name, matterId: set.matterId ?? undefined }, { surface: "documents.translate", to: target, pages: translated });
-  const view = await listTranslations(principal, setId, file.id, target);
-  return { ...view, translated, skipped, remaining: Math.max(0, todo.length - done) };
+  return { file, to: target, records: written.map((r) => ({ ...r, stale: false })), translated, skipped, remaining: Math.max(0, todo.length - done) };
 }
 
 // =====================================================================================================================
@@ -474,10 +511,12 @@ export async function createDefectNotice(principal: Principal, setId: string, in
   const set = await loadSet(principal, setId, "write");
   let text = typeof input.text === "string" ? input.text.replace(/\u0000/g, "").slice(0, 60_000) : "";
   let title = str(input.title, 200);
+  let sourceFileId: string | null = null;
   if (!text.trim() && typeof input.fileId === "string" && input.fileId) {
     const { file, pages } = await filePages(set.id, input.fileId);
     text = pages.map((p) => p.text).join("\n").slice(0, 60_000);
     title = title || file.name;
+    sourceFileId = file.id;
   }
   if (!text.trim()) throw new DocsError("Paste the defect notice or choose a file", 422, "invalid");
   const items = splitDefects(text).slice(0, 150);
@@ -508,7 +547,10 @@ export async function createDefectNotice(principal: Principal, setId: string, in
     }
   }
   const t = now();
-  const notice: DefectNotice = { id: `dn_${nanoid(10)}`, title: title || `Defect notice ${istDate()}`, forum, text, textHash: sha(text), defects, createdAt: t, createdBy: principal.name || principal.id, updatedAt: t, version: 1, aiClassified };
+  // A notice read from a set file holds a copy of that file's text: it is keyed under the file ("<fileId>:dn_…"), so
+  // deleting the file deletes it too (work-store deleteFile removes "<fileId>:…" keys).
+  const id = sourceFileId ? `${sourceFileId}:dn_${nanoid(10)}` : `dn_${nanoid(10)}`;
+  const notice: DefectNotice = { id, title: title || `Defect notice ${istDate()}`, forum, text, textHash: sha(text), defects, createdAt: t, createdBy: principal.name || principal.id, updatedAt: t, version: 1, aiClassified, sourceFileId };
   await commit<DefectNotice>({ setId: set.id, kind: "defects", key: notice.id, data: notice, textHash: notice.textHash, createdBy: principal.id, updatedAt: t }, 0);
   return notice;
 }

@@ -1,6 +1,6 @@
 import "server-only";
 import { decodeHtml, htmlText, isoDate } from "@/modules/india/sources/parse-util";
-import { normalizeCaseNumber } from "../../case-numbers";
+import { normalizeCaseNumber, qualifiedCaseKey } from "../../case-numbers";
 import type { AdapterContext, DiscoverResult } from "../../adapter";
 import type { DiscoveredDoc } from "../../types";
 
@@ -436,15 +436,21 @@ export interface TitleCaseNumbers {
 
 const YEAR_RE = /\b(?:19|20)\d{2}\b/g;
 
-function normalizeOne(part: string): string | null {
+/**
+ * Exact keys for one printed number: the normalized key and, when the number carries an NCLT bench code
+ * ("CP(IB)/271(AHM)2025", "C.P.(IB)/507/MB/2021"), the bench-qualified key ("CPIB/271/2025@AHM") — the same keys the
+ * cause-list parser emits (case-numbers.ts caseNumberKeys), so matters match orders and listings consistently.
+ */
+function normalizeOne(part: string): string[] {
   let p = clean(part);
   // "TYPE/123/MB/2021" (bench between slashes) is the same printing as "TYPE/123(MB)2021".
   p = p.replace(/^(.+?)\s*\/\s*(\d{1,7})\s*\/\s*([A-Za-z]{1,6})\s*\/\s*((?:19|20)\d{2})$/, "$1/$2($3)$4");
   // "CP (IB)" → "CP(IB)" (space between a type and its parenthetical).
   p = p.replace(/([A-Za-z.])\s+\(/g, "$1(");
   const n = normalizeCaseNumber(p);
-  if (!n || /\d/.test(n.type) || n.type.length > 24) return null;
-  return n.key;
+  if (!n || /\d/.test(n.type) || n.type.length > 24) return [];
+  const q = qualifiedCaseKey(n);
+  return q ? [n.key, q] : [n.key];
 }
 
 /**
@@ -463,14 +469,12 @@ export function caseNumbersFromTitle(title: string): TitleCaseNumbers {
     const list = /^(.+?)\s*Nos?\.?\s*(\d{1,7}(?:\s*(?:,|&|and)\s*\d{1,7})+)\s*(?:of|\/)\s*((?:19|20)\d{2})$/i.exec(part);
     if (list) {
       for (const num of list[2].split(/\s*(?:,|&|and)\s*/i)) {
-        const k = normalizeOne(`${list[1]} No. ${num} of ${list[3]}`);
-        if (k && !keys.includes(k)) keys.push(k);
+        for (const k of normalizeOne(`${list[1]} No. ${num} of ${list[3]}`)) if (!keys.includes(k)) keys.push(k);
       }
       continue;
     }
     if (/[&,;]|\band\b/i.test(part)) continue;
-    const k = normalizeOne(part);
-    if (k && !keys.includes(k)) keys.push(k);
+    for (const k of normalizeOne(part)) if (!keys.includes(k)) keys.push(k);
   }
   return { printed, keys };
 }

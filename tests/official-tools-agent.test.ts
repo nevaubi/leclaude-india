@@ -36,9 +36,9 @@ const entry = (over: Partial<CauseListEntry>): CauseListEntry => ({
 });
 
 describe("not available on this deployment", () => {
-  it("returns a deterministic not-available result while the facade is not wired", async () => {
-    await expect(run(searchOfficialSourcesTool, { q: "insider trading" })).resolves.toMatchObject({ available: false, status: "not_available", reason: "official_not_implemented", count: 0, results: [] });
-    await expect(run(readOfficialDocumentTool, { id: "src://sebi-orders_9f3a1c2b7e#p3" })).resolves.toMatchObject({ available: false, reason: "official_not_implemented" });
+  it("returns a deterministic not-available result while the corpus is not configured (no Postgres in tests)", async () => {
+    await expect(run(searchOfficialSourcesTool, { q: "insider trading" })).resolves.toMatchObject({ available: false, status: "not_available", reason: "official_not_configured", count: 0, results: [] });
+    await expect(run(readOfficialDocumentTool, { id: "src://sebi-orders_9f3a1c2b7e#p3" })).resolves.toMatchObject({ available: false, reason: "official_not_configured" });
     await expect(run(causelistLookupTool, { date: "2026-10-05", case_number: "SLP(C) No. 1234/2026" })).resolves.toMatchObject({ available: false, entries: [] });
     await expect(run(courtCalendarTool, { forum: "sci", year: 2026 })).resolves.toMatchObject({ available: false, status: "not_available" });
   });

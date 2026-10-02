@@ -79,15 +79,15 @@ describe("printed dates", () => {
 describe("case numbers in listing titles", () => {
   it("normalizes single numbers and strict lists, keeps everything else printed only", () => {
     expect(caseNumbersFromTitle("In the matter of X LLP [CP(IB) 188 of 2026]")).toEqual({ printed: ["CP(IB) 188 of 2026"], keys: ["CPIB/188/2026"] });
-    expect(caseNumbersFromTitle("X [IA/1037(AHM) 2026 in IA (Plan)/9(AHM) 2026 in CP (IB)/271(AHM)2025]").keys).toEqual(["IA/1037/2026", "IAPLAN/9/2026", "CPIB/271/2025"]);
-    expect(caseNumbersFromTitle("X [C.P. (IB)/507/MB/2021]").keys).toEqual(["CPIB/507/2021"]);
+    expect(caseNumbersFromTitle("X [IA/1037(AHM) 2026 in IA (Plan)/9(AHM) 2026 in CP (IB)/271(AHM)2025]").keys).toEqual(["IA/1037/2026", "IA/1037/2026@AHM", "IAPLAN/9/2026", "IAPLAN/9/2026@AHM", "CPIB/271/2025", "CPIB/271/2025@AHM"]);
+    expect(caseNumbersFromTitle("X [C.P. (IB)/507/MB/2021]").keys).toEqual(["CPIB/507/2021", "CPIB/507/2021@MB"]);
     expect(caseNumbersFromTitle("A vs. B [CA (AT) (Ins) No. 1699, 1700, 1701 & 1702 of 2025]").keys).toEqual(["CAATINS/1699/2025", "CAATINS/1700/2025", "CAATINS/1701/2025", "CAATINS/1702/2025"]);
-    // Two years in one part, unknown prefixes and bench-in-the-middle forms are never turned into a key.
+    // Two years in one part and unknown prefixes are never turned into a key; NCLT numbers also get the bench-qualified key.
     const messy = caseNumbersFromTitle("A vs. B [IA No. 5562 of 2023 & 4475, 5530 of 2025 in CA (AT) (Ins) No. 1557 & 1684 of 2023 and 626-628 of 2025]");
     expect(messy.printed).toHaveLength(2);
     expect(messy.keys).toEqual([]);
     expect(caseNumbersFromTitle("X [?? (IB)86(AHM)2026]")).toEqual({ printed: ["?? (IB)86(AHM)2026"], keys: [] });
-    expect(caseNumbersFromTitle("X [IA(IBC)(Plan)/32/MB/2026]").keys).toEqual([]);
+    expect(caseNumbersFromTitle("X [IA(IBC)(Plan)/32/MB/2026]").keys).toEqual(["IAIBCPLAN/32/2026", "IAIBCPLAN/32/2026@MB"]);
     expect(caseNumbersFromTitle("No brackets here")).toEqual({ printed: [], keys: [] });
   });
 });

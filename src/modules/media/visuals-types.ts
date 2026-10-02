@@ -14,7 +14,7 @@
  * - Logos are shown only beside the publisher they identify (nominative use), never as decoration.
  *
  * API:
- *   GET /api/india/visuals → VisualsResponse (public, cached; empty maps when the store is not configured)
+ *   GET /api/india/visuals → VisualsResponse (signed-in users, privately cached; empty maps when the store is not configured)
  *   POST /api/india/enrichment/run { target: "visuals", kinds?: VisualKind[], keys?: string[] } → enrichment report
  */
 
@@ -33,7 +33,7 @@ export interface VisualCredit {
 
 export interface Visual {
   kind: VisualKind;
-  /** Registry key: court id ("sci", "hc-bombay"), city id ("mumbai"), or regulator key ("RBI", "SEBI"). */
+  /** Registry key: court id ("sci", "hc-bombay"), city id ("mumbai"), or regulator key as stored on instruments ("rbi", "sebi"). */
   key: string;
   /** Our media URL (/api/media/<sha256>). */
   url: string;

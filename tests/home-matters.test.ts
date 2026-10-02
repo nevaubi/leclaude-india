@@ -31,14 +31,14 @@ describe("Home matters table model", () => {
     expect(hotCell({ hotDocs: 0, docCount: 0 })).toEqual({ text: "0 / 0", hot: false });
   });
   it("writes one quiet meta line", () => {
-    expect(matterMeta({ caption: "MDL No. 2873 (D.S.C.)", name: "In re AFFF", clientSide: "plaintiff", client: "Water District", status: "active" })).toBe("MDL No. 2873 (D.S.C.) · Plaintiff · Water District");
+    expect(matterMeta({ caption: "Arb. Ref. 14/2024 (seat: New Delhi)", name: "Valsara v. Meridian", clientSide: "plaintiff", client: "Water District", status: "active" })).toBe("Arb. Ref. 14/2024 (seat: New Delhi) · Plaintiff · Water District");
     expect(matterMeta({ name: "Project Harbor", clientSide: "buyer", client: "Harbor Co.", status: "pre-suit" })).toBe("Project Harbor · Buyer · Harbor Co. · Pre-suit");
   });
 });
 
 describe("For you slot", () => {
   it("accepts the insights payload shapes and rejects junk", () => {
-    const item = { id: "i1", title: "PFAS filings up 40% in D.S.C." };
+    const item = { id: "i1", title: "Arbitration filings up 40% in New Delhi" };
     expect(parseInsights({ insights: [item] })).toEqual([item]);
     expect(parseInsights({ items: [item, { id: 1 }, null] })).toEqual([item]);
     expect(parseInsights([item])).toEqual([item]);

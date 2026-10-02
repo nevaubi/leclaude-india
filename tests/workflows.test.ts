@@ -40,7 +40,7 @@ beforeAll(() => { resetSqlite(); db(); });
 describe("template expressions", () => {
   const ctx = {
     inputs: { name: "Snowfield Reseller LLC", count: 3, text: "hello" },
-    steps: { extract: { output: { parties: ["Harborline", "Snowfield"], term_months: 36, nested: { deep: { value: "x" } } } }, search: { output: { results: [{ bates: "MFC-0043877", subject: "RE: 8(e)" }, { bates: "MFC-0043881", subject: "FW: Voss" }] } } },
+    steps: { extract: { output: { parties: ["Harborline", "Snowfield"], term_months: 36, nested: { deep: { value: "x" } } } }, search: { output: { results: [{ bates: "MFC-0043877", subject: "RE: 8(e)" }, { bates: "MFC-0043881", subject: "FW: Vasudevan" }] } } },
     matter: { id: "m_1", name: "Northgate v. Apex" },
     now: "2026-09-23T12:00:00.000Z",
   };
@@ -57,7 +57,7 @@ describe("template expressions", () => {
   });
   it("supports array indexes and filters", () => {
     expect(resolveText("{{steps.search.output.results[0].bates}}", ctx)).toBe("MFC-0043877");
-    expect(resolveText("{{steps.search.output.results.1.subject}}", ctx)).toBe("FW: Voss");
+    expect(resolveText("{{steps.search.output.results.1.subject}}", ctx)).toBe("FW: Vasudevan");
     expect(resolveText("{{steps.extract.output.parties | join:\" & \"}}", ctx)).toBe("Harborline & Snowfield");
     expect(resolveTemplate("{{steps.search.output.results | pluck:bates}}", ctx)).toEqual(["MFC-0043877", "MFC-0043881"]);
     expect(resolveText("{{steps.search.output.results | length}}", ctx)).toBe("2");
@@ -69,7 +69,7 @@ describe("template expressions", () => {
     expect(JSON.parse(resolveText("{{steps.extract.output | json:compact}}", ctx))).toMatchObject({ term_months: 36 });
     const table = resolveText("{{steps.search.output.results | table:bates,subject}}", ctx);
     expect(table.split("\n")[0]).toBe("| bates | subject |");
-    expect(table).toContain("| MFC-0043881 | FW: Voss |");
+    expect(table).toContain("| MFC-0043881 | FW: Vasudevan |");
     expect(resolveTemplate("{{steps.search.output.results | where:bates,MFC-0043877 | length}}", ctx)).toBe(1);
   });
   it("reports missing paths and unknown filters without throwing", () => {
@@ -266,11 +266,11 @@ describe("engine", () => {
       N("start", "trigger.manual"),
       N("search", "data.search_library", { query: "{{inputs.query}}", limit: 5 }),
       N("route", "logic.branch", { rules: [{ id: "yes", label: "Yes", logic: "all", conditions: [{ left: "{{steps.search.output.count}}", op: "gte", right: "0" }] }] }),
-      N("task", "action.create_task", { title: "Review {{inputs.title}} ({{steps.search.output.count}} hits)", description: "From run {{run.id}}", assigneeId: PEOPLE.elenaMarsh, priority: "high", dueRule: "+3d", matterId: "{{matter.id}}", tags: ["test"] }),
-      N("event", "action.create_event", { title: "Follow-up on {{inputs.title}}", kind: "meeting", startsAt: "+2d 10:00", durationMinutes: 30, attendeeIds: [PEOPLE.jordanWhitfield] }),
+      N("task", "action.create_task", { title: "Review {{inputs.title}} ({{steps.search.output.count}} hits)", description: "From run {{run.id}}", assigneeId: PEOPLE.eshaMathur, priority: "high", dueRule: "+3d", matterId: "{{matter.id}}", tags: ["test"] }),
+      N("event", "action.create_event", { title: "Follow-up on {{inputs.title}}", kind: "meeting", startsAt: "+2d 10:00", durationMinutes: 30, attendeeIds: [PEOPLE.arjunMehra] }),
       N("never", "action.notify", { message: "should be skipped" }),
       N("merge", "logic.merge"),
-      N("notify", "action.notify", { message: "Done: {{steps.task.output.title}}", recipientIds: [PEOPLE.jordanWhitfield], matterId: "{{matter.id}}" }),
+      N("notify", "action.notify", { message: "Done: {{steps.task.output.title}}", recipientIds: [PEOPLE.arjunMehra], matterId: "{{matter.id}}" }),
       N("export", "action.export", { format: "markdown", filename: "test-export", source: "# Report\n\n{{steps.task.output.title}}", addToLibrary: true }),
     ], [E("start", "search"), E("search", "route"), E("route", "task", "yes"), E("route", "event", "yes"), E("route", "never", "else"), E("task", "merge"), E("event", "merge"), E("never", "merge"), E("merge", "notify"), E("notify", "export")], { inputs: [{ key: "query", label: "Query", type: "text", required: true }, { key: "title", label: "Title", type: "text" }, { key: "matter", label: "Matter", type: "matter" }] });
 
@@ -291,7 +291,7 @@ describe("engine", () => {
     const task = db().tasks.get(out.taskId)!;
     expect(task.source).toBe("workflow");
     expect(task.matterId).toBe(MATTERS.harbor);
-    expect(task.assigneeId).toBe(PEOPLE.elenaMarsh);
+    expect(task.assigneeId).toBe(PEOPLE.eshaMathur);
     expect(task.dueAt).toBe(new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10));
     expect(task.links?.[0].href).toBe(`/workflows/runs/${run.id}`);
     const merge = run.steps.find((s) => s.nodeId === "merge")!.output as { succeeded: string[]; skipped: string[] };
@@ -337,13 +337,13 @@ describe("engine", () => {
   it("pauses on approval and resumes down the approved or rejected path", async () => {
     const w = wf("wf_test_approval", [
       N("start", "trigger.manual"),
-      N("approval", "logic.approval", { approverId: PEOPLE.jordanWhitfield, title: "Sign off {{inputs.doc}}", message: "Please review {{inputs.doc}}" }),
+      N("approval", "logic.approval", { approverId: PEOPLE.arjunMehra, title: "Sign off {{inputs.doc}}", message: "Please review {{inputs.doc}}" }),
       N("ok", "action.create_task", { title: "Circulate {{inputs.doc}} — {{steps.approval.output.comment}}" }),
       N("no", "action.create_task", { title: "Revise {{inputs.doc}} — {{steps.approval.output.comment}}" }),
     ], [E("start", "approval"), E("approval", "ok", "approved"), E("approval", "no", "rejected")]);
     const paused = await startRun(w, { inputs: { doc: "Memo v2" }, wait: true });
     expect(paused.status).toBe("waiting_approval");
-    expect(paused.approvals?.[0]).toMatchObject({ nodeId: "approval", title: "Sign off Memo v2", message: "Please review Memo v2", approverId: PEOPLE.jordanWhitfield });
+    expect(paused.approvals?.[0]).toMatchObject({ nodeId: "approval", title: "Sign off Memo v2", message: "Please review Memo v2", approverId: PEOPLE.arjunMehra });
     expect(paused.steps.find((s) => s.nodeId === "approval")!.status).toBe("waiting_approval");
     expect(paused.steps.find((s) => s.nodeId === "ok")!.status).toBe("pending");
     await expect(resumeRun("run_nope", { approved: true })).rejects.toThrow(/not found/);
@@ -428,13 +428,13 @@ describe("engine", () => {
 
   it("updates e-discovery coding and saves Word documents through the office service", async () => {
     const d = db();
-    d.edocs.put({ id: "ed_test_1", matterId: MATTERS.afff, bates: "MFC-TEST-0001", date: "2031-01-01", custodianId: PEOPLE.robertKaine, custodianName: "Robert Kaine", type: "Email", subject: "Test privileged email", text: "privileged legal advice about reporting", coding: {} });
+    d.edocs.put({ id: "ed_test_1", matterId: MATTERS.valsara, bates: "MFC-TEST-0001", date: "2031-01-01", custodianId: PEOPLE.rohitKapur, custodianName: "Rohit Kapur", type: "Email", subject: "Test privileged email", text: "privileged legal advice about reporting", coding: {} });
     const w = wf("wf_test_coding", [
       N("start", "trigger.manual"),
-      N("search", "data.search_ediscovery", { query: "*", matterId: MATTERS.afff, limit: 1 }),
+      N("search", "data.search_ediscovery", { query: "*", matterId: MATTERS.valsara, limit: 1 }),
       N("code", "action.update_coding", { documents: "{{steps.search.output.results | pluck:bates}}", field: "privileged", value: "true", note: "coded in test" }),
-      N("doc", "action.save_document", { kind: "word", title: "Memo {{inputs.n}}", content: "# Memo {{inputs.n}}\n\nCoded {{steps.code.output.updated}} document(s).\n\n- MFC-TEST-0001", matterId: MATTERS.afff }),
-      N("sheet", "action.save_document", { kind: "sheet", title: "Log", rows: "{{steps.search.output.results}}", matterId: MATTERS.afff }),
+      N("doc", "action.save_document", { kind: "word", title: "Memo {{inputs.n}}", content: "# Memo {{inputs.n}}\n\nCoded {{steps.code.output.updated}} document(s).\n\n- MFC-TEST-0001", matterId: MATTERS.valsara }),
+      N("sheet", "action.save_document", { kind: "sheet", title: "Log", rows: "{{steps.search.output.results}}", matterId: MATTERS.valsara }),
     ], [E("start", "search"), E("search", "code"), E("code", "doc"), E("code", "sheet")]);
     const run = await startRun(w, { inputs: { n: "1" }, wait: true });
     expect(run.status, run.error).toBe("succeeded");

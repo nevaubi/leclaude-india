@@ -356,7 +356,7 @@ export async function safeSelfCorrect<T>(input: Parameters<typeof selfCorrect<T>
 
 /** Bates numbers such as MFC-0041877, NG_000123, ABC-DEF-000001 (prefix of letters, separator, ≥4 digits). */
 const BATES_RE = /\b([A-Z]{2,}(?:[-_][A-Z]{2,})*[-_]\d{4,})\b/g;
-/** page:line cites such as 24:05, 142:8–143:2 and "Voss 19:15" (clock times like "10:30 a.m." are skipped). */
+/** page:line cites such as 24:05, 142:8–143:2 and "Vasudevan 19:15" (clock times like "10:30 a.m." are skipped). */
 const PAGE_LINE_RE = /\b(\d{1,4}):(\d{1,2})\b(?:\s*[–-]\s*(\d{1,4}):(\d{1,2}))?(?!\s*(?:[ap]\.?m\b|[ap]\.m\.|(?:AM|PM)\b))/g;
 
 export interface CiteCheck {

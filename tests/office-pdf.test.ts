@@ -60,8 +60,8 @@ describe("generation and extraction", () => {
     expect(new TextDecoder("latin1").decode(cmoBytes.subarray(0, 5))).toBe("%PDF-");
     const ex = await extractPdf(cmoBytes);
     expect(ex.pageCount).toBeGreaterThanOrEqual(3);
-    expect(ex.pages[0].text).toContain("CASE MANAGEMENT ORDER NO. 26");
-    expect(ex.pages[0].text).toContain("Gregory Hale");
+    expect(ex.pages[0].text).toContain("PROCEDURAL ORDER NO. 5");
+    expect(ex.pages[0].text).toContain("Girish Hegde");
     expect(ex.pages[0].text).toMatch(/Page 1 of \d/);
     expect(ex.outline.length).toBeGreaterThanOrEqual(4);
     expect(ex.outline.map((o) => o.title)).toEqual(expect.arrayContaining([expect.stringContaining("Tier 2 Custodians"), expect.stringContaining("Search Methodology")]));
@@ -74,9 +74,9 @@ describe("generation and extraction", () => {
 
   it("parses inline markdown runs and supports newlines in paragraphs", async () => {
     expect(parseRuns("a **b** *c* ***d***")).toEqual([{ text: "a " }, { text: "b", bold: true }, { text: " " }, { text: "c", italic: true }, { text: " " }, { text: "d", bold: true, italic: true }]);
-    const bytes = await generatePdf({ title: "t", blocks: [{ type: "paragraph", text: "From: Gregory Hale\nTo: Nadia Brooks\nSubject: MW-7" }] });
+    const bytes = await generatePdf({ title: "t", blocks: [{ type: "paragraph", text: "From: Girish Hegde\nTo: Nandini Bose\nSubject: MW-7" }] });
     const ex = await extractPdf(bytes);
-    expect(ex.pages[0].text).toMatch(/From: Gregory Hale\s*\n\s*To: Nadia Brooks/);
+    expect(ex.pages[0].text).toMatch(/From: Girish Hegde\s*\n\s*To: Nandini Bose/);
   });
 
   it("detects AcroForm fields with values, options and pages", async () => {
@@ -120,7 +120,7 @@ describe("text search", () => {
     const find = (id: string) => searchRuns(runs, PII_PATTERNS.find((p) => p.id === id)!.pattern, { regex: true }).map((h) => h.text);
     expect(find("ssn")).toContain("412-55-8367");
     expect(find("phone")).toEqual(expect.arrayContaining(["(843) 555-0192"]));
-    expect(find("email")).toEqual(expect.arrayContaining(["marcus.delgado@lowcountryenv.com"]));
+    expect(find("email")).toEqual(expect.arrayContaining(["marcus.delgado@konkanenv.example"]));
     expect(find("account").join(" ")).toContain("4471029835");
     expect(find("dob").join(" ")).toContain("03/14/1971");
   }, 30_000);
@@ -206,7 +206,7 @@ describe("apply pipeline (pdf-lib)", () => {
   it("draws highlights and redactions (page count unchanged, bytes differ), and rasterized redaction removes the text", async () => {
     const { cmoBytes, model } = await generated();
     const ex = await extractPdf(cmoBytes);
-    const hit = searchRuns(ex.pages[0].runs, "Gregory Hale")[0];
+    const hit = searchRuns(ex.pages[0].runs, "Girish Hegde")[0];
     expect(hit).toBeDefined();
     const m = applyOp(model, { op: "add_annotations", annotations: [
       { id: "h", page: 1, type: "highlight", rects: hit.rects, color: "#FACC15", opacity: 0.4, author: "t", createdAt: NOW },
@@ -220,7 +220,7 @@ describe("apply pipeline (pdf-lib)", () => {
     expect(ex2.pageCount).toBe(ex.pageCount);
     expect(ex2.pages[0].text).toContain("CONFIDENTIAL");
     // True redaction: the redacted occurrence is removed from the content stream (other occurrences stay).
-    const count = (t: string) => (t.match(/Gregory\s+Hale/g) ?? []).length;
+    const count = (t: string) => (t.match(/Girish\s+Hegde/g) ?? []).length;
     expect(count(ex2.pages[0].text)).toBe(count(ex.pages[0].text) - 1);
     const native = await applyModel(cmoBytes, m, { flattenAnnotations: false });
     const doc = await PDFDocument.load(native);
@@ -230,7 +230,7 @@ describe("apply pipeline (pdf-lib)", () => {
     const raster = await applyModel(cmoBytes, m, { rasterizedPages: { 1: TINY_PNG } });
     const ex3 = await extractPdf(raster);
     expect(ex3.pageCount).toBe(ex.pageCount);
-    expect(ex3.pages[0].text).not.toContain("Gregory Hale");
+    expect(ex3.pages[0].text).not.toContain("Girish Hegde");
     expect(ex3.pages[1].text).toContain("Production Schedule");
   }, 60_000);
 
@@ -244,7 +244,7 @@ describe("apply pipeline (pdf-lib)", () => {
     expect(ex.pageCount).toBe(activePages(m).length);
     expect(ex.pages[0].text).toBe("");
     expect(ex.pages[1].text).toContain("Milestone"); // source page 2 (schedule table) first
-    expect(ex.pages[2].text).toContain("CASE MANAGEMENT ORDER");
+    expect(ex.pages[2].text).toContain("PROCEDURAL ORDER NO. 5");
     expect(ex.pages[3].text).toContain("Appendix A"); // source page 4; source page 3 deleted
     const blank = await blankPdf(2, [500, 400]);
     const merged = await mergePdfs(cmoBytes, [blank]);
@@ -253,27 +253,27 @@ describe("apply pipeline (pdf-lib)", () => {
     const split = await extractPages(cmoBytes, [3, 1], "Split");
     const exs = await extractPdf(split);
     expect(exs.pageCount).toBe(2);
-    expect(exs.pages[1].text).toContain("CASE MANAGEMENT ORDER");
+    expect(exs.pages[1].text).toContain("PROCEDURAL ORDER NO. 5");
     const compressed = await compressPdf(cmoBytes);
     expect((await readPageSizes(compressed)).length).toBe(model.pageCount);
   }, 60_000);
 
   it("fills and flattens a generated form", async () => {
     const { formBytes } = await generated();
-    const filled = await fillFormFields(formBytes, { ack_name: "Dr. Linda Whitfield", ack_role: "Expert witness", ack_aeo: true, ack_date: "September 24, 2026" });
+    const filled = await fillFormFields(formBytes, { ack_name: "Dr. Leela Sundaram", ack_role: "Expert witness", ack_aeo: true, ack_date: "September 24, 2026" });
     const fields = await readFormFields(filled);
-    expect(fields.find((f) => f.name === "ack_name")?.value).toBe("Dr. Linda Whitfield");
+    expect(fields.find((f) => f.name === "ack_name")?.value).toBe("Dr. Leela Sundaram");
     expect(fields.find((f) => f.name === "ack_role")?.value).toBe("Expert witness");
     expect(fields.find((f) => f.name === "ack_aeo")?.value).toBe(true);
-    const flat = await fillFormFields(formBytes, { ack_name: "Dr. Linda Whitfield" }, true);
+    const flat = await fillFormFields(formBytes, { ack_name: "Dr. Leela Sundaram" }, true);
     expect(await readFormFields(flat)).toEqual([]);
     const ex = await extractPdf(flat);
-    expect(ex.pages.map((p) => p.text).join(" ")).toContain("Dr. Linda Whitfield");
+    expect(ex.pages.map((p) => p.text).join(" ")).toContain("Dr. Leela Sundaram");
     // via the model
     const ex0 = await extractPdf(formBytes);
     const m = buildModel({ sourceBlobId: "f", pageSizes: ex0.pages, meta: { fields: ex0.fields, hasForm: true } });
-    const out = await applyModel(formBytes, applyOp(m, { op: "fill_form", values: { ack_employer: "Whitfield Laboratories" } }), { flattenForms: true });
-    expect((await extractPdf(out)).pages.map((p) => p.text).join(" ")).toContain("Whitfield Laboratories");
+    const out = await applyModel(formBytes, applyOp(m, { op: "fill_form", values: { ack_employer: "Sundaram Laboratories" } }), { flattenForms: true });
+    expect((await extractPdf(out)).pages.map((p) => p.text).join(" ")).toContain("Sundaram Laboratories");
   }, 60_000);
 
   it("writes headers, footers, page numbers, watermark and bookmarks", async () => {
@@ -343,7 +343,7 @@ describe("agent tools", () => {
     expect(h.added).toBeGreaterThanOrEqual(2);
     await tool(tools, "add_note")({ page: 1, text: "Confirm numbering", near: "MFC-0060000" });
     tool(tools, "add_stamp")({ text: "Confidential", pages: "1" });
-    const r = (await tool(tools, "add_redaction")({ query: "Gregory Hale", reason: "PII" })) as { added: number; note: string };
+    const r = (await tool(tools, "add_redaction")({ query: "Girish Hegde", reason: "PII" })) as { added: number; note: string };
     expect(r.added).toBeGreaterThanOrEqual(1);
     expect(r.note).toMatch(/apply/i);
     const b = tool(tools, "bates_stamp")({ prefix: "MFC-", start: 60000, digits: 7, position: "bottom-right", legend: "CONFIDENTIAL" }) as { first: string; last: string };
@@ -381,7 +381,7 @@ describe("agent tools", () => {
     const tools = pdfAgentTools(ctx, {
       extraction: async () => ex,
       summarize: async (text, focus) => `SUMMARY(${focus ?? "none"}) ${text.length}`,
-      extractTable: async () => ({ columns: ["Well", "PFOA"], rows: [["MW-7", "1,140"]] }),
+      extractTable: async () => ({ columns: ["Well", "MC-7"], rows: [["MW-7", "1,140"]] }),
       createWordDocument: async (title) => ({ id: "w1", url: `/office/word/w1?${title}` }),
       otherDocumentText: async () => ({ title: "Other", text: "totally different text" }),
       diffTexts: (a, b) => ({ added: b.split("\n").length, removed: a.split("\n").length, changes: [{ kind: "added", text: b }] }),
@@ -399,10 +399,10 @@ describe("agent tools", () => {
     // Deterministic, position-based: the lab table's columns and every row (the wrapped "(dup)" cell joins its row).
     const table = (await tool(tools, "extract_table")({ page: 3 })) as { method: string; columns: string[]; rowCount: number; markdown: string };
     expect(table.method).toBe("layout");
-    expect(table.columns).toEqual(["Well", "Sample ID", "PFOA", "PFOS", "PFHxS", "Qualifier", "Analyst"]);
+    expect(table.columns).toEqual(["Well", "Sample ID", "MC-7", "MC-8", "MC-6", "Qualifier", "Analyst"]);
     expect(table.rowCount).toBe(14); // MW-1…MW-12, the MW-7 duplicate and the trip blank
-    expect(table.markdown).toContain("| MW-7 | LET-060228-07 | 1,140 | 2,360 | 412 |  | K. Ortiz |");
-    expect(table.markdown).toContain("| MW-7 (dup) | LET-060228-07D | 1,102 |");
+    expect(table.markdown).toContain("| MW-7 | KET-060228-07 | 1,140 | 2,360 | 412 |  | K. Oza |");
+    expect(table.markdown).toContain("| MW-7 (dup) | KET-060228-07D | 1,102 |");
     expect((await tool(tools, "create_word_document")({ title: "Memo", from_text: true })) as object).toMatchObject({ url: expect.stringContaining("/office/word/w1") });
     const cmp = (await tool(tools, "compare_to_document")({ other_doc_id: "x" })) as { identical: boolean; addedLines: number };
     expect(cmp.identical).toBe(false);
@@ -426,14 +426,14 @@ describe("templates, import and service", () => {
     const ex = await extractPdf(bytes);
     expect(ex.pageCount).toBeGreaterThanOrEqual(3);
     expect(ex.fields.map((f) => f.name)).toContain("svc_method");
-    expect(ex.pages[0].text).toContain("Lowcountry Environmental Testing");
+    expect(ex.pages[0].text).toContain("Konkan Environmental Testing");
   }, 40_000);
 
   it("imports bytes into a model with text index and stored source blob", async () => {
     const { cmoBytes } = await generated();
-    const r = await importDocument(cmoBytes, "Hale_production_vol_2.pdf");
+    const r = await importDocument(cmoBytes, "Hegde_production_vol_2.pdf");
     const m = normalizeModel(r.content);
-    expect(r.title).toBe("Hale production vol 2");
+    expect(r.title).toBe("Hegde production vol 2");
     expect(m.pageCount).toBeGreaterThanOrEqual(3);
     expect(m.textIndex?.length).toBe(m.pageCount);
     expect(blobs.meta(m.sourceBlobId)?.mime).toBe("application/pdf");
@@ -479,7 +479,7 @@ describe("templates, import and service", () => {
     expect(burned!.model.sourceBlobId).not.toBe(beforeBlob);
     expect(burned!.model.annotations.every((a) => a.type === "note")).toBe(true);
     expect(burned!.model.textIndex![0].text).not.toContain("412-55-8367"); // page 1 rasterized
-    expect(burned!.model.textIndex![2].text).toContain("LET-060228-07"); // lab table intact
+    expect(burned!.model.textIndex![2].text).toContain("KET-060228-07"); // lab table intact
     expect(burned!.model.bates).toBeUndefined(); // seeded Bates numbers were generated into the source
     const merged = await mergeInto("odoc_pdf_hale_production", [{ bytes: await blankPdf(1), name: "blank.pdf" }]);
     expect(merged!.model.pageCount).toBe(4);

@@ -14,7 +14,7 @@ import { POST as bulkPOST } from "@/app/api/ediscovery/docs/bulk/route";
 import { GET as pdfGET } from "@/app/api/ediscovery/docs/[id]/pdf/route";
 import { PATCH as privPATCH, GET as privGET } from "@/app/api/ediscovery/privilege-log/route";
 
-const AFFF = MATTERS.afff;
+const VALSARA = MATTERS.valsara;
 const req = (url: string, init?: { method?: string; json?: unknown }) => new NextRequest(`http://localhost${url}`, { method: init?.method ?? "GET", ...(init?.json !== undefined ? { body: JSON.stringify(init.json), headers: { "Content-Type": "application/json" } } : {}) });
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 
@@ -46,7 +46,7 @@ describe("verified quotes", () => {
 // ---------------------------------------------------------------------------
 describe("viewer helpers", () => {
   it("page spans match the production renderer's page split", () => {
-    const doc = db().edocs.get("ed_afff_0001")!;
+    const doc = db().edocs.get("ed_vls_0001")!;
     const spans = pageSpans(doc.text, doc.pages ?? 1);
     const pages = splitPages(doc.text, doc.pages ?? 1);
     expect(spans.length).toBe(pages.length);
@@ -132,24 +132,24 @@ describe("viewer helpers", () => {
 // ---------------------------------------------------------------------------
 describe("bulk coding preview and families", () => {
   it("expands families and reports what would change before anything is written", () => {
-    const fam = expandFamilies(["ed_afff_0001"]);
-    expect(fam.ids.sort()).toEqual(["ed_afff_0001", "ed_afff_0002", "ed_afff_0007"]);
+    const fam = expandFamilies(["ed_vls_0001"]);
+    expect(fam.ids.sort()).toEqual(["ed_vls_0001", "ed_vls_0002", "ed_vls_0007"]);
     expect(fam.added).toBe(2);
-    const before = db().edocs.get("ed_afff_0001")!.coding.responsive;
-    const preview = bulkPreview({ ids: ["ed_afff_0001"], patch: { responsive: true, hot: true }, addIssues: ["TOX-01"], includeFamilies: true, dryRun: true });
+    const before = db().edocs.get("ed_vls_0001")!.coding.responsive;
+    const preview = bulkPreview({ ids: ["ed_vls_0001"], patch: { responsive: true, hot: true }, addIssues: ["TOX-01"], includeFamilies: true, dryRun: true });
     expect(preview.total).toBe(3);
     expect(preview.addedFamily).toBe(2);
     expect(preview.fields.map((f) => f.label)).toEqual(["Responsive", "Hot", "Add issue codes"]);
     expect(preview.fields[0].changed + preview.unchanged).toBeGreaterThanOrEqual(0);
-    expect(db().edocs.get("ed_afff_0001")!.coding.responsive).toBe(before); // dry run wrote nothing
-    const r = bulkCode({ ids: ["ed_afff_0051"], patch: { hot: true }, includeFamilies: true });
+    expect(db().edocs.get("ed_vls_0001")!.coding.responsive).toBe(before); // dry run wrote nothing
+    const r = bulkCode({ ids: ["ed_vls_0051"], patch: { hot: true }, includeFamilies: true });
     expect(r.updated).toBeGreaterThanOrEqual(1);
-    expect(db().edocs.get("ed_afff_0051")!.coding.hot).toBe(true);
+    expect(db().edocs.get("ed_vls_0051")!.coding.hot).toBe(true);
   });
   it("filters by month facet and reports month buckets against the other filters", async () => {
-    const all = await searchDocuments({ matterId: AFFF, limit: 5000 });
+    const all = await searchDocuments({ matterId: VALSARA, limit: 5000 });
     const month = all.facets.months[0].year;
-    const res = await searchDocuments({ matterId: AFFF, filters: { months: [month] }, limit: 5000 });
+    const res = await searchDocuments({ matterId: VALSARA, filters: { months: [month] }, limit: 5000 });
     expect(res.total).toBe(all.facets.months[0].count);
     expect(res.hits.every((h) => h.date.startsWith(month))).toBe(true);
     // the month facet is counted with every *other* filter applied, so it still lists the whole distribution while filtered
@@ -160,7 +160,7 @@ describe("bulk coding preview and families", () => {
 // ---------------------------------------------------------------------------
 describe("near-duplicate scan helpers", () => {
   it("finds unlinked pairs and inconsistent coding without changing anything", () => {
-    const base = db().edocs.get("ed_afff_0011")!;
+    const base = db().edocs.get("ed_vls_0011")!;
     const docs: EDocument[] = [
       { ...base, id: "nd_a", bates: "ND-0000001", nearDuplicateIds: undefined, nearDuplicateScores: undefined, hash: "h1", isDuplicateOf: undefined, coding: { responsive: true } },
       { ...base, id: "nd_b", bates: "ND-0000002", text: base.text + "\nDraft 2 — please treat as confidential.", nearDuplicateIds: undefined, nearDuplicateScores: undefined, hash: "h2", isDuplicateOf: undefined, coding: { responsive: false } },
@@ -180,16 +180,16 @@ describe("near-duplicate scan helpers", () => {
 // ---------------------------------------------------------------------------
 describe("routes: bulk dry run, image surrogate, privilege-log bulk status", () => {
   it("returns the preview for dryRun and applies otherwise", async () => {
-    const dry = await bulkPOST(req("/x", { method: "POST", json: { ids: ["ed_afff_0003"], patch: { responsive: false }, dryRun: true } }));
+    const dry = await bulkPOST(req("/x", { method: "POST", json: { ids: ["ed_vls_0003"], patch: { responsive: false }, dryRun: true } }));
     expect(dry.status).toBe(200);
     const { preview } = (await dry.json()) as { preview: { total: number; fields: { label: string }[] } };
     expect(preview.total).toBe(1);
     expect(preview.fields[0].label).toBe("Responsive");
-    const applied = await bulkPOST(req("/x", { method: "POST", json: { ids: ["ed_afff_0003"], patch: { hot: false } } }));
+    const applied = await bulkPOST(req("/x", { method: "POST", json: { ids: ["ed_vls_0003"], patch: { hot: false } } }));
     expect(((await applied.json()) as { updated: number }).updated).toBe(1);
   });
   it("renders the image surrogate with a page map header", async () => {
-    const doc = db().edocs.get("ed_afff_0001")!;
+    const doc = db().edocs.get("ed_vls_0001")!;
     const { bytes, pageMap } = await renderProductionPdfWithMap(doc, { begin: doc.bates, pages: doc.pages ?? 1 }, [], "");
     expect(pageMap.length).toBeGreaterThanOrEqual(doc.pages ?? 1);
     expect(pageMap[0]).toBe(1);
@@ -201,7 +201,7 @@ describe("routes: bulk dry run, image surrogate, privilege-log bulk status", () 
     expect((await pdfGET(req("/x"), params("nope"))).status).toBe(404);
   });
   it("moves several privilege-log entries through the status workflow", async () => {
-    const list = (await (await privGET(req(`/x?matter=${AFFF}`))).json()) as { entries: { id: string; status: string }[] };
+    const list = (await (await privGET(req(`/x?matter=${VALSARA}`))).json()) as { entries: { id: string; status: string }[] };
     const ids = list.entries.slice(0, 2).map((e) => e.id);
     expect(ids.length).toBe(2);
     const res = await privPATCH(req("/x", { method: "PATCH", json: { ids, patch: { status: "review" } } }));
@@ -211,6 +211,6 @@ describe("routes: bulk dry run, image surrogate, privilege-log bulk status", () 
     expect((await privPATCH(req("/x", { method: "PATCH", json: { ids, patch: { status: "served" } } }))).status).toBe(422);
     const one = await privPATCH(req("/x", { method: "PATCH", json: { id: ids[0], patch: { status: "final", templateId: "ac-advice" } } }));
     expect(((await one.json()) as { entry: { status: string; templateId: string } }).entry).toMatchObject({ status: "final", templateId: "ac-advice" });
-    expect(PEOPLE.jordanWhitfield).toBeTruthy();
+    expect(PEOPLE.arjunMehra).toBeTruthy();
   });
 });

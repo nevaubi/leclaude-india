@@ -248,7 +248,7 @@ interface FRDoc { title: string; type: string; abstract?: string; document_numbe
 
 /** Practice-area → Federal Register query terms. Only areas with active matters are queried. */
 const FR_QUERIES: Partial<Record<PracticeArea, { term: string; keywords: string[] }[]>> = {
-  "Products Liability": [{ term: "PFAS OR PFOA OR PFOS OR \"aqueous film-forming foam\"", keywords: ["pfas", "pfoa", "pfos", "fluoro", "foam"] }, { term: "medroxyprogesterone OR \"drug labeling\" OR \"prescription drug\"", keywords: ["medroxyprogesterone", "labeling", "contracept", "drug"] }],
+  "Products Liability": [{ term: "\"product liability\" OR \"failure to warn\" OR \"product recall\"", keywords: ["product liability", "failure to warn", "recall"] }, { term: "medroxyprogesterone OR \"drug labeling\" OR \"prescription drug\"", keywords: ["medroxyprogesterone", "labeling", "contracept", "drug"] }],
   Regulatory: [{ term: "\"Toxic Substances Control Act\"", keywords: ["tsca", "toxic substances"] }],
   "Corporate / M&A": [{ term: "\"premerger notification\" OR \"Hart-Scott-Rodino\"", keywords: ["premerger", "hart-scott", "merger"] }],
   Employment: [{ term: "\"Fair Labor Standards Act\" OR \"wage and hour\" OR \"joint employer\"", keywords: ["wage", "labor standards", "employ"] }],

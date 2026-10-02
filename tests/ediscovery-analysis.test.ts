@@ -5,16 +5,16 @@ import type { Conflict, Person, Relationship, TimelineEvent } from "@/lib/types/
 import { searchTranscripts, designationsCsv, designationsMarkdown, summarizeObjections, qaInRange, normalizeRange, highlightTerms, transcriptText, resolvePageLine, pageLineOf } from "@/modules/ediscovery/analysis/transcript";
 import { dedupeEvents, sortEvents, filterEvents, chronologyCsv, chronologyMarkdown, eventKey } from "@/modules/ediscovery/analysis/chronology";
 import { buildGraph, resolvePersonName } from "@/modules/ediscovery/analysis/graph";
-import { VOSS_DEPOSITION } from "@/modules/ediscovery/analysis/seed-depo-voss";
-import { HALE_DEPOSITION } from "@/modules/ediscovery/analysis/seed-depo-hale";
-import { PRYCE_DEPOSITION } from "@/modules/ediscovery/analysis/seed-depo-pryce";
-import { AFFF_TIMELINE } from "@/modules/ediscovery/analysis/seed-timeline";
-import { AFFF_CONFLICTS } from "@/modules/ediscovery/analysis/seed-conflicts";
+import { VOSS_DEPOSITION } from "@/modules/ediscovery/analysis/seed-depo-vasudevan";
+import { HALE_DEPOSITION } from "@/modules/ediscovery/analysis/seed-depo-hegde";
+import { PRYCE_DEPOSITION } from "@/modules/ediscovery/analysis/seed-depo-prasad";
+import { VALSARA_TIMELINE } from "@/modules/ediscovery/analysis/seed-timeline";
+import { VALSARA_CONFLICTS } from "@/modules/ediscovery/analysis/seed-conflicts";
 import { ANALYSIS_SEED_IDS, EXPLICIT_RELATIONSHIPS, deriveEmailRelationships, seedAnalysis } from "@/modules/ediscovery/analysis/seed";
 import { listDepositions, getDeposition, toggleFlag, updateQA, createDesignation, listDesignations, deleteDesignation, searchAllTranscripts, crossAnalysis, listEvents, createEvent, updateEvent, mergeEvents, eventsFromDocuments, graph, personDetail, createRelationship, listConflicts, createConflict, updateConflict, addConflictNote, getConflict, conflictsCsv, overview, resolveExhibit, objectionSummary, objectionRulings, setObjectionRuling } from "@/modules/ediscovery/analysis/service";
 import { digestDeposition, findContradictions, buildFactMatrix, extractTimelineEvents, knowledgeMap, prepareOutline } from "@/modules/ediscovery/analysis/ai";
 
-const AFFF = MATTERS.afff;
+const VALSARA = MATTERS.valsara;
 
 beforeAll(() => { resetSqlite(); delete process.env.OPENAI_API_KEY; });
 
@@ -32,8 +32,8 @@ describe("seed content", () => {
         expect(b.line).toBeLessThanOrEqual(25);
       }
       const objectors = new Set(dep.transcript.filter((q) => q.objection).map((q) => q.objection!.by));
-      expect(objectors.has("Jordan Whitfield"), dep.witnessName).toBe(true);
-      expect(objectors.has("Rebecca Klein"), dep.witnessName).toBe(true);
+      expect(objectors.has("Arjun Mehra"), dep.witnessName).toBe(true);
+      expect(objectors.has("Radhika Kale"), dep.witnessName).toBe(true);
       expect(dep.transcript.some((q) => q.exhibit)).toBe(true);
       expect(dep.transcript.some((q) => q.flags?.includes("admission"))).toBe(true);
       expect(dep.transcript.some((q) => q.flags?.includes("contradiction"))).toBe(true);
@@ -42,34 +42,34 @@ describe("seed content", () => {
     }
   });
   it("seeds ≥40 timeline events 1998–2027 citing seeded Bates numbers", () => {
-    expect(AFFF_TIMELINE.length).toBeGreaterThanOrEqual(40);
-    expect(AFFF_TIMELINE[0].date.slice(0, 4)).toBe("1998");
-    expect(new Set(AFFF_TIMELINE.map((e) => e.id)).size).toBe(AFFF_TIMELINE.length);
-    for (const e of AFFF_TIMELINE) for (const s of e.sources) {
+    expect(VALSARA_TIMELINE.length).toBeGreaterThanOrEqual(40);
+    expect(VALSARA_TIMELINE[0].date.slice(0, 4)).toBe("1998");
+    expect(new Set(VALSARA_TIMELINE.map((e) => e.id)).size).toBe(VALSARA_TIMELINE.length);
+    for (const e of VALSARA_TIMELINE) for (const s of e.sources) {
       if (s.kind === "document") { expect(db().edocs.get(s.id!), `${e.title} ${s.bates}`).not.toBeNull(); expect(db().edocs.get(s.id!)!.bates).toBe(s.bates); }
       if (s.kind === "deposition") expect(db().depositions.get(s.id!), `${e.title} ${s.id}`).not.toBeNull();
     }
-    const cats = new Set(AFFF_TIMELINE.map((e) => e.category));
+    const cats = new Set(VALSARA_TIMELINE.map((e) => e.category));
     expect(cats.size).toBeGreaterThanOrEqual(6);
   });
   it("seeds ≥60 relationships (explicit + derived from email headers) and ≥8 conflicts", () => {
-    const rels = db().relationships.find((r) => r.matterId === AFFF);
+    const rels = db().relationships.find((r) => r.matterId === VALSARA);
     expect(rels.length).toBeGreaterThanOrEqual(60);
     expect(EXPLICIT_RELATIONSHIPS.some((r) => r.kind === "reports_to")).toBe(true);
     expect(EXPLICIT_RELATIONSHIPS.some((r) => r.kind === "retained")).toBe(true);
     expect(EXPLICIT_RELATIONSHIPS.some((r) => r.kind === "represents")).toBe(true);
-    const derived = deriveEmailRelationships(db().edocs.find((d) => d.matterId === AFFF), db().people.all());
+    const derived = deriveEmailRelationships(db().edocs.find((d) => d.matterId === VALSARA), db().people.all());
     expect(derived.length).toBeGreaterThan(20);
-    const vossToHale = derived.find((r) => r.fromId === PEOPLE.helenVoss && r.toId === PEOPLE.gregoryHale && r.kind === "emailed");
+    const vossToHale = derived.find((r) => r.fromId === PEOPLE.hemaVasudevan && r.toId === PEOPLE.girishHegde && r.kind === "emailed");
     expect(vossToHale?.weight).toBeGreaterThan(1);
     expect(vossToHale?.evidence?.[0]?.bates).toMatch(/^MFC-/);
     for (const r of rels) { expect(db().people.get(r.fromId), r.id).not.toBeNull(); expect(db().people.get(r.toId), r.id).not.toBeNull(); }
-    expect(AFFF_CONFLICTS.length).toBeGreaterThanOrEqual(8);
-    for (const c of AFFF_CONFLICTS) for (const s of c.sides) {
+    expect(VALSARA_CONFLICTS.length).toBeGreaterThanOrEqual(8);
+    for (const c of VALSARA_CONFLICTS) for (const s of c.sides) {
       if (s.sourceKind === "deposition") expect(db().depositions.get(s.sourceId), c.id).not.toBeNull();
       else expect(db().edocs.get(s.sourceId), `${c.id} ${s.cite}`).not.toBeNull();
     }
-    expect(db().conflicts.count((c) => c.matterId === AFFF)).toBe(AFFF_CONFLICTS.length);
+    expect(db().conflicts.count((c) => c.matterId === VALSARA)).toBe(VALSARA_CONFLICTS.length);
   });
   it("is idempotent across repeated seeding", () => {
     const before = { deps: db().depositions.count(), rels: db().relationships.count(), tl: db().timeline.count(), cf: db().conflicts.count() };
@@ -108,9 +108,9 @@ describe("transcript search", () => {
     expect(highlightTerms("")).toBeNull();
   });
   it("searches the persisted transcripts through the service", () => {
-    const hits = searchAllTranscripts(AFFF, "41 micrograms");
-    expect(hits.some((h) => h.witnessName === "Gregory Hale")).toBe(true);
-    expect(searchAllTranscripts(AFFF, "bioassay", { depositionId: VOSS_DEPOSITION.id }).every((h) => h.depositionId === VOSS_DEPOSITION.id)).toBe(true);
+    const hits = searchAllTranscripts(VALSARA, "41 micrograms");
+    expect(hits.some((h) => h.witnessName === "Girish Hegde")).toBe(true);
+    expect(searchAllTranscripts(VALSARA, "bioassay", { depositionId: VOSS_DEPOSITION.id }).every((h) => h.depositionId === VOSS_DEPOSITION.id)).toBe(true);
   });
 });
 
@@ -126,7 +126,7 @@ describe("designations and objections", () => {
     // a page far beyond the excerpt is not found; garbage is rejected
     expect(resolvePageLine(t, "9999:1")).toBe(-1);
     expect(resolvePageLine(t, "abc")).toBe(-1);
-    expect(pageLineOf("Hale 46:07–46:20")).toBe("46:7");
+    expect(pageLineOf("Hegde 46:07–46:20")).toBe("46:7");
     expect(pageLineOf("MFC-0041877")).toBeNull();
   });
   it("normalises reversed ranges and selects the Q/A pairs inside", () => {
@@ -135,19 +135,19 @@ describe("designations and objections", () => {
     expect(inside.map(({ qa }) => `${qa.page}:${qa.line}`)).toEqual(["19:15", "20:8", "20:17", "22:2", "22:11", "22:19"]);
   });
   it("exports designations as CSV with vendor columns and as markdown with excerpts", () => {
-    const d1 = createDesignation({ matterId: AFFF, depositionId: VOSS_DEPOSITION.id, startPage: 22, startLine: 19, endPage: 19, endLine: 15, purpose: "impeachment", note: "\"Final\" sequence" });
-    const d2 = createDesignation({ matterId: AFFF, depositionId: VOSS_DEPOSITION.id, startPage: 91, startLine: 18, endPage: 93, endLine: 14, purpose: "affirmative" });
+    const d1 = createDesignation({ matterId: VALSARA, depositionId: VOSS_DEPOSITION.id, startPage: 22, startLine: 19, endPage: 19, endLine: 15, purpose: "impeachment", note: "\"Final\" sequence" });
+    const d2 = createDesignation({ matterId: VALSARA, depositionId: VOSS_DEPOSITION.id, startPage: 91, startLine: 18, endPage: 93, endLine: 14, purpose: "affirmative" });
     expect(d1.startPage).toBe(19); // normalised
     const list = listDesignations(VOSS_DEPOSITION.id);
     expect(list.map((d) => d.id)).toEqual([d1.id, d2.id]);
     const csv = designationsCsv(VOSS_DEPOSITION, list);
     const lines = csv.trim().split("\r\n");
     expect(lines[0]).toBe("Witness,Deposition date,Begin page,Begin line,End page,End line,Range,Purpose,Note,Excerpt");
-    expect(lines[1].startsWith("Helen Voss,2026-06-17,19,15,22,19,19:15–22:19,impeachment,")).toBe(true);
+    expect(lines[1].startsWith("Hema Vasudevan,2026-06-17,19,15,22,19,19:15–22:19,impeachment,")).toBe(true);
     expect(lines[1]).toContain('"""Final"" sequence"');
     expect(lines).toHaveLength(3);
-    const md = designationsMarkdown(VOSS_DEPOSITION, list, { matterName: "AFFF" });
-    expect(md).toContain("# Deposition designations — Helen Voss");
+    const md = designationsMarkdown(VOSS_DEPOSITION, list, { matterName: "Valsara v. Meridian" });
+    expect(md).toContain("# Deposition designations — Hema Vasudevan");
     expect(md).toContain("| 1 | 19:15–22:19 | impeachment |");
     expect(md).toContain("**19:15** Q. The document is titled 'final report summary.'");
     expect(md).toContain("## 2. 91:18–93:14 (affirmative)");
@@ -158,7 +158,7 @@ describe("designations and objections", () => {
   it("summarises objections by basis and attorney", () => {
     const s = summarizeObjections(VOSS_DEPOSITION.transcript);
     expect(s.total).toBeGreaterThan(8);
-    expect(s.byAttorney[0].attorney).toBe("Jordan Whitfield");
+    expect(s.byAttorney[0].attorney).toBe("Arjun Mehra");
     expect(s.byBasis.find((b) => b.basis === "privilege")!.count).toBeGreaterThanOrEqual(3);
     expect(s.rulings.pending).toBe(s.total);
     expect(s.byBasis.reduce((n, b) => n + b.count, 0)).toBe(s.total);
@@ -168,7 +168,7 @@ describe("designations and objections", () => {
   });
   it("records objection rulings in a module-private store and rejects Q/A without an objection", () => {
     seedAnalysis(db());
-    const dep = getDeposition(ANALYSIS_SEED_IDS.depositions.voss)!;
+    const dep = getDeposition(ANALYSIS_SEED_IDS.depositions.vasudevan)!;
     const withObjection = dep.transcript.findIndex((qa) => qa.objection);
     const without = dep.transcript.findIndex((qa) => !qa.objection);
     expect(objectionSummary(dep.id)!.rulings.sustained).toBe(0);
@@ -186,8 +186,8 @@ describe("designations and objections", () => {
   });
   it("renders transcript text for prompts with cites, objections and exhibits", () => {
     const t = transcriptText(VOSS_DEPOSITION, { indexes: [6, 7] });
-    expect(t).toContain("19:03\nQ. I am handing you what has been marked Voss Exhibit 1.");
-    expect(t).toContain("(Exhibit Voss-1)");
+    expect(t).toContain("19:03\nQ. I am handing you what has been marked Vasudevan Exhibit 1.");
+    expect(t).toContain("(Exhibit Vasudevan-1)");
     expect(t).toContain("[contradiction, key]");
   });
 });
@@ -195,22 +195,22 @@ describe("designations and objections", () => {
 // ---------------------------------------------------------------------------
 describe("deposition service", () => {
   it("lists depositions with counts and resolves exhibits to documents", () => {
-    const list = listDepositions(AFFF);
-    expect(list.map((d) => d.id)).toContain(ANALYSIS_SEED_IDS.depositions.voss);
-    const voss = list.find((d) => d.id === ANALYSIS_SEED_IDS.depositions.voss)!;
-    expect(voss.qaCount).toBe(VOSS_DEPOSITION.transcript.length);
-    expect(voss.flagCounts.admission).toBeGreaterThan(5);
-    expect(voss.objectionCount).toBeGreaterThan(5);
-    expect(voss.hasDigest).toBe(false);
-    expect((voss as unknown as { transcript?: unknown }).transcript).toBeUndefined();
+    const list = listDepositions(VALSARA);
+    expect(list.map((d) => d.id)).toContain(ANALYSIS_SEED_IDS.depositions.vasudevan);
+    const vasudevan = list.find((d) => d.id === ANALYSIS_SEED_IDS.depositions.vasudevan)!;
+    expect(vasudevan.qaCount).toBe(VOSS_DEPOSITION.transcript.length);
+    expect(vasudevan.flagCounts.admission).toBeGreaterThan(5);
+    expect(vasudevan.objectionCount).toBeGreaterThan(5);
+    expect(vasudevan.hasDigest).toBe(false);
+    expect((vasudevan as unknown as { transcript?: unknown }).transcript).toBeUndefined();
     expect(list.filter((d) => d.status === "scheduled").length).toBe(2);
-    const dep = getDeposition(voss.id)!;
-    expect(resolveExhibit(dep, "Voss-1").docId).toBe("ed_afff_0001");
-    expect(resolveExhibit(dep, "MFC-0041880").docId).toBe("ed_afff_0002");
+    const dep = getDeposition(vasudevan.id)!;
+    expect(resolveExhibit(dep, "Vasudevan-1").docId).toBe("ed_vls_0001");
+    expect(resolveExhibit(dep, "MFC-0041880").docId).toBe("ed_vls_0002");
     expect(resolveExhibit(dep, "Nope-9").docId).toBeUndefined();
   });
   it("toggles flags and edits notes on a Q/A pair", () => {
-    const id = ANALYSIS_SEED_IDS.depositions.hale;
+    const id = ANALYSIS_SEED_IDS.depositions.hegde;
     const before = getDeposition(id)!.transcript[0].flags ?? [];
     expect(before).not.toContain("key");
     toggleFlag(id, 0, "key");
@@ -224,28 +224,28 @@ describe("deposition service", () => {
     expect(() => updateQA(id, 9999, { note: "x" })).toThrow(/out of range/);
   });
   it("cross-analysis returns testimony, BM25 document passages and matching seeded conflicts without a key", async () => {
-    const res = await crossAnalysis(AFFF, { topic: "preliminary final report", witnessId: PEOPLE.helenVoss });
+    const res = await crossAnalysis(VALSARA, { topic: "preliminary final report", witnessId: PEOPLE.hemaVasudevan });
     expect(res.aiConfigured).toBe(false);
     expect(res.testimony.length).toBeGreaterThan(0);
-    expect(res.testimony[0].cite).toMatch(/^Voss \d+:\d{2}$/);
+    expect(res.testimony[0].cite).toMatch(/^Vasudevan \d+:\d{2}$/);
     expect(res.documents.length).toBeGreaterThan(0);
     expect(res.documents[0].cite).toMatch(/^MFC-/);
-    expect(res.otherTestimony.every((t) => t.label !== "Helen Voss")).toBe(true);
-    expect(res.conflicts.some((c) => c.id === "cf_afff_001")).toBe(true);
+    expect(res.otherTestimony.every((t) => t.label !== "Hema Vasudevan")).toBe(true);
+    expect(res.conflicts.some((c) => c.id === "cf_vls_001")).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
 describe("chronology", () => {
-  const base = (over: Partial<TimelineEvent>): TimelineEvent => ({ id: "x", matterId: AFFF, date: "2001-03-14", title: "Whitfield final report received", category: "scientific", significance: 3, sources: [{ kind: "document", bates: "MFC-0041877", id: "ed_afff_0001" }], createdBy: "ai", ...over });
+  const base = (over: Partial<TimelineEvent>): TimelineEvent => ({ id: "x", matterId: VALSARA, date: "2001-03-14", title: "Sundaram final report received", category: "scientific", significance: 3, sources: [{ kind: "document", bates: "MFC-0041877", id: "ed_vls_0001" }], createdBy: "ai", ...over });
   it("sorts by date then significance and normalises keys for dedupe", () => {
     const sorted = sortEvents([base({ id: "b", date: "2002-01-01" }), base({ id: "a", significance: 5, title: "Zeta" }), base({ id: "c", significance: 3, title: "Alpha" })]);
     expect(sorted.map((e) => e.id)).toEqual(["a", "c", "b"]);
-    expect(eventKey({ date: "2001-03-14", title: "The Whitfield FINAL report, received!" })).toBe(eventKey({ date: "2001-03-14", title: "Whitfield final report received" }));
+    expect(eventKey({ date: "2001-03-14", title: "The Sundaram FINAL report, received!" })).toBe(eventKey({ date: "2001-03-14", title: "Sundaram final report received" }));
   });
   it("dedupes by date+title, unions sources and keeps the longer description", () => {
     const existing = [base({ id: "e1", description: "short" })];
-    const incoming = [base({ id: "n1", description: "a much longer description of the event", significance: 5, sources: [{ kind: "document", bates: "MFC-0041880", id: "ed_afff_0002" }] }), base({ id: "n2", date: "2001-03-15", title: "Pryce restricts distribution" })];
+    const incoming = [base({ id: "n1", description: "a much longer description of the event", significance: 5, sources: [{ kind: "document", bates: "MFC-0041880", id: "ed_vls_0002" }] }), base({ id: "n2", date: "2001-03-15", title: "Prasad restricts distribution" })];
     const res = dedupeEvents(existing, incoming);
     expect(res.added.map((e) => e.id)).toEqual(["n2"]);
     expect(res.merged).toHaveLength(2);
@@ -255,10 +255,10 @@ describe("chronology", () => {
     expect(merged.significance).toBe(5);
   });
   it("filters by category, person, significance, dates, source kind and text", () => {
-    const events = listEvents(AFFF);
-    expect(events.length).toBe(AFFF_TIMELINE.length);
+    const events = listEvents(VALSARA);
+    expect(events.length).toBe(VALSARA_TIMELINE.length);
     expect(filterEvents(events, { categories: ["testimony"] }).every((e) => e.category === "testimony")).toBe(true);
-    expect(filterEvents(events, { personId: PEOPLE.helenVoss }).length).toBeGreaterThan(5);
+    expect(filterEvents(events, { personId: PEOPLE.hemaVasudevan }).length).toBeGreaterThan(5);
     expect(filterEvents(events, { minSignificance: 5 }).every((e) => e.significance === 5)).toBe(true);
     expect(filterEvents(events, { from: "2002-07-01", to: "2002-07-31" }).map((e) => e.date.slice(0, 7))).toEqual(expect.arrayContaining(["2002-07"]));
     expect(filterEvents(events, { from: "2002-07-01", to: "2002-07-31" }).every((e) => e.date.startsWith("2002-07"))).toBe(true);
@@ -267,24 +267,24 @@ describe("chronology", () => {
     expect(filterEvents(events, { disputedOnly: true }).every((e) => e.disputed)).toBe(true);
   });
   it("creates, updates and merges events through the service and exports CSV/markdown", () => {
-    const e = createEvent(AFFF, { date: "2001-03-20", title: "Sponsor QA re-analysis: half-life 98–103 days", category: "scientific", significance: 4, sources: [{ kind: "document", id: "ed_afff_0017", bates: "MFC-0041922" }] });
+    const e = createEvent(VALSARA, { date: "2001-03-20", title: "Sponsor QA re-analysis: half-life 98–103 days", category: "scientific", significance: 4, sources: [{ kind: "document", id: "ed_vls_0017", bates: "MFC-0041922" }] });
     expect(e.id).toMatch(/^tl_/);
     updateEvent(e.id, { verified: true, disputed: true });
     expect(db().timeline.get(e.id)?.verified).toBe(true);
-    const again = mergeEvents(AFFF, [{ ...e, id: "tl_dup", description: "Recovery-group serum re-analysed." }]);
+    const again = mergeEvents(VALSARA, [{ ...e, id: "tl_dup", description: "Recovery-group serum re-analysed." }]);
     expect(again.added).toHaveLength(0);
     expect(again.merged).toBe(1);
     expect(db().timeline.get(e.id)?.description).toBe("Recovery-group serum re-analysed.");
-    const meta = eventsFromDocuments(AFFF, ["ed_afff_0057", "ed_afff_0059", "missing"]);
+    const meta = eventsFromDocuments(VALSARA, ["ed_vls_0057", "ed_vls_0059", "missing"]);
     expect(meta).toHaveLength(2);
     expect(meta[0].sources[0].bates).toBe("MFC-0052210");
-    expect(meta[0].personIds).toContain(PEOPLE.gregoryHale);
-    const csv = chronologyCsv(listEvents(AFFF), new Map([[PEOPLE.helenVoss, "Helen Voss"]]));
+    expect(meta[0].personIds).toContain(PEOPLE.girishHegde);
+    const csv = chronologyCsv(listEvents(VALSARA), new Map([[PEOPLE.hemaVasudevan, "Hema Vasudevan"]]));
     expect(csv.split("\r\n")[0]).toBe("Date,End date,Precision,Event,Description,Category,Significance,Sources,People,Verified,Disputed,Created by");
     expect(csv).toContain("MFC-0041877");
-    const md = chronologyMarkdown(listEvents(AFFF), { title: "Chronology", matterName: "AFFF" });
+    const md = chronologyMarkdown(listEvents(VALSARA), { title: "Chronology", matterName: "Valsara v. Meridian" });
     expect(md).toContain("| Date | Event | Category | Sources | Status |");
-    expect(md).toContain("### Mar 14, 2001 — Whitfield final report");
+    expect(md).toContain("### Mar 14, 2001 — Sundaram final report");
     expect(db().timeline.delete(e.id)).toBe(true);
   });
 });
@@ -292,19 +292,19 @@ describe("chronology", () => {
 // ---------------------------------------------------------------------------
 describe("graph builder", () => {
   const people: Person[] = [
-    { id: "a", name: "Helen Voss", role: "custodian", organization: "Meridian" },
-    { id: "b", name: "Gregory Hale", role: "custodian", organization: "Meridian" },
-    { id: "c", name: "Dr. Linda Whitfield", role: "expert", organization: "Whitfield Labs" },
+    { id: "a", name: "Hema Vasudevan", role: "custodian", organization: "Meridian" },
+    { id: "b", name: "Girish Hegde", role: "custodian", organization: "Meridian" },
+    { id: "c", name: "Dr. Leela Sundaram", role: "expert", organization: "Sundaram Labs" },
     { id: "d", name: "Nobody Here", role: "other", organization: "Elsewhere" },
   ];
   const rels: Relationship[] = [
-    { id: "r1", matterId: AFFF, fromId: "a", toId: "b", kind: "emailed", weight: 3, evidence: [{ bates: "MFC-1" }] },
-    { id: "r2", matterId: AFFF, fromId: "a", toId: "b", kind: "emailed", weight: 2, evidence: [{ bates: "MFC-2" }] },
-    { id: "r3", matterId: AFFF, fromId: "a", toId: "c", kind: "retained", weight: 4 },
-    { id: "r4", matterId: AFFF, fromId: "a", toId: "zzz", kind: "other", weight: 1 },
+    { id: "r1", matterId: VALSARA, fromId: "a", toId: "b", kind: "emailed", weight: 3, evidence: [{ bates: "MFC-1" }] },
+    { id: "r2", matterId: VALSARA, fromId: "a", toId: "b", kind: "emailed", weight: 2, evidence: [{ bates: "MFC-2" }] },
+    { id: "r3", matterId: VALSARA, fromId: "a", toId: "c", kind: "retained", weight: 4 },
+    { id: "r4", matterId: VALSARA, fromId: "a", toId: "zzz", kind: "other", weight: 1 },
   ];
   it("aggregates parallel edges, sizes nodes by document counts, clusters by organisation and drops unknown ids", () => {
-    const g = buildGraph(people, rels, [{ id: "d1", from: "Helen Voss", to: ["Gregory Hale", "Dr. Whitfield"], custodianId: "a" }, { id: "d2", from: "Hale, Gregory", to: ["Voss"], custodianId: "b" }]);
+    const g = buildGraph(people, rels, [{ id: "d1", from: "Hema Vasudevan", to: ["Girish Hegde", "Dr. Sundaram"], custodianId: "a" }, { id: "d2", from: "Hegde, Gregory", to: ["Vasudevan"], custodianId: "b" }]);
     expect(g.nodes.map((n) => n.id).sort()).toEqual(["a", "b", "c"]);
     const a = g.nodes.find((n) => n.id === "a")!;
     expect(a.authored).toBe(1);
@@ -315,38 +315,38 @@ describe("graph builder", () => {
     const ab = g.edges.find((e) => e.kind === "emailed")!;
     expect(ab.weight).toBe(5);
     expect(ab.evidence.map((e) => e.bates)).toEqual(["MFC-1", "MFC-2"]);
-    expect(g.clusters.map((c) => c.id)).toEqual(["Meridian", "Whitfield Labs"]);
+    expect(g.clusters.map((c) => c.id)).toEqual(["Meridian", "Sundaram Labs"]);
     expect(g.clusters[0].size).toBe(2);
   });
   it("resolves header names with titles, initials and last-name-only forms", () => {
-    expect(resolvePersonName("Dr. Linda Whitfield", people)?.id).toBe("c");
-    expect(resolvePersonName("Voss", people)?.id).toBe("a");
-    expect(resolvePersonName("G. Hale", people)?.id).toBe("b");
+    expect(resolvePersonName("Dr. Leela Sundaram", people)?.id).toBe("c");
+    expect(resolvePersonName("Vasudevan", people)?.id).toBe("a");
+    expect(resolvePersonName("G. Hegde", people)?.id).toBe("b");
     expect(resolvePersonName("Unknown Person", people)).toBeUndefined();
   });
   it("builds the seeded matter graph with custodians, counsel and external parties", () => {
-    const g = graph(AFFF);
+    const g = graph(VALSARA);
     expect(g.nodes.length).toBeGreaterThan(15);
     expect(g.edges.length).toBeGreaterThan(40);
-    const voss = g.nodes.find((n) => n.id === PEOPLE.helenVoss)!;
-    expect(voss.authored).toBeGreaterThan(10);
-    expect(voss.depositions).toBe(1);
-    expect(g.nodes.find((n) => n.id === "x_afff_jrourke")?.organization).toBe("Illinois EPA");
-    expect(g.clusters[0].id).toBe("Meridian Fluorochem Corp.");
-    const detail = personDetail(AFFF, PEOPLE.alanPryce)!;
+    const vasudevan = g.nodes.find((n) => n.id === PEOPLE.hemaVasudevan)!;
+    expect(vasudevan.authored).toBeGreaterThan(10);
+    expect(vasudevan.depositions).toBe(1);
+    expect(g.nodes.find((n) => n.id === "x_vls_jrourke")?.organization).toBe("Gujarat Pollution Control Board");
+    expect(g.clusters[0].id).toBe("Meridian Fine Chemicals Ltd.");
+    const detail = personDetail(VALSARA, PEOPLE.anilPrasad)!;
     expect(detail.authored.length).toBeGreaterThan(5);
-    expect(detail.depositions.some((d) => d.witnessName === "Alan Pryce")).toBe(true);
+    expect(detail.depositions.some((d) => d.witnessName === "Anil Prasad")).toBe(true);
     expect(detail.relationships.some((r) => r.kind === "reports_to" && r.direction === "out")).toBe(true);
-    expect(detail.conflicts.some((c) => c.id === "cf_afff_004")).toBe(true);
+    expect(detail.conflicts.some((c) => c.id === "cf_vls_004")).toBe(true);
     expect(detail.timeline.length).toBeGreaterThan(5);
-    expect(personDetail(AFFF, "nobody")).toBeNull();
+    expect(personDetail(VALSARA, "nobody")).toBeNull();
   });
   it("adds a relationship with validation", () => {
-    const r = createRelationship(AFFF, { fromId: PEOPLE.nadiaBrooks, toId: PEOPLE.helenVoss, kind: "meeting", label: "MSDS drafting" });
+    const r = createRelationship(VALSARA, { fromId: PEOPLE.nandiniBose, toId: PEOPLE.hemaVasudevan, kind: "meeting", label: "MSDS drafting" });
     expect(db().relationships.get(r.id)).not.toBeNull();
-    expect(graph(AFFF).edges.some((e) => e.id === r.id)).toBe(true);
-    expect(() => createRelationship(AFFF, { fromId: PEOPLE.nadiaBrooks, toId: PEOPLE.nadiaBrooks, kind: "meeting" })).toThrow(/two different/);
-    expect(() => createRelationship(AFFF, { fromId: "ghost", toId: PEOPLE.nadiaBrooks, kind: "meeting" })).toThrow(/Unknown person/);
+    expect(graph(VALSARA).edges.some((e) => e.id === r.id)).toBe(true);
+    expect(() => createRelationship(VALSARA, { fromId: PEOPLE.nandiniBose, toId: PEOPLE.nandiniBose, kind: "meeting" })).toThrow(/two different/);
+    expect(() => createRelationship(VALSARA, { fromId: "ghost", toId: PEOPLE.nandiniBose, kind: "meeting" })).toThrow(/Unknown person/);
     db().relationships.delete(r.id);
   });
 });
@@ -354,50 +354,50 @@ describe("graph builder", () => {
 // ---------------------------------------------------------------------------
 describe("conflicts", () => {
   it("lists seeded conflicts open-first by severity with witness names and filters", () => {
-    const rows = listConflicts(AFFF);
+    const rows = listConflicts(VALSARA);
     expect(rows.length).toBeGreaterThanOrEqual(8);
     expect(rows[0].status).toBe("open");
     expect(rows[0].severity).toBe("high");
-    expect(rows.find((c) => c.id === "cf_afff_001")!.witnessNames).toEqual(["Helen Voss"]);
-    expect(listConflicts(AFFF, { witnessId: PEOPLE.gregoryHale }).every((c) => c.witnessNames.includes("Gregory Hale"))).toBe(true);
-    expect(listConflicts(AFFF, { status: "dismissed" }).map((c) => c.id)).toEqual(["cf_afff_011"]);
-    expect(listConflicts(AFFF, { kind: "date_inconsistency" }).length).toBe(2);
-    expect(listConflicts(AFFF, { q: "budget" }).map((c) => c.id)).toContain("cf_afff_005");
+    expect(rows.find((c) => c.id === "cf_vls_001")!.witnessNames).toEqual(["Hema Vasudevan"]);
+    expect(listConflicts(VALSARA, { witnessId: PEOPLE.girishHegde }).every((c) => c.witnessNames.includes("Girish Hegde"))).toBe(true);
+    expect(listConflicts(VALSARA, { status: "dismissed" }).map((c) => c.id)).toEqual(["cf_vls_011"]);
+    expect(listConflicts(VALSARA, { kind: "date_inconsistency" }).length).toBe(2);
+    expect(listConflicts(VALSARA, { q: "budget" }).map((c) => c.id)).toContain("cf_vls_005");
   });
   it("creates a conflict, changes status, links a side, adds notes and exports", () => {
-    const c = createConflict(AFFF, {
-      title: "Brooks: learned of MW-7 'in the hallway' vs. Hale's action-item email distribution",
-      kind: "testimony_vs_document", severity: "low", analysis: "Minor; Brooks was removed from the thread (MFC-0052217).",
+    const c = createConflict(VALSARA, {
+      title: "Bose: learned of MW-7 'in the hallway' vs. Hegde's action-item email distribution",
+      kind: "testimony_vs_document", severity: "low", analysis: "Minor; Bose was removed from the thread (MFC-0052217).",
       sides: [
-        { label: "Brooks testimony", sourceKind: "deposition", sourceId: ANALYSIS_SEED_IDS.depositions.brooks, cite: "Brooks 72:12", excerpt: "I learned about the 41 microgram result from Greg in the hallway." },
-        { label: "Pryce email", sourceKind: "document", sourceId: "ed_afff_0059", cite: "MFC-0052217", excerpt: "Nadia — you are off this thread." },
+        { label: "Bose testimony", sourceKind: "deposition", sourceId: ANALYSIS_SEED_IDS.depositions.bose, cite: "Bose 72:12", excerpt: "I learned about the 41 microgram result from Girish in the hallway." },
+        { label: "Prasad email", sourceKind: "document", sourceId: "ed_vls_0059", cite: "MFC-0052217", excerpt: "Nandini — you are off this thread." },
       ],
     });
     expect(c.id).toMatch(/^cf_/);
     expect(c.status).toBe("open");
     expect(c.createdBy).toBe("user");
-    expect(() => createConflict(AFFF, { title: "", kind: "testimony_vs_document", severity: "low", analysis: "", sides: c.sides })).toThrow(/title/);
-    expect(() => createConflict(AFFF, { title: "x", kind: "testimony_vs_document", severity: "low", analysis: "", sides: [c.sides[0]] })).toThrow(/two sides/);
-    updateConflict(c.id, { status: "resolved", addSide: { label: "Hale action items", sourceKind: "document", sourceId: "ed_afff_0061", cite: "MFC-0052219", excerpt: "actions from 7/9 meeting" } });
+    expect(() => createConflict(VALSARA, { title: "", kind: "testimony_vs_document", severity: "low", analysis: "", sides: c.sides })).toThrow(/title/);
+    expect(() => createConflict(VALSARA, { title: "x", kind: "testimony_vs_document", severity: "low", analysis: "", sides: [c.sides[0]] })).toThrow(/two sides/);
+    updateConflict(c.id, { status: "resolved", addSide: { label: "Hegde action items", sourceKind: "document", sourceId: "ed_vls_0061", cite: "MFC-0052219", excerpt: "actions from 7/9 meeting" } });
     let got = getConflict(c.id)!;
     expect(got.conflict.status).toBe("resolved");
     expect(got.conflict.sides).toHaveLength(3);
     updateConflict(c.id, { status: "open", removeSideIndex: 2 });
     updateConflict(c.id, { status: "dismissed" });
     const note = addConflictNote(c.id, "Discussed with PR; no action.");
-    expect(note.authorName).toBe("Jordan Whitfield");
+    expect(note.authorName).toBe("Arjun Mehra");
     got = getConflict(c.id)!;
     expect(got.notes.map((n) => n.body)).toEqual(["Discussed with PR; no action."]);
     expect(got.conflict.noteCount).toBe(1);
     expect(got.conflict.sides).toHaveLength(2);
-    const csv = conflictsCsv(AFFF);
+    const csv = conflictsCsv(VALSARA);
     expect(csv.split("\r\n")[0]).toBe("ID,Severity,Kind,Status,Title,Witnesses,Side 1,Cite 1,Side 2,Cite 2,Side 3,Cite 3,Analysis,Created by");
-    expect(csv).toContain("Brooks 72:12");
+    expect(csv).toContain("Bose 72:12");
     expect(() => addConflictNote("nope", "x")).toThrow(/Unknown conflict/);
     expect(db().conflicts.delete(c.id)).toBe(true);
-    const ov = overview(AFFF);
-    expect(ov.depositions).toBe(7); // Voss, Hale, Pryce, Brooks, the imported Liu transcript + 2 scheduled
-    expect(ov.transcribed).toBe(5); // Voss, Hale, Pryce, Brooks + the imported Liu transcript
+    const ov = overview(VALSARA);
+    expect(ov.depositions).toBe(7); // Vasudevan, Hegde, Prasad, Bose, the imported Lal transcript + 2 scheduled
+    expect(ov.transcribed).toBe(5); // Vasudevan, Hegde, Prasad, Bose + the imported Lal transcript
     expect(ov.conflicts.open).toBeGreaterThanOrEqual(8);
     expect(ov.aiConfigured).toBe(false);
   });
@@ -407,23 +407,23 @@ describe("conflicts", () => {
 describe("AI features without a key", () => {
   it("throw AIConfigError (503 no_api_key) rather than failing silently", async () => {
     const isCfg = (e: unknown) => (e as { name?: string }).name === "AIConfigError";
-    await expect(digestDeposition(ANALYSIS_SEED_IDS.depositions.voss)).rejects.toSatisfy(isCfg);
-    await expect(prepareOutline(AFFF, { witnessName: "Martin Suarez" })).rejects.toSatisfy(isCfg);
-    await expect(findContradictions(AFFF, { depositionId: ANALYSIS_SEED_IDS.depositions.voss, topic: "preliminary" })).rejects.toSatisfy(isCfg);
-    await expect(buildFactMatrix(AFFF, { topic: "MW-7" })).rejects.toSatisfy(isCfg);
-    await expect(extractTimelineEvents(AFFF, { docIds: ["ed_afff_0057"] })).rejects.toSatisfy(isCfg);
-    await expect(knowledgeMap(AFFF, { topic: "half-life" })).rejects.toSatisfy(isCfg);
+    await expect(digestDeposition(ANALYSIS_SEED_IDS.depositions.vasudevan)).rejects.toSatisfy(isCfg);
+    await expect(prepareOutline(VALSARA, { witnessName: "Manish Sood" })).rejects.toSatisfy(isCfg);
+    await expect(findContradictions(VALSARA, { depositionId: ANALYSIS_SEED_IDS.depositions.vasudevan, topic: "preliminary" })).rejects.toSatisfy(isCfg);
+    await expect(buildFactMatrix(VALSARA, { topic: "MW-7" })).rejects.toSatisfy(isCfg);
+    await expect(extractTimelineEvents(VALSARA, { docIds: ["ed_vls_0057"] })).rejects.toSatisfy(isCfg);
+    await expect(knowledgeMap(VALSARA, { topic: "half-life" })).rejects.toSatisfy(isCfg);
     // a cached digest is returned without a key
-    db().depositions.update(ANALYSIS_SEED_IDS.depositions.brooks, { aiDigest: { summary: "cached", keyAdmissions: [], themes: [] } });
-    await expect(digestDeposition(ANALYSIS_SEED_IDS.depositions.brooks)).resolves.toMatchObject({ summary: "cached" });
-    db().depositions.update(ANALYSIS_SEED_IDS.depositions.brooks, { aiDigest: undefined });
+    db().depositions.update(ANALYSIS_SEED_IDS.depositions.bose, { aiDigest: { summary: "cached", keyAdmissions: [], themes: [] } });
+    await expect(digestDeposition(ANALYSIS_SEED_IDS.depositions.bose)).resolves.toMatchObject({ summary: "cached" });
+    db().depositions.update(ANALYSIS_SEED_IDS.depositions.bose, { aiDigest: undefined });
     // scheduled depositions have nothing to digest
-    await expect(digestDeposition("dep_afff_hale_v2")).rejects.toThrow(/No transcript/);
+    await expect(digestDeposition("dep_vls_hale_v2")).rejects.toThrow(/No transcript/);
   });
   it("seeded conflicts have the right shape for the UI", () => {
-    const c: Conflict = db().conflicts.get("cf_afff_002")!;
+    const c: Conflict = db().conflicts.get("cf_vls_002")!;
     expect(c.kind).toBe("date_inconsistency");
-    expect(c.sides[0].cite).toBe("Hale 46:7");
+    expect(c.sides[0].cite).toBe("Hegde 46:7");
     expect(c.sides[1].cite).toBe("MFC-0052210");
   });
 });

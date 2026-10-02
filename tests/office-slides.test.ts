@@ -19,10 +19,10 @@ import { slidesInstructions, SLIDES_SUGGESTIONS } from "@/modules/office/slides/
 
 beforeAll(() => { resetSqlite(); });
 
-const theme = getTheme("seeger-navy");
+const theme = getTheme("classic-navy");
 
-const OUTLINE = `# AFFF bellwether: case strategy
-kicker: MDL 2873
+const OUTLINE = `# Valsara arbitration: case strategy
+kicker: Arb. Ref. 14/2024
 subtitle: Themes and chronology
 date: September 22, 2026
 
@@ -33,7 +33,7 @@ date: September 22, 2026
 
 # Three themes
 - **Knowledge:** Meridian acted on the science it had
-- **Causation:** plaintiffs cannot isolate the product
+- **Causation:** the Claimant cannot isolate the source
   - three other suppliers documented
 - **Conduct:** phase-out preceded the mandate
 notes: Spine of the deck.
@@ -74,7 +74,7 @@ layout: section
 subtitle: Privileged`;
 
 function deckOf(outline = OUTLINE): DeckContent {
-  const deck = emptyDeck("seeger-navy");
+  const deck = emptyDeck("classic-navy");
   deck.slides = parseOutline(outline, theme).slides;
   return deck;
 }
@@ -245,7 +245,7 @@ describe("snapshot", () => {
     const deck = deckOf();
     const snap = parseSnapshot(buildSnapshot(deck, { title: "Deck" }));
     const text = renderSnapshot(snap, null);
-    expect(text).toMatch(/S1 \[sl_[A-Za-z0-9_-]+\] title — "AFFF bellwether: case strategy"/);
+    expect(text).toMatch(/S1 \[sl_[A-Za-z0-9_-]+\] title — "Valsara arbitration: case strategy"/);
     expect(text).toMatch(/S3 \[sl_[A-Za-z0-9_-]+\] bullets — "Three themes" title#el_[A-Za-z0-9_-]+ · body#el_[A-Za-z0-9_-]+ \d+w 4b · notes 4w/);
     expect(text).not.toContain("role=body"); // no element dump without focus
     expect(() => parseSnapshot({})).toThrow();
@@ -278,7 +278,7 @@ describe("agent tools", () => {
     const { ctx, proposals } = makeCtx(deck);
     const tools = slidesAgentTools(ctx, { generateImage: async () => ({ url: "/api/blobs/generated" }) });
     const third = deck.slides[2].id;
-    tool(tools, "add_slide")({ after_id: third, layout: "table", title: "Key custodians", table: { header: ["Custodian", "Role"], rows: [["Voss", "Toxicologist"]] }, notes: "Read the names." });
+    tool(tools, "add_slide")({ after_id: third, layout: "table", title: "Key custodians", table: { header: ["Custodian", "Role"], rows: [["Vasudevan", "Toxicologist"]] }, notes: "Read the names." });
     tool(tools, "set_slide_text")({ slide_id: "3", placeholder: "body", markdown: "- one\n- two" });
     tool(tools, "set_notes")({ slide_id: third, text: "New notes" });
     await tool(tools, "insert_image")({ slide_id: third, prompt: "a groundwater plume diagram" });
@@ -352,7 +352,7 @@ describe("pptx export", () => {
     expect(buf.byteLength).toBeGreaterThan(20_000);
     const zip = await JSZip.loadAsync(buf);
     const slide1 = await zip.file("ppt/slides/slide1.xml")!.async("string");
-    expect(slide1).toContain("AFFF bellwether: case strategy");
+    expect(slide1).toContain("Valsara arbitration: case strategy");
     const slide3 = await zip.file("ppt/slides/slide3.xml")!.async("string");
     expect(slide3).toContain("Knowledge:");
     expect(slide3).toContain("buChar"); // bullets
@@ -386,7 +386,7 @@ describe("pptx import", () => {
     const content = normalizeDeck(imported.content);
     expect(imported.title).toBe("Round trip");
     expect(content.slides.length).toBe(deck.slides.length);
-    expect(slideTitle(content.slides[0])).toBe("AFFF bellwether: case strategy");
+    expect(slideTitle(content.slides[0])).toBe("Valsara arbitration: case strategy");
     const third = content.slides[2];
     const body = third.elements.filter((e) => e.type === "text").map((e) => plainText(e.text)).join("\n");
     expect(body).toContain("Knowledge:");
@@ -413,15 +413,15 @@ describe("templates and seeds", () => {
   it("every template builds a complete, in-bounds deck", () => {
     expect(SLIDES_TEMPLATES.length).toBeGreaterThanOrEqual(8);
     for (const t of SLIDES_TEMPLATES) {
-      const deck = normalizeDeck(t.build({ matterId: "m_afff_2873", title: t.name }));
+      const deck = normalizeDeck(t.build({ matterId: "m_valsara_arb", title: t.name }));
       expect(deck.slides.length, t.id).toBeGreaterThanOrEqual(t.id === "slides-blank" ? 1 : 7);
       for (const s of deck.slides) for (const e of s.elements) expect(withinSlide(e, 1), `${t.id}: ${e.role ?? e.type}`).toBe(true);
       const layouts = new Set(deck.slides.map((s) => s.layout));
       if (t.id !== "slides-blank") expect(layouts.size, t.id).toBeGreaterThanOrEqual(3);
       expect(JSON.stringify(deck)).not.toMatch(/lorem ipsum/i);
     }
-    const strategy = normalizeDeck(SLIDES_TEMPLATES[0].build({ matterId: "m_afff_2873" }));
-    expect(JSON.stringify(strategy)).toContain("Aqueous Film-Forming Foams");
+    const strategy = normalizeDeck(SLIDES_TEMPLATES[0].build({ matterId: "m_valsara_arb" }));
+    expect(JSON.stringify(strategy)).toContain("Valsara Textile Park Ltd. v. Meridian Fine Chemicals Ltd.");
     expect(deckFromOutline("# Only\n- a", "modern-mono").theme.id).toBe("modern-mono");
   });
   it("seeds decks with versions, comments and library items idempotently", () => {
@@ -429,16 +429,16 @@ describe("templates and seeds", () => {
     seedSlides(d);
     const decks = d.officeDocs.find((x) => x.kind === "slides" && x.id.startsWith("sd_"));
     expect(decks.length).toBeGreaterThanOrEqual(4);
-    const afff = d.officeDocs.get("sd_afff_case_strategy")!;
-    expect(afff.matterId).toBe("m_afff_2873");
-    const deck = normalizeDeck(afff.content);
+    const valsara = d.officeDocs.get("sd_vls_case_strategy")!;
+    expect(valsara.matterId).toBe("m_valsara_arb");
+    const deck = normalizeDeck(valsara.content);
     expect(deck.slides.length).toBeGreaterThanOrEqual(10);
     expect(deck.slides.some((s) => s.layout === "chart" && JSON.stringify(s).includes("MFC-0041877"))).toBe(true);
-    expect(d.officeVersions.find((v) => v.docId === afff.id).length).toBeGreaterThanOrEqual(4);
-    const comments = d.officeComments.find((c) => c.docId === afff.id);
+    expect(d.officeVersions.find((v) => v.docId === valsara.id).length).toBeGreaterThanOrEqual(4);
+    const comments = d.officeComments.find((c) => c.docId === valsara.id);
     expect(comments.length).toBe(3);
     expect(comments.every((c) => /^slide:sl_/.test(c.anchor) && deck.slides.some((s) => `slide:${s.id}` === c.anchor))).toBe(true);
-    const lib = d.library.find((l) => l.officeDocId === afff.id);
+    const lib = d.library.find((l) => l.officeDocId === valsara.id);
     expect(lib.length).toBe(1);
     expect(lib[0].type).toBe("pptx");
     const before = { docs: d.officeDocs.count(), versions: d.officeVersions.count(), comments: d.officeComments.count(), lib: d.library.count() };

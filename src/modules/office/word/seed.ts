@@ -9,7 +9,7 @@ import { cloneNode, findNodeById, inlineFromMarkdown, makeTable, type PMNode } f
 import { captionBlock, captionFromMatter, certificateOfService, signatureBlock, type FirmInfo } from "./sections";
 
 /** Letterhead of the sample firm (demo dataset only; templates use placeholders). */
-const FIRM: FirmInfo = { name: "Seeger Weiss LLP", address1: "1201 Main Street, Suite 1900", address2: "Columbia, South Carolina 29201", phone: "(803) 555-0140", email: "jwhitfield@seegerweiss.com" };
+const FIRM: FirmInfo = { name: "Mehra & Rao Advocates", address1: "21 Kasturba Gandhi Marg, 7th Floor", address2: "New Delhi 110001", phone: "+91 11 5550 0140", email: "amehra@mehrarao.example" };
 import { buildDoc, motionBriefDoc } from "./templates";
 import { buildTrackedInline, markBlocksInserted } from "./tracked-diff";
 
@@ -70,19 +70,19 @@ function untrackedReplace(doc: PMNode, needle: string, markdown: string): PMNode
 }
 
 export function seedWord(db: Database) {
-  const afff = db.matters.get(MATTERS.afff);
+  const depo = db.matters.get(MATTERS.depo);
   const northgate = db.matters.get(MATTERS.northgate);
   const sterling = db.matters.get(MATTERS.sterling);
 
   const docs: SeedDoc[] = [
     // 1. Motion and supporting brief (the screenshot document)
     {
-      id: "wd_afff_motion_brief",
+      id: "wd_depo_motion_brief",
       title: "Motion and supporting brief",
-      matterId: MATTERS.afff,
+      matterId: MATTERS.depo,
       templateId: "word-motion-brief",
       createdAt: "2026-09-18T14:05:00Z",
-      v1: motionBriefDoc(afff, "Motion and supporting brief"),
+      v1: motionBriefDoc(depo, "Motion and supporting brief"),
       versions: [
         {
           summary: "Agent edit: Tightened the Legal standard section and added FRCP 56(a)",
@@ -92,50 +92,50 @@ export function seedWord(db: Database) {
         {
           summary: "Agent edit: Converted Argument I to a numbered outline and flagged placeholder citations",
           author: AGENT.name,
-          transform: (d) => trackedInsertAfter(d, "Plaintiffs' only response is a market-share inference", buildDoc(["@outline 1. Product identification is an element of every claim. [VERIFY]\n2. The record identifies three suppliers, none of which used Meridian fluorosurfactant.\n3. Market-share inference is unavailable under the governing law. [VERIFY]"]).content ?? []),
+          transform: (d) => trackedInsertAfter(d, "Plaintiffs' only response is a market-share inference", buildDoc(["@outline 1. Product identification is an element of every claim. [VERIFY]\n2. The record identifies three distributors, none of which purchased from the client during the relevant period.\n3. Market-share inference is unavailable under the governing law. [VERIFY]"]).content ?? []),
         },
         { summary: "Checkpoint", label: "Before partner review", transform: (d) => d },
       ],
       comments: [
-        { id: "wc_afff_motion_1", find: "Because product identification is an essential element", body: "Placeholder case citations inserted for testing only; replace with actual Bluebook citations before filing.", agent: true, quote: "[Celotex Corp. v. Catrett, 477 U.S. 317, 322–23 (1986)]", createdAt: "2026-09-21T15:45:00Z" },
-        { id: "wc_afff_motion_2", find: "Plaintiffs' only response is a market-share inference", body: "Need the Fourth Circuit cite rejecting market-share liability in toxic tort — Elena, can you pull the AFFF product-ID order from the MDL docket?", author: PEOPLE.jordanWhitfield, createdAt: "2026-09-22T09:12:00Z", replies: [{ id: "wcr_afff_motion_2a", body: "On it. Order 2:18-mn-2873, ECF 3140 (Apr. 2024) addresses product ID in the water-provider bellwethers.", authorName: "Elena Marsh", createdAt: "2026-09-22T10:40:00Z" }] },
-        { id: "wc_afff_motion_3", find: "Procurement records produced by", body: "Confirm the Brooks declaration exhibit numbering matches the sales ledger produced at MFC-0041877.", author: PEOPLE.mariaLopez, createdAt: "2026-09-22T11:02:00Z", resolved: true },
+        { id: "wc_vls_motion_1", find: "Because product identification is an essential element", body: "Placeholder case citations inserted for testing only; replace with actual Bluebook citations before filing.", agent: true, quote: "[Celotex Corp. v. Catrett, 477 U.S. 317, 322–23 (1986)]", createdAt: "2026-09-21T15:45:00Z" },
+        { id: "wc_vls_motion_2", find: "Plaintiffs' only response is a market-share inference", body: "Need the circuit cite rejecting market-share liability for distributors — Esha, can you check whether the MDL court has issued any product-identification order?", author: PEOPLE.arjunMehra, createdAt: "2026-09-22T09:12:00Z", replies: [{ id: "wcr_vls_motion_2a", body: "On it. Nothing on the MDL docket yet; I will pull the circuit authority instead. [VERIFY]", authorName: "Esha Mathur", createdAt: "2026-09-22T10:40:00Z" }] },
+        { id: "wc_vls_motion_3", find: "Procurement records produced by", body: "Confirm the declarant's exhibit numbering matches the distributor sales ledger.", author: PEOPLE.meeraLobo, createdAt: "2026-09-22T11:02:00Z", resolved: true },
       ],
       tags: ["motion", "MSJ", "draft"],
     },
 
-    // 2. AFFF rebuttal expert outline
+    // 2. Valsara rebuttal expert outline
     {
-      id: "wd_afff_rebuttal_expert_outline",
-      title: "Rebuttal expert outline — Dr. Whitfield (toxicology)",
-      matterId: MATTERS.afff,
+      id: "wd_vls_rebuttal_expert_outline",
+      title: "Rebuttal expert outline — Dr. Sundaram (toxicology)",
+      matterId: MATTERS.valsara,
       createdAt: "2026-09-10T16:20:00Z",
       v1: buildDoc([
         "@center **PRIVILEGED & CONFIDENTIAL — ATTORNEY WORK PRODUCT — DRAFT**",
-        "# Rebuttal Expert Report Outline: Dr. Linda Whitfield, Ph.D., DABT",
-        `**Matter:** In re: AFFF Products Liability Litigation, MDL No. 2873 (D.S.C.)\n**Responding to:** Plaintiffs' toxicology report of [PLAINTIFFS' EXPERT], served August 29, 2026\n**Rebuttal reports due:** November 6, 2026 (CMO 26 ¶ 4)\n**Drafting team:** P. Raman, E. Marsh; expert liaison M. Lopez`,
+        "# Rebuttal Expert Report Outline: Dr. Leela Sundaram, Ph.D., DABT",
+        `**Matter:** Valsara Textile Park Ltd. v. Meridian Fine Chemicals Ltd., Arb. Ref. 14/2024 (seat: New Delhi)\n**Responding to:** Claimant's toxicology report of [CLAIMANT'S EXPERT], served October 2, 2026\n**Rebuttal reports due:** November 6, 2026 (Procedural Order No. 4 ¶ 3(b))\n**Drafting team:** P. Raman, E. Mathur; expert liaison M. Lobo`,
         "## I. Scope of Rebuttal",
-        "- Limit to opinions actually offered in the opening report (Fed. R. Civ. P. 26(a)(2)(D)(ii)); no new affirmative opinions.\n- Three targets: (1) the general-causation dose-response analysis for PFOS and kidney cancer; (2) the reliance on serum-level back-calculation from municipal water data; (3) the “no safe level” framing and its inconsistency with the 2024 EPA MCL derivation.",
+        "- Limit to opinions actually offered in the opening report (Procedural Order No. 4 ¶ 13); no new affirmative opinions.\n- Three targets: (1) the dose-response analysis linking MC-8 in the Park wellfield to the health-risk premium in the Claimant's quantum; (2) the reliance on back-calculated historical concentrations from 2016–2019 sampling; (3) the “no safe level” framing and its inconsistency with CPCB's guidance-value derivation.",
         "## II. Qualifications and Reliance Materials",
-        "- CV (Ex. A); testimony list, four years (Ex. B); compensation $[__]/hr.\n- Reliance list must include: EPA Final Rule, 89 Fed. Reg. 32532 (Apr. 26, 2024); ATSDR Toxicological Profile for PFAS (2021); C8 Science Panel probable-link reports (2011–2012); Meridian internal studies MFC-0102211 – MFC-0102387; deposition transcripts of H. Voss (Vols. I–II) and G. Hale.",
+        "- CV (Ex. A); prior engagements, four years (Ex. B); declaration of independence; fees ₹[__]/hr.\n- Reliance list must include: CPCB technical basis document for MC-8 (2016); Meridian internal studies SL-2000-0417 and SL-2001-0512 (MFC-0041877, MFC-0052226, MFC-0052248); Beacon groundwater reports; deposition transcripts of H. Vasudevan (Vol. I) and G. Hegde (Vols. I–II).",
         "## III. Summary of Rebuttal Opinions",
-        "@legal 1. The opening report's meta-analysis pools studies with heterogeneous exposure metrics (serum PFOS vs. drinking-water concentration vs. occupational job-exposure matrices) without a heterogeneity test; the pooled relative risk of 1.42 is driven by two occupational cohorts (I² > 70% when recalculated).\n2. Back-calculating serum levels from 2016–2019 municipal sampling to estimate 1990s exposure ignores the documented decline in PFOS half-life estimates (5.4 → 3.4 years) and produces implausibly high historical serum estimates.\n3. The “no safe level” statement conflates a regulatory MCLG of zero (a policy-driven goal for likely carcinogens) with a toxicological threshold; the report's own Table 4 shows no statistically significant association below 20 ng/mL serum PFOS.\n4. The report does not address alternative exposure sources (consumer products, diet) quantified in NHANES 1999–2018, which explain background serum levels of 4–8 ng/mL.",
-        "## IV. Methodology Section (Daubert-proof)",
-        "- Bradford Hill framework applied criterion by criterion; cite Restatement (Third) of Torts: Liability for Physical and Emotional Harm § 28 cmt. c.\n- Reproduce the meta-analysis with random-effects model and leave-one-out sensitivity; attach code and data as Ex. C.\n- Address the Fourth Circuit's standard for reliable methodology: [Westberry v. Gislaved Gummi AB, 178 F.3d 257 (4th Cir. 1999)] [VERIFY]; [Sardis v. Overhead Door Corp., 10 F.4th 268 (4th Cir. 2021)] [VERIFY].",
+        "@legal 1. The opening report pools rodent and occupational data with heterogeneous exposure metrics (serum MC-8 vs. groundwater concentration) without a heterogeneity test; its pooled risk estimate is driven by two high-dose rat groups.\n2. Back-calculating historical wellfield concentrations from 2016–2019 sampling ignores the documented source removal at Lagoon 2 in 2003 and produces implausibly high historical estimates.\n3. The “no safe level” statement conflates a precautionary guidance value with a toxicological threshold; the report's own Table 4 shows no effect below the two-year study NOAEL of 0.03 mg/kg-day.\n4. The report does not address background AOX in the industrial estate, which explains a substantial share of the measured load at the wellfield boundary.",
+        "## IV. Methodology Section",
+        "- Bradford Hill framework applied criterion by criterion.\n- Reproduce the dose-response analysis with a benchmark-dose model and leave-one-out sensitivity; attach code and data as Ex. C.\n- Address the Tribunal's directions on expert evidence (Procedural Order No. 4 ¶¶ 12–14) and the technical conferencing format.",
         "## V. Anticipated Cross-Examination Themes",
-        "| Theme | Plaintiffs' likely question | Prepared answer |\n| --- | --- | --- |\n| Industry funding | Has Dr. Whitfield ever been retained by a fluorochemical manufacturer? | Yes — disclosed; opinions rely on public literature and are reproducible (Ex. C). |\n| Internal studies | Did Meridian's 1998 rat study (MFC-0102211) show hepatic effects? | Yes at doses 1,000× environmental exposure; report addresses relevance of high-dose animal data. |\n| Regulatory reliance | Doesn't EPA classify PFOS as “likely carcinogenic”? | Hazard classification ≠ risk at a given dose; MCL of 4 ppt reflects feasibility, not a causation threshold. |",
+        "| Theme | Claimant's likely question | Prepared answer |\n| --- | --- | --- |\n| Prior engagement | Did Dr. Sundaram's laboratory run Meridian's own studies? | Yes — disclosed in the declaration of independence; opinions rely on the full study data and are reproducible (Ex. C). |\n| Internal studies | Did the 2001 90-day study (MFC-0041877) show hepatic effects? | Yes at doses far above any realistic exposure; the report addresses relevance of high-dose animal data. |\n| Regulatory reliance | Doesn't CPCB treat MC-8 as a persistent organohalogen of concern? | Hazard classification ≠ risk at a given dose; the guidance value reflects precaution, not a causation threshold. |",
         "## VI. Open Items",
-        "- [ ] Obtain de-identified serum data from the [WATER SYSTEM] biomonitoring study (subpoena served Sept. 3).\n- [ ] Confirm whether the opening expert relied on the unpublished 2025 [UNIVERSITY] cohort; if so, request underlying data under CMO 19.\n- [ ] Schedule working session with Dr. Whitfield week of October 6.",
+        "- [ ] Obtain the Park's raw wellfield sampling data (production request served Sept. 3).\n- [ ] Confirm whether the opening expert relied on unpublished cohort data; if so, request the underlying data under Procedural Order No. 3.\n- [ ] Schedule working session with Dr. Sundaram week of October 6.",
       ]),
       versions: [
-        { summary: "Agent edit: Added Daubert methodology section and anticipated cross-examination table", author: AGENT.name, transform: (d) => d },
-        { summary: "Saved changes", transform: (d) => untrackedReplace(d, "Schedule working session", "- [ ] Schedule working session with Dr. Whitfield week of October 6 (confirmed Oct. 8, 10:00 a.m., Columbia office).") },
+        { summary: "Agent edit: Added methodology section and anticipated cross-examination table", author: AGENT.name, transform: (d) => d },
+        { summary: "Saved changes", transform: (d) => untrackedReplace(d, "Schedule working session", "- [ ] Schedule working session with Dr. Sundaram week of October 6 (confirmed Oct. 8, 10:00 a.m., New Delhi office).") },
       ],
       comments: [
-        { id: "wc_afff_rebuttal_1", find: "The opening report's meta-analysis pools studies", body: "Ask Dr. Whitfield whether the I² recalculation used the DerSimonian-Laird or REML estimator — plaintiffs will probe this.", author: PEOPLE.priyaRaman, createdAt: "2026-09-12T13:20:00Z" },
-        { id: "wc_afff_rebuttal_2", find: "Address the Fourth Circuit's standard", body: "[VERIFY] Confirm Sardis pin cite for the 'reliability, not conclusions' proposition before we lift it into the report.", agent: true, createdAt: "2026-09-12T13:22:00Z" },
+        { id: "wc_vls_rebuttal_1", find: "The opening report pools rodent and occupational data", body: "Ask Dr. Sundaram which benchmark-dose model family she used for the recalculation — the Claimant will probe this.", author: PEOPLE.priyaRaman, createdAt: "2026-09-12T13:20:00Z" },
+        { id: "wc_vls_rebuttal_2", find: "Address the Tribunal's directions on expert evidence", body: "[VERIFY] Confirm the paragraph numbers in Procedural Order No. 4 before we lift them into the report.", agent: true, createdAt: "2026-09-12T13:22:00Z" },
       ],
-      tags: ["expert", "Daubert", "outline"],
+      tags: ["expert", "rebuttal", "outline"],
     },
 
     // 3. Northgate MSJ opposition draft
@@ -166,8 +166,8 @@ export function seedWord(db: Database) {
         "Even if the waiver applied, the invoice value of cargo lost in the carrier's custody is the direct and natural result of the breach — the very thing Apex was paid to protect — not consequential loss. [Authority distinguishing direct from consequential damages for lost goods] [VERIFY]. At most, only the lost-customer damages in Count III implicate the waiver, and those are properly reserved for trial.",
         "# CONCLUSION",
         "Apex's motion should be denied in its entirety. In the alternative, the Court should deny the motion as to Counts I and II and defer ruling on Count III pending trial.",
-        signatureBlock({ date: "October 9, 2026", attorney: "Daniel Okafor", barNo: "ARDC No. 6312847", forParty: "Plaintiff Northgate Logistics, Inc.", firm: FIRM }),
-        certificateOfService({ date: "October 9, 2026", documentTitle: "Memorandum in Opposition", attorney: "Daniel Okafor" }),
+        signatureBlock({ date: "October 9, 2026", attorney: "Dhruv Oberoi", barNo: "ARDC No. 6312847", forParty: "Plaintiff Northgate Logistics, Inc.", firm: FIRM }),
+        certificateOfService({ date: "October 9, 2026", documentTitle: "Memorandum in Opposition", attorney: "Dhruv Oberoi" }),
       ]),
       versions: [
         { summary: "Agent edit: Added Argument III on direct vs. consequential damages", author: AGENT.name, transform: (d) => d },
@@ -175,7 +175,7 @@ export function seedWord(db: Database) {
       ],
       comments: [
         { id: "wc_northgate_1", find: "Gross negligence under Illinois law", body: "[VERIFY] Placeholder authority for the gross negligence standard — candidates: the Illinois Supreme Court's formulation in the common-carrier context. Confirm before filing.", agent: true, quote: "[Authority] [VERIFY]", createdAt: "2026-09-19T17:05:00Z" },
-        { id: "wc_northgate_2", find: "Northgate's customer,", body: "Client asked us not to name the pharma customer in a public filing — file this paragraph under seal or refer to “Customer A.”", author: PEOPLE.danielOkafor, createdAt: "2026-09-20T08:30:00Z" },
+        { id: "wc_northgate_2", find: "Northgate's customer,", body: "Client asked us not to name the pharma customer in a public filing — file this paragraph under seal or refer to “Customer A.”", author: PEOPLE.dhruvOberoi, createdAt: "2026-09-20T08:30:00Z" },
       ],
       tags: ["MSJ", "opposition", "N.D. Ill."],
     },
@@ -189,18 +189,18 @@ export function seedWord(db: Database) {
       v1: buildDoc([
         "@center **PRIVILEGED & CONFIDENTIAL — ATTORNEY-CLIENT COMMUNICATION**",
         "# Project Harbor — Stock Purchase Agreement Issues List",
-        "**Buyer:** Harborline Technologies, Inc.\n**Target:** Bluewater Analytics, Inc.\n**Draft:** Seller's draft 3 (Sept. 17, 2026) vs. Buyer's proposed draft 4\n**Prepared by:** D. Okafor / S. Chen\n**Status as of:** September 22, 2026",
+        "**Buyer:** Harborline Technologies, Inc.\n**Target:** Bluewater Analytics, Inc.\n**Draft:** Seller's draft 3 (Sept. 17, 2026) vs. Buyer's proposed draft 4\n**Prepared by:** D. Oberoi / S. Chawla\n**Status as of:** September 22, 2026",
         "## Executive Summary",
         "Four issues remain open that affect deal certainty or value: (1) the IP assignment chain for the core ML models (§ 3.12); (2) change-of-control consents for the top-20 customer contracts as a closing condition (§ 6.2(d)); (3) the R&W insurance retention and the survival of fundamental reps (§ 8); and (4) the earn-out revenue definition (§ 2.5). Everything else is at or near agreed language.",
         "## Open Issues",
         makeTable(
           ["#", "Section", "Issue", "Seller position (draft 3)", "Buyer position (draft 4)", "Risk", "Owner"],
           [
-            ["1", "§ 3.12 / Sched. 3.12(b)", "IP assignment chain for the core ML models", "Rep limited to “Knowledge of Seller”; three contractor agreements lack present-tense assignment language", "Flat rep; pre-closing covenant to obtain confirmatory assignments from the three contractors (Nguyen, Feld, Okoro Labs); special indemnity uncapped for IP title", "High", "S. Chen"],
-            ["2", "§ 6.2(d)", "Change-of-control consents", "Consents from top-10 customers only; others “commercially reasonable efforts”", "Consents from customers representing ≥ 85% of TTM revenue (top-20) as a condition; Seller bears cost of consent fees", "High", "D. Okafor"],
-            ["3", "§ 8.1 / § 8.4", "Survival and R&W insurance retention", "General reps survive 12 months; retention 1% of EV; fundamental reps 3 years", "General reps 18 months; retention 0.75% dropping to 0.5% at 12 months; fundamental reps survive to statute of limitations; fraud carve-out", "Medium", "D. Okafor"],
-            ["4", "§ 2.5 / Ex. B", "Earn-out revenue definition", "GAAP revenue incl. one-time services and pass-through cloud costs", "Recurring subscription revenue only, net of credits and pass-through costs; Buyer operational covenants limited to “good faith”", "Medium", "S. Chen"],
-            ["5", "§ 5.9", "Employee retention pool", "$4.0M pool allocated by Seller pre-closing", "$4.0M pool; allocation by Buyer with Seller consultation; forfeiture on voluntary departure within 12 months", "Low", "S. Chen"],
+            ["1", "§ 3.12 / Sched. 3.12(b)", "IP assignment chain for the core ML models", "Rep limited to “Knowledge of Seller”; three contractor agreements lack present-tense assignment language", "Flat rep; pre-closing covenant to obtain confirmatory assignments from the three contractors (Nguyen, Phadke, Okoro Labs); special indemnity uncapped for IP title", "High", "S. Chawla"],
+            ["2", "§ 6.2(d)", "Change-of-control consents", "Consents from top-10 customers only; others “commercially reasonable efforts”", "Consents from customers representing ≥ 85% of TTM revenue (top-20) as a condition; Seller bears cost of consent fees", "High", "D. Oberoi"],
+            ["3", "§ 8.1 / § 8.4", "Survival and R&W insurance retention", "General reps survive 12 months; retention 1% of EV; fundamental reps 3 years", "General reps 18 months; retention 0.75% dropping to 0.5% at 12 months; fundamental reps survive to statute of limitations; fraud carve-out", "Medium", "D. Oberoi"],
+            ["4", "§ 2.5 / Ex. B", "Earn-out revenue definition", "GAAP revenue incl. one-time services and pass-through cloud costs", "Recurring subscription revenue only, net of credits and pass-through costs; Buyer operational covenants limited to “good faith”", "Medium", "S. Chawla"],
+            ["5", "§ 5.9", "Employee retention pool", "$4.0M pool allocated by Seller pre-closing", "$4.0M pool; allocation by Buyer with Seller consultation; forfeiture on voluntary departure within 12 months", "Low", "S. Chawla"],
             ["6", "§ 3.18", "Privacy / data compliance rep", "Compliance with “applicable privacy laws” in all material respects", "Add specific reps on CCPA/CPRA, GDPR Art. 28 processor terms, and model-training data provenance", "Medium", "A. Khan"],
             ["7", "§ 10.2", "Governing law / forum", "Delaware law; Delaware Chancery", "Agreed", "Closed", "—"],
           ],
@@ -215,14 +215,14 @@ export function seedWord(db: Database) {
         "### 4. Earn-out definition (§ 2.5)",
         "Seller's definition captures $2.1M of one-time implementation services in the TTM base, inflating the target. Buyer's definition limits the metric to recurring subscription revenue recognized under ASC 606, net of credits. Agree to a post-closing dispute mechanism with an independent accountant (§ 2.5(f)).",
         "## Next Steps",
-        "- [ ] Turn draft 4 to Seller's counsel (Whitlock & Barrera) by Sept. 24.\n- [ ] Call with Euclid re: retention step-down — Sept. 25.\n- [ ] Contractor confirmatory assignments circulated — Sept. 26.\n- [ ] HSR filing preparation kick-off (target Nov. 6) — S. Chen.",
+        "- [ ] Turn draft 4 to Seller's counsel (Whitlock & Barrera) by Sept. 24.\n- [ ] Call with Euclid re: retention step-down — Sept. 25.\n- [ ] Contractor confirmatory assignments circulated — Sept. 26.\n- [ ] HSR filing preparation kick-off (target Nov. 6) — S. Chawla.",
       ]),
       versions: [
         { summary: "Agent edit: Reorganized issues by risk and added executive summary", author: AGENT.name, transform: (d) => d },
         { summary: "Saved changes", transform: (d) => untrackedReplace(d, "Turn draft 4 to Seller's counsel", "- [x] Turn draft 4 to Seller's counsel (Whitlock & Barrera) by Sept. 24 — sent Sept. 23.") },
       ],
       comments: [
-        { id: "wc_harbor_1", find: "Diligence identified three contractor agreements", body: "Seller's counsel says Okoro Labs was an employee, not a contractor, for the relevant period — need the payroll records before we push the special indemnity.", author: PEOPLE.danielOkafor, createdAt: "2026-09-22T14:15:00Z" },
+        { id: "wc_harbor_1", find: "Diligence identified three contractor agreements", body: "Seller's counsel says Okoro Labs was an employee, not a contractor, for the relevant period — need the payroll records before we push the special indemnity.", author: PEOPLE.dhruvOberoi, createdAt: "2026-09-22T14:15:00Z" },
         { id: "wc_harbor_2", find: "Two use “agrees to assign” language", body: "[VERIFY] Stanford v. Roche pin cite — the present-assignment holding is at 563 U.S. 776, 785–86 (2011).", agent: true, createdAt: "2026-09-22T14:16:00Z" },
       ],
       tags: ["M&A", "SPA", "issues list"],
@@ -257,102 +257,102 @@ export function seedWord(db: Database) {
         "Sterling denies each allegation in the Notice, reserves all defenses including manageability and the limits on penalty stacking under section 2699(f) and (g) as amended, and reserves the right to seek early evaluation and a stay under section 2699.3(g). This letter is not a waiver of any privilege; the exhibits are provided for the Agency's evaluation and are designated confidential.",
         "Please direct all correspondence to the undersigned.",
         "Respectfully submitted,",
-        `\n\n**Samuel Chen**\n${FIRM.name}\nschen@seegerweiss.com`,
-        "cc: Jordan Whitfield; Sterling Medical Group, P.C. (via email)",
+        `\n\n**Sameer Chawla**\n${FIRM.name}\nschawla@mehrarao.example`,
+        "cc: Arjun Mehra; Sterling Medical Group, P.C. (via email)",
       ]),
       versions: [
         { summary: "Agent edit: Added Section IV notice of cure under the 2024 PAGA reforms", author: AGENT.name, transform: (d) => d },
         { summary: "Agent edit: Review — flagged 6 citations for verification", author: AGENT.name, transform: (d) => d },
       ],
       comments: [
-        { id: "wc_sterling_1", find: "Timekeeping records for the 12-month look-back", body: "Payroll analysis is still running for clinics 11–14; the 96.8% figure covers clinics 1–10 only. Update before sending.", author: PEOPLE.samuelChen, createdAt: "2026-09-20T16:48:00Z" },
+        { id: "wc_sterling_1", find: "Timekeeping records for the 12-month look-back", body: "Payroll analysis is still running for clinics 11–14; the 96.8% figure covers clinics 1–10 only. Update before sending.", author: PEOPLE.sameerChawla, createdAt: "2026-09-20T16:48:00Z" },
         { id: "wc_sterling_2", find: "Sterling discontinued quarter-hour rounding", body: "[VERIFY] Camp v. Home Depot — confirm current status of the Supreme Court review and whether the opinion remains citable.", agent: true, createdAt: "2026-09-20T16:50:00Z" },
       ],
       tags: ["PAGA", "letter", "LWDA"],
     },
 
-    // 6. Research memo on TSCA 8(e)
+    // 6. Research memo on Clause 9.4
     {
-      id: "wd_afff_tsca_8e_memo",
-      title: "Research memo — TSCA § 8(e) substantial-risk reporting and the knowledge timeline",
-      matterId: MATTERS.afff,
+      id: "wd_vls_clause94_memo",
+      title: "Research memo — Clause 9.4 substantial-risk notice and the knowledge timeline",
+      matterId: MATTERS.valsara,
       templateId: "word-research-memo",
       createdAt: "2026-09-08T12:30:00Z",
       v1: buildDoc([
         `@center **${FIRM.name.toUpperCase()}**`,
         "@center **PRIVILEGED & CONFIDENTIAL — ATTORNEY WORK PRODUCT**",
         "@center # MEMORANDUM",
-        "**TO:** Jordan Whitfield, Priya Raman\n**FROM:** Elena Marsh\n**DATE:** September 8, 2026\n**RE:** AFFF MDL 2873 — TSCA § 8(e) substantial-risk reporting obligations and the Meridian knowledge timeline (1978–2002)",
+        "**TO:** Arjun Mehra, Priya Raman\n**FROM:** Esha Mathur\n**DATE:** September 8, 2026\n**RE:** Valsara v. Meridian (Arb. Ref. 14/2024) — Clause 9.4 substantial-risk notice obligations and the Meridian knowledge timeline (2001–2002)",
         "---",
         "# I. QUESTIONS PRESENTED",
-        "1. When did TSCA § 8(e), 15 U.S.C. § 2607(e), require a fluorosurfactant manufacturer to report information about PFOS toxicity or bioaccumulation to EPA, and what standard governs whether information “reasonably supports the conclusion” of substantial risk?\n2. Can plaintiffs use an alleged failure to report under § 8(e) as evidence of negligence or as the basis for a negligence per se instruction in the bellwether cases?",
+        "1. When did Clause 9.4 of the 1998 Supply and Technical Services Agreement require Meridian to give Valsara Textile Park notice of information about MC-8 toxicity or persistence, and what standard governs whether information “reasonably supports the conclusion” of substantial risk?\n2. If notice was late, what is the measure of the Park's recovery: liquidated damages under Clause 9.6, general damages, or both?",
         "# II. BRIEF ANSWERS",
-        "1. Section 8(e) requires “immediate” reporting (within 30 calendar days under EPA's 1978 Statement of Interpretation, 43 Fed. Reg. 11110 (Mar. 16, 1978), as revised in 2003, 68 Fed. Reg. 33129) of information that reasonably supports the conclusion that a chemical presents a substantial risk of injury to health or the environment. The standard is objective and does not require proof of actual harm; information showing bioaccumulation in humans, coupled with toxicity data, is expressly within the 1978 Statement's Part V examples. Meridian's 1998 rat study (MFC-0102211) and its 2000 serum-monitoring results for plant workers (MFC-0118804) are likely reportable events; the 1978–1990 monitoring data present a closer question. [VERIFY current EPA guidance]\n2. Probably not as negligence per se. TSCA provides no private right of action, and courts in the Fourth Circuit have generally declined to premise negligence per se on federal reporting statutes that protect an agency's informational interests rather than a class of persons. [Authority] [VERIFY]. The evidence may nevertheless be admissible as evidence of knowledge and of the standard of care, subject to Rule 403 balancing; that is the more significant exposure.",
+        "1. Clause 9.4 requires notice within 30 days of information that reasonably supports the conclusion that the Product presents a substantial risk of injury to health or the environment. Schedule 6 makes the test objective and lists pronounced bioaccumulation combined with toxicity as notifiable. The March 2001 90-day study (MFC-0041877) and the September 2001 MW-7 detection (MFC-0041988) are the Claimant's strongest trigger dates; notice was given in October 2002. [VERIFY against the executed Agreement]\n2. Clause 9.6 names a per-day sum. Under section 74 of the Indian Contract Act, 1872 the Park can recover reasonable compensation not exceeding the named sum; whether it must prove actual loss turns on whether loss was capable of proof. [Kailash Nath Associates v. DDA, (2015) 4 SCC 136] [VERIFY]. General damages for remediation sit under section 73 and Clause 12 (indemnity).",
         "# III. FACTS",
-        "The relevant internal documents, in date order, are summarized in the chronology at Exhibit A (from the e-discovery timeline, TL-AFFF-0044 through TL-AFFF-0091). In summary: (a) 1978–1985 — Meridian receives 3M's industry-wide serum monitoring summaries showing organic fluorine in plant workers (MFC-0077102); (b) 1998 — Meridian commissions a 90-day rat feeding study of its C8 fluorosurfactant showing hepatic enlargement at the two highest doses (MFC-0102211); (c) 2000 — Meridian's medical department reports PFOS in the serum of 61 of 64 tested production employees, median 412 ng/mL (MFC-0118804); (d) 2001 — Helen Voss circulates a draft § 8(e) notice to Robert Kaine, who responds that the results are “consistent with the published literature” and “not new information” (MFC-0119377); (e) no § 8(e) submission is made until the 2006 EPA PFOA Stewardship Program.",
+        "The relevant internal documents, in date order, are summarized in the chronology at Exhibit A (from the e-discovery timeline, tl_vls_006 through tl_vls_043). In summary: (a) 14 March 2001 — Sundaram Laboratories delivers the 90-day study (MFC-0041877); (b) 19–22 March 2001 — Sood drafts a Clause 9.4 notice and an analysis memo; Kapur advises that the hepatic findings are corroborative and the kinetic finding preliminary (MFC-0041915, MFC-0041921, MFC-0041930); (c) 26 March 2001 — decision not to give notice, conditioned on further studies (MFC-0041936); (d) September 2001 — first MC-8 detection at MW-7 (MFC-0041988); (e) October 2002 — notice given after the 12-month bioassay interim.",
         "# IV. DISCUSSION",
-        "## A. The § 8(e) Standard",
-        "Section 8(e) obligates any person who manufactures, processes or distributes a chemical substance and who “obtains information which reasonably supports the conclusion that such substance … presents a substantial risk of injury to health or the environment” to “immediately inform the Administrator,” unless the person has actual knowledge that EPA has been adequately informed. 15 U.S.C. § 2607(e). EPA's 1978 Statement of Interpretation and Enforcement Policy defines substantial risk by reference to the seriousness of the effect and the likelihood of exposure, and lists as reportable “widespread and previously unsuspected distribution in environmental media” and “pronounced bioaccumulation.” 43 Fed. Reg. at 11112–13. The 2003 revision preserves those categories and clarifies the 30-day window. 68 Fed. Reg. 33129 (June 3, 2003).",
-        "## B. The “Not New Information” Defense",
-        "Section 8(e) excuses reporting where the person “has actual knowledge that the Administrator has been adequately informed.” The 1978 Statement treats published literature as adequately informing EPA only where the specific information is in the literature; corroborative internal data “that adds significantly” to what is known remains reportable. 43 Fed. Reg. at 11113. Kaine's 2001 rationale (MFC-0119377) will therefore be tested against whether EPA had Meridian-specific worker serum data in 2000–2001. It did not; 3M's submissions concerned 3M's workforce. [VERIFY against EPA AR-226 docket index]",
-        "## C. Negligence Per Se and Admissibility",
-        "TSCA contains no private right of action, 15 U.S.C. § 2619 (citizen suits limited to injunctive relief against violations), and the Fourth Circuit applies the forum state's negligence per se doctrine. Under South Carolina law, negligence per se requires that the statute be intended to protect a class of persons that includes the plaintiff from the type of harm suffered. [Authority] [VERIFY]. Reporting statutes directed at an agency's informational needs generally fail that test. [Authority] [VERIFY]. However, evidence of the unreported studies is relevant to (i) knowledge for punitive-damages purposes, (ii) the reasonableness of Meridian's warnings, and (iii) rebutting a state-of-the-art defense. Expect plaintiffs to offer the Voss–Kaine exchange under Fed. R. Evid. 801(d)(2)(D); the privilege analysis is addressed in the separate memo of August 30 (Kaine as in-house counsel).",
+        "## A. The Clause 9.4 Standard",
+        "Clause 9.4 obliges the Supplier, on obtaining information which “reasonably supports the conclusion” of substantial risk, to give written notice within 30 days, copied to the State Pollution Control Board. Schedule 6 defines substantial risk by reference to the seriousness of the effect and the likelihood of exposure and lists “pronounced bioaccumulation” as notifiable when combined with toxicity data (paragraph 5(c)).",
+        "## B. The “Corroborative Information” Defence",
+        "Paragraph 4 of Schedule 6 excuses notice of information that merely confirms an effect already known to the Buyer. Kapur's 2001 rationale (MFC-0041921) will therefore be tested against what the Park actually knew in 2001. It knew nothing about MC-8 persistence; the published literature concerned other manufacturers' compounds. [VERIFY against the Park's correspondence file]",
+        "## C. Measure of Recovery",
+        "Liquidated damages under Clause 9.6 are recoverable only as reasonable compensation up to the named sum (Indian Contract Act, 1872, s. 74). [Authority] [VERIFY]. The remediation claim is an indemnity claim under Clause 12 and requires proof of the costs and of causation from Lagoon 2. The notice history is also relevant to the Claimant's case on the MSDS and product-literature warranties (Clause 8.2).",
         "# V. RECOMMENDATIONS",
-        "- Prepare a Rule 403 / negligence-per-se motion in limine framework now; the issue will recur in every bellwether.\n- Depose Robert Kaine on the 2001 exchange only after resolving the privilege question; consider a targeted privilege log challenge response.\n- Retain a regulatory expert (former EPA OPPT staff) on § 8(e) practice in 1998–2002.\n- Commission the chronology module to align TL-AFFF-0044 through -0091 with the deposition testimony of Voss and Hale.",
+        "- Prepare the Respondent's case that the March 2001 decision was a good-faith reading of paragraph 4, conditioned on an active investigation.\n- Address the Clause 9.6 quantum separately; insist on proof of loss.\n- Retain an expert on industry practice for supply-contract notices in the textile-chemicals sector (2000–2002).\n- Align timeline entries tl_vls_006 through tl_vls_043 with the deposition testimony of Vasudevan and Hegde.",
         "# VI. AUTHORITIES",
-        "- 15 U.S.C. § 2607(e); 15 U.S.C. § 2619\n- 43 Fed. Reg. 11110 (Mar. 16, 1978); 68 Fed. Reg. 33129 (June 3, 2003)\n- 40 C.F.R. Part 720 (premanufacture notification) — background only\n- [South Carolina negligence per se authority] [VERIFY]\n- [Fourth Circuit reporting-statute authority] [VERIFY]",
+        "- 1998 Supply and Technical Services Agreement, Clauses 8.2, 9.4, 9.6, 12 and Schedule 6 (fictional demo contract)\n- Indian Contract Act, 1872, ss. 73–74\n- [Kailash Nath Associates v. DDA, (2015) 4 SCC 136] [VERIFY]\n- Arbitration and Conciliation Act, 1996 (procedure only)",
       ]),
       versions: [
-        { summary: "Agent edit: Expanded Discussion B on the “not new information” defense with the 1978 Statement cite", author: AGENT.name, transform: (d) => d },
-        { summary: "Checkpoint", label: "Sent to JW/PR", transform: (d) => d },
+        { summary: "Agent edit: Expanded Discussion B on the corroborative-information defence with the Schedule 6 cite", author: AGENT.name, transform: (d) => d },
+        { summary: "Checkpoint", label: "Sent to AM/PR", transform: (d) => d },
       ],
       comments: [
-        { id: "wc_tsca_1", find: "Kaine's 2001 rationale", body: "This is the single most important document in the knowledge timeline. Make sure the chronology cross-references MFC-0119377 to Voss Vol. II 144:8–151:20.", author: PEOPLE.jordanWhitfield, createdAt: "2026-09-09T07:55:00Z", replies: [{ id: "wcr_tsca_1a", body: "Added to TL-AFFF-0077 with the transcript cite.", authorName: "Elena Marsh", createdAt: "2026-09-09T11:20:00Z" }] },
+        { id: "wc_clause94_1", find: "Kapur's 2001 rationale", body: "This is the single most important document in the knowledge timeline. Make sure the chronology cross-references MFC-0041921 to Vasudevan Vol. I 147:16.", author: PEOPLE.arjunMehra, createdAt: "2026-09-09T07:55:00Z", replies: [{ id: "wcr_clause94_1a", body: "Added to tl_vls_015 with the transcript cite.", authorName: "Esha Mathur", createdAt: "2026-09-09T11:20:00Z" }] },
       ],
-      tags: ["memo", "TSCA", "research"],
+      tags: ["memo", "Clause 9.4", "research"],
     },
 
-    // 7. Deposition outline — Helen Voss
+    // 7. Deposition outline — Hema Vasudevan
     {
-      id: "wd_afff_voss_depo_outline",
-      title: "Deposition outline — Helen Voss (defending), Vol. III",
-      matterId: MATTERS.afff,
+      id: "wd_vls_voss_depo_outline",
+      title: "Deposition outline — Hema Vasudevan (defending), Vol. III",
+      matterId: MATTERS.valsara,
       createdAt: "2026-09-12T19:45:00Z",
       v1: buildDoc([
         "@center **PRIVILEGED & CONFIDENTIAL — ATTORNEY WORK PRODUCT**",
-        "# Deposition Preparation Outline — Helen Voss, Senior Toxicologist",
-        "**Deposition:** Volume III, October 2, 2026, 9:30 a.m., Charleston (Klein & Associates offices)\n**Examining:** Rebecca Klein (PEC)\n**Defending:** Jordan Whitfield; second chair Elena Marsh\n**Prior volumes:** Vol. I (Mar. 12, 2026, 312 pp.), Vol. II (Mar. 13, 2026, 287 pp.)\n**Prep sessions:** Sept. 25 (full day), Sept. 30 (half day)",
+        "# Deposition Preparation Outline — Hema Vasudevan, Senior Toxicologist",
+        "**Deposition:** Volume III, October 2, 2026, 9:30 a.m., Mumbai (Kale & Associates offices)\n**Examining:** Radhika Kale (Claimant's counsel)\n**Defending:** Arjun Mehra; second chair Esha Mathur\n**Prior volumes:** Vol. I (June 17, 2026, 248 pp.), Vol. II (scheduled Oct. 1, 2026)\n**Prep sessions:** Sept. 25 (full day), Sept. 30 (half day)",
         "## I. Objectives",
-        "- Protect the privilege over the 2001 draft § 8(e) notice exchange with Robert Kaine (MFC-0119377) — instruct not to answer as to legal advice; permit testimony on the underlying scientific facts.\n- Keep testimony consistent with Vol. II on the 2000 serum study design (n=64, median 412 ng/mL) and its limitations.\n- Avoid speculative testimony about what “the industry knew”; witness speaks only to her own knowledge and documents she authored or received.",
+        "- Protect the privilege over the March 2001 draft Clause 9.4 notice exchange with Rohit Kapur (MFC-0041914–0041921) — instruct not to answer as to legal advice; permit testimony on the underlying scientific facts.\n- Keep testimony consistent with Vol. I on the 90-day study and the serum half-life (98–103 days in the rat).\n- Avoid speculative testimony about what “the industry knew”; witness speaks only to her own knowledge and documents she authored or received.",
         "## II. Anticipated Topics and Key Documents",
         makeTable(
           ["Topic", "Likely exhibits", "Vulnerability", "Prep note"],
           [
-            ["1998 rat feeding study design", "MFC-0102211 – MFC-0102387", "Dose selection memo says highest dose chosen “to ensure an effect” (MFC-0102219)", "Explain MTD convention under OECD 408; effect at 1,000× environmental exposure"],
-            ["2000 worker serum study", "MFC-0118804; MFC-0118890 (raw data)", "No control group; 3 refusals unexplained", "Consistent with Vol. II 201:4–214:19; do not volunteer the refusal reasons"],
-            ["2001 draft § 8(e) notice", "MFC-0119377; MFC-0119380 (draft)", "Voss wrote “I think we need to file this” in the cover email", "Privilege instruction on legal advice; fact testimony on what she believed scientifically is fair game"],
-            ["Communications with 3M", "MFC-0077102; MFC-0077340", "Klein will suggest coordination on non-disclosure", "Witness received summaries only; never attended industry meetings before 2003"],
-            ["Product stewardship after 2006", "MFC-0140011 series", "Timing of phase-out vs. EPA program", "Emphasize voluntary participation in the Stewardship Program and 2008 reformulation"],
+            ["2001 90-day study", "MFC-0041877 – MFC-0041879", "Her own email called it “the Sundaram final” (MFC-0041880)", "Explain the deliverable vs. interpretation distinction once; do not argue"],
+            ["Serum persistence", "MFC-0041922; MFC-0041986", "Every recovery animal retained >70% (Vol. I 63:9)", "Consistent with Vol. I; do not volunteer human half-life estimates"],
+            ["2001 draft Clause 9.4 notice", "MFC-0041914; MFC-0041915 (draft)", "Vasudevan told Sood she thought the notice should go (Vol. I 147:16)", "Privilege instruction on legal advice; fact testimony on what she believed scientifically is fair game"],
+            ["Marketing claims", "MFC-0041964; MFC-0041955", "“Slide 8 is false” — Kale will use to show internal knowledge", "Own the email; she raised it in writing, which is the point"],
+            ["MF-5 transition after 2006", "MFC-0052251 series", "Timing of phase-out vs. CPCB programme", "Emphasize voluntary participation and the 2006 reformulation"],
           ],
         ),
         "## III. Objections and Instructions",
-        "@legal 1. **Privilege.** Any question calling for the substance of communications with Kaine or outside counsel after the 2001 draft notice: “Objection; instruct the witness not to answer on the basis of attorney-client privilege. Ms. Voss, you may answer as to facts within your knowledge but not the content of legal advice.”\n2. **Form.** Compound, assumes facts, calls for speculation, mischaracterizes prior testimony (cite volume:page).\n3. **Scope.** Vol. III is limited by CMO 24 to documents produced after March 13, 2026 (Tier 2 custodial production) — object and instruct on questions re-covering Vol. I–II topics unless tied to new documents.\n4. **Rule 30(d)(1).** Seven-hour limit; Vols. I–II consumed 13.5 hours under the stipulated extension; Vol. III capped at 4 hours per Order of Aug. 20, 2026.",
+        "@legal 1. **Privilege.** Any question calling for the substance of communications with Kapur or outside counsel after the 2001 draft notice: “Objection; instruct the witness not to answer on the basis of legal professional privilege. Ms. Vasudevan, you may answer as to facts within your knowledge but not the content of legal advice.”\n2. **Form.** Compound, assumes facts, calls for speculation, mischaracterizes prior testimony (cite volume:page).\n3. **Scope.** Vol. III is limited by Procedural Order No. 4 ¶ 9 to documents produced after June 17, 2026 (Tier 2 custodial production) — object and instruct on questions re-covering Vol. I topics unless tied to new documents.\n4. **Time.** Seven-hour limit per witness under Procedural Order No. 4; Vol. III capped at 4 hours by the Tribunal's direction of Aug. 20, 2026.",
         "## IV. Cross-Analysis: Prior Testimony to Reconcile",
-        "- Vol. I 88:14–89:2 (“I don't recall seeing the 3M data before 2002”) vs. MFC-0077102 (routed to Voss in 1999, per distribution list) — prepare witness: she may not have opened the attachment; the routing slip is not recollection.\n- Vol. II 144:8–151:20 (draft notice) — confirm the witness's account of Kaine's response is limited to the email text.\n- Vol. II 233:1–235:9 (serum half-life) — align with rebuttal expert Dr. Whitfield's 3.4-year figure.",
+        "- Vol. I 19:15 (“preliminary result”) vs. MFC-0041880 (“the Sundaram final”) — conflict cf_vls_001; prepare the witness to explain the distinction once and move on.\n- Vol. I 39:15–40:6 (objected verbally to “no adverse findings”) vs. Hegde Vol. I 22:19 — conflict cf_vls_008.\n- Vol. I 147:16 (told Sood the notice should go) — confirm the witness's account is limited to the conversation, not legal advice.",
         "## V. Redirect Themes (if needed)",
-        "1. Meridian's medical monitoring program preceded any regulatory requirement.\n2. Serum results were shared with the tested employees and their physicians.\n3. The 2001 exchange reflects an internal scientific debate, not concealment.",
+        "1. Meridian commissioned the two-year bioassay and the groundwater programme promptly.\n2. Notice was given within 30 days of the 12-month interim.\n3. The 2001 exchange reflects an internal scientific debate, not concealment.",
         "## VI. Logistics",
-        "- Court reporter: Veritext (realtime ordered); videographer confirmed.\n- Exhibits: Klein has designated 42 exhibits (list received Sept. 19); Maria to prepare binder with Bates cross-reference and prior-volume cites.\n- Witness arrival 8:30 a.m.; prep room reserved.",
+        "- Transcription: Nyaya Transcripts (realtime ordered); videographer confirmed.\n- Exhibits: Kale has designated 42 exhibits (list received Sept. 19); Meera to prepare binder with Bates cross-reference and prior-volume cites.\n- Witness arrival 8:30 a.m.; prep room reserved.",
       ]),
       versions: [
-        { summary: "Agent edit: Built the cross-analysis section from Vol. I–II transcript conflicts", author: AGENT.name, transform: (d) => d },
-        { summary: "Agent edit: Added CMO 24 scope objection and the 4-hour cap", author: AGENT.name, transform: (d) => trackedRewrite(d, "Witness arrival 8:30 a.m.", "- Witness arrival 8:15 a.m.; prep room reserved; breakfast ordered.") },
+        { summary: "Agent edit: Built the cross-analysis section from Vol. I transcript conflicts", author: AGENT.name, transform: (d) => d },
+        { summary: "Agent edit: Added the Procedural Order No. 4 scope objection and the 4-hour cap", author: AGENT.name, transform: (d) => trackedRewrite(d, "Witness arrival 8:30 a.m.", "- Witness arrival 8:15 a.m.; prep room reserved; breakfast ordered.") },
       ],
       comments: [
-        { id: "wc_voss_1", find: "Voss wrote “I think we need to file this”", body: "Klein will lead with this. Confirm with Robert Kaine's counsel that Meridian is asserting privilege over the full thread, not just Kaine's reply.", author: PEOPLE.jordanWhitfield, createdAt: "2026-09-14T08:05:00Z" },
-        { id: "wc_voss_2", find: "Vol. I 88:14–89:2", body: "Conflict C-0031 in the e-discovery module tracks this inconsistency; severity high.", author: PEOPLE.tomBradley, createdAt: "2026-09-14T09:30:00Z" },
+        { id: "wc_voss_1", find: "Vasudevan told Sood she thought the notice should go", body: "Kale will lead with this. Confirm with Rohit Kapur's counsel that Meridian is asserting privilege over the full thread, not just Kapur's reply.", author: PEOPLE.arjunMehra, createdAt: "2026-09-14T08:05:00Z" },
+        { id: "wc_voss_2", find: "Vol. I 19:15", body: "Conflict cf_vls_001 in the e-discovery module tracks this inconsistency; severity high.", author: PEOPLE.tanmayBhatt, createdAt: "2026-09-14T09:30:00Z" },
       ],
-      tags: ["deposition", "outline", "Voss"],
+      tags: ["deposition", "outline", "Vasudevan"],
     },
 
     // 8. Depo-Provera client update letter
@@ -383,14 +383,14 @@ export function seedWord(db: Database) {
         "Fees and costs through August 31 total $412,600 against the Phase 1 (pleadings and Science Day) budget of $650,000. We anticipate remaining within budget through Science Day.",
         "Please let us know if you would like to discuss any of these items. We appreciate the opportunity to assist you in this matter.",
         "Sincerely,",
-        `\n\n**Priya Raman**\nPartner, ${FIRM.name}\npraman@seegerweiss.com`,
-        "cc: Samuel Chen; Maria Lopez",
+        `\n\n**Priya Raman**\nPartner, ${FIRM.name}\npraman@mehrarao.example`,
+        "cc: Sameer Chawla; Meera Lobo",
       ]),
       versions: [
         { summary: "Agent edit: Added the deadline table and budget section", author: AGENT.name, transform: (d) => d },
       ],
       comments: [
-        { id: "wc_depo_1", find: "approximately 31% of plaintiffs identify a distributor", body: "Double-check this figure against the September 19 census export — Maria's tally was 29.6%.", author: PEOPLE.priyaRaman, createdAt: "2026-09-21T10:12:00Z" },
+        { id: "wc_depo_1", find: "approximately 31% of plaintiffs identify a distributor", body: "Double-check this figure against the September 19 census export — Meera's tally was 29.6%.", author: PEOPLE.priyaRaman, createdAt: "2026-09-21T10:12:00Z" },
       ],
       tags: ["client update", "MDL 3140"],
     },
@@ -410,16 +410,16 @@ export function seedWord(db: Database) {
       saveOfficeDoc(sd.id, { content, version: { force: true, summary: v.summary, label: v.label, authorName: v.author } });
       const latest = db.officeVersions.find((x) => x.docId === sd.id).sort((a, b) => b.version - a.version)[0];
       if (latest && latest.summary === v.summary && latest.label === v.label) db.officeVersions.update(latest.id, { createdAt: at });
-      else db.officeVersions.put({ id: `${sd.id}_v${i + 2}`, docId: sd.id, version: (latest?.version ?? 1) + 1, label: v.label, summary: v.summary, authorId: v.author ? undefined : PEOPLE.jordanWhitfield, authorName: v.author ?? "Jordan Whitfield", createdAt: at, content, changedFields: 0 });
+      else db.officeVersions.put({ id: `${sd.id}_v${i + 2}`, docId: sd.id, version: (latest?.version ?? 1) + 1, label: v.label, summary: v.summary, authorId: v.author ? undefined : PEOPLE.arjunMehra, authorName: v.author ?? "Arjun Mehra", createdAt: at, content, changedFields: 0 });
     });
     const finalDoc = db.officeDocs.get(sd.id)!;
     const comments: OfficeComment[] = sd.comments.map((c) => {
       const anchor = blockIdWithText(finalDoc.content as PMNode, c.find) || String(((finalDoc.content as PMNode).content ?? [])[0]?.attrs?.id ?? "");
-      const author = c.agent ? undefined : db.people.get(c.author ?? PEOPLE.jordanWhitfield);
-      return { id: c.id, docId: sd.id, anchor, quote: c.quote, body: c.body, authorId: author?.id, authorName: c.agent ? AGENT.name : author?.name ?? "Jordan Whitfield", createdAt: c.createdAt, resolved: c.resolved, replies: c.replies ?? [], source: c.agent ? "agent" : "user" };
+      const author = c.agent ? undefined : db.people.get(c.author ?? PEOPLE.arjunMehra);
+      return { id: c.id, docId: sd.id, anchor, quote: c.quote, body: c.body, authorId: author?.id, authorName: c.agent ? AGENT.name : author?.name ?? "Arjun Mehra", createdAt: c.createdAt, resolved: c.resolved, replies: c.replies ?? [], source: c.agent ? "agent" : "user" };
     });
     db.officeComments.putMany(comments);
-    const lib: LibraryItem = { id: `lib_word_${sd.id}`, parentId: sd.matterId ? matterFolderId(sd.matterId) : null, name: sd.title, type: "docx", matterId: sd.matterId, officeDocId: sd.id, size: doc.size, tags: sd.tags, ownerId: PEOPLE.jordanWhitfield, sharedWith: ["matter-team"], createdAt: sd.createdAt, updatedAt: finalDoc.updatedAt, version: finalDoc.contentVersion, status: "draft" };
+    const lib: LibraryItem = { id: `lib_word_${sd.id}`, parentId: sd.matterId ? matterFolderId(sd.matterId) : null, name: sd.title, type: "docx", matterId: sd.matterId, officeDocId: sd.id, size: doc.size, tags: sd.tags, ownerId: PEOPLE.arjunMehra, sharedWith: ["matter-team"], createdAt: sd.createdAt, updatedAt: finalDoc.updatedAt, version: finalDoc.contentVersion, status: "draft" };
     db.library.put(lib);
     void sterling;
   }

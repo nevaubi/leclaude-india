@@ -22,13 +22,13 @@ async function fixture(): Promise<Uint8Array> {
   const helv = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   doc.setTitle("Custodian interview notes");
-  doc.setAuthor("Nadia Brooks");
+  doc.setAuthor("Nandini Bose");
   doc.setSubject("Interview of Marcus Delgado, SSN 412-55-8367");
   doc.setKeywords(["interview", "custodian"]);
   const p1 = doc.addPage([612, 792]);
   p1.drawText("1. Custodian Background", { x: 72, y: 720, size: 16, font: bold });
   p1.drawText("Name: Marcus Delgado    SSN: 412-55-8367    Phone: (843) 555-0192", { x: 72, y: 690, size: 11, font: helv });
-  p1.drawText("Email: marcus.delgado@lowcountryenv.com    DOB: 03/14/1971", { x: 72, y: 672, size: 11, font: helv });
+  p1.drawText("Email: marcus.delgado@konkanenv.example    DOB: 03/14/1971", { x: 72, y: 672, size: 11, font: helv });
   p1.drawText("The custodian confirmed that MW-7 samples were collected on June 2, 2024.", { x: 72, y: 654, size: 11, font: helv });
   p1.drawText("Account No. 4471029835 was used for the lab invoices.", { x: 72, y: 636, size: 11, font: helv });
   p1.drawRectangle({ x: 60, y: 600, width: 480, height: 1, color: rgb(0.5, 0.5, 0.5) });
@@ -41,7 +41,7 @@ async function fixture(): Promise<Uint8Array> {
   const aeo = form.createCheckBox("ack_aeo"); aeo.addToPage(p2, { x: 72, y: 560, width: 14, height: 14 });
   const p3 = doc.addPage([612, 792]);
   p3.drawText("3. Sampling Chronology", { x: 72, y: 720, size: 16, font: bold });
-  p3.drawText("Well     Date        PFOA (ng/L)", { x: 72, y: 690, size: 11, font: helv });
+  p3.drawText("Well     Date        MC-7 (ng/L)", { x: 72, y: 690, size: 11, font: helv });
   p3.drawText("MW-7     06/02/2024  1,140", { x: 72, y: 672, size: 11, font: helv });
   p3.drawText("MW-9     06/03/2024  88", { x: 72, y: 654, size: 11, font: helv });
   setOutline(doc, [{ title: "Custodian Background", page: 1 }, { title: "Acknowledgment", page: 2 }, { title: "Sampling Chronology", page: 3, children: [{ title: "Results table", page: 3 }] }]);
@@ -206,7 +206,7 @@ async function pdfjsAnnotations(bytes: Uint8Array, pageNo: number) {
 }
 
 describe("native annotations", () => {
-  const mk = (id: string, type: PdfAnnotation["type"], rects: PdfAnnotation["rects"], extra: Partial<PdfAnnotation> = {}): PdfAnnotation => ({ id, page: 1, type, rects, color: "#FACC15", opacity: 1, author: "Nadia Brooks", createdAt: NOW, ...extra });
+  const mk = (id: string, type: PdfAnnotation["type"], rects: PdfAnnotation["rects"], extra: Partial<PdfAnnotation> = {}): PdfAnnotation => ({ id, page: 1, type, rects, color: "#FACC15", opacity: 1, author: "Nandini Bose", createdAt: NOW, ...extra });
 
   it("writes real annotations (QuadPoints, author, dates, appearance) that pdf-lib and pdf.js read back", async () => {
     const bytes = await fixture();
@@ -228,7 +228,7 @@ describe("native annotations", () => {
     const read = readNativeAnnotations(doc).filter((a) => a.page === 1);
     const byId = new Map(read.map((a) => [a.id, a]));
     for (const id of ["an_h1", "an_u1", "an_s1", "an_n1", "an_t1", "an_r1", "an_e1", "an_i1", "an_st"]) expect(byId.has(id), id).toBe(true);
-    expect(byId.get("an_h1")).toMatchObject({ type: "highlight", author: "Nadia Brooks", text: "key sample", native: { subtype: "Highlight", hasAppearance: true } });
+    expect(byId.get("an_h1")).toMatchObject({ type: "highlight", author: "Nandini Bose", text: "key sample", native: { subtype: "Highlight", hasAppearance: true } });
     expect(byId.get("an_h1")!.rects[0].x).toBeCloseTo(hit.rects[0].x, 1);
     expect(byId.get("an_s1")!.native.subtype).toBe("StrikeOut");
     expect(byId.get("an_n1")).toMatchObject({ type: "note", text: "Confirm date" });
@@ -241,7 +241,7 @@ describe("native annotations", () => {
     const js = await pdfjsAnnotations(out, 1);
     const hl = js.find((a) => a.subtype === "Highlight" && a.contentsObj?.str === "key sample")!;
     expect(hl).toBeDefined();
-    expect(hl.titleObj?.str).toBe("Nadia Brooks");
+    expect(hl.titleObj?.str).toBe("Nandini Bose");
     expect(Array.from(hl.quadPoints ?? []).length).toBe(8);
     expect(js.map((a) => a.subtype)).toEqual(expect.arrayContaining(["Highlight", "Underline", "StrikeOut", "Text", "FreeText", "Square", "Circle", "Ink", "Stamp"]));
     // the page text is untouched by native annotations
@@ -274,15 +274,15 @@ describe("forms, outline, metadata, labels", () => {
     const ex = await extractPdf(bytes);
     expect(ex.fields.map((f) => f.name).sort()).toEqual(["ack_aeo", "ack_name", "ack_role"]);
     let m = await modelFor(bytes);
-    m = applyOp(m, { op: "fill_form", values: { ack_name: "Dr. Linda Whitfield", ack_role: "Expert witness", ack_aeo: true } });
+    m = applyOp(m, { op: "fill_form", values: { ack_name: "Dr. Leela Sundaram", ack_role: "Expert witness", ack_aeo: true } });
     const filled = await applyModel(bytes, m);
     const f2 = (await extractPdf(filled)).fields;
-    expect(f2.find((f) => f.name === "ack_name")?.value).toBe("Dr. Linda Whitfield");
+    expect(f2.find((f) => f.name === "ack_name")?.value).toBe("Dr. Leela Sundaram");
     expect(f2.find((f) => f.name === "ack_aeo")?.value).toBe(true);
     const flat = await applyModel(bytes, applyOp(m, { op: "flatten_form", flatten: true }));
     const ex3 = await extractPdf(flat);
     expect(ex3.fields).toEqual([]);
-    expect(ex3.pages[1].text).toContain("Dr. Linda Whitfield");
+    expect(ex3.pages[1].text).toContain("Dr. Leela Sundaram");
   }, 30_000);
 
   it("keeps the outline, page labels and properties, appends bookmarks and applies metadata edits", async () => {
@@ -292,7 +292,7 @@ describe("forms, outline, metadata, labels", () => {
     expect(ex.outline.map((o) => o.title)).toEqual(["Custodian Background", "Acknowledgment", "Sampling Chronology"]);
     let m = await modelFor(bytes);
     m = applyOp(m, { op: "add_bookmarks", bookmarks: [{ id: "b1", page: 2, title: "Signature block", level: 1 }] });
-    m = applyOp(m, { op: "set_metadata", metadata: { title: "Delgado interview (redacted)", keywords: "interview, PFAS" } });
+    m = applyOp(m, { op: "set_metadata", metadata: { title: "Delgado interview (redacted)", keywords: "interview, MC-8" } });
     const out = await applyModel(bytes, m);
     const ex2 = await extractPdf(out);
     expect(ex2.outline.map((o) => o.title)).toEqual(["Custodian Background", "Acknowledgment", "Sampling Chronology", "Signature block"]);
@@ -300,8 +300,8 @@ describe("forms, outline, metadata, labels", () => {
     expect(ex2.outline[3].page).toBe(2);
     expect(ex2.pageLabels).toEqual(["i", "ii", "iii"]);
     expect(ex2.meta.title).toBe("Delgado interview (redacted)");
-    expect(ex2.meta.author).toBe("Nadia Brooks"); // untouched source property
-    expect(ex2.meta.keywords).toContain("PFAS");
+    expect(ex2.meta.author).toBe("Nandini Bose"); // untouched source property
+    expect(ex2.meta.keywords).toContain("MC-8");
   }, 30_000);
 });
 

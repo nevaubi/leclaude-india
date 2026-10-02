@@ -24,7 +24,7 @@ import { intelDocuments, intelEntities, intelInsights, intelSources, upsertDocum
 import { INTEL_COLLECTIONS, type IntelRelation } from "@/modules/intel/types";
 
 /** Names and numbers that only exist in the bundled sample corpus. */
-const SAMPLE = /AFFF|Depo-Provera|2873|3140|Gergel|Douglas & London|PFAS|medroxyprogesterone/i;
+const SAMPLE = /VALSARA|Depo-Provera|3140|Rodgers|Kale & Associates|medroxyprogesterone/i;
 
 beforeAll(() => { resetSqlite(); db(); });
 afterAll(() => { resetSqlite(); });

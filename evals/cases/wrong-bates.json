@@ -3,7 +3,7 @@
   "category": "citations",
   "title": "Generated Bates number that is not in the evidence",
   "constitution": "§23 never substitute evidence (unresolved Bates → first document is forbidden); §44 wrong Bates",
-  "input": { "matterId": "m_afff_2873", "cite": "MFC-9999999", "fallbackCandidate": "first document of the matter" },
+  "input": { "matterId": "m_valsara_arb", "cite": "MFC-9999999", "fallbackCandidate": "first document of the matter" },
   "expected": "The citation stays unresolved with a reason, carries no ref, and any attempt to bind it to another document throws EvidenceSubstitutionError.",
   "passCriteria": [
     "Citation.state === 'unresolved'",

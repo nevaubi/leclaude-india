@@ -14,7 +14,7 @@ describe("database", () => {
     const d = db();
     expect(d.matters.count()).toBeGreaterThanOrEqual(5);
     expect(d.people.count()).toBeGreaterThan(10);
-    expect(d.matters.get("m_afff_2873")?.client).toBe("Meridian Fluorochem Corp.");
+    expect(d.matters.get("m_valsara_arb")?.client).toBe("Meridian Fine Chemicals Ltd.");
   });
   it("collections round-trip with cache", () => {
     const d = db();
@@ -52,7 +52,7 @@ describe("tool schemas", () => {
 
 describe("text utilities", () => {
   it("chunks text with overlap and computes cosine", () => {
-    const text = Array.from({ length: 200 }, (_, i) => `Sentence number ${i} about PFAS exposure and drinking water.`).join(" ");
+    const text = Array.from({ length: 200 }, (_, i) => `Sentence number ${i} about solvent exposure and drinking water.`).join(" ");
     const chunks = chunkText(text, { size: 800, overlap: 100 });
     expect(chunks.length).toBeGreaterThan(5);
     expect(chunks.every((c) => c.length <= 1000)).toBe(true);
@@ -70,10 +70,10 @@ describe("text utilities", () => {
 
 describe("vector store (keyword fallback without API key)", () => {
   it("indexes and searches by keyword when embeddings are unavailable", async () => {
-    await indexDocument("test_vec", "doc1", "The Whitfield toxicology study reported hepatic effects in rats at 30 mg/kg.", { title: "tox" }, { embed: false });
-    await indexDocument("test_vec", "doc2", "Monitoring well MW-7 at the Decatur site showed PFOA at 1,200 ppt.", { title: "well" }, { embed: false });
+    await indexDocument("test_vec", "doc1", "The Sundaram toxicology study reported hepatic effects in rats at 30 mg/kg.", { title: "tox" }, { embed: false });
+    await indexDocument("test_vec", "doc2", "Monitoring well MW-7 at the Valsara site showed MC-8 at 1,200 ng/L.", { title: "well" }, { embed: false });
     expect(indexStats("test_vec").docs).toBe(2);
-    const hits = await hybridSearch("test_vec", "Decatur monitoring well", { k: 5 });
+    const hits = await hybridSearch("test_vec", "Valsara monitoring well", { k: 5 });
     expect(hits[0]?.docId).toBe("doc2");
     expect(hits[0]?.meta?.title).toBe("well");
   });

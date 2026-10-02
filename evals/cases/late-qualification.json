@@ -4,14 +4,14 @@
   "title": "Admission at page 20, material qualification at page 220",
   "constitution": "§28 coverage (never label a digest comprehensive from a transcript prefix); §44 late qualification",
   "input": {
-    "matterId": "m_afff_2873",
-    "depositionId": "dep_afff_hale_v1",
-    "earlyCite": "Hale Dep. 20:4",
-    "lateCite": "Hale Dep. 220:11",
-    "artifact": "Hale admitted without qualification that the 90-day study was complete before the MSDS revision. (Hale Dep. 20:4)",
+    "matterId": "m_valsara_arb",
+    "depositionId": "dep_vls_hale_v1",
+    "earlyCite": "Hegde Dep. 20:4",
+    "lateCite": "Hegde Dep. 220:11",
+    "artifact": "Hegde admitted without qualification that the 90-day study was complete before the MSDS revision. (Hegde Dep. 20:4)",
     "sources": [
-      { "cite": "Hale Dep. 20:4", "text": "Q. Was the ninety-day study complete before the MSDS revision? A. Yes, it was complete." },
-      { "cite": "Hale Dep. 220:11", "text": "Q. Earlier you said the study was complete. A. I should clarify: the histopathology slides had not been read. The report was a draft. I would not call it complete in the sense you mean." }
+      { "cite": "Hegde Dep. 20:4", "text": "Q. Was the ninety-day study complete before the MSDS revision? A. Yes, it was complete." },
+      { "cite": "Hegde Dep. 220:11", "text": "Q. Earlier you said the study was complete. A. I should clarify: the histopathology slides had not been read. The report was a draft. I would not call it complete in the sense you mean." }
     ]
   },
   "expected": "A cite deep in the transcript resolves exactly like an early one (coverage is not truncated to a prefix), and a verification of the unqualified-admission claim against both passages is not 'verified': the late qualification contradicts or limits it.",

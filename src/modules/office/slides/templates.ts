@@ -6,7 +6,7 @@ import { parseOutline } from "./layouts";
 import { emptyDeck, getTheme, type DeckContent } from "./model";
 
 /** Build a deck from the outline grammar (see layouts.ts). */
-export function deckFromOutline(outline: string, themeId = "seeger-navy"): DeckContent {
+export function deckFromOutline(outline: string, themeId = "classic-navy"): DeckContent {
   const theme = getTheme(themeId);
   const { slides, themeId: declared } = parseOutline(outline, theme);
   const deck = emptyDeck(declared ?? themeId);
@@ -79,17 +79,17 @@ notes: This is the spine of the deck. Each theme has a slide later; if the audie
 layout: timeline
 timeline:
 - 1998 — Internal toxicology study — [BATES] — high-dose animal data, no human signal
-- 2001 — Draft §8(e) notice circulated — [BATES] — legal review, not filed
+- 2001 — Draft regulatory notice circulated — [BATES] — legal review, not filed
 - 2006 — Voluntary stewardship program joined — phase-out begins
 - 2016 — First plaintiff suits filed — MDL consolidation follows
-- 2024 — EPA final rule — MCL set at 4 ppt
+- 2024 — Regulator's final rule — exposure standard set
 notes: Walk the timeline left to right. Emphasize that the stewardship decision preceded the regulatory mandate by a decade. Mark any date you cannot source as [VERIFY].
 
 # Key documents
 layout: table
 | Bates | Date | Document | Why it matters |
 | [BATES] | 1998-03-12 | Toxicology study summary | High-dose animal data; no human signal |
-| [BATES] | 2001-06-04 | Draft §8(e) notice + cover email | Shows deliberation, not concealment |
+| [BATES] | 2001-06-04 | Draft regulatory notice + cover email | Shows deliberation, not concealment |
 | [BATES] | 2006-01-15 | Stewardship program letter | Voluntary phase-out before mandate |
 | [BATES] | 2019-11-20 | Plaintiffs' expert reliance list | Omits background exposure literature |
 caption: Every Bates cite must be verified against the production index before the deck leaves the firm.
@@ -114,7 +114,7 @@ left: Risks
 - Expert exclusion motions cut both ways
 right: Recommendations
 - Press product-identification defenses now
-- Prepare the §8(e) narrative with a clean witness
+- Prepare the notice narrative with a clean witness
 - Open a settlement channel before Daubert rulings
 
 # Next steps
@@ -580,13 +580,13 @@ subtitle: Questions, ideas and feedback: [CONTACT]`;
 }
 
 export const SLIDES_TEMPLATES: OfficeTemplate[] = [
-  { id: "slides-case-strategy", kind: "slides", name: "Case strategy deck", description: "Themes, chronology, key documents with Bates cites, damages exposure, risks and next steps for an internal or client strategy session.", category: "Litigation", practiceArea: "Litigation", tags: ["strategy", "litigation", "internal"], build: ({ matterId }) => deckFromOutline(caseStrategyOutline(matterOf(matterId)), "seeger-navy") },
+  { id: "slides-case-strategy", kind: "slides", name: "Case strategy deck", description: "Themes, chronology, key documents with Bates cites, damages exposure, risks and next steps for an internal or client strategy session.", category: "Litigation", practiceArea: "Litigation", tags: ["strategy", "litigation", "internal"], build: ({ matterId }) => deckFromOutline(caseStrategyOutline(matterOf(matterId)), "classic-navy") },
   { id: "slides-client-update", kind: "slides", name: "Client status update", description: "Executive summary, developments, deadline table, budget chart and decisions needed — client-ready in the Client Light theme.", category: "Client", practiceArea: "Litigation", tags: ["client", "status", "budget"], build: ({ matterId }) => deckFromOutline(clientUpdateOutline(matterOf(matterId)), "client-light") },
   { id: "slides-mediation", kind: "slides", name: "Mediation presentation", description: "FRE 408 mediation statement: competing narratives, what a jury will see, outcome ranges, cost of continuing and a settlement framework.", category: "Litigation", practiceArea: "Litigation", tags: ["mediation", "settlement"], build: ({ matterId }) => deckFromOutline(mediationOutline(matterOf(matterId)), "counsel-slate") },
   { id: "slides-depo-prep", kind: "slides", name: "Deposition prep for witness", description: "Witness-facing preparation deck: goals, ground rules, themes, documents to know, the hard questions, objections and logistics.", category: "Litigation", practiceArea: "Litigation", tags: ["deposition", "witness", "prep"], build: ({ matterId }) => deckFromOutline(depoPrepOutline(matterOf(matterId)), "courtroom-serif") },
-  { id: "slides-expert-timeline", kind: "slides", name: "Expert timeline", description: "State-of-the-science and regulatory timelines, reliance-list table, Rule 702 factors and cross-examination vulnerabilities.", category: "Litigation", practiceArea: "Products Liability", tags: ["expert", "Daubert", "timeline"], build: ({ matterId }) => deckFromOutline(expertTimelineOutline(matterOf(matterId)), "seeger-navy") },
+  { id: "slides-expert-timeline", kind: "slides", name: "Expert timeline", description: "State-of-the-science and regulatory timelines, reliance-list table, Rule 702 factors and cross-examination vulnerabilities.", category: "Litigation", practiceArea: "Products Liability", tags: ["expert", "Daubert", "timeline"], build: ({ matterId }) => deckFromOutline(expertTimelineOutline(matterOf(matterId)), "classic-navy") },
   { id: "slides-board-briefing", kind: "slides", name: "Board M&A briefing", description: "Deal overview, key terms table, diligence findings, risks and mitigants, timeline to closing and the resolutions requested.", category: "Transactional", practiceArea: "Corporate / M&A", tags: ["M&A", "board", "diligence"], build: ({ matterId }) => deckFromOutline(boardBriefingOutline(matterOf(matterId)), "counsel-slate") },
   { id: "slides-cle-rule-702", kind: "slides", name: "CLE training deck (Rule 702)", description: "The 2023 amendment to Rule 702: text, before/after comparison, circuit trends table, briefing strategy and a hypothetical.", category: "Internal", tags: ["CLE", "evidence", "training"], build: () => deckFromOutline(cleOutline(), "courtroom-serif") },
   { id: "slides-all-hands", kind: "slides", name: "Firm all-hands", description: "Quarterly all-hands: wins, pipeline chart, people, initiatives and the calendar.", category: "Internal", tags: ["firm", "all-hands"], build: () => deckFromOutline(allHandsOutline(), "modern-mono") },
-  { id: "slides-blank", kind: "slides", name: "Blank deck", description: "A single title slide in the firm theme.", category: "Internal", tags: ["blank"], build: ({ title }) => deckFromOutline(`# ${title ?? "Untitled deck"}\nsubtitle: \ndate: ${today()}`, "seeger-navy") },
+  { id: "slides-blank", kind: "slides", name: "Blank deck", description: "A single title slide in the firm theme.", category: "Internal", tags: ["blank"], build: ({ title }) => deckFromOutline(`# ${title ?? "Untitled deck"}\nsubtitle: \ndate: ${today()}`, "classic-navy") },
 ];

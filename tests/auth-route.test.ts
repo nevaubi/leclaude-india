@@ -37,7 +37,7 @@ const json = async (r: Response) => ({ status: r.status, body: (await r.json()) 
 /** Routes declared without a request parameter still receive one from Next; call them the way Next does. */
 const call = (h: unknown, ...args: unknown[]) => (h as (...a: unknown[]) => Promise<Response>)(...args);
 const nreq = (path: string, init?: RequestInit) => new NextRequest(`http://localhost${path}`, init as ConstructorParameters<typeof NextRequest>[1]);
-const headerFor = (p: Partial<Principal>) => ({ [AUTH_HEADER_USER]: JSON.stringify({ id: "u_test", name: "Test", roles: ["associate"], matterIds: [MATTERS.afff], ...p }) });
+const headerFor = (p: Partial<Principal>) => ({ [AUTH_HEADER_USER]: JSON.stringify({ id: "u_test", name: "Test", roles: ["associate"], matterIds: [MATTERS.valsara], ...p }) });
 
 describe("withAuth in dev mode", () => {
   it("passes through with the demo principal in context and preserves the handler's return", async () => {
@@ -46,18 +46,18 @@ describe("withAuth in dev mode", () => {
       resource: (_req, { id }) => refs.library(id),
     });
     const r = await json(await handler(nreq("/api/x/abc"), { params: Promise.resolve({ id: "abc" }) }));
-    expect(r).toEqual({ status: 200, body: { id: "abc", principal: PEOPLE.jordanWhitfield, obligations: [] } });
+    expect(r).toEqual({ status: 200, body: { id: "abc", principal: PEOPLE.arjunMehra, obligations: [] } });
   });
   it("audits writes and denials but not plain reads unless AUTH_AUDIT_READS is set", async () => {
     const before = auditCount();
     const read = withAuth(async (req: Request) => Response.json({ ok: true, via: req.url }), { action: "read", resource: () => ({ kind: "task" }) });
-    const write = withAuth(async (req: Request) => Response.json({ ok: true, via: req.url }), { action: "write", resource: () => ({ kind: "task", matterId: MATTERS.afff }) });
+    const write = withAuth(async (req: Request) => Response.json({ ok: true, via: req.url }), { action: "write", resource: () => ({ kind: "task", matterId: MATTERS.valsara }) });
     await read(nreq("/api/tasks"));
     expect(auditCount()).toBe(before);
     await write(nreq("/api/tasks", { method: "POST" }));
     expect(auditCount()).toBe(before + 1);
     const last = recentAudit({ limit: 1 })[0];
-    expect(last).toMatchObject({ principalId: PEOPLE.jordanWhitfield, action: "write", decision: "allow", via: "POST /api/tasks", resource: { kind: "task", matterId: MATTERS.afff } });
+    expect(last).toMatchObject({ principalId: PEOPLE.arjunMehra, action: "write", decision: "allow", via: "POST /api/tasks", resource: { kind: "task", matterId: MATTERS.valsara } });
     process.env.AUTH_AUDIT_READS = "1";
     await read(nreq("/api/tasks"));
     expect(auditCount()).toBe(before + 2);
@@ -91,7 +91,7 @@ describe("withAuth in dev mode", () => {
     expect(missing.status).toBe(404);
   });
   it("applies the role matrix to dev personas: a paralegal cannot administer settings", async () => {
-    process.env.LECLAUDE_USER_ID = PEOPLE.mariaLopez;
+    process.env.LECLAUDE_USER_ID = PEOPLE.meeraLobo;
     const r = await json(await call(settingsProviders, nreq("/api/settings/providers")));
     expect(r.status).toBe(403);
     expect(r.body).toMatchObject({ error: "Forbidden", code: "forbidden" });
@@ -111,7 +111,7 @@ describe("withAuth in header mode", () => {
   it("returns 401 without a trusted assertion and one 403 shape without reasons when the policy denies", async () => {
     process.env.AUTH_MODE = "header";
     process.env.AUTH_TRUST_HEADER = "true";
-    const exportRoute = withAuth(async (req: Request) => Response.json({ ok: true, via: req.url }), { action: "export", resource: () => ({ kind: "document", id: "ed_x", matterId: MATTERS.afff }) });
+    const exportRoute = withAuth(async (req: Request) => Response.json({ ok: true, via: req.url }), { action: "export", resource: () => ({ kind: "document", id: "ed_x", matterId: MATTERS.valsara }) });
     const missing = await json(await exportRoute(nreq("/api/export")));
     expect(missing).toEqual({ status: 401, body: { error: `Missing ${AUTH_HEADER_USER} header`, code: "unauthenticated" } });
     const denied = await json(await exportRoute(nreq("/api/export", { headers: headerFor({ roles: ["paralegal"] }) })));
@@ -128,7 +128,7 @@ describe("withAuth in header mode", () => {
     process.env.AUTH_TRUST_HEADER = "true";
     const anyDoc = db().edocs.findOne((d) => d.matterId === MATTERS.northgate)!;
     const route = withAuth(async (_req: Request, { params }: { params: Promise<{ id: string }> }) => Response.json({ leaked: (await params).id }), { action: "read", resource: (_req, { id }) => refs.edoc(id) });
-    const r = await json(await route(nreq(`/api/docs/${anyDoc.id}`, { headers: headerFor({ matterIds: [MATTERS.afff] }) }), { params: Promise.resolve({ id: anyDoc.id }) }));
+    const r = await json(await route(nreq(`/api/docs/${anyDoc.id}`, { headers: headerFor({ matterIds: [MATTERS.valsara] }) }), { params: Promise.resolve({ id: anyDoc.id }) }));
     expect(r).toEqual({ status: 403, body: { error: "Forbidden", code: "forbidden" } });
   });
   it("outside a request, currentPrincipal is null and requirePrincipal fails closed", () => {
@@ -142,29 +142,29 @@ describe("withAuth in header mode", () => {
 
 describe("scope helpers", () => {
   const partner: Principal = { id: "p", name: "p", tenantId: "default", roles: ["partner"], matterIds: "*", source: "header" };
-  const member: Principal = { ...partner, roles: ["associate"], matterIds: [MATTERS.afff, "m_unknown"] };
+  const member: Principal = { ...partner, roles: ["associate"], matterIds: [MATTERS.valsara, "m_unknown"] };
   const guest: Principal = { ...partner, roles: ["client_guest"] };
   it("enumerates tenant matters for wildcard access and never widens an explicit list", () => {
     expect(accessibleMatterIds(partner).sort()).toEqual(Object.values(MATTERS).sort());
-    expect(matterScope(member).matterIds).toEqual([MATTERS.afff, "m_unknown"]);
+    expect(matterScope(member).matterIds).toEqual([MATTERS.valsara, "m_unknown"]);
     expect(accessibleMatterIds(guest)).toEqual([]);
-    expect(narrowScope(member, [MATTERS.afff, MATTERS.northgate]).matterIds).toEqual([MATTERS.afff]);
+    expect(narrowScope(member, [MATTERS.valsara, MATTERS.northgate]).matterIds).toEqual([MATTERS.valsara]);
   });
   it("requireMatterAccess throws 403 for a non-member and scopeFor narrows to the requested matter", () => {
-    expect(requireMatterAccess(member, MATTERS.afff, "write").allow).toBe(true);
+    expect(requireMatterAccess(member, MATTERS.valsara, "write").allow).toBe(true);
     expect(() => requireMatterAccess(member, MATTERS.northgate)).toThrow(AuthError);
-    expect(scopeFor(member, MATTERS.afff).matterIds).toEqual([MATTERS.afff]);
-    expect(scopeFor(member, undefined).matterIds).toEqual([MATTERS.afff, "m_unknown"]);
+    expect(scopeFor(member, MATTERS.valsara).matterIds).toEqual([MATTERS.valsara]);
+    expect(scopeFor(member, undefined).matterIds).toEqual([MATTERS.valsara, "m_unknown"]);
     expect(() => scopeFor(member, MATTERS.northgate)).toThrow(/no access to matter/);
   });
 });
 
 describe("resource helpers", () => {
   it("jsonBody reads a clone so the handler can still consume the body", async () => {
-    const r = nreq("/api/x", { method: "POST", body: JSON.stringify({ matterId: MATTERS.afff, n: 1 }), headers: { "content-type": "application/json" } });
-    expect(await bodyMatterId(r)).toBe(MATTERS.afff);
-    expect(await jsonBody(r)).toEqual({ matterId: MATTERS.afff, n: 1 });
-    expect(await r.json()).toEqual({ matterId: MATTERS.afff, n: 1 });
+    const r = nreq("/api/x", { method: "POST", body: JSON.stringify({ matterId: MATTERS.valsara, n: 1 }), headers: { "content-type": "application/json" } });
+    expect(await bodyMatterId(r)).toBe(MATTERS.valsara);
+    expect(await jsonBody(r)).toEqual({ matterId: MATTERS.valsara, n: 1 });
+    expect(await r.json()).toEqual({ matterId: MATTERS.valsara, n: 1 });
     expect(await jsonBody(nreq("/api/x", { method: "POST", body: "nope" }))).toEqual({});
   });
   it("refs carry the record's matter and sensitivity", () => {

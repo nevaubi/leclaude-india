@@ -3,7 +3,7 @@
   "category": "citations",
   "title": "Two documents share a Bates range",
   "constitution": "§23 allowed states include requires_review; never pick the first candidate",
-  "input": { "matterId": "m_afff_2873", "cite": "MFC-0041877", "twinId": "ed_eval_twin" },
+  "input": { "matterId": "m_valsara_arb", "cite": "MFC-0041877", "twinId": "ed_eval_twin" },
   "expected": "With a second document covering the same Bates number, the cite is 'requires_review', carries no ref, and its reason lists both candidate ids.",
   "passCriteria": ["Citation.state === 'requires_review'", "Citation.ref === undefined", "reason contains both candidate ids", "after removing the twin the cite resolves again"],
   "grading": "code",

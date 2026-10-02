@@ -33,19 +33,19 @@ function person(id: string, name: string, role: Person["role"]): Person {
 }
 
 function doc(id: string, matterId: string, custodianId: string, bates: string, subject: string, text: string): EDocument {
-  return { id, matterId, bates, date: "2024-05-01", custodianId, custodianName: "Helen Voss", type: "Email", subject, text, coding: {}, from: "Helen Voss", to: ["Counsel"], entities: { people: ["Helen Voss"], orgs: [], places: [] } };
+  return { id, matterId, bates, date: "2024-05-01", custodianId, custodianName: "Hema Vasudevan", type: "Email", subject, text, coding: {}, from: "Hema Vasudevan", to: ["Counsel"], entities: { people: ["Hema Vasudevan"], orgs: [], places: [] } };
 }
 
 function depo(id: string, matterId: string, witnessId: string, answer: string): Deposition {
-  return { id, matterId, witnessId, witnessName: "Helen Voss", date: "2025-02-10", takenBy: "Plaintiffs", pages: 40, status: "transcribed", transcript: [{ page: 12, line: 4, question: "What did you know about the Riverbend outfall?", answer }, { page: 30, line: 18, question: "Anything else?", answer: "No." }] };
+  return { id, matterId, witnessId, witnessName: "Hema Vasudevan", date: "2025-02-10", takenBy: "Plaintiffs", pages: 40, status: "transcribed", transcript: [{ page: 12, line: 4, question: "What did you know about the Riverbend outfall?", answer }, { page: 30, line: 18, question: "Anything else?", answer: "No." }] };
 }
 
 const ALPHA_DOCS = [
-  doc("ed_scope_alpha_1", ALPHA, VOSS_A, "RB-ALPHA-0001", "Riverbend outfall sampling — Voss notes", "Helen Voss reviewed the Riverbend outfall sampling data for the discharge permit renewal."),
-  doc("ed_scope_alpha_2", ALPHA, VOSS_A, "RB-ALPHA-0002", "Voss follow-up on Riverbend sampling", "Follow-up from Voss: the Riverbend outfall exceedance needs a corrective action plan."),
+  doc("ed_scope_alpha_1", ALPHA, VOSS_A, "RB-ALPHA-0001", "Riverbend outfall sampling — Vasudevan notes", "Hema Vasudevan reviewed the Riverbend outfall sampling data for the discharge permit renewal."),
+  doc("ed_scope_alpha_2", ALPHA, VOSS_A, "RB-ALPHA-0002", "Vasudevan follow-up on Riverbend sampling", "Follow-up from Vasudevan: the Riverbend outfall exceedance needs a corrective action plan."),
 ];
 const BETA_DOCS = [
-  doc("ed_scope_beta_1", BETA, VOSS_B, "RB-BETA-0001", "Riverbend warehouse lease — Voss review", "Helen Voss reviewed the Riverbend warehouse lease renewal and the outfall easement language."),
+  doc("ed_scope_beta_1", BETA, VOSS_B, "RB-BETA-0001", "Riverbend warehouse lease — Vasudevan review", "Hema Vasudevan reviewed the Riverbend warehouse lease renewal and the outfall easement language."),
 ];
 
 function ctxWith(scope?: ToolContext["scope"], state: Record<string, unknown> = {}): ToolContext & { events: unknown[] } {
@@ -59,7 +59,7 @@ beforeAll(async () => {
   getSqlite().prepare("INSERT INTO vectors (collection, doc_id, chunk_index, text, embedding, meta, model) VALUES (?, ?, ?, ?, NULL, ?, NULL)").run(VECTOR_COLLECTIONS.edocs, "ed_scope_legacy", 0, "Legacy Riverbend outfall memo indexed before scope columns existed", JSON.stringify({ matterId: ALPHA }));
   const d = db();
   d.matters.putMany([matter(ALPHA, "Riverbend Outfall Permit"), matter(BETA, "Riverbend Warehouse Lease")]);
-  d.people.putMany([person(VOSS_A, "Helen Voss", "custodian"), person(VOSS_B, "Helen Voss", "witness")]);
+  d.people.putMany([person(VOSS_A, "Hema Vasudevan", "custodian"), person(VOSS_B, "Hema Vasudevan", "witness")]);
   d.edocs.putMany([...ALPHA_DOCS, ...BETA_DOCS]);
   d.depositions.putMany([depo("dep_scope_alpha", ALPHA, VOSS_A, "I saw the outfall sampling results in May."), depo("dep_scope_beta", BETA, VOSS_B, "The outfall easement was part of the lease.")]);
   await indexDocuments(VECTOR_COLLECTIONS.edocs, ALPHA_DOCS.map((x) => ({ id: x.id, text: `${x.subject}\n${x.text}`, matterId: x.matterId, meta: { matterId: x.matterId, bates: x.bates } })), { embed: false, scope: alphaScope });
@@ -111,16 +111,16 @@ describe("cross-matter isolation (§44 name collision)", () => {
     expect(await hybridSearch(VECTOR_COLLECTIONS.edocs, "legacy Riverbend outfall memo", { scope: betaScope, k: 5 })).toEqual([]);
   });
   it("a matter-scoped search never returns the other matter's rows", async () => {
-    const alpha = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Voss Riverbend outfall", { scope: alphaScope, k: 10 });
+    const alpha = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Vasudevan Riverbend outfall", { scope: alphaScope, k: 10 });
     expect(alpha.length).toBeGreaterThan(0);
     expect(alpha.every((h) => h.matterId === ALPHA && h.tenantId === TENANT)).toBe(true);
     expect(alpha.some((h) => h.docId.startsWith("ed_scope_beta"))).toBe(false);
-    const beta = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Voss Riverbend outfall", { scope: betaScope, k: 10 });
+    const beta = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Vasudevan Riverbend outfall", { scope: betaScope, k: 10 });
     expect(beta.map((h) => h.docId)).toEqual(["ed_scope_beta_1"]);
-    const both = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Voss Riverbend outfall", { scope: { tenantId: TENANT, matterIds: [ALPHA, BETA] }, k: 10 });
+    const both = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Vasudevan Riverbend outfall", { scope: { tenantId: TENANT, matterIds: [ALPHA, BETA] }, k: 10 });
     expect(new Set(both.map((h) => h.matterId))).toEqual(new Set([ALPHA, BETA]));
-    expect(await hybridSearch(VECTOR_COLLECTIONS.edocs, "Voss Riverbend outfall", { scope: { tenantId: "other-tenant", matterIds: [ALPHA] }, k: 10 })).toEqual([]);
-    expect(await hybridSearch(VECTOR_COLLECTIONS.edocs, "Voss Riverbend outfall", { scope: { tenantId: TENANT, matterIds: [] }, k: 10 })).toEqual([]);
+    expect(await hybridSearch(VECTOR_COLLECTIONS.edocs, "Vasudevan Riverbend outfall", { scope: { tenantId: "other-tenant", matterIds: [ALPHA] }, k: 10 })).toEqual([]);
+    expect(await hybridSearch(VECTOR_COLLECTIONS.edocs, "Vasudevan Riverbend outfall", { scope: { tenantId: TENANT, matterIds: [] }, k: 10 })).toEqual([]);
     expect(indexStats(VECTOR_COLLECTIONS.edocs, betaScope).docs).toBe(1);
     expect(indexStats(VECTOR_COLLECTIONS.edocs, alphaScope).docs).toBe(3);
   });
@@ -144,37 +144,37 @@ describe("cross-matter isolation (§44 name collision)", () => {
     expect((await hybridSearch(VECTOR_COLLECTIONS.edocs, "bound alpha single-matter", { scope: alphaScope, k: 5 })).map((h) => h.docId)).toContain("ed_scope_bound");
   });
   it("findPeople / findDocuments / findDepositionPassages never bind across matters", () => {
-    const a = findPeople("Voss", alphaScope);
+    const a = findPeople("Vasudevan", alphaScope);
     expect(a.map((p) => p.id)).toEqual([VOSS_A]);
-    expect(a[0]).toMatchObject({ name: "Helen Voss", matter_ids: [ALPHA], documents: 2, depositions: 1 });
+    expect(a[0]).toMatchObject({ name: "Hema Vasudevan", matter_ids: [ALPHA], documents: 2, depositions: 1 });
     expect(a[0].linked_as).toEqual(expect.arrayContaining(["custodian", "witness"]));
-    const b = findPeople("Helen Voss", betaScope);
+    const b = findPeople("Hema Vasudevan", betaScope);
     expect(b.map((p) => p.id)).toEqual([VOSS_B]);
-    const both = findPeople("voss", { tenantId: TENANT, matterIds: [ALPHA, BETA] });
+    const both = findPeople("vasudevan", { tenantId: TENANT, matterIds: [ALPHA, BETA] });
     expect(new Set(both.map((p) => p.id))).toEqual(new Set([VOSS_A, VOSS_B])); // same name, two people, never merged
-    expect(findPeople("Voss", { tenantId: TENANT, matterIds: [] })).toEqual([]);
+    expect(findPeople("Vasudevan", { tenantId: TENANT, matterIds: [] })).toEqual([]);
     expect(findPeople("Nobody Here", alphaScope)).toEqual([]);
 
-    const docsA = findDocuments("Voss", alphaScope);
+    const docsA = findDocuments("Vasudevan", alphaScope);
     expect(docsA.map((d) => d.id).sort()).toEqual(["ed_scope_alpha_1", "ed_scope_alpha_2"]);
     expect(docsA.every((d) => d.matter_id === ALPHA && d.source === documentSource(ALPHA, d.id))).toBe(true);
-    expect(findDocuments("Voss", betaScope).map((d) => d.id)).toEqual(["ed_scope_beta_1"]);
+    expect(findDocuments("Vasudevan", betaScope).map((d) => d.id)).toEqual(["ed_scope_beta_1"]);
 
     const passA = findDepositionPassages("outfall", alphaScope);
     expect(passA.map((p) => p.deposition_id)).toEqual(["dep_scope_alpha"]);
     expect(passA[0].source).toBe(depositionSource(ALPHA, "dep_scope_alpha", 12, 4));
     expect(passA[0].source).toBe(`depo://${ALPHA}/dep_scope_alpha/p/12/l/4`);
-    expect(findDepositionPassages("outfall", betaScope, { witness: "Voss" }).map((p) => p.matter_id)).toEqual([BETA]);
+    expect(findDepositionPassages("outfall", betaScope, { witness: "Vasudevan" }).map((p) => p.matter_id)).toEqual([BETA]);
   });
   it("the internal tools honour an explicit ctx.scope and never widen to a requested foreign matter", async () => {
     const ctx = ctxWith(alphaScope);
-    const r = (await searchEdiscoveryTool.execute({ query: "Voss Riverbend outfall" }, ctx)) as { count: number; scope: { matter_ids: string[] }; results: { source: string; matter_id: string }[] };
+    const r = (await searchEdiscoveryTool.execute({ query: "Vasudevan Riverbend outfall" }, ctx)) as { count: number; scope: { matter_ids: string[] }; results: { source: string; matter_id: string }[] };
     expect(r.count).toBeGreaterThan(0);
     expect(r.scope.matter_ids).toEqual([ALPHA]);
     expect(r.results.every((x) => x.matter_id === ALPHA && x.source.startsWith(`matter://${ALPHA}/document/`))).toBe(true);
-    const foreign = (await searchEdiscoveryTool.execute({ query: "Voss", matter_id: BETA }, ctx)) as { code?: string; count: number; results: unknown[] };
+    const foreign = (await searchEdiscoveryTool.execute({ query: "Vasudevan", matter_id: BETA }, ctx)) as { code?: string; count: number; results: unknown[] };
     expect(foreign).toMatchObject({ code: "unauthorized", count: 0, results: [] });
-    const people = (await findPeopleTool.execute({ name: "Voss" }, ctxWith(betaScope))) as { people: { id: string }[] };
+    const people = (await findPeopleTool.execute({ name: "Vasudevan" }, ctxWith(betaScope))) as { people: { id: string }[] };
     expect(people.people.map((p) => p.id)).toEqual([VOSS_B]);
     const deps = (await searchDepositionsTool.execute({ query: "outfall" }, ctxWith(alphaScope))) as { results: { source: string }[] };
     expect(deps.results.map((d) => d.source)).toEqual([`depo://${ALPHA}/dep_scope_alpha/p/12/l/4`]);
@@ -191,12 +191,12 @@ describe("strict and lenient modes", () => {
   it("throws ScopeError for unscoped search and index in strict mode", async () => {
     vi.stubEnv("LECLAUDE_STRICT_SCOPE", "true");
     expect(strictScopeEnabled()).toBe(true);
-    await expect(hybridSearch(VECTOR_COLLECTIONS.edocs, "Voss", { k: 5 })).rejects.toBeInstanceOf(ScopeError);
-    await expect(hybridSearch(VECTOR_COLLECTIONS.edocs, "Voss", { k: 5, filter: (m) => m.matterId === ALPHA })).rejects.toThrow(/retrieval without scope/);
+    await expect(hybridSearch(VECTOR_COLLECTIONS.edocs, "Vasudevan", { k: 5 })).rejects.toBeInstanceOf(ScopeError);
+    await expect(hybridSearch(VECTOR_COLLECTIONS.edocs, "Vasudevan", { k: 5, filter: (m) => m.matterId === ALPHA })).rejects.toThrow(/retrieval without scope/);
     await expect(indexDocuments(VECTOR_COLLECTIONS.edocs, [{ id: "ed_scope_strict", text: "x", matterId: ALPHA }], { embed: false })).rejects.toBeInstanceOf(ScopeError);
     await expect(indexDocument("strict_col", "d", "x", {}, { embed: false })).rejects.toBeInstanceOf(ScopeError);
     // Scoped calls keep working in strict mode.
-    expect((await hybridSearch(VECTOR_COLLECTIONS.edocs, "Voss Riverbend outfall", { scope: alphaScope, k: 5 })).length).toBeGreaterThan(0);
+    expect((await hybridSearch(VECTOR_COLLECTIONS.edocs, "Vasudevan Riverbend outfall", { scope: alphaScope, k: 5 })).length).toBeGreaterThan(0);
   });
   it("in lenient mode an unscoped call is recorded per call site, warned once, and never widened by the layer", async () => {
     vi.stubEnv("LECLAUDE_STRICT_SCOPE", "false");
@@ -204,7 +204,7 @@ describe("strict and lenient modes", () => {
     resetUnscopedRetrievalReport();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const seen: (string | null | undefined)[][] = [];
-    for (let i = 0; i < 2; i++) seen.push((await hybridSearch(VECTOR_COLLECTIONS.edocs, "Voss Riverbend outfall", { k: 10 })).map((h) => h.matterId)); // one call site, called twice
+    for (let i = 0; i < 2; i++) seen.push((await hybridSearch(VECTOR_COLLECTIONS.edocs, "Vasudevan Riverbend outfall", { k: 10 })).map((h) => h.matterId)); // one call site, called twice
     expect(new Set(seen[0])).toEqual(new Set([ALPHA, BETA])); // legacy behaviour: nothing narrows without a scope or filter
     let report = unscopedRetrievalReport();
     expect(report.strict).toBe(false);
@@ -216,7 +216,7 @@ describe("strict and lenient modes", () => {
     expect(warningsFor()).toHaveLength(1); // warned once per site, not per call
     expect(JSON.parse(warningsFor()[0])).toMatchObject({ event: "retrieval.unscoped", operation: "search", collection: VECTOR_COLLECTIONS.edocs });
     // The caller's own filter still narrows (never widened by the layer); a second call site is reported separately.
-    const narrowed = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Voss Riverbend outfall", { k: 10, filter: (m) => m.matterId === BETA });
+    const narrowed = await hybridSearch(VECTOR_COLLECTIONS.edocs, "Vasudevan Riverbend outfall", { k: 10, filter: (m) => m.matterId === BETA });
     expect(narrowed.length).toBeGreaterThan(0);
     expect(narrowed.every((h) => h.matterId === BETA)).toBe(true);
     report = unscopedRetrievalReport();

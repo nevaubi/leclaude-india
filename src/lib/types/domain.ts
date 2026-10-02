@@ -24,9 +24,9 @@ export interface Person {
 export interface Matter {
   id: ID;
   slug: string;
-  name: string; // "In re: AFFF Products Liability Litigation"
-  shortName: string; // "AFFF / PFAS"
-  caption?: string; // "MDL No. 2873 (D.S.C.)"
+  name: string; // "Valsara Textile Park Ltd. v. Meridian Fine Chemicals Ltd."
+  shortName: string; // "Valsara v. Meridian"
+  caption?: string; // "Arb. Ref. 14/2024 (seat: New Delhi)"
   client: string;
   clientSide: "plaintiff" | "defendant" | "petitioner" | "respondent" | "buyer" | "seller" | "other";
   practiceArea: PracticeArea;

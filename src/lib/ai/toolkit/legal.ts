@@ -59,7 +59,7 @@ export const searchCaseLawTool = defineTool<{ query: string; jurisdiction?: stri
   parameters: {
     type: "object",
     properties: {
-      query: { type: "string", description: "Search query, e.g. '\"failure to warn\" AND PFAS' or 'consequential damages waiver indemnity'" },
+      query: { type: "string", description: "Search query, e.g. '\"failure to warn\" AND benzene' or 'consequential damages waiver indemnity'" },
       jurisdiction: { type: "string", description: "Named group: scotus, federal-appellate, 4th-circuit, 7th-circuit, 9th-circuit, 11th-circuit, california-state, new-york-state, delaware, texas-state, illinois-state. Omit for all courts." },
       courts: { type: "string", description: "Space-separated CourtListener court ids (e.g. 'ca4 dsc'), overrides jurisdiction" },
       filed_after: { type: "string", description: "ISO date YYYY-MM-DD" },
@@ -70,7 +70,7 @@ export const searchCaseLawTool = defineTool<{ query: string; jurisdiction?: stri
     required: ["query"],
   },
   examples: [
-    { query: "\"failure to warn\" AND PFAS", jurisdiction: "4th-circuit", filed_after: "2020-01-01", order_by: "citeCount desc", limit: 10 },
+    { query: "\"failure to warn\" AND benzene", jurisdiction: "4th-circuit", filed_after: "2020-01-01", order_by: "citeCount desc", limit: 10 },
     { query: "\"government contractor defense\" \"reasonably precise specifications\"", courts: "ca4 dsc", limit: 5 },
   ],
   timeoutMs: 25_000,
@@ -131,7 +131,7 @@ export const searchDocketsTool = defineTool<{ query: string; courts?: string; fi
   parameters: {
     type: "object",
     properties: {
-      query: { type: "string", description: "e.g. 'Meridian Fluorochem' or 'AFFF products liability'" },
+      query: { type: "string", description: "e.g. 'Northgate Logistics' or 'Depo-Provera products liability'" },
       courts: { type: "string", description: "Space-separated court ids, e.g. 'dsc ilnd'" },
       filed_after: { type: "string", description: "ISO date YYYY-MM-DD" },
       filed_before: { type: "string", description: "ISO date YYYY-MM-DD" },
@@ -139,7 +139,7 @@ export const searchDocketsTool = defineTool<{ query: string; courts?: string; fi
     },
     required: ["query"],
   },
-  examples: [{ query: "Meridian Fluorochem", courts: "dsc", filed_after: "2019-01-01", limit: 10 }, { query: "AFFF products liability MDL 2873" }],
+  examples: [{ query: "Northgate Logistics Holdings", filed_after: "2019-01-01", limit: 10 }, { query: "Depo-Provera products liability MDL 3140" }],
   timeoutMs: 25_000,
   label: (a) => `Searching dockets: ${a.query}`,
   async execute(args, ctx) {
@@ -227,14 +227,14 @@ export const searchRegulationsTool = defineTool<{ query: string; title?: number;
   parameters: {
     type: "object",
     properties: {
-      query: { type: "string", description: "e.g. 'perfluorooctanoic acid drinking water MCL' or '\"substantial risk\" 8(e)'" },
+      query: { type: "string", description: "e.g. 'benzene drinking water MCL' or '\"substantial risk\" 8(e)'" },
       title: { type: "integer", description: "Restrict to a CFR title number, e.g. 40 (Environment), 21 (Food & Drugs), 29 (Labor), 17 (Securities)" },
       agency_slug: { type: "string", description: "eCFR agency slug, e.g. 'environmental-protection-agency'" },
       limit: { type: "integer", description: "Default 10, max 20" },
     },
     required: ["query"],
   },
-  examples: [{ query: "perfluorooctanoic acid maximum contaminant level", title: 40, limit: 10 }, { query: "\"substantial risk\" 8(e)", agency_slug: "environmental-protection-agency" }],
+  examples: [{ query: "benzene maximum contaminant level", title: 40, limit: 10 }, { query: "\"substantial risk\" 8(e)", agency_slug: "environmental-protection-agency" }],
   timeoutMs: 25_000,
   label: (a) => `Searching CFR: ${a.query}`,
   async execute(args, ctx) {
@@ -298,7 +298,7 @@ export const searchFederalRegisterTool = defineTool<{ query: string; agency?: st
     },
     required: ["query"],
   },
-  examples: [{ query: "PFAS national primary drinking water regulation", agency: "environmental-protection-agency", document_type: "RULE", published_after: "2024-01-01", limit: 10 }],
+  examples: [{ query: "prescription drug labeling", agency: "food-and-drug-administration", document_type: "RULE", published_after: "2024-01-01", limit: 10 }],
   timeoutMs: 25_000,
   label: (a) => `Searching Federal Register: ${a.query}`,
   async execute(args, ctx) {

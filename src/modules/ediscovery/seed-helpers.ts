@@ -16,41 +16,41 @@ export function fakeHash(input: string): string {
 }
 
 export const CUSTODIANS = {
-  hale: { id: PEOPLE.gregoryHale, name: "Gregory Hale", email: "g.hale@meridianfluorochem.com", title: "Director, Environmental Health & Safety" },
-  voss: { id: PEOPLE.helenVoss, name: "Helen Voss", email: "h.voss@meridianfluorochem.com", title: "Senior Toxicologist" },
-  brooks: { id: PEOPLE.nadiaBrooks, name: "Nadia Brooks", email: "n.brooks@meridianfluorochem.com", title: "Product Stewardship Manager" },
-  pryce: { id: PEOPLE.alanPryce, name: "Alan Pryce", email: "a.pryce@meridianfluorochem.com", title: "VP, Fire Suppression Products" },
-  kaine: { id: PEOPLE.robertKaine, name: "Robert Kaine", email: "r.kaine@meridianfluorochem.com", title: "Associate General Counsel" },
-  suarez: { id: PEOPLE.martinSuarez, name: "Martin Suarez", email: "m.suarez@meridianfluorochem.com", title: "Regulatory Affairs Counsel" },
+  hegde: { id: PEOPLE.girishHegde, name: "Girish Hegde", email: "g.hegde@meridianfinechem.example", title: "Director, Environmental Health & Safety" },
+  vasudevan: { id: PEOPLE.hemaVasudevan, name: "Hema Vasudevan", email: "h.vasudevan@meridianfinechem.example", title: "Senior Toxicologist" },
+  bose: { id: PEOPLE.nandiniBose, name: "Nandini Bose", email: "n.bose@meridianfinechem.example", title: "Product Stewardship Manager" },
+  prasad: { id: PEOPLE.anilPrasad, name: "Anil Prasad", email: "a.prasad@meridianfinechem.example", title: "VP, Textile Chemicals" },
+  kapur: { id: PEOPLE.rohitKapur, name: "Rohit Kapur", email: "r.kapur@meridianfinechem.example", title: "Associate General Counsel" },
+  sood: { id: PEOPLE.manishSood, name: "Manish Sood", email: "m.sood@meridianfinechem.example", title: "Regulatory Affairs Counsel" },
 } as const;
 export type CustodianKey = keyof typeof CUSTODIANS;
 
 /** Non-custodian correspondents referenced across the corpus. */
 export const PEOPLE_DIR: Record<string, string> = {
-  "Gregory Hale": "g.hale@meridianfluorochem.com",
-  "Helen Voss": "h.voss@meridianfluorochem.com",
-  "Nadia Brooks": "n.brooks@meridianfluorochem.com",
-  "Alan Pryce": "a.pryce@meridianfluorochem.com",
-  "Robert Kaine": "r.kaine@meridianfluorochem.com",
-  "Martin Suarez": "m.suarez@meridianfluorochem.com",
-  "Paul Merrick": "p.merrick@meridianfluorochem.com",
-  "Diane Castellano": "d.castellano@meridianfluorochem.com",
-  "Frank Oduya": "f.oduya@meridianfluorochem.com",
-  "Karen Liu": "k.liu@meridianfluorochem.com",
-  "Steve Halloran": "s.halloran@meridianfluorochem.com",
-  "Priya Natarajan": "p.natarajan@meridianfluorochem.com",
-  "Walter Brandt": "w.brandt@meridianfluorochem.com",
-  "Dr. Linda Whitfield": "lwhitfield@whitfieldlabs.com",
-  "Dr. Yusuf Bello": "ybello@whitfieldlabs.com",
-  "Carla Nunez": "cnunez@beaconenv.com",
-  "Thomas Ashby": "tashby@ashbylowe.com",
-  "Marcus Feld": "feld.marcus@epa.gov",
-  "Janet Rourke": "janet.rourke@illinois.gov",
-  "Chief Raymond Duffy": "rduffy@maconfpd.org",
-  "Lisa Ferrante": "lferrante@decaturwater.org",
-  "Cmdr. Dale Whitcomb": "dale.whitcomb@navy.mil",
-  "Owen Tsai": "otsai@tidewaterrefining.com",
-  "Gail Mortensen": "gmortensen@savannahfire.gov",
+  "Girish Hegde": "g.hegde@meridianfinechem.example",
+  "Hema Vasudevan": "h.vasudevan@meridianfinechem.example",
+  "Nandini Bose": "n.bose@meridianfinechem.example",
+  "Anil Prasad": "a.prasad@meridianfinechem.example",
+  "Rohit Kapur": "r.kapur@meridianfinechem.example",
+  "Manish Sood": "m.sood@meridianfinechem.example",
+  "Pankaj Malhotra": "p.malhotra@meridianfinechem.example",
+  "Deepa Krishnan": "d.krishnan@meridianfinechem.example",
+  "Farhan Qureshi": "f.qureshi@meridianfinechem.example",
+  "Kavita Lal": "k.lal@meridianfinechem.example",
+  "Sanjay Hooda": "s.hooda@meridianfinechem.example",
+  "Priya Natarajan": "p.natarajan@meridianfinechem.example",
+  "Vikram Bhandari": "v.bhandari@meridianfinechem.example",
+  "Dr. Leela Sundaram": "lsundaram@sundaramlabs.example",
+  "Dr. Yusuf Bilgrami": "ybilgrami@sundaramlabs.example",
+  "Charu Nair": "cnair@beaconenviro.example",
+  "Tarun Ahuja": "tahuja@ahujabakshi.example",
+  "Mahesh Phadke": "mahesh.phadke@cpcb.example",
+  "Jyoti Rathore": "jyoti.rathore@gpcb.example",
+  "Raghav Dutta": "rdutta@sarangpurcoop.example",
+  "Lata Fernandes": "lfernandes@valsarapark.example",
+  "Col. Devendra Wadhwa": "d.wadhwa@dqa-textiles.example",
+  "Omkar Tamhane": "otamhane@konkanweaves.example",
+  "Gauri Menon": "gmenon@saurashtrafabrics.example",
   // Northgate v. Apex
   "Melissa Grant": "mgrant@northgatelogistics.com",
   "Victor Salazar": "vsalazar@northgatelogistics.com",
@@ -59,16 +59,16 @@ export const PEOPLE_DIR: Record<string, string> = {
   "Rhonda Feely": "rfeely@apexfreight.com",
   "Curtis Lange": "clange@apexfreight.com",
   "Ana Pereira": "apereira@marlowinsurance.com",
-  "Daniel Okafor": "dokafor@seegerweiss.com",
+  "Dhruv Oberoi": "doberoi@mehrarao.example",
 };
 
 const fmtAddr = (name: string) => (PEOPLE_DIR[name] ? `${name} <${PEOPLE_DIR[name]}>` : name);
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-export function emailDate(date: string, time = "09:14") {
+export function emailDate(date: string, time = "09:14", tz = "-0600") {
   const d = new Date(date + "T00:00:00Z");
-  return `${DAYS[d.getUTCDay()]}, ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} ${time}:00 -0600`;
+  return `${DAYS[d.getUTCDay()]}, ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} ${time}:00 ${tz}`;
 }
 
 export interface DocSpec {
@@ -107,6 +107,8 @@ export interface BuildOptions {
   prefix: string;
   start: number;
   width?: number;
+  /** UTC offset written into generated email headers (default -0600). */
+  tz?: string;
   custodianDir?: Record<string, { id: string; name: string }>;
 }
 
@@ -129,7 +131,7 @@ export function buildDocs(specs: DocSpec[], opts: BuildOptions): EDocument[] {
         `From: ${fmtAddr(s.from ?? cust.name)}`,
         `To: ${(s.to ?? []).map(fmtAddr).join("; ")}`,
         s.cc?.length ? `Cc: ${s.cc.map(fmtAddr).join("; ")}` : null,
-        `Date: ${emailDate(s.date, s.time)}`,
+        `Date: ${emailDate(s.date, s.time, opts.tz)}`,
         `Subject: ${s.subject}`,
       ].filter(Boolean).join("\n");
       text = `${header}\n\n${text}`;
@@ -169,6 +171,6 @@ export function buildDocs(specs: DocSpec[], opts: BuildOptions): EDocument[] {
   return out;
 }
 
-export const REVIEWERS = { marsh: PEOPLE.elenaMarsh, lopez: PEOPLE.mariaLopez, bradley: PEOPLE.tomBradley, whitfield: PEOPLE.jordanWhitfield, raman: PEOPLE.priyaRaman };
-export const AFFF = MATTERS.afff;
+export const REVIEWERS = { marsh: PEOPLE.eshaMathur, lopez: PEOPLE.meeraLobo, bradley: PEOPLE.tanmayBhatt, mehra: PEOPLE.arjunMehra, raman: PEOPLE.priyaRaman };
+export const VALSARA = MATTERS.valsara;
 export const NORTHGATE = MATTERS.northgate;

@@ -153,7 +153,7 @@ describe("engine", () => {
 
 describe("ops", () => {
   it("fills, sorts, styles, merges, filters and builds tables", () => {
-    let wb = wbWith([{ type: "build_table", anchor: "A1", headers: ["Claimant", "Amount", "Due"], rows: [["Okafor", 125000, "2026-07-02"], ["Alvarez", 350000, "2026-08-14"], ["Bennett", 210000, "2026-09-03"]], total_row: true, number_format: "$#,##0.00" }]);
+    let wb = wbWith([{ type: "build_table", anchor: "A1", headers: ["Claimant", "Amount", "Due"], rows: [["Oberoi", 125000, "2026-07-02"], ["Alvarez", 350000, "2026-08-14"], ["Bennett", 210000, "2026-09-03"]], total_row: true, number_format: "$#,##0.00" }]);
     const s = wb.sheets[0];
     expect(s.cells.A1.v).toBe("Claimant");
     expect(wb.styles[s.cells.A1.s!]).toMatchObject({ bold: true, fill: "#1F3A5F", color: "#FFFFFF" });
@@ -161,7 +161,7 @@ describe("ops", () => {
     expect(s.freeze.rows).toBe(1);
     expect(computeWorkbook(wb)[s.id].B5.v).toBe(685000);
     wb = applyOp(wb, { type: "sort_range", sheet: "Sheet1", range: "A1:C4", by: "B", order: "desc", has_header: true });
-    expect([wb.sheets[0].cells.A2.v, wb.sheets[0].cells.A3.v, wb.sheets[0].cells.A4.v]).toEqual(["Alvarez", "Bennett", "Okafor"]);
+    expect([wb.sheets[0].cells.A2.v, wb.sheets[0].cells.A3.v, wb.sheets[0].cells.A4.v]).toEqual(["Alvarez", "Bennett", "Oberoi"]);
     wb = applyOp(wb, { type: "fill_range", sheet: "Sheet1", range: "D2:D4", pattern: "=B2*0.3333" });
     expect(wb.sheets[0].cells.D4.f).toBe("=B4*0.3333");
     wb = applyOp(wb, { type: "set_formula_column", sheet: "Sheet1", column: "E", from_row: 2, to_row: 4, template: "=B{row}-D{row}" });
@@ -175,7 +175,7 @@ describe("ops", () => {
     wb = applyOp(wb, { type: "conditional_format", sheet: "Sheet1", range: "C2:C4", rule: { kind: "dueBefore", date: "2026-08-20" }, style: { fill: "#FDE2E1" } });
     const cf = conditionalStyles(wb.sheets[0], computeWorkbook(wb));
     expect(cf.get("C2")).toBeDefined();
-    expect(cf.get("C3")).toBeUndefined(); // Bennett sorted second → 2026-09-03? sorted desc by amount: Alvarez(8/14), Bennett(9/3), Okafor(7/2)
+    expect(cf.get("C3")).toBeUndefined(); // Bennett sorted second → 2026-09-03? sorted desc by amount: Alvarez(8/14), Bennett(9/3), Oberoi(7/2)
     expect(cf.get("C4")).toBeDefined();
     wb = applyOp(wb, { type: "delete_cols", sheet: "Sheet1", index: 3, count: 1 });
     expect(wb.sheets[0].cells.D3.f).toBe("=B3-#REF!");
@@ -228,7 +228,7 @@ describe("snapshot", () => {
 
 describe("agent tools", () => {
   it("reads overview, headers, ranges and profiles data", () => {
-    const wb = wbWith([{ type: "build_table", anchor: "A1", headers: ["Witness", "Date", "Hours"], rows: [["Hale", "2026-10-06", 7], ["Voss", "2026-10-09", 6.5], ["Pryce", "2026-09-18", 7]], total_row: true }]);
+    const wb = wbWith([{ type: "build_table", anchor: "A1", headers: ["Witness", "Date", "Hours"], rows: [["Hegde", "2026-10-06", 7], ["Vasudevan", "2026-10-09", 6.5], ["Prasad", "2026-09-18", 7]], total_row: true }]);
     const { ctx } = makeCtx(wb);
     const tools = sheetAgentTools(ctx);
     const overview = tool(tools, "get_sheet_overview")({}) as { headers: { col: string; name: string }[]; usedRange: string; columns: { col: string; numbers: number }[] };
@@ -237,7 +237,7 @@ describe("agent tools", () => {
     const range = tool(tools, "get_range")({ range: "C2:C5" }) as { rows: { C?: { v: unknown; f?: string } }[] };
     expect(range.rows[3].C?.f).toBe("=SUM(C2:C4)");
     expect(range.rows[3].C?.v).toBe(20.5);
-    const found = tool(tools, "find_cells")({ query: "voss" }) as { count: number; hits: { ref: string }[] };
+    const found = tool(tools, "find_cells")({ query: "vasudevan" }) as { count: number; hits: { ref: string }[] };
     expect(found.hits[0].ref).toBe("A3");
     const desc = tool(tools, "describe_data")({ range: "A1:C4", has_header: true }) as { columns: { col: string; numbers: number; dates: number }[] };
     expect(desc.columns[2].numbers).toBe(3);
@@ -306,7 +306,7 @@ describe("agent tools", () => {
 describe("XLSX export/import", () => {
   it("round-trips values, formulas, formats, widths, merges, freeze and names", async () => {
     let wb = wbWith([
-      { type: "build_table", anchor: "A1", headers: ["Claimant", "Amount", "Settled"], rows: [["Okafor", 125000, "2026-07-02"], ["Alvarez", 350000, "2026-08-14"]], total_row: true, number_format: "$#,##0.00" },
+      { type: "build_table", anchor: "A1", headers: ["Claimant", "Amount", "Settled"], rows: [["Oberoi", 125000, "2026-07-02"], ["Alvarez", 350000, "2026-08-14"]], total_row: true, number_format: "$#,##0.00" },
       { type: "merge_cells", range: "A7:C7" },
       { type: "set_cells", cells: [{ ref: "A7", value: "Notes", style: { bold: true } }, { ref: "C2", style: { numFmt: "yyyy-mm-dd" } }, { ref: "C3", style: { numFmt: "yyyy-mm-dd" } }] },
       { type: "set_column_width", columns: ["A"], width: 180 },

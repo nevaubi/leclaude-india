@@ -330,7 +330,7 @@ const CONTRADICTION_ITEM = {
     title: { type: "string", description: "One-line description: '<Witness>: <claim> vs. <source> <what it says>'" },
     kind: { type: "string", enum: ["testimony_vs_document", "testimony_vs_testimony", "document_vs_document", "date_inconsistency", "position_inconsistency"] },
     severity: { type: "string", enum: ["low", "medium", "high"] },
-    testimonyCite: { type: "string", description: "Witness and page:line, e.g. 'Voss 19:15'" },
+    testimonyCite: { type: "string", description: "Witness and page:line, e.g. 'Vasudevan 19:15'" },
     testimonyExcerpt: { type: "string" },
     sourceKind: { type: "string", enum: ["document", "deposition"] },
     sourceCite: { type: "string", description: "Bates number or witness page:line" },

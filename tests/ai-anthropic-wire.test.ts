@@ -7,13 +7,13 @@ import { InferenceError, type InferenceEvent, type InferenceRequest } from "@/li
 const anthropicOpts = (model = "claude-opus-4-6", over: Partial<AnthropicWireOptions> = {}): AnthropicWireOptions => ({ platform: "anthropic", model, capabilities: CAPABILITIES.anthropic, defaultMaxTokens: 16_000, thinkingBudget: 0, toolExamples: false, structuredOutput: "auto", ...over });
 const bedrockOpts = (model = "us.anthropic.claude-opus-4-6-v1", over: Partial<AnthropicWireOptions> = {}): AnthropicWireOptions => ({ platform: "bedrock", model, capabilities: CAPABILITIES.bedrock, defaultMaxTokens: 16_000, thinkingBudget: 0, toolExamples: false, structuredOutput: "auto", ...over });
 
-const lookupTool = { name: "lookup", description: "Find documents", parameters: { type: "object", properties: { q: { type: "string" }, limit: { type: "integer" } }, required: ["q"] }, examples: [{ q: "pfas" }] };
+const lookupTool = { name: "lookup", description: "Find documents", parameters: { type: "object", properties: { q: { type: "string" }, limit: { type: "integer" } }, required: ["q"] }, examples: [{ q: "solvent" }] };
 
 const toolLoop: InferenceRequest = {
   instructions: "You are a careful litigator.",
   messages: [
-    { role: "user", content: [{ type: "text", text: "find pfas" }] },
-    { role: "assistant", content: [{ type: "tool_call", id: "toolu_1", name: "lookup", args: { q: "pfas" } }] },
+    { role: "user", content: [{ type: "text", text: "find solvent" }] },
+    { role: "assistant", content: [{ type: "tool_call", id: "toolu_1", name: "lookup", args: { q: "solvent" } }] },
     { role: "tool", content: [{ type: "tool_result", callId: "toolu_1", content: '{"count":2}' }, { type: "tool_result", callId: "toolu_2", content: "boom", isError: true }] },
   ],
   tools: [lookupTool],
@@ -73,7 +73,7 @@ describe("Anthropic request builder", () => {
   it("maps tool calls and tool results, in order, in a single user turn", () => {
     const { body } = buildAnthropicRequest(toolLoop, anthropicOpts());
     const messages = body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>;
-    expect(messages[1].content).toEqual([{ type: "tool_use", id: "toolu_1", name: "lookup", input: { q: "pfas" } }]);
+    expect(messages[1].content).toEqual([{ type: "tool_use", id: "toolu_1", name: "lookup", input: { q: "solvent" } }]);
     expect(messages[2].content).toEqual([
       { type: "tool_result", tool_use_id: "toolu_1", content: '{"count":2}' },
       { type: "tool_result", tool_use_id: "toolu_2", content: "boom", is_error: true },
@@ -109,18 +109,18 @@ describe("Anthropic request builder", () => {
 
   it("renders evidence as search_result blocks with citations enabled, or numbered text under structured output", () => {
     const req: InferenceRequest = {
-      messages: [{ role: "user", content: [{ type: "text", text: "What did Voss admit?" }] }],
-      evidence: [{ type: "search_result", source: "depo://m1/dep_voss/p/20/l/4-12", title: "Voss dep. 20:4-12", content: ["Q. Did you know? A. Yes, in 1998.", "Q. Anything else? A. No."] }],
+      messages: [{ role: "user", content: [{ type: "text", text: "What did Vasudevan admit?" }] }],
+      evidence: [{ type: "search_result", source: "depo://m1/dep_voss/p/20/l/4-12", title: "Vasudevan dep. 20:4-12", content: ["Q. Did you know? A. Yes, in 1998.", "Q. Anything else? A. No."] }],
     };
     const { body } = buildAnthropicRequest(req, anthropicOpts());
     const user = (body.messages as Array<{ content: Array<Record<string, unknown>> }>)[0].content;
-    expect(user[0]).toEqual({ type: "search_result", source: "depo://m1/dep_voss/p/20/l/4-12", title: "Voss dep. 20:4-12", content: [{ type: "text", text: "Q. Did you know? A. Yes, in 1998." }, { type: "text", text: "Q. Anything else? A. No." }], citations: { enabled: true } });
-    expect(user[1]).toEqual({ type: "text", text: "What did Voss admit?" });
+    expect(user[0]).toEqual({ type: "search_result", source: "depo://m1/dep_voss/p/20/l/4-12", title: "Vasudevan dep. 20:4-12", content: [{ type: "text", text: "Q. Did you know? A. Yes, in 1998." }, { type: "text", text: "Q. Anything else? A. No." }], citations: { enabled: true } });
+    expect(user[1]).toEqual({ type: "text", text: "What did Vasudevan admit?" });
 
     const structured = buildAnthropicRequest({ ...req, jsonSchema: { name: "admissions", schema: { type: "object", properties: { found: { type: "boolean" } }, required: ["found"] } } }, anthropicOpts());
     const sUser = (structured.body.messages as Array<{ content: Array<Record<string, unknown>> }>)[0].content;
     expect(sUser[0].type).toBe("text");
-    expect(String(sUser[0].text)).toContain("[1] Voss dep. 20:4-12");
+    expect(String(sUser[0].text)).toContain("[1] Vasudevan dep. 20:4-12");
     expect(String(sUser[0].text)).toContain("source: depo://m1/dep_voss/p/20/l/4-12");
     expect(structured.body.output_config).toEqual({ format: { type: "json_schema", schema: { type: "object", properties: { found: { type: "boolean" } }, required: ["found"], additionalProperties: false } }, effort: "medium" });
   });
@@ -194,7 +194,7 @@ describe("Anthropic request builder", () => {
     const req: InferenceRequest = { messages: [{ role: "user", content: [{ type: "text", text: "search" }] }], tools: [lookupTool], builtins: [{ type: "web_search", allowedDomains: ["courtlistener.com"] }, { type: "web_fetch" }] };
     const modern = buildAnthropicRequest(req, anthropicOpts("claude-opus-4-6", { toolExamples: true }));
     const tools = modern.body.tools as Array<Record<string, unknown>>;
-    expect(tools[0]).toMatchObject({ name: "lookup", input_examples: [{ q: "pfas" }] });
+    expect(tools[0]).toMatchObject({ name: "lookup", input_examples: [{ q: "solvent" }] });
     expect(tools[1]).toEqual({ type: "web_search_20260209", name: "web_search", allowed_domains: ["courtlistener.com"], user_location: { type: "approximate", country: "IN" } });
     expect(tools[2]).toEqual({ type: "web_fetch_20260209", name: "web_fetch" });
     expect(modern.betas).toEqual(["advanced-tool-use-2025-11-20"]);
@@ -222,19 +222,19 @@ describe("Anthropic stream parser", () => {
     { type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "sig_xyz" } },
     { type: "content_block_stop", index: 0 },
     { type: "content_block_start", index: 1, content_block: { type: "text", text: "" } },
-    { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Voss admitted knowledge " } },
-    { type: "content_block_delta", index: 1, delta: { type: "citations_delta", citation: { type: "search_result_location", source: "depo://m1/dep_voss/p/20/l/4-12", title: "Voss dep. 20:4-12", cited_text: "A. Yes, in 1998.", search_result_index: 0, start_block_index: 0, end_block_index: 1 } } },
+    { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Vasudevan admitted knowledge " } },
+    { type: "content_block_delta", index: 1, delta: { type: "citations_delta", citation: { type: "search_result_location", source: "depo://m1/dep_voss/p/20/l/4-12", title: "Vasudevan dep. 20:4-12", cited_text: "A. Yes, in 1998.", search_result_index: 0, start_block_index: 0, end_block_index: 1 } } },
     { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "in 1998." } },
     { type: "content_block_stop", index: 1 },
     { type: "content_block_start", index: 2, content_block: { type: "server_tool_use", id: "srvtoolu_1", name: "web_search", input: {} } },
-    { type: "content_block_delta", index: 2, delta: { type: "input_json_delta", partial_json: '{"query": "AFFF MDL' } },
-    { type: "content_block_delta", index: 2, delta: { type: "input_json_delta", partial_json: ' 2873"}' } },
+    { type: "content_block_delta", index: 2, delta: { type: "input_json_delta", partial_json: '{"query": "Depo-Provera MDL' } },
+    { type: "content_block_delta", index: 2, delta: { type: "input_json_delta", partial_json: ' 3140"}' } },
     { type: "content_block_stop", index: 2 },
     { type: "content_block_start", index: 3, content_block: { type: "web_search_tool_result", tool_use_id: "srvtoolu_1", content: [] } },
     { type: "content_block_stop", index: 3 },
     { type: "content_block_start", index: 4, content_block: { type: "tool_use", id: "toolu_1", name: "lookup", input: {}, caller: { type: "direct" } } },
-    { type: "content_block_delta", index: 4, delta: { type: "input_json_delta", partial_json: '{"q": "pf' } },
-    { type: "content_block_delta", index: 4, delta: { type: "input_json_delta", partial_json: 'as", "limit": 3}' } },
+    { type: "content_block_delta", index: 4, delta: { type: "input_json_delta", partial_json: '{"q": "sol' } },
+    { type: "content_block_delta", index: 4, delta: { type: "input_json_delta", partial_json: 'vent", "limit": 3}' } },
     { type: "content_block_stop", index: 4 },
     { type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { output_tokens: 57 } },
     { type: "message_stop" },
@@ -246,11 +246,11 @@ describe("Anthropic stream parser", () => {
     for (const ev of transcript) parser.handle(ev);
     const out = parser.finish();
     expect(events.map((e) => e.type)).toEqual(["reasoning.delta", "text.delta", "citation", "text.delta", "web_search", "web_search", "tool.call"]);
-    expect(events.find((e) => e.type === "citation")).toEqual({ type: "citation", source: "depo://m1/dep_voss/p/20/l/4-12", title: "Voss dep. 20:4-12", quote: "A. Yes, in 1998.", blockIndex: 0 });
-    expect(events.filter((e) => e.type === "web_search")).toEqual([{ type: "web_search", status: "searching" }, { type: "web_search", status: "completed", query: "AFFF MDL 2873" }]);
-    expect(events.find((e) => e.type === "tool.call")).toEqual({ type: "tool.call", id: "toolu_1", name: "lookup", args: { q: "pfas", limit: 3 }, caller: "direct" });
-    expect(out.text).toBe("Voss admitted knowledge in 1998.");
-    expect(out.toolCalls).toEqual([{ id: "toolu_1", name: "lookup", args: { q: "pfas", limit: 3 }, caller: "direct" }]);
+    expect(events.find((e) => e.type === "citation")).toEqual({ type: "citation", source: "depo://m1/dep_voss/p/20/l/4-12", title: "Vasudevan dep. 20:4-12", quote: "A. Yes, in 1998.", blockIndex: 0 });
+    expect(events.filter((e) => e.type === "web_search")).toEqual([{ type: "web_search", status: "searching" }, { type: "web_search", status: "completed", query: "Depo-Provera MDL 3140" }]);
+    expect(events.find((e) => e.type === "tool.call")).toEqual({ type: "tool.call", id: "toolu_1", name: "lookup", args: { q: "solvent", limit: 3 }, caller: "direct" });
+    expect(out.text).toBe("Vasudevan admitted knowledge in 1998.");
+    expect(out.toolCalls).toEqual([{ id: "toolu_1", name: "lookup", args: { q: "solvent", limit: 3 }, caller: "direct" }]);
     expect(out.stopReason).toBe("tool_calls");
     expect(out.messageId).toBe("msg_01");
     expect(out.containerId).toBe("container_7");
@@ -262,9 +262,9 @@ describe("Anthropic stream parser", () => {
     expect(raw.provider).toBe("anthropic");
     expect(raw.content.map((b) => (b as { type: string }).type)).toEqual(["thinking", "text", "server_tool_use", "web_search_tool_result", "tool_use"]);
     expect(raw.content[0]).toEqual({ type: "thinking", thinking: "Weighing the record. ", signature: "sig_xyz" });
-    expect(raw.content[4]).toEqual({ type: "tool_use", id: "toolu_1", name: "lookup", input: { q: "pfas", limit: 3 }, caller: { type: "direct" } });
+    expect(raw.content[4]).toEqual({ type: "tool_use", id: "toolu_1", name: "lookup", input: { q: "solvent", limit: 3 }, caller: { type: "direct" } });
     expect((raw.content[1] as { citations: unknown[] }).citations).toHaveLength(1);
-    expect(out.assistantTurn.content).toEqual([{ type: "text", text: "Voss admitted knowledge in 1998." }, { type: "tool_call", id: "toolu_1", name: "lookup", args: { q: "pfas", limit: 3 } }]);
+    expect(out.assistantTurn.content).toEqual([{ type: "text", text: "Vasudevan admitted knowledge in 1998." }, { type: "tool_call", id: "toolu_1", name: "lookup", args: { q: "solvent", limit: 3 } }]);
   });
 
   it("returns structured output from the forced tool without emitting a tool call", () => {

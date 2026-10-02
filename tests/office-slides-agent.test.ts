@@ -19,7 +19,7 @@ import { handFixture } from "./office-slides-fixtures";
 
 beforeAll(() => { resetSqlite(); });
 
-const theme = getTheme("seeger-navy");
+const theme = getTheme("classic-navy");
 const OUTLINE = `# Case strategy
 subtitle: Meridian v. Halvorsen
 
@@ -33,7 +33,7 @@ notes: Spine.
 - Open settlement channel`;
 
 function deckOf(outline = OUTLINE): DeckContent {
-  const d = emptyDeck("seeger-navy");
+  const d = emptyDeck("classic-navy");
   d.slides = parseOutline(outline, theme).slides;
   return d;
 }
@@ -68,7 +68,7 @@ function fakeData(matter: string | null = "m1"): SlidesDataAccess {
       { id: "t3", date: "2006-01-01", title: "Stewardship program", significance: 3, verified: true, sources: [] },
       { id: "t4", date: "2010-05-05", title: "Minor memo", significance: 1, verified: true, sources: [{ kind: "document", bates: "MFC-0200000" }] },
     ] : []),
-    exhibitByBates: (m, bates) => (m === "m1" && bates.toUpperCase() === "MFC-0102211" ? { id: "d1", bates: "MFC-0102211", batesEnd: "MFC-0102219", date: "1998-03-12", custodianName: "Dr. Voss", type: "report", subject: "Rat study summary", text: "The study found liver effects at the highest dose. Further work is recommended.", aiSummary: "Summary of 1998 rat study" } : null),
+    exhibitByBates: (m, bates) => (m === "m1" && bates.toUpperCase() === "MFC-0102211" ? { id: "d1", bates: "MFC-0102211", batesEnd: "MFC-0102219", date: "1998-03-12", custodianName: "Dr. Vasudevan", type: "report", subject: "Rat study summary", text: "The study found liver effects at the highest dose. Further work is recommended.", aiSummary: "Summary of 1998 rat study" } : null),
     officeDoc: (id) => (id === "doc_memo" ? { id, title: "Strategy memo", kind: "word", matterId: "m1", content: { type: "doc", content: [
       { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Liability themes" }] },
       { type: "paragraph", content: [{ type: "text", text: "Meridian had no notice before 1998. The record shows otherwise only for 2001." }] },
@@ -343,7 +343,7 @@ describe("new tools", () => {
 | MFC-1 | Rat study |
 # A word from the witness
 - "We knew the science was incomplete and said so at the time."
-- Dr. Voss
+- Dr. Vasudevan
 # Questions
 # Everything else
 ${Array.from({ length: 9 }, (_, i) => `- item ${i + 1}`).join("\n")}`;

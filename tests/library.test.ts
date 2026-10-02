@@ -29,7 +29,7 @@ describe("library seed", () => {
     expect(items.filter((i) => i.type === "template").length).toBeGreaterThanOrEqual(13);
     for (const id of Object.values(LIBRARY_FOLDERS)) expect(d.library.get(id)?.type).toBe("folder");
     for (const m of Object.values(MATTERS)) expect(d.library.get(matterFolderId(m))?.parentId).toBe(LIBRARY_FOLDERS.matters);
-    expect(d.library.get(matterSubfolderId(MATTERS.afff, "Depositions"))?.parentId).toBe(matterFolderId(MATTERS.afff));
+    expect(d.library.get(matterSubfolderId(MATTERS.valsara, "Depositions"))?.parentId).toBe(matterFolderId(MATTERS.valsara));
     for (const id of LIBRARY_SEED_IDS.clauses) {
       const it = d.library.get(id)!;
       expect(it.type).toBe("clause");
@@ -78,8 +78,8 @@ describe("folder tree", () => {
   });
   it("computes breadcrumbs and descendants", () => {
     const items = db().library.all();
-    const depo = matterSubfolderId(MATTERS.afff, "Depositions");
-    expect(breadcrumbsFor(items, depo).map((b) => b.name)).toEqual(["Matters", "AFFF / PFAS", "Depositions"]);
+    const depo = matterSubfolderId(MATTERS.valsara, "Depositions");
+    expect(breadcrumbsFor(items, depo).map((b) => b.name)).toEqual(["Matters", "Valsara v. Meridian", "Depositions"]);
     expect(isDescendant(items, depo, LIBRARY_FOLDERS.matters)).toBe(true);
     expect(isDescendant(items, LIBRARY_FOLDERS.matters, depo)).toBe(false);
     expect(descendantIds(items, LIBRARY_FOLDERS.knowledge)).toContain("lib_note_bluebook_quick_guide");
@@ -148,14 +148,14 @@ describe("clause variables", () => {
 });
 
 describe("office document merge", () => {
-  const folders = new Set([LIBRARY_FOLDERS.myFiles, matterFolderId(MATTERS.afff)]);
-  const doc = (id: string, extra: Partial<OfficeDocument> = {}): OfficeDocument => ({ id, kind: "word", title: `Doc ${id}`, content: {}, contentVersion: 2, createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-02T00:00:00Z", createdById: PEOPLE.elenaMarsh, size: 10, ...extra });
+  const folders = new Set([LIBRARY_FOLDERS.myFiles, matterFolderId(MATTERS.valsara)]);
+  const doc = (id: string, extra: Partial<OfficeDocument> = {}): OfficeDocument => ({ id, kind: "word", title: `Doc ${id}`, content: {}, contentVersion: 2, createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-02T00:00:00Z", createdById: PEOPLE.eshaMathur, size: 10, ...extra });
   it("creates entries in the matter folder for docs without one, and re-homes root-level entries", () => {
-    const docs = [doc("d1", { matterId: MATTERS.afff }), doc("d2"), doc("d3", { matterId: MATTERS.afff })];
-    const existing: LibraryItem = { id: "lib_x", parentId: null, name: "Old title", type: "docx", officeDocId: "d3", matterId: MATTERS.afff, createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" };
+    const docs = [doc("d1", { matterId: MATTERS.valsara }), doc("d2"), doc("d3", { matterId: MATTERS.valsara })];
+    const existing: LibraryItem = { id: "lib_x", parentId: null, name: "Old title", type: "docx", officeDocId: "d3", matterId: MATTERS.valsara, createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" };
     const plan = planOfficeDocMerge(docs, [existing], { existingFolderIds: folders });
-    expect(plan.create.map((c) => [c.officeDocId, c.parentId, c.type])).toEqual([["d1", matterFolderId(MATTERS.afff), "docx"], ["d2", LIBRARY_FOLDERS.myFiles, "docx"]]);
-    expect(plan.update).toEqual([{ id: "lib_x", patch: { parentId: matterFolderId(MATTERS.afff), name: "Doc d3", updatedAt: "2026-09-02T00:00:00Z", size: 10, version: 2 } }]);
+    expect(plan.create.map((c) => [c.officeDocId, c.parentId, c.type])).toEqual([["d1", matterFolderId(MATTERS.valsara), "docx"], ["d2", LIBRARY_FOLDERS.myFiles, "docx"]]);
+    expect(plan.update).toEqual([{ id: "lib_x", patch: { parentId: matterFolderId(MATTERS.valsara), name: "Doc d3", updatedAt: "2026-09-02T00:00:00Z", size: 10, version: 2 } }]);
     // idempotent: applying the plan yields an empty plan
     const after = [ ...plan.create, { ...existing, ...plan.update[0].patch } ];
     const plan2 = planOfficeDocMerge(docs, after, { existingFolderIds: folders });
@@ -204,7 +204,7 @@ describe("library service", () => {
     const starred = listItems({ view: "starred" });
     expect(starred.items.length).toBeGreaterThanOrEqual(5);
     const shared = listItems({ view: "shared" });
-    expect(shared.items.every((i) => i.ownerId !== PEOPLE.jordanWhitfield)).toBe(true);
+    expect(shared.items.every((i) => i.ownerId !== PEOPLE.arjunMehra)).toBe(true);
     const filtered = listItems({ folder: LIBRARY_FOLDERS.knowledge, type: "link" });
     expect(filtered.items.length).toBeGreaterThanOrEqual(4);
     expect(filtered.items.every((i) => i.type === "link")).toBe(true);
@@ -254,7 +254,7 @@ describe("library service", () => {
     expect(clause.clause?.category).toBe("termination");
     expect(clause.clause?.variables.map((v) => v.name)).toEqual(["Party A", "Party B", "Term"]);
     expect(clause.clause?.variables[2].example).toBe("12 months");
-    const doc = createOfficeDoc({ kind: "word", title: "Dup me", content: markdownToDoc("# Hello\n\nWorld"), matterId: MATTERS.afff });
+    const doc = createOfficeDoc({ kind: "word", title: "Dup me", content: markdownToDoc("# Hello\n\nWorld"), matterId: MATTERS.valsara });
     syncOfficeDocs(true);
     const row = db().library.findOne((l) => l.officeDocId === doc.id)!;
     const dup = duplicateItem(row.id)!;
@@ -311,10 +311,10 @@ describe("library service", () => {
 
 describe("filters", () => {
   it("round-trips query params", () => {
-    const f = parseFilters(new URLSearchParams("view=starred&type=clause&matter=m_afff_2873&sort=updated&dir=desc&tag=PFAS&from=2026-01-01"));
-    expect(f).toMatchObject({ view: "starred", type: "clause", matterId: "m_afff_2873", sort: "updated", dir: "desc", tag: "PFAS", from: "2026-01-01", folder: null });
+    const f = parseFilters(new URLSearchParams("view=starred&type=clause&matter=m_valsara_arb&sort=updated&dir=desc&tag=arbitration&from=2026-01-01"));
+    expect(f).toMatchObject({ view: "starred", type: "clause", matterId: "m_valsara_arb", sort: "updated", dir: "desc", tag: "arbitration", from: "2026-01-01", folder: null });
     expect(activeFilterCount(f)).toBe(4);
-    expect(filtersToParams(f).toString()).toBe("view=starred&matter=m_afff_2873&type=clause&tag=PFAS&from=2026-01-01&sort=updated&dir=desc");
+    expect(filtersToParams(f).toString()).toBe("view=starred&matter=m_valsara_arb&type=clause&tag=arbitration&from=2026-01-01&sort=updated&dir=desc");
     expect(parseFilters(new URLSearchParams("view=bogus&sort=bogus")).view).toBe("folder");
   });
 });

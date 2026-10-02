@@ -30,108 +30,104 @@ interface SeedDeck {
   folderId?: string;
 }
 
-const AFFF_OUTLINE = `# AFFF bellwether (Group C): case strategy
-kicker: MDL No. 2873 (D.S.C.) · Meridian Fluorochem · Privileged
-subtitle: Themes, chronology, key documents, damages exposure and the path through Daubert to trial
-date: September 22, 2026 · Litigation team working session
+const VALSARA_OUTLINE = `# Valsara v. Meridian (Phase 1): case strategy
+kicker: Arb. Ref. 14/2024 (seat: New Delhi) · Meridian Fine Chemicals · Privileged
+subtitle: Themes, chronology, key documents, quantum exposure and the path to the Phase 1 hearing
+date: September 22, 2026 · Arbitration team working session
 
 # Agenda
-- Where the bellwether stands
+- Where the arbitration stands
 - Three themes the record supports
-- Knowledge chronology and the §8(e) narrative
+- Knowledge chronology and the Clause 9.4 narrative
 - Key documents and the privilege fight
-- Plaintiffs' damages model versus ours
+- The Claimant's quantum model versus ours
 - Risks, recommendations and next steps
 
 # Case caption and posture
 layout: two_column
 left: The case
-- **Caption:** In re: Aqueous Film-Forming Foams Products Liability Litigation, MDL No. 2873
-- **Court:** D.S.C. · Hon. Richard M. Gergel
-- **Client:** Meridian Fluorochem Corp. (defendant)
-- **Plaintiffs' lead:** Rebecca Klein, Plaintiffs' Executive Committee
+- **Caption:** Valsara Textile Park Ltd. v. Meridian Fine Chemicals Ltd., Arb. Ref. 14/2024
+- **Tribunal:** Justice (Retd.) Vasudha Rangan (Presiding Arbitrator)
+- **Client:** Meridian Fine Chemicals Ltd. (Respondent)
+- **Claimant's counsel:** Radhika Kale, Kale & Associates
 right: Where we are
-- **Stage:** Tier 2 custodial review · expert discovery
+- **Stage:** Tier 2 document production · expert evidence
 - **Oct 14, 2026** — Tier 2 production deadline
 - **Nov 6, 2026** — Rebuttal expert reports due
-- **Dec 18, 2026** — Daubert motions
-- **Mar 8, 2027** — Group C bellwether trial
+- **Dec 18, 2026** — Objections to expert evidence
+- **Mar 8, 2027** — Phase 1 evidentiary hearing
 notes: Forty-five seconds. Everyone in the room knows the matter; the point is to anchor the dates that drive the work plan.
 
 # Three themes the record supports
 - **Knowledge:** Meridian acted on the science it had, when it had it
-- **Causation:** plaintiffs cannot isolate Meridian fluorosurfactant from three other suppliers
-- **Conduct:** the 2006 stewardship phase-out preceded any regulatory mandate by a decade
-- Every theme maps to a witness (Voss, Hale, Brooks), a document set and a rebuttal expert
-notes: This is the spine of the deck. If the client remembers one slide, it is this one. The causation theme is the strongest for the water-provider bellwethers; knowledge matters most for punitive exposure.
+- **Causation:** the Claimant cannot isolate Meridian's Lagoon 2 from other sources in the industrial estate
+- **Conduct:** the 2006 MF-5 transition preceded any regulatory mandate by years
+- Every theme maps to a witness (Vasudevan, Hegde, Bose), a document set and a rebuttal expert
+notes: This is the spine of the deck. If the client remembers one slide, it is this one. The causation theme is strongest on the wellfield indemnity; knowledge matters most for the Clause 9.6 liquidated damages.
 
 # Knowledge chronology
 layout: timeline
 timeline:
-- 1998-03 — Internal rat study summary — MFC-0102211 — hepatic effects at 1,000× environmental dose
-- 1999-11 — 3M data routed to Voss — MFC-0077102 — routing slip only; no evidence it was opened
-- 2001-06 — Draft §8(e) notice circulated — MFC-0119377 — reviewed by Kaine; not filed
-- 2006-01 — Stewardship program joined — MFC-0140011 — voluntary phase-out begins
-- 2016-04 — First water-provider suits — MDL consolidation follows
-- 2024-04 — EPA final rule, 89 Fed. Reg. 32532 — MCL of 4 ppt
-notes: Walk left to right. The 2001 draft notice is the document Klein will lead with; frame it before she does — deliberation, legal review, and a scientific debate, not concealment. Cite the Bates numbers aloud.
+- 2001-03 — Sundaram 90-day study final — MFC-0041877 — liver effects and ~100-day serum half-life
+- 2001-03 — Draft Clause 9.4 notice prepared — MFC-0041915 — reviewed by Kapur; not served
+- 2001-09 — First MC-8 detection at MW-7 — MFC-0041988 — 12 µg/L downgradient of Lagoon 2
+- 2002-10 — Clause 9.4 notice served on the Park — after the 12-month bioassay interim
+- 2006-12 — MF-3 production ends — MFC-0052251 — MF-5 transition
+- 2023-01 — Notice of arbitration — Tribunal constituted later that year
+notes: Walk left to right. The 2001 draft notice is the document Kale will lead with; frame it before she does — deliberation, legal review, and a scientific debate, not concealment. Cite the Bates numbers aloud.
 
 # Key documents
 layout: table
 | Bates | Date | Document | Why it matters |
-| MFC-0102211 | 1998-03-12 | Rat study summary (Voss) | High-dose animal data; no human signal |
-| MFC-0119377 | 2001-06-04 | Draft §8(e) notice + Voss cover email | "I think we need to file this" — privilege asserted over Kaine reply |
-| MFC-0077102 | 1999-11-20 | 3M summary routed to Voss | Distribution list only; Voss Vol. I 88:14–89:2 |
-| MFC-0140011 | 2006-01-15 | Stewardship program letter (Pryce) | Voluntary phase-out before mandate |
-| MFC-0041877 | 2003-2009 | Sales ledger, fire-suppression segment | Supplier shares for product-ID defense |
+| MFC-0041877 | 2001-03-14 | Sundaram 90-day study summary | High-dose animal data; persistence finding |
+| MFC-0041915 | 2001-03-19 | Draft Clause 9.4 notice (Sood) | Alternative A / B — privilege asserted over the thread |
+| MFC-0041930 | 2001-03-22 | Sood Clause 9.4 analysis memo | Legal judgment; corroborative-information paragraph |
+| MFC-0052210 | 2002-07-08 | Hegde MW-7 email | "voluntarily, now" — notice timing |
+| MFC-0052221 | 2002-10-24 | Letter to the Park water works | First disclosure to the Park |
 caption: Bates cites verified against the Tier 1 production index on September 19, 2026; Tier 2 documents pending.
-notes: Read the Bates numbers so Maria can pull the binder. Row two is the privilege fight — Conflict C-0031 in e-discovery tracks the Voss testimony inconsistency.
+notes: Read the Bates numbers so Meera can pull the binder. Row two is the privilege fight — conflict cf_vls_001 in e-discovery tracks the Vasudevan testimony inconsistency.
 
-# The §8(e) narrative
+# The Clause 9.4 narrative
 layout: comparison
-left: Plaintiffs will say
-- Voss believed a notice was required in 2001
-- Legal killed the filing to avoid liability
-- Meridian kept selling for five more years
+left: The Claimant will say
+- Meridian's own toxicologist wanted notice given in 2001
+- Legal deferred the notice to protect sales
+- Meridian kept supplying MF-3 for five more years
 right: The record shows
 - The draft reflected an open scientific question, not a conclusion
-- Kaine's review was a privileged legal judgment; substantial-risk threshold not met
-- Meridian joined the stewardship program voluntarily in 2006
+- Kapur's review was a privileged legal judgment; the Schedule 6 threshold was arguable
+- Notice was given within 30 days of the 12-month interim
 
-# Damages: plaintiffs' model versus ours
+# Quantum: the Claimant's model versus ours
 layout: chart
-chart: bar | Plaintiffs' model | Defense model | Bellwether settlement range
-chart-title: Estimated exposure, Group C water providers ($M)
+chart: bar | Claimant's model | Respondent's model | Settlement range
+chart-title: Estimated exposure, wellfield remediation and liquidated damages (₹ crore)
 Exposure: 184, 42, 65
-unit: $
-- Plaintiffs assume 100% market-share attribution to Meridian
-- Defense model applies documented supplier shares (MFC-0041877) and background exposure (NHANES 1999–2018)
-- Range reflects litigation cost and adverse-verdict risk
-notes: Dr. Patel's hydrogeology rebuttal drives the defense number; say plainly that it is provisional until his report is final on November 6.
+unit: ₹
+- The Claimant attributes 100% of the wellfield remediation to Lagoon 2
+- Respondent's model applies the documented plume geometry and background AOX levels
+- Range reflects cost of the proceedings and adverse-award risk
+notes: Dr. Patel's hydrogeology rebuttal drives the Respondent's number; say plainly that it is provisional until his report is final on November 6.
 
 # Risks and recommendations
 layout: comparison
 left: Risks
-- Adverse Group C verdict anchors the remaining tiers
+- An adverse Phase 1 award anchors quantum
 - Privilege ruling on the 2001 thread goes against us
-- Daubert cuts both ways: Whitfield's I² recalculation invites a Rule 702 challenge
+- Expert objections cut both ways: Sundaram's recalculation invites a challenge
 right: Recommendations
-- Press product identification now — supplier shares are documented
-- Prepare Voss as the clean §8(e) witness; Vol. III limited by CMO 24
-- Open a settlement channel with the PEC before the Daubert rulings
+- Press source attribution now — the plume geometry is documented
+- Prepare Vasudevan as the clean Clause 9.4 witness; Vol. III limited by Procedural Order No. 4
+- Open a settlement channel with the Claimant before the expert conferencing session
 
 # Next steps
 layout: table
 | Action | Owner | Due |
-| Finalize Tier 2 custodial production (14 custodians) | T. Bradley | Oct 14, 2026 |
-| Rebuttal expert outlines — Whitfield (tox), Patel (hydro) | P. Raman / E. Marsh | Oct 24, 2026 |
-| Voss Vol. III preparation sessions (2) | J. Whitfield / M. Lopez | Oct 28, 2026 |
-| Client decision on settlement authority | R. Kaine | Nov 13, 2026 |
-notes: Close with the asks. Confirm owners and dates in the room and send this table as the follow-up email.
-
-# Questions
-layout: section
-subtitle: Privileged & Confidential — Attorney Work Product — Prepared at the direction of counsel`;
+| Finalize Tier 2 custodial production (8 custodians) | T. Bhatt | Oct 14, 2026 |
+| Rebuttal expert outlines — Sundaram (tox), Patel (hydro) | P. Raman / E. Mathur | Oct 24, 2026 |
+| Vasudevan Vol. III preparation sessions (2) | A. Mehra / M. Lobo | Oct 28, 2026 |
+| Client decision on settlement authority | R. Kapur | Nov 13, 2026 |
+notes: Close with the asks. Confirm owners and dates in the room and send this table as the follow-up email.`;
 
 const NORTHGATE_OUTLINE = `# Northgate v. Apex: summary judgment hearing
 kicker: No. 1:26-cv-02218 (N.D. Ill.) · Hon. Sara L. Ellis
@@ -326,7 +322,7 @@ timeline:
 const CLE_OUTLINE = `# Rule 702 after the 2023 amendment
 kicker: CLE · Evidence · 1.0 general credit
 subtitle: What changed, what courts are doing with it, and how to brief it
-date: Seeger Weiss LLP · October 2026
+date: Mehra & Rao Advocates · October 2026
 
 # Agenda
 - The text: what the amendment changed
@@ -386,17 +382,17 @@ const T = (d: string) => new Date(d).toISOString();
 export function seedSlides(db: Database) {
   const decks: SeedDeck[] = [
     {
-      id: "sd_afff_case_strategy",
-      title: "AFFF bellwether — case strategy (Group C)",
-      matterId: MATTERS.afff,
+      id: "sd_vls_case_strategy",
+      title: "Valsara v. Meridian — case strategy (Phase 1)",
+      matterId: MATTERS.valsara,
       templateId: "slides-case-strategy",
-      themeId: "seeger-navy",
-      outline: AFFF_OUTLINE,
+      themeId: "classic-navy",
+      outline: VALSARA_OUTLINE,
       createdAt: "2026-09-17T15:10:00Z",
-      tags: ["strategy", "bellwether", "MDL 2873"],
+      tags: ["strategy", "arbitration", "Valsara"],
       versions: [
         {
-          summary: "Agent edit: Added the §8(e) comparison slide and speaker notes on the chronology",
+          summary: "Agent edit: Added the Clause 9.4 comparison slide and speaker notes on the chronology",
           author: AGENT,
           transform: (deck) => {
             const chrono = deck.slides[4];
@@ -404,20 +400,20 @@ export function seedSlides(db: Database) {
           },
         },
         {
-          summary: "Agent edit: Inserted a supplier-share chart from the MFC-0041877 sales ledger",
+          summary: "Agent edit: Inserted a source-attribution chart from the Beacon plume data",
           author: AGENT,
           transform: (deck) => {
             const after = deck.slides[7];
-            const slide = buildSlide("chart", { title: "Supplier shares at the Group C sites", chart: { type: "pie", categories: ["Meridian", "Supplier B", "Supplier C", "Supplier D"], series: [{ name: "Share of AFFF volume", values: [23, 41, 24, 12] }], title: "AFFF volume by supplier, 2003–2009 (MFC-0041877)", showLegend: true, showValues: true, unit: "%" }, body: "- Meridian supplied 23% of foam volume at the four Group C sites\n- Shares derived from the fire-suppression sales ledger, MFC-0041877\n- Plaintiffs' model attributes 100% to Meridian [VERIFY against site procurement records]", notes: "This is the product-identification slide. Emphasize that the ledger is Meridian's own business record and that plaintiffs have not produced site-level procurement data to rebut it." }, deck.theme, { slideNumber: 9 });
+            const slide = buildSlide("chart", { title: "Source attribution at the Park wellfield", chart: { type: "pie", categories: ["Lagoon 2 (Meridian)", "Estate drain B", "Unit 14 effluent pit", "Background"], series: [{ name: "Share of AOX load", values: [23, 41, 24, 12] }], title: "Estimated AOX load by source, 2003–2009 (Beacon data)", showLegend: true, showValues: true, unit: "%" }, body: "- Lagoon 2 accounts for an estimated 23% of the AOX load at the wellfield boundary\n- Shares derived from the Beacon plume data and the Park effluent register, MFC-0041877\n- The Claimant's model attributes 100% to Meridian [VERIFY against the Park's discharge consents]", notes: "This is the source-attribution slide. Emphasise that the effluent register is the Park's own business record and that the Claimant has not produced unit-level discharge data to rebut it." }, deck.theme, { slideNumber: 9 });
             return applyOp(deck, { op: "add_slide", afterId: after.id, slide });
           },
         },
         { summary: "Checkpoint", label: "Before partner review", transform: (d) => d },
       ],
       comments: [
-        { id: "sc_afff_1", slide: 6, body: "Row two: confirm with Robert Kaine's office that Meridian is asserting privilege over the full thread (MFC-0119377–0119380), not only the reply. Klein will move to compel.", author: PEOPLE.jordanWhitfield, createdAt: "2026-09-19T09:40:00Z", replies: [{ id: "sc_afff_1a", body: "Confirmed with Kaine on 9/19 — full thread. Privilege log entry PL-0142 updated.", authorName: "Maria Lopez", createdAt: "2026-09-19T14:05:00Z" }] },
-        { id: "sc_afff_2", slide: 8, body: "Defense model figure ($42M) is provisional until Dr. Patel's hydrogeology report; I added [VERIFY] language to the notes. Consider a range rather than a point estimate for the client version.", agent: true, createdAt: "2026-09-20T11:22:00Z" },
-        { id: "sc_afff_3", slide: 5, body: "Timeline: the 1999 3M routing entry should read Vol. I 88:14–89:2 in the caption — that is the testimony Conflict C-0031 tracks.", author: PEOPLE.tomBradley, createdAt: "2026-09-20T16:48:00Z", resolved: true },
+        { id: "sc_vls_1", slide: 6, body: "Row two: confirm with Rohit Kapur's office that Meridian is asserting privilege over the full thread (MFC-0041914–0041921), not only the draft. Kale will apply for production.", author: PEOPLE.arjunMehra, createdAt: "2026-09-19T09:40:00Z", replies: [{ id: "sc_vls_1a", body: "Confirmed with Kapur on 9/19 — full thread. Privilege log entry PL-0142 updated.", authorName: "Meera Lobo", createdAt: "2026-09-19T14:05:00Z" }] },
+        { id: "sc_vls_2", slide: 8, body: "Respondent's model figure (₹42 crore) is provisional until Dr. Patel's hydrogeology report; I added [VERIFY] language to the notes. Consider a range rather than a point estimate for the client version.", agent: true, createdAt: "2026-09-20T11:22:00Z" },
+        { id: "sc_vls_3", slide: 5, body: "Timeline: the March 2001 draft-notice entry should cite Vasudevan Vol. I 147:16 in the caption — that is the testimony conflict cf_vls_001 tracks.", author: PEOPLE.tanmayBhatt, createdAt: "2026-09-20T16:48:00Z", resolved: true },
       ],
     },
     {
@@ -433,8 +429,8 @@ export function seedSlides(db: Database) {
         { summary: "Saved changes", transform: (deck) => applyOp(deck, { op: "set_slide", slideId: deck.slides[3].id, patch: { notes: "Lead with the text. Judge Ellis reads the contract first; put §9.2 on the screen and pause. The incident report is the admission: APX-002214 at 3. If asked about Ex. B drafting history, cite the Ramirez deposition at 44:8–46:2." } }) },
       ],
       comments: [
-        { id: "sc_ng_1", slide: 5, body: "Add the UCC cover-damages cite to the slide itself, not just the notes — Ellis likes to see the statute.", author: PEOPLE.danielOkafor, createdAt: "2026-09-22T08:15:00Z" },
-        { id: "sc_ng_2", slide: 7, body: "Chargebacks row: Apex will call the customer notices hearsay. Have the business-records foundation (Ramirez Decl. ¶ 11) ready.", author: PEOPLE.elenaMarsh, createdAt: "2026-09-22T10:02:00Z" },
+        { id: "sc_ng_1", slide: 5, body: "Add the UCC cover-damages cite to the slide itself, not just the notes — Ellis likes to see the statute.", author: PEOPLE.dhruvOberoi, createdAt: "2026-09-22T08:15:00Z" },
+        { id: "sc_ng_2", slide: 7, body: "Chargebacks row: Apex will call the customer notices hearsay. Have the business-records foundation (Ramirez Decl. ¶ 11) ready.", author: PEOPLE.eshaMathur, createdAt: "2026-09-22T10:02:00Z" },
       ],
     },
     {
@@ -451,7 +447,7 @@ export function seedSlides(db: Database) {
         { summary: "Checkpoint", label: "Sent to Harborline GC", transform: (d) => d },
       ],
       comments: [
-        { id: "sc_hb_1", slide: 5, body: "Contractor classification reserve: Samuel's memo puts the range at $380–460K; $420K is the midpoint. OK to present as a point estimate?", author: PEOPLE.danielOkafor, createdAt: "2026-09-20T09:00:00Z", replies: [{ id: "sc_hb_1a", body: "Yes — footnote the range in the board book.", authorName: "Samuel Chen", createdAt: "2026-09-20T09:35:00Z" }] },
+        { id: "sc_hb_1", slide: 5, body: "Contractor classification reserve: Sameer's memo puts the range at $380–460K; $420K is the midpoint. OK to present as a point estimate?", author: PEOPLE.dhruvOberoi, createdAt: "2026-09-20T09:00:00Z", replies: [{ id: "sc_hb_1a", body: "Yes — footnote the range in the board book.", authorName: "Sameer Chawla", createdAt: "2026-09-20T09:35:00Z" }] },
         { id: "sc_hb_2", slide: 8, body: "Share issuance number (1.2M) depends on the 20-day VWAP at signing; recommend \"up to 1.3M\" to leave headroom.", agent: true, createdAt: "2026-09-20T12:10:00Z" },
       ],
     },
@@ -468,7 +464,7 @@ export function seedSlides(db: Database) {
         { summary: "Agent edit: Added the exposure-range table and cure/contest comparison", author: AGENT, transform: (d) => d },
       ],
       comments: [
-        { id: "sc_st_1", slide: 3, body: "Re-run the exceptions chart after the Clinic C badge data arrives (due 9/26); the 9.6 figure includes 300 shifts with missing punches.", author: PEOPLE.samuelChen, createdAt: "2026-09-23T07:50:00Z" },
+        { id: "sc_st_1", slide: 3, body: "Re-run the exceptions chart after the Clinic C badge data arrives (due 9/26); the 9.6 figure includes 300 shifts with missing punches.", author: PEOPLE.sameerChawla, createdAt: "2026-09-23T07:50:00Z" },
       ],
     },
     {
@@ -502,17 +498,17 @@ export function seedSlides(db: Database) {
       saveOfficeDoc(sd.id, { content, version: { force: true, summary: v.summary, label: v.label, authorName: v.author } });
       const latest = db.officeVersions.find((x) => x.docId === sd.id).sort((a, b) => b.version - a.version)[0];
       if (latest && latest.summary === v.summary && latest.label === v.label) db.officeVersions.update(latest.id, { createdAt: at });
-      else db.officeVersions.put({ id: `${sd.id}_v${i + 2}`, docId: sd.id, version: (latest?.version ?? 1) + 1, label: v.label, summary: v.summary, authorId: v.author ? undefined : PEOPLE.jordanWhitfield, authorName: v.author ?? "Jordan Whitfield", createdAt: at, content, changedFields: 0 });
+      else db.officeVersions.put({ id: `${sd.id}_v${i + 2}`, docId: sd.id, version: (latest?.version ?? 1) + 1, label: v.label, summary: v.summary, authorId: v.author ? undefined : PEOPLE.arjunMehra, authorName: v.author ?? "Arjun Mehra", createdAt: at, content, changedFields: 0 });
     });
     const finalDoc = db.officeDocs.get(sd.id)!;
     const deck = finalDoc.content as DeckContent;
     const comments: OfficeComment[] = sd.comments.map((c) => {
       const slide = deck.slides[Math.min(c.slide, deck.slides.length) - 1];
-      const author = c.agent ? undefined : db.people.get(c.author ?? PEOPLE.jordanWhitfield);
-      return { id: c.id, docId: sd.id, anchor: `slide:${slide.id}`, body: c.body, authorId: author?.id, authorName: c.agent ? AGENT : author?.name ?? "Jordan Whitfield", createdAt: c.createdAt, resolved: c.resolved, replies: c.replies ?? [], source: c.agent ? "agent" : "user" };
+      const author = c.agent ? undefined : db.people.get(c.author ?? PEOPLE.arjunMehra);
+      return { id: c.id, docId: sd.id, anchor: `slide:${slide.id}`, body: c.body, authorId: author?.id, authorName: c.agent ? AGENT : author?.name ?? "Arjun Mehra", createdAt: c.createdAt, resolved: c.resolved, replies: c.replies ?? [], source: c.agent ? "agent" : "user" };
     });
     db.officeComments.putMany(comments);
-    const lib: LibraryItem = { id: `lib_slides_${sd.id}`, parentId: sd.folderId ?? (sd.matterId ? matterFolderId(sd.matterId) : null), name: sd.title, type: "pptx", matterId: sd.matterId, officeDocId: sd.id, size: doc.size, tags: sd.tags, ownerId: PEOPLE.jordanWhitfield, sharedWith: [sd.matterId ? "matter-team" : "firm"], createdAt: sd.createdAt, updatedAt: finalDoc.updatedAt, version: finalDoc.contentVersion, status: "draft" };
+    const lib: LibraryItem = { id: `lib_slides_${sd.id}`, parentId: sd.folderId ?? (sd.matterId ? matterFolderId(sd.matterId) : null), name: sd.title, type: "pptx", matterId: sd.matterId, officeDocId: sd.id, size: doc.size, tags: sd.tags, ownerId: PEOPLE.arjunMehra, sharedWith: [sd.matterId ? "matter-team" : "firm"], createdAt: sd.createdAt, updatedAt: finalDoc.updatedAt, version: finalDoc.contentVersion, status: "draft" };
     db.library.put(lib);
   }
 }

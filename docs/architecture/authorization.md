@@ -25,7 +25,7 @@ Constitution §21 (identity), §22 (authorization is a hard invariant), §41 (se
 
 | mode | principal source | notes |
 |---|---|---|
-| `dev` (default) | `currentUser()` → the seeded person | tenant from `LECLAUDE_TENANT_ID` (default `seeger-weiss`); roles from the person record (`rolesForPerson`), `["associate"]` when there is none; `matterIds: "*"`. Behavior of the demo partner is unchanged; other personas (`LECLAUDE_USER_ID=p_mlopez`) now meet the matrix. |
+| `dev` (default) | `currentUser()` → the seeded person | tenant from `LECLAUDE_TENANT_ID` (default `default`); roles from the person record (`rolesForPerson`), `["associate"]` when there is none; `matterIds: "*"`. Behavior of the demo partner is unchanged; other personas (`LECLAUDE_USER_ID=p_mlopez`) now meet the matrix. |
 | `header` | `x-leclaude-user` JSON or base64url JSON `{ id, name, tenantId, roles, matterIds }` | trusted only with `AUTH_TRUST_HEADER=true` behind a proxy that authenticated upstream; unknown roles are dropped, malformed matter ids are dropped, an `expiresAt` in the past is a 401 |
 | `jwt` | `Authorization: Bearer <jwt>` | HS256 with `AUTH_JWT_SECRET` or RS256 with `AUTH_JWT_PUBLIC_KEY` (PEM); `alg=none` and any other algorithm are rejected; an RS256 key never acts as an HMAC secret; `exp` required (60 s leeway), `nbf`/`iat` checked, `iss`/`aud` enforced when `AUTH_JWT_ISSUER`/`AUTH_JWT_AUDIENCE` are set. Claims → principal: `sub`, `name`/`preferred_username`/`email`, `tenant`/`tenant_id`/`tid`, `roles`, `matters`/`matter_ids` (array or `"*"`), `sid`/`jti`. `jose` is not installed; verification uses `node:crypto` only. |
 

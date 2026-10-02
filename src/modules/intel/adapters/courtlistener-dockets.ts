@@ -9,7 +9,7 @@ import { defineAdapter, type AdapterContext } from "./types";
 
 const schema = z.object({
   docketIds: z.array(z.number().int().positive()).default([]),
-  /** Docket numbers ("2:18-mn-02873"); resolved through search, optionally restricted to `courts`. */
+  /** Docket numbers ("3:25-md-03140"); resolved through search, optionally restricted to `courts`. */
   docketNumbers: z.array(z.string().min(3)).default([]),
   courts: z.string().optional(),
   /** Resolve dockets for the matters in scope by case name and court. */

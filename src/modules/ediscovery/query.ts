@@ -2,9 +2,9 @@
  * Review search query language (pure, client-safe, unit-tested).
  *
  *   toxicology AND (rat OR bioassay) NOT marketing
- *   "monitoring well" custodian:hale type:email date:2002-07
+ *   "monitoring well" custodian:hegde type:email date:2002-07
  *   MFC-0041877–MFC-0041999            (Bates range, en dash, hyphen or "to")
- *   from:kaine date:2001-03-01..2001-03-31   -draft
+ *   from:kapur date:2001-03-01..2001-03-31   -draft
  *   liver w/5 study            (proximity: within 5 words, either order)
  *   "rat study" pre/3 results  (ordered proximity: left before right within 3 words)
  *   hot:yes priv:wp responsive:no hasattachment:yes dupes:near family:MFC-0041877 thread:t_whitfield

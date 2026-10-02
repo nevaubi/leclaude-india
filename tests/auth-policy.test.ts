@@ -7,7 +7,7 @@ import type { Action, Principal, ResourceRef, Role } from "@/lib/auth/types";
  * Expectations are literal tables, not a re-implementation of the policy.
  */
 const TENANT = "default";
-const MATTER = "m_afff_2873";
+const MATTER = "m_valsara_arb";
 const OTHER = "m_northgate_v_apex";
 
 function P(roles: Role[], matterIds: Principal["matterIds"] = "*", extra: Partial<Principal> = {}): Principal {

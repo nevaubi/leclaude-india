@@ -18,7 +18,7 @@ export const getForumInfoTool = defineTool<{ city?: string; matter_id?: string }
   name: "get_forum_info",
   description: "Forum and local-law context for an Indian matter or city: the matter's forum, the city's courts and tribunals (High Court seat/bench, civil, sessions, commercial, NCLT, DRT, consumer, RERA) with official website, e-filing, cause-list and case-status links and their sources, and the State's local statutes (rent, court fees, stamp, municipal, land revenue) resolved by exact title in the law corpus. Unresolved titles are reported as not found; never substitute a similar Act.",
   parameters: { type: "object", properties: { city: { type: "string", description: "City id or name, e.g. 'bengaluru', 'Mumbai', 'Gurgaon'" }, matter_id: { type: "string", description: "Matter id; its recorded city and court are used" } }, required: [] },
-  examples: [{ city: "bengaluru" }, { matter_id: "m_afff_2873" }],
+  examples: [{ city: "bengaluru" }, { matter_id: "m_valsara_arb" }],
   timeoutMs: 12_000,
   maxResultChars: 16_000,
   access: "read",

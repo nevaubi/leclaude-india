@@ -239,8 +239,8 @@ describe("FileDrop helpers", () => {
     expect(describeFiles([f("a", 1024), f("b", 1024)])).toBe("2 files · 2.0 KB");
   });
   it("flattens folder trees with depth and path", () => {
-    const flat = flattenFolders([{ id: "r", name: "Matters", children: [{ id: "c", name: "AFFF", children: [] }] }, { id: "k", name: "Knowledge" }]);
-    expect(flat.map((f) => [f.id, f.depth, f.path])).toEqual([["r", 0, "Matters"], ["c", 1, "Matters / AFFF"], ["k", 0, "Knowledge"]]);
+    const flat = flattenFolders([{ id: "r", name: "Matters", children: [{ id: "c", name: "Valsara", children: [] }] }, { id: "k", name: "Knowledge" }]);
+    expect(flat.map((f) => [f.id, f.depth, f.path])).toEqual([["r", 0, "Matters"], ["c", 1, "Matters / Valsara"], ["k", 0, "Knowledge"]]);
   });
 });
 
@@ -290,8 +290,8 @@ describe("current user", () => {
     delete process.env.LECLAUDE_USER_ID;
     setWorkspaceUser(null);
     expect(currentUser()).toEqual({ id: DEFAULT_USER.id, name: DEFAULT_USER.name });
-    setWorkspaceUser({ id: "p_jwhitfield", name: "Jordan Whitfield" });
-    expect(currentUser()).toEqual({ id: "p_jwhitfield", name: "Jordan Whitfield" });
+    setWorkspaceUser({ id: "p_jwhitfield", name: "Arjun Mehra" });
+    expect(currentUser()).toEqual({ id: "p_jwhitfield", name: "Arjun Mehra" });
     expect(currentUser((id) => (id === "p_jwhitfield" ? "Jordan W." : undefined)).name).toBe("Jordan W.");
     process.env.LECLAUDE_USER_ID = "p_praman";
     expect(currentUser()).toEqual({ id: "p_praman", name: "p_praman" });

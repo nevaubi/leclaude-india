@@ -98,7 +98,7 @@ lenient mode every one of them is recorded by the report; in strict mode each th
 
 | File:line | Call | Change |
 | --- | --- | --- |
-| `src/modules/ediscovery/seed.ts:84` | `indexDocuments(VECTOR_COLLECTIONS.edocs, docs…, { embed: false })` | add `scope: { tenantId: configuredTenantId(), matterIds: [AFFF, NORTHGATE] }` (docs already carry `meta.matterId`; add `matterId: d.matterId` per doc) |
+| `src/modules/ediscovery/seed.ts:84` | `indexDocuments(VECTOR_COLLECTIONS.edocs, docs…, { embed: false })` | add `scope: { tenantId: configuredTenantId(), matterIds: [VALSARA, NORTHGATE] }` (docs already carry `meta.matterId`; add `matterId: d.matterId` per doc) |
 | `src/modules/ediscovery/service.ts:320` | `hybridSearch(edocs, req.q, { k, perDoc: 1, filter: meta.matterId === req.matterId })` | pass `scope: { tenantId: principal.tenantId, matterIds: [req.matterId] }` from the route's `scopeFor(principal, req.matterId)`; keep the filter or drop it |
 | `src/modules/ediscovery/service.ts:689` | `hybridSearch(edocs, q, { …, filter: meta.matterId === doc.matterId })` (similar documents) | `scope: { tenantId, matterIds: [doc.matterId] }` |
 | `src/modules/ediscovery/service.ts:732` | `indexDocuments(edocs, docs…, { embed })` (reindex) | `scope: { tenantId, matterIds: unique(docs.map(d => d.matterId)) }`, `matterId: d.matterId` per doc |
@@ -210,8 +210,8 @@ and collected by `runTool`, never serialized into the model-facing text.
 
 ## 8. Tests
 
-- `tests/ai-scope-isolation.test.ts` — two matters sharing the surname Voss and a witness
-  named Helen Voss; scoped search, corpus scope, index-time validation, legacy backfill,
+- `tests/ai-scope-isolation.test.ts` — two matters sharing the surname Vasudevan and a witness
+  named Hema Vasudevan; scoped search, corpus scope, index-time validation, legacy backfill,
   `findPeople`/`findDocuments`/`findDepositionPassages`, explicit `ctx.scope`, strict mode
   throws, lenient report and single warning.
 - `tests/tools-contract.test.ts` — `runTool` authorize denial, timeout, cancellation,

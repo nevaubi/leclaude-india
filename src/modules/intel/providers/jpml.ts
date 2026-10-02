@@ -25,7 +25,6 @@ export interface JpmlMdl {
 
 /** Fallback list: MDLs with pending dockets that we are confident about (court, transferee judge). */
 export const JPML_FALLBACK: JpmlMdl[] = [
-  { mdlNumber: "2873", title: "In re: Aqueous Film-Forming Foams Products Liability Litigation", court: "D. South Carolina", courtId: "dsc", judge: "Richard M. Gergel", docketNumber: "2:18-mn-02873", transferDate: "2018-12-07", fallback: true },
   { mdlNumber: "3140", title: "In re: Depo-Provera (Depot Medroxyprogesterone Acetate) Products Liability Litigation", court: "N.D. Florida", courtId: "flnd", judge: "M. Casey Rodgers", docketNumber: "3:25-md-03140", transferDate: "2025-02-07", fallback: true },
   { mdlNumber: "2804", title: "In re: National Prescription Opiate Litigation", court: "N.D. Ohio", courtId: "ohnd", judge: "Dan Aaron Polster", docketNumber: "1:17-md-02804", transferDate: "2017-12-05", fallback: true },
   { mdlNumber: "2846", title: "In re: Davol, Inc./C.R. Bard, Inc., Polypropylene Hernia Mesh Products Liability Litigation", court: "S.D. Ohio", courtId: "ohsd", judge: "Edmund A. Sargus, Jr.", docketNumber: "2:18-md-02846", fallback: true },

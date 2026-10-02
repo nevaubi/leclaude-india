@@ -391,7 +391,7 @@ V. Salazar`,
     custodian: NG_CUSTODIANS.grant,
     type: "Letter",
     subject: "Demand for indemnification and payment of cargo claims — MTSA §§ 9 and 11 — Northgate Logistics to Apex Freight Systems",
-    from: "Daniel Okafor",
+    from: "Dhruv Oberoi",
     to: ["Kevin Brandau"],
     cc: ["Melissa Grant", "Dana Whitmore"],
     threadId: T_DEMAND,
@@ -434,8 +434,8 @@ Nothing in this letter waives any right or remedy of Northgate, all of which are
 
 Very truly yours,
 
-Daniel Okafor
-Seeger Weiss LLP
+Dhruv Oberoi
+Mehra & Rao Advocates
 
 cc: Melissa Grant; Dana Whitmore; Ana Pereira, Marlow Insurance Group (by email)`,
   },
@@ -447,7 +447,7 @@ cc: Melissa Grant; Dana Whitmore; Ana Pereira, Marlow Insurance Group (by email)
     type: "Letter",
     subject: "Response to demand — Apex Freight Systems denial of indemnity and tender of $500,000 policy limits",
     from: "Kevin Brandau",
-    to: ["Daniel Okafor"],
+    to: ["Dhruv Oberoi"],
     cc: ["Melissa Grant"],
     threadId: T_DEMAND,
     aiScore: 92,
@@ -459,14 +459,14 @@ cc: Melissa Grant; Dana Whitmore; Ana Pereira, Marlow Insurance Group (by email)
 
 November 10, 2025
 
-Daniel Okafor, Esq.
-Seeger Weiss LLP
+Dhruv Oberoi, Esq.
+Mehra & Rao Advocates
 233 South Wacker Drive, Suite 6100
 Chicago, Illinois 60606
 
 Re: Northgate Logistics, Inc. — Your letter of October 17, 2025
 
-Dear Mr. Okafor:
+Dear Mr. Oberoi:
 
 Apex Freight Systems, LLC responds to Northgate's demand as follows.
 
@@ -496,7 +496,7 @@ cc: Rhonda Feely; Great Plains Mutual Insurance Co. (claims)`,
     custodian: NG_CUSTODIANS.grant,
     type: "Email",
     subject: "Apex response — litigation recommendation (privileged)",
-    from: "Daniel Okafor",
+    from: "Dhruv Oberoi",
     to: ["Melissa Grant", "Dana Whitmore"],
     threadId: T_DEMAND,
     aiScore: 82,
@@ -518,7 +518,7 @@ Apex's letter is what we expected. My recommendation is to reject the $500,000 t
 
 Filing draft to you by December 5. Please implement the litigation hold I circulated yesterday.
 
-Daniel`,
+Dhruv`,
   },
   {
     id: "ed_ng_0015",
@@ -569,7 +569,7 @@ Senior Claims Examiner, Marlow Insurance Group`,
     custodian: NG_CUSTODIANS.whitmore,
     type: "Email",
     subject: "LITIGATION HOLD — Northgate / Apex (privileged)",
-    from: "Daniel Okafor",
+    from: "Dhruv Oberoi",
     to: ["Melissa Grant", "Dana Whitmore", "Victor Salazar"],
     aiScore: 45,
     aiIssues: ["LEG-01"],
@@ -578,7 +578,7 @@ Senior Claims Examiner, Marlow Insurance Group`,
 
 Please preserve all documents and ESI relating to the Apex MTSA, Change Orders 1–3, the Joliet facility, Bright Harbor Electronics, the September 2025 losses, weekly operations calls with Apex (including any notes, recordings or Teams chats), and communications with Marlow Insurance. Suspend auto-deletion on your mailboxes and Teams. Do not delete text messages with Apex personnel. Forward this notice to anyone else at Northgate who may have relevant material and let me know who received it.
 
-Daniel`,
+Dhruv`,
   },
   {
     id: "ed_ng_0018",

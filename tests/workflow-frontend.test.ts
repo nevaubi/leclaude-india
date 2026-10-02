@@ -50,7 +50,7 @@ describe("front-end validation", () => {
     expect(keys.prefix).toMatch(/Letters/);
   });
   it("accepts a valid form, pasted text for a file field and the engine's mapped shape", () => {
-    expect(validateFrontendValues(FE, { nda: file("nda.pdf"), matter: "m_afff_2873", side: "Receiving", checks: ["Term"], due: "2026-10-01", pages: 12, prefix: "MFC-" })).toEqual([]);
+    expect(validateFrontendValues(FE, { nda: file("nda.pdf"), matter: "m_valsara_arb", side: "Receiving", checks: ["Term"], due: "2026-10-01", pages: 12, prefix: "MFC-" })).toEqual([]);
     expect(validateFrontendValues(FE, { nda: "pasted text", matter: "m", side: "Receiving" })).toEqual([]);
     // Mapped inputs: the text lives under the key and the file sidecar under <key>_file.
     expect(validateFrontendValues(FE, { nda: "", nda_file: { blobId: "b", name: "x.pdf", mime: "application/pdf", size: 1 }, matter: "m", side: "Receiving" })).toEqual([]);
@@ -61,7 +61,7 @@ describe("front-end validation", () => {
 
 describe("front-end input mapping", () => {
   it("maps files to text plus a sidecar, multi-files to arrays plus joined text, and coerces scalars", () => {
-    const { inputs, matterId } = mapFrontendValues(FE, { nda: file("nda.pdf", "NDA TEXT"), exhibits: [file("a.pdf", "A"), file("b.pdf", "B")], matter: "m_afff_2873", side: "Receiving", checks: "Term, Venue", rush: "yes", due: "2026-10-01", pages: "12", prefix: "MFC-", reviewer: "p_emarsh" });
+    const { inputs, matterId } = mapFrontendValues(FE, { nda: file("nda.pdf", "NDA TEXT"), exhibits: [file("a.pdf", "A"), file("b.pdf", "B")], matter: "m_valsara_arb", side: "Receiving", checks: "Term, Venue", rush: "yes", due: "2026-10-01", pages: "12", prefix: "MFC-", reviewer: "p_emarsh" });
     expect(inputs.nda).toBe("NDA TEXT");
     expect(inputs.nda_file).toEqual({ blobId: "blob_nda.pdf", name: "nda.pdf", mime: "application/pdf", size: 10, pages: undefined, truncated: undefined });
     expect((inputs.exhibits as unknown[]).length).toBe(2);
@@ -70,7 +70,7 @@ describe("front-end input mapping", () => {
     expect(inputs.rush).toBe(true);
     expect(inputs.pages).toBe(12);
     expect(inputs.reviewer).toBe("p_emarsh");
-    expect(matterId).toBe("m_afff_2873");
+    expect(matterId).toBe("m_valsara_arb");
   });
   it("passes the output section through under the reserved keys, unless a field already carries it", () => {
     const a = mapFrontendValues(FE, { nda: "t", matter: "m", side: "Receiving", output_format: "pdf", output_label: "Memo", output_folder: "fld_1" }).inputs;
@@ -142,7 +142,7 @@ describe("start page helpers", () => {
     expect(nodeSummary("intel.verify", { target: "insights" })).toContain("Insights");
     expect(nodeSummary("intel.publish", { to: "home", title: "Alert" })).toBe("to home · Alert");
     expect(nodeSummary("review.auto", { fixes: ["retry", "narrow"], escalate: true })).toBe("2 fix(es) allowed · escalates");
-    expect(nodeSummary("data.query", { source: "ediscovery", q: "PFAS", limit: 50 })).toBe("ediscovery · PFAS · max 50");
+    expect(nodeSummary("data.query", { source: "ediscovery", q: "MC-8", limit: 50 })).toBe("ediscovery · MC-8 · max 50");
     expect(nodeSummary("output.file", { format: "xlsx", label: "" })).toBe("xlsx · (label from front end)");
     expect(nodeSummary("logic.schedule_after", { workflowId: "wf_x", wait: true })).toBe("Start wf_x · wait");
     expect(nodeSummary("logic.schedule_after", {})).toBe("No workflow chosen");

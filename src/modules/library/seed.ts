@@ -22,7 +22,7 @@ function folder(id: string, parentId: string | null, name: string, extra: Partia
 // Folders
 // ---------------------------------------------------------------------------
 export const MATTER_SUBFOLDERS: Record<string, string[]> = {
-  [M.afff]: ["Pleadings & orders", "Discovery", "Depositions", "Experts", "Correspondence", "Research"],
+  [M.valsara]: ["Pleadings & orders", "Discovery", "Depositions", "Experts", "Correspondence", "Research"],
   [M.depo]: ["Pleadings", "Science & literature", "Correspondence"],
   [M.northgate]: ["Pleadings", "Briefing", "Discovery", "Contract"],
   [M.harbor]: ["Data room", "Diligence memos", "Transaction documents"],
@@ -40,7 +40,7 @@ function buildFolders(db: Database): Item[] {
     folder(LIBRARY_FOLDERS.templates, null, "Templates", { description: "Document, workbook, deck and PDF templates for the Office suite." }),
     folder(LIBRARY_FOLDERS.clauses, null, "Clause bank", { description: "Approved clauses with fillable variables and drafting notes.", tags: ["clauses"] }),
     folder(LIBRARY_FOLDERS.knowledge, null, "Knowledge", { description: "Practice notes, cheat sheets and research guides maintained by KM." }),
-    folder(LIBRARY_FOLDERS.myFiles, null, "My files", { ownerId: P.jordanWhitfield, sharedWith: ["private"], description: "Your personal working folder." }),
+    folder(LIBRARY_FOLDERS.myFiles, null, "My files", { ownerId: P.arjunMehra, sharedWith: ["private"], description: "Your personal working folder." }),
     folder("lib_folder_firm_policies", LIBRARY_FOLDERS.firm, "Policies & administration"),
     folder("lib_folder_firm_forms", LIBRARY_FOLDERS.firm, "Forms & precedents"),
     folder("lib_folder_firm_cle", LIBRARY_FOLDERS.firm, "CLE materials"),
@@ -51,8 +51,8 @@ function buildFolders(db: Database): Item[] {
     folder(KNOWLEDGE_SUBFOLDERS.style, LIBRARY_FOLDERS.knowledge, "Firm style"),
   ];
   for (const m of db.matters.all()) {
-    out.push(folder(matterFolderId(m.id), LIBRARY_FOLDERS.matters, m.shortName, { matterId: m.id, ownerId: m.leadAttorneyId ?? P.jordanWhitfield, sharedWith: ["matter-team"], description: `${m.name}${m.caption ? ` — ${m.caption}` : ""}`, practiceArea: m.practiceArea, createdAt: `${m.openedAt}T09:00:00Z` }));
-    for (const name of MATTER_SUBFOLDERS[m.id] ?? []) out.push(folder(matterSubfolderId(m.id, name), matterFolderId(m.id), name, { matterId: m.id, ownerId: m.leadAttorneyId ?? P.jordanWhitfield, sharedWith: ["matter-team"], createdAt: `${m.openedAt}T09:05:00Z` }));
+    out.push(folder(matterFolderId(m.id), LIBRARY_FOLDERS.matters, m.shortName, { matterId: m.id, ownerId: m.leadAttorneyId ?? P.arjunMehra, sharedWith: ["matter-team"], description: `${m.name}${m.caption ? ` — ${m.caption}` : ""}`, practiceArea: m.practiceArea, createdAt: `${m.openedAt}T09:00:00Z` }));
+    for (const name of MATTER_SUBFOLDERS[m.id] ?? []) out.push(folder(matterSubfolderId(m.id, name), matterFolderId(m.id), name, { matterId: m.id, ownerId: m.leadAttorneyId ?? P.arjunMehra, sharedWith: ["matter-team"], createdAt: `${m.openedAt}T09:05:00Z` }));
   }
   return out;
 }
@@ -163,13 +163,13 @@ const LINKS: LinkSeed[] = [
   { id: "lib_link_courtlistener", parentId: KNOWLEDGE_SUBFOLDERS.research, name: "CourtListener — opinions, RECAP dockets, citation lookup", url: "https://www.courtlistener.com/", description: "Free Law Project's search over ~10M opinions and the RECAP archive of PACER filings. The Search agent queries the v4 API directly.", tags: ["case law", "dockets", "free"], starred: true },
   { id: "lib_link_ecfr", parentId: KNOWLEDGE_SUBFOLDERS.research, name: "eCFR — Electronic Code of Federal Regulations", url: "https://www.ecfr.gov/", description: "Point-in-time CFR with the Versioner API; use for 40 C.F.R. (EPA) and 29 C.F.R. (DOL) research.", tags: ["regulations", "CFR"] },
   { id: "lib_link_pacer", parentId: KNOWLEDGE_SUBFOLDERS.research, name: "PACER — Public Access to Court Electronic Records", url: "https://pacer.uscourts.gov/", description: "Federal docket access. Firm account: billing code required for every download; check RECAP first.", tags: ["dockets", "federal"] },
-  { id: "lib_link_jpml", parentId: KNOWLEDGE_SUBFOLDERS.research, name: "JPML — Judicial Panel on Multidistrict Litigation", url: "https://www.jpml.uscourts.gov/", description: "Pending MDL dockets, transfer orders and hearing sessions. MDL 2873 (AFFF) and MDL 3140 (Depo-Provera) status.", tags: ["MDL", "JPML"] },
-  { id: "lib_link_federal_register", parentId: KNOWLEDGE_SUBFOLDERS.research, name: "Federal Register", url: "https://www.federalregister.gov/", description: "Daily journal of proposed and final rules; EPA PFAS rulemakings and HSR threshold notices.", tags: ["regulatory", "rulemaking"] },
+  { id: "lib_link_jpml", parentId: KNOWLEDGE_SUBFOLDERS.research, name: "JPML — Judicial Panel on Multidistrict Litigation", url: "https://www.jpml.uscourts.gov/", description: "Pending MDL dockets, transfer orders and hearing sessions. MDL 3140 (Depo-Provera) status.", tags: ["MDL", "JPML"] },
+  { id: "lib_link_federal_register", parentId: KNOWLEDGE_SUBFOLDERS.research, name: "Federal Register", url: "https://www.federalregister.gov/", description: "Daily journal of proposed and final rules; FMCSA motor-carrier rulemakings and HSR threshold notices.", tags: ["regulatory", "rulemaking"] },
   { id: "lib_link_dsc_local_rules", parentId: KNOWLEDGE_SUBFOLDERS.litigation, name: "D.S.C. Local Civil Rules", url: "https://www.scd.uscourts.gov/rules", description: "Current Local Civil Rules for the District of South Carolina, including Rule 7.04–7.08 briefing rules.", tags: ["D.S.C.", "local rules"] },
   { id: "lib_link_ndil_local_rules", parentId: KNOWLEDGE_SUBFOLDERS.litigation, name: "N.D. Ill. Local Rules and Judge Ellis standing orders", url: "https://www.ilnd.uscourts.gov/LocalRules.aspx", description: "Local Rules 5.2, 7.1 and 56.1 (statement of facts) and standing orders for summary judgment practice before Judge Ellis.", tags: ["N.D. Ill.", "local rules", "Rule 56.1"], matterId: M.northgate },
   { id: "lib_link_lwda_paga", parentId: KNOWLEDGE_SUBFOLDERS.litigation, name: "LWDA — PAGA filing portal and cure procedures", url: "https://www.dir.ca.gov/Private-Attorneys-General-Act/Private-Attorneys-General-Act.html", description: "California Labor & Workforce Development Agency PAGA notice search, cure submissions and the post-2024 early evaluation process.", tags: ["PAGA", "California", "LWDA"], matterId: M.sterling, practiceArea: "Employment" },
-  { id: "lib_link_mdl2873_docket", parentId: matterSubfolderId(M.afff, "Pleadings & orders"), name: "MDL 2873 docket (RECAP mirror)", url: "https://www.courtlistener.com/?q=%22Aqueous+Film-Forming+Foams%22&type=r", description: "RECAP search for the AFFF MDL docket; check before pulling from PACER.", tags: ["MDL 2873", "docket"], matterId: M.afff, practiceArea: "Products Liability", ownerId: P.mariaLopez },
-  { id: "lib_link_bluewater_dataroom", parentId: matterSubfolderId(M.harbor, "Data room"), name: "Bluewater Analytics virtual data room (Datasite)", url: "https://app.datasite.com/", description: "Project Harbor VDR. Folder 4.2 Material Contracts; 6.1 IP assignments; 8.3 Employee matters. Access managed by Daniel Okafor.", tags: ["data room", "diligence"], matterId: M.harbor, practiceArea: "Corporate / M&A", ownerId: P.danielOkafor },
+  { id: "lib_link_vls_arbitration_act", parentId: matterSubfolderId(M.valsara, "Pleadings & orders"), name: "Arbitration and Conciliation Act, 1996 (India Code)", url: "https://www.indiacode.nic.in/", description: "Official text of the Act governing the Valsara arbitration (Arb. Ref. 14/2024); check amendments before citing.", tags: ["arbitration", "statute"], matterId: M.valsara, practiceArea: "Commercial", ownerId: P.meeraLobo },
+  { id: "lib_link_bluewater_dataroom", parentId: matterSubfolderId(M.harbor, "Data room"), name: "Bluewater Analytics virtual data room (Datasite)", url: "https://app.datasite.com/", description: "Project Harbor VDR. Folder 4.2 Material Contracts; 6.1 IP assignments; 8.3 Employee matters. Access managed by Dhruv Oberoi.", tags: ["data room", "diligence"], matterId: M.harbor, practiceArea: "Corporate / M&A", ownerId: P.dhruvOberoi },
 ];
 
 function linkItems(): Item[] {
@@ -196,24 +196,24 @@ interface UploadSeed { id: string; parentId: string; name: string; description: 
 
 const UPLOADS: UploadSeed[] = [
   {
-    id: "lib_upload_hale_vol2_rough", parentId: matterSubfolderId(M.afff, "Depositions"), name: "Hale Vol. II — rough ASCII transcript (2026-09-22).txt", ownerId: P.mariaLopez, matterId: M.afff, practiceArea: "Products Liability", size: 412_884, createdAt: "2026-09-22T19:40:00Z",
-    description: "Uploaded rough transcript from the court reporter (Veritext). Not certified; do not cite page:line until the final is delivered (expected 2026-10-01).",
-    tags: ["upload", "transcript", "rough", "Hale"],
-    content: `# Upload: Hale Vol. II rough ASCII
+    id: "lib_upload_hale_vol2_rough", parentId: matterSubfolderId(M.valsara, "Depositions"), name: "Hegde Vol. II — rough ASCII transcript (2026-09-22).txt", ownerId: P.meeraLobo, matterId: M.valsara, practiceArea: "Products Liability", size: 412_884, createdAt: "2026-09-22T19:40:00Z",
+    description: "Uploaded rough transcript from the transcription agency. Not certified; do not cite page:line until the final is delivered (expected 2026-10-01).",
+    tags: ["upload", "transcript", "rough", "Hegde"],
+    content: `# Upload: Hegde Vol. II rough ASCII
 
-**Source:** Veritext rough draft, received 2026-09-22 18:55 ET. **Certified transcript expected:** 2026-10-01.
+**Source:** Transcription agency rough draft, received 2026-09-22 18:55 IST. **Certified transcript expected:** 2026-10-01.
 
-## Reviewer notes (M. Lopez)
+## Reviewer notes (M. Lobo)
 
-- 214 pages. Examination by R. Klein (PEC) 9:12 a.m.–4:48 p.m.; defended by J. Whitfield.
-- Exhibits marked Hale 14–29. Hale 22 is MFC-0041912 (Aug. 2016 EHS memo) — the "no adverse findings" passage is at rough pp. 131–139.
-- Rough pp. 88–94: Hale places the 2011 bioassay summary on Voss's desk "sometime that fall"; compare Voss Vol. I 76:3–15 (Voss says she "never received" a written summary). Flagged for the conflicts register.
-- Rough pp. 172–178: instruction not to answer (privilege) on the Kaine/Suarez § 8(e) discussion — record preserved; expect a Special Master letter from plaintiffs.
+- 214 pages. Examination by R. Kale (Claimant's counsel) 9:12 a.m.–4:48 p.m.; defended by A. Mehra.
+- Exhibits marked Hegde 14–29. Hegde 22 is MFC-0041912 (Aug. 2016 EHS memo) — the "no adverse findings" passage is at rough pp. 131–139.
+- Rough pp. 88–94: Hegde places the 2011 bioassay summary on Vasudevan's desk "sometime that fall"; compare Vasudevan Vol. I 76:3–15 (Vasudevan says she "never received" a written summary). Flagged for the conflicts register.
+- Rough pp. 172–178: instruction not to answer (privilege) on the Kapur/Sood Clause 9.4 discussion — record preserved; expect an application to the Tribunal from the Claimant.
 
-The rough text is retained in the e-discovery workspace under deposition "Hale Vol. II (rough)"; this note is the library placeholder.`,
+The rough text is retained in the e-discovery workspace under deposition "Hegde Vol. II (rough)"; this note is the library placeholder.`,
   },
   {
-    id: "lib_upload_mfc_vol014_loadfile", parentId: matterSubfolderId(M.afff, "Discovery"), name: "MFC production volume 014 — load file QC notes.xlsx", ownerId: P.tomBradley, matterId: M.afff, practiceArea: "Products Liability", size: 1_284_112, createdAt: "2026-09-18T15:10:00Z",
+    id: "lib_upload_mfc_vol014_loadfile", parentId: matterSubfolderId(M.valsara, "Discovery"), name: "MFC production volume 014 — load file QC notes.xlsx", ownerId: P.tanmayBhatt, matterId: M.valsara, practiceArea: "Products Liability", size: 1_284_112, createdAt: "2026-09-18T15:10:00Z",
     description: "QC checklist for production volume MFC-VOL014 (MFC-0102001 – MFC-0118440): field validation, privilege screen hits, family integrity, slip-sheet counts.",
     tags: ["upload", "production", "QC", "load file"],
     content: `# Upload: MFC-VOL014 load file QC
@@ -227,12 +227,12 @@ The rough text is retained in the e-discovery workspace under deposition "Hale V
 | Natives | 212 spreadsheets, 41 presentations produced natively with slip sheets |
 | Confidentiality stamps | 4,290 Confidential; 522 AEO (formulation records) |
 | Text extraction | 14 documents OCR'd (scanned lab notebooks) |
-| Delivered | 2026-09-18 via SFTP to PEC vendor; hash manifest attached |
+| Delivered | 2026-09-18 via SFTP to the Claimant's vendor; hash manifest attached |
 
-Open item: three AEO-designated batch records (MFC-0117702–0117709) were requested by plaintiffs for their toxicology expert; expert disclosure under PO ¶ 5(d) pending.`,
+Open item: three AEO-designated batch records (MFC-0117702–0117709) were requested by the Claimant for its toxicology expert; disclosure under Procedural Order No. 2 ¶ 5(d) pending.`,
   },
   {
-    id: "lib_upload_roland_2024_bmj", parentId: matterSubfolderId(M.depo, "Science & literature"), name: "Roland et al. (2024) BMJ — progestogens and meningioma (PDF) — key excerpts", ownerId: P.samuelChen, matterId: M.depo, practiceArea: "Products Liability", size: 2_106_330, createdAt: "2026-08-14T11:20:00Z",
+    id: "lib_upload_roland_2024_bmj", parentId: matterSubfolderId(M.depo, "Science & literature"), name: "Roland et al. (2024) BMJ — progestogens and meningioma (PDF) — key excerpts", ownerId: P.sameerChawla, matterId: M.depo, practiceArea: "Products Liability", size: 2_106_330, createdAt: "2026-08-14T11:20:00Z",
     description: "Uploaded PDF of the French national case-control study relied on by plaintiffs' epidemiologist; excerpts and reviewer notes for Science Day preparation.",
     tags: ["upload", "epidemiology", "meningioma", "Depo-Provera"],
     content: `# Upload: Roland et al., BMJ 2024;384:e078078 — reviewer excerpts
@@ -252,7 +252,7 @@ Open item: three AEO-designated batch records (MFC-0117702–0117709) were reque
 Full PDF stored in the matter workspace; this placeholder holds the excerpts for search.`,
   },
   {
-    id: "lib_upload_bluewater_dr_index", parentId: matterSubfolderId(M.harbor, "Data room"), name: "Bluewater data room index export (2026-09-19).xlsx", ownerId: P.danielOkafor, matterId: M.harbor, practiceArea: "Corporate / M&A", size: 388_220, createdAt: "2026-09-19T17:05:00Z",
+    id: "lib_upload_bluewater_dr_index", parentId: matterSubfolderId(M.harbor, "Data room"), name: "Bluewater data room index export (2026-09-19).xlsx", ownerId: P.dhruvOberoi, matterId: M.harbor, practiceArea: "Corporate / M&A", size: 388_220, createdAt: "2026-09-19T17:05:00Z",
     description: "Datasite index export: 1,842 documents across 11 top-level folders; used by the diligence tracker workflow to flag missing exhibits and unsigned amendments.",
     tags: ["upload", "data room", "diligence", "index"],
     content: `# Upload: Bluewater VDR index (2026-09-19)
@@ -272,7 +272,7 @@ Full PDF stored in the matter workspace; this placeholder holds the excerpts for
 | 11. Regulatory / privacy | 250 | — |`,
   },
   {
-    id: "lib_upload_sterling_payroll_summary", parentId: matterSubfolderId(M.sterling, "Payroll analysis"), name: "Sterling Medical — Kronos payroll export summary (14 clinics).csv", ownerId: P.samuelChen, matterId: M.sterling, practiceArea: "Employment", size: 5_412_990, createdAt: "2026-09-12T13:30:00Z",
+    id: "lib_upload_sterling_payroll_summary", parentId: matterSubfolderId(M.sterling, "Payroll analysis"), name: "Sterling Medical — Kronos payroll export summary (14 clinics).csv", ownerId: P.sameerChawla, matterId: M.sterling, practiceArea: "Employment", size: 5_412_990, createdAt: "2026-09-12T13:30:00Z",
     description: "Summary statistics from the Kronos export (2025-08-11 to 2026-08-10): punch rounding incidence, meal-period compliance rate and premium payments by clinic. Underlying CSV in the matter workspace.",
     tags: ["upload", "payroll", "PAGA", "analysis"],
     content: `# Upload: Kronos export summary — Sterling Medical
@@ -315,35 +315,35 @@ function uploadItems(): Item[] {
 
 const MATTER_NOTES: { id: string; parentId: string; name: string; description: string; content: string; tags: string[]; matterId: string; practiceArea: PracticeArea; ownerId: string; createdAt: string; updatedAt: string; starred?: boolean }[] = [
   {
-    id: "lib_note_afff_voss_admissions", parentId: matterSubfolderId(M.afff, "Depositions"), name: "Voss Vol. I — key admissions and follow-ups", ownerId: P.elenaMarsh, matterId: M.afff, practiceArea: "Products Liability", createdAt: "2026-06-12T20:00:00Z", updatedAt: "2026-09-15T16:30:00Z", starred: true,
-    description: "Working notes from the Voss (Senior Toxicologist) deposition: admissions, themes and follow-ups for Vol. II and for the Whitfield rebuttal report.",
-    tags: ["Voss", "deposition", "admissions", "toxicology"],
-    content: `# Voss Vol. I (2026-06-11) — working notes
+    id: "lib_note_vls_voss_admissions", parentId: matterSubfolderId(M.valsara, "Depositions"), name: "Vasudevan Vol. I — key admissions and follow-ups", ownerId: P.eshaMathur, matterId: M.valsara, practiceArea: "Products Liability", createdAt: "2026-06-12T20:00:00Z", updatedAt: "2026-09-15T16:30:00Z", starred: true,
+    description: "Working notes from the Vasudevan (Senior Toxicologist) deposition: admissions, themes and follow-ups for Vol. II and for the Sundaram rebuttal report.",
+    tags: ["Vasudevan", "deposition", "admissions", "toxicology"],
+    content: `# Vasudevan Vol. I (2026-06-11) — working notes
 
 ## Helpful testimony
 
 - 41:8–42:3 — Confirms the 2011 bioassay used a dose range "well above any realistic human exposure" and that the study design was reviewed by an external CRO.
-- 76:3–15 — "I never received a written summary of the bioassay from Greg [Hale]. We discussed it in the stewardship meeting." (Conflicts with Hale Vol. II rough pp. 88–94 — see conflicts register C-09.)
-- 118:22–119:14 — Agrees that EPA's 2009 provisional health advisory was "public knowledge in the industry" by the time of the 2011 study; supports the corroborative-information position on § 8(e).
-- 143:1–20 — Cannot identify any Meridian fluorosurfactant sold to the Joint Base Charleston fire training program; refers to Brooks for sales records.
+- 76:3–15 — "I never received a written summary of the bioassay from Girish [Hegde]. We discussed it in the stewardship meeting." (Conflicts with Hegde Vol. II rough pp. 88–94 — see conflicts register C-09.)
+- 118:22–119:14 — Agrees that CPCB's 2009 provisional guidance value was "public knowledge in the industry" by the time of the 2011 study; supports the corroborative-information position on Clause 9.4.
+- 143:1–20 — Cannot identify any MF-3 sold directly to the Park's member units after 2006; refers to Bose for sales records.
 
 ## Harmful testimony
 
-- 97:5–98:11 — Concedes she "would have wanted to know" the lower-dose results before signing the 2016 product stewardship statement. Expect plaintiffs to pair with MFC-0041912.
-- 160:14–161:2 — "Fluorosurfactant chemistry was our whole business" — undercuts the sophisticated-purchaser theme if used out of context.
+- 97:5–98:11 — Concedes she "would have wanted to know" the lower-dose results before signing the 2016 product stewardship statement. Expect the Claimant to pair with MFC-0041912.
+- 160:14–161:2 — "Repellent-finish chemistry was our whole business" — undercuts the sophisticated-purchaser theme if used out of context.
 
 ## Follow-ups for Vol. II
 
 1. Establish the internal peer-review path for the 2011 results (who saw the CRO report, when).
-2. Walk through the 2016 EHS memo paragraph by paragraph; get Voss to place "no adverse findings" in the regulatory-submission context.
-3. Confirm she had no role in AFFF formulation or sales.
+2. Walk through the 2016 EHS memo paragraph by paragraph; get Vasudevan to place "no adverse findings" in the regulatory-submission context.
+3. Confirm she had no role in Aqua-Guard formulation or sales.
 
-## For the Whitfield rebuttal report
+## For the Sundaram rebuttal report
 
-Voss's dose-range testimony (41:8–42:3) should be quoted in the rebuttal to plaintiffs' extrapolation from the rodent data.`,
+Vasudevan's dose-range testimony (41:8–42:3) should be quoted in the rebuttal to the Claimant's extrapolation from the rodent data.`,
   },
   {
-    id: "lib_note_northgate_msj_themes", parentId: matterSubfolderId(M.northgate, "Briefing"), name: "MSJ opposition — themes and record cites", ownerId: P.danielOkafor, matterId: M.northgate, practiceArea: "Commercial", createdAt: "2026-09-02T14:00:00Z", updatedAt: "2026-09-21T18:20:00Z",
+    id: "lib_note_northgate_msj_themes", parentId: matterSubfolderId(M.northgate, "Briefing"), name: "MSJ opposition — themes and record cites", ownerId: P.dhruvOberoi, matterId: M.northgate, practiceArea: "Commercial", createdAt: "2026-09-02T14:00:00Z", updatedAt: "2026-09-21T18:20:00Z",
     description: "Outline of the opposition to Apex's motion for summary judgment (due 2026-10-09): three themes with record cites and the Rule 56.1 response plan.",
     tags: ["Northgate", "summary judgment", "opposition", "outline"],
     content: `# Opposition to Apex MSJ — outline (due 2026-10-09)
@@ -375,7 +375,7 @@ The 2026-01-08 dispatch chain ("run it anyway, we'll sort the seals later," NG-0
 - Confirm Judge Ellis's page limit for the opposition (15 pages under LR 7.1 unless leave granted) — motion for leave to file 25 pages to be filed by 2026-09-30.`,
   },
   {
-    id: "lib_note_harbor_ip_chain", parentId: matterSubfolderId(M.harbor, "Diligence memos"), name: "Core ML Models — IP assignment chain memo", ownerId: P.samuelChen, matterId: M.harbor, practiceArea: "Corporate / M&A", createdAt: "2026-09-10T10:00:00Z", updatedAt: "2026-09-19T15:00:00Z",
+    id: "lib_note_harbor_ip_chain", parentId: matterSubfolderId(M.harbor, "Diligence memos"), name: "Core ML Models — IP assignment chain memo", ownerId: P.sameerChawla, matterId: M.harbor, practiceArea: "Corporate / M&A", createdAt: "2026-09-10T10:00:00Z", updatedAt: "2026-09-19T15:00:00Z",
     description: "Diligence memo on the chain of title for Bluewater's seven core ML models: developers, assignment status, open-source dependencies and recommended SPA protections.",
     tags: ["IP", "assignment", "diligence", "Project Harbor"],
     content: `# Core ML Models — chain of title
@@ -463,7 +463,7 @@ const FIRM_NOTES: Item[] = [
 Questions: Aisha Khan (KM) or the General Counsel.`,
   },
   {
-    id: "lib_note_firm_prod_specs", parentId: "lib_folder_firm_forms", name: "Standard production specifications (25-field load file)", type: "note", ownerId: P.tomBradley, sharedWith: ["firm"], status: "approved", version: 5, createdAt: "2023-08-15T09:00:00Z", updatedAt: "2026-05-05T09:00:00Z", tags: ["e-discovery", "production", "load file", "form"],
+    id: "lib_note_firm_prod_specs", parentId: "lib_folder_firm_forms", name: "Standard production specifications (25-field load file)", type: "note", ownerId: P.tanmayBhatt, sharedWith: ["firm"], status: "approved", version: 5, createdAt: "2023-08-15T09:00:00Z", updatedAt: "2026-05-05T09:00:00Z", tags: ["e-discovery", "production", "load file", "form"],
     description: "The firm's default production format and metadata field list for ESI protocols.",
     content: `# Standard production specifications
 
@@ -481,18 +481,18 @@ Time zone: UTC, stated in the protocol. Families produced together; parent-child
 // Activity
 // ---------------------------------------------------------------------------
 const ACTIVITY: ActivityEntry[] = [
-  { id: "lact_001", itemId: "lib_note_mdl2873_cmo26", itemName: "MDL 2873 — CMO 26 summary", actorId: P.jordanWhitfield, actorName: "Jordan Whitfield", action: "updated", detail: "Added open issue 3 (Voss Vol. II timing).", at: "2026-09-16T18:45:00Z" },
-  { id: "lact_002", itemId: "lib_clause_pfas_definitions", itemName: "PFAS / AFFF definitions for requests for production", actorId: P.priyaRaman, actorName: "Priya Raman", action: "updated", detail: "Added HFPO-DA (GenX) to definition 1.", at: "2026-09-18T18:00:00Z" },
-  { id: "lact_003", itemId: "lib_upload_mfc_vol014_loadfile", itemName: "MFC production volume 014 — load file QC notes.xlsx", actorId: P.tomBradley, actorName: "Tom Bradley", action: "uploaded", detail: "1.2 MB", at: "2026-09-18T15:10:00Z" },
-  { id: "lact_004", itemId: "lib_upload_bluewater_dr_index", itemName: "Bluewater data room index export (2026-09-19).xlsx", actorId: P.danielOkafor, actorName: "Daniel Okafor", action: "uploaded", detail: "388 KB", at: "2026-09-19T17:05:00Z" },
-  { id: "lact_005", itemId: "lib_note_depo_objections", itemName: "Deposition objection quick reference", actorId: P.jordanWhitfield, actorName: "Jordan Whitfield", action: "updated", detail: "Errata section: added sham-correction note.", at: "2026-09-19T08:00:00Z" },
-  { id: "lact_006", itemId: "lib_clause_depo_stipulations", itemName: "Standard deposition stipulations (on the record)", actorId: P.jordanWhitfield, actorName: "Jordan Whitfield", action: "inserted", detail: "Inserted into Voss Vol. II outline", at: "2026-09-19T08:10:00Z" },
-  { id: "lact_007", itemId: "lib_note_harbor_ip_chain", itemName: "Core ML Models — IP assignment chain memo", actorId: P.samuelChen, actorName: "Samuel Chen", action: "updated", detail: "Added open-source finding.", at: "2026-09-19T15:00:00Z" },
-  { id: "lact_008", itemId: "lib_note_hsr_basics", itemName: "HSR filing basics for Project Harbor", actorId: P.danielOkafor, actorName: "Daniel Okafor", action: "updated", detail: "Filing fee tier and gun-jumping section.", at: "2026-09-20T11:00:00Z" },
-  { id: "lact_009", itemId: "lib_note_northgate_msj_themes", itemName: "MSJ opposition — themes and record cites", actorId: P.danielOkafor, actorName: "Daniel Okafor", action: "updated", detail: "Rule 56.1 plan and page-limit motion.", at: "2026-09-21T18:20:00Z" },
-  { id: "lact_010", itemId: "lib_upload_hale_vol2_rough", itemName: "Hale Vol. II — rough ASCII transcript (2026-09-22).txt", actorId: P.mariaLopez, actorName: "Maria Lopez", action: "uploaded", detail: "412 KB · rough transcript", at: "2026-09-22T19:40:00Z" },
-  { id: "lact_011", itemId: "lib_clause_mae_definition", itemName: "Material Adverse Effect definition (buyer-favorable)", actorId: P.danielOkafor, actorName: "Daniel Okafor", action: "created", detail: "Draft for Project Harbor SPA", at: "2026-08-04T14:00:00Z" },
-  { id: "lact_012", itemId: "lib_note_afff_voss_admissions", itemName: "Voss Vol. I — key admissions and follow-ups", actorId: P.elenaMarsh, actorName: "Elena Marsh", action: "starred", at: "2026-09-15T16:31:00Z" },
+  { id: "lact_001", itemId: "lib_note_vls_po3", itemName: "Arb. Ref. 14/2024 — Procedural Order No. 3 summary", actorId: P.arjunMehra, actorName: "Arjun Mehra", action: "updated", detail: "Added open issue 3 (Vasudevan Vol. II timing).", at: "2026-09-16T18:45:00Z" },
+  { id: "lact_002", itemId: "lib_clause_vls_definitions", itemName: "MC-8 / Aqua-Guard definitions for document requests (Redfern schedule)", actorId: P.priyaRaman, actorName: "Priya Raman", action: "updated", detail: "Added MC-7 to definition 1.", at: "2026-09-18T18:00:00Z" },
+  { id: "lact_003", itemId: "lib_upload_mfc_vol014_loadfile", itemName: "MFC production volume 014 — load file QC notes.xlsx", actorId: P.tanmayBhatt, actorName: "Tanmay Bhatt", action: "uploaded", detail: "1.2 MB", at: "2026-09-18T15:10:00Z" },
+  { id: "lact_004", itemId: "lib_upload_bluewater_dr_index", itemName: "Bluewater data room index export (2026-09-19).xlsx", actorId: P.dhruvOberoi, actorName: "Dhruv Oberoi", action: "uploaded", detail: "388 KB", at: "2026-09-19T17:05:00Z" },
+  { id: "lact_005", itemId: "lib_note_depo_objections", itemName: "Deposition objection quick reference", actorId: P.arjunMehra, actorName: "Arjun Mehra", action: "updated", detail: "Errata section: added sham-correction note.", at: "2026-09-19T08:00:00Z" },
+  { id: "lact_006", itemId: "lib_clause_depo_stipulations", itemName: "Standard deposition stipulations (on the record)", actorId: P.arjunMehra, actorName: "Arjun Mehra", action: "inserted", detail: "Inserted into Vasudevan Vol. II outline", at: "2026-09-19T08:10:00Z" },
+  { id: "lact_007", itemId: "lib_note_harbor_ip_chain", itemName: "Core ML Models — IP assignment chain memo", actorId: P.sameerChawla, actorName: "Sameer Chawla", action: "updated", detail: "Added open-source finding.", at: "2026-09-19T15:00:00Z" },
+  { id: "lact_008", itemId: "lib_note_hsr_basics", itemName: "HSR filing basics for Project Harbor", actorId: P.dhruvOberoi, actorName: "Dhruv Oberoi", action: "updated", detail: "Filing fee tier and gun-jumping section.", at: "2026-09-20T11:00:00Z" },
+  { id: "lact_009", itemId: "lib_note_northgate_msj_themes", itemName: "MSJ opposition — themes and record cites", actorId: P.dhruvOberoi, actorName: "Dhruv Oberoi", action: "updated", detail: "Rule 56.1 plan and page-limit motion.", at: "2026-09-21T18:20:00Z" },
+  { id: "lact_010", itemId: "lib_upload_hale_vol2_rough", itemName: "Hegde Vol. II — rough ASCII transcript (2026-09-22).txt", actorId: P.meeraLobo, actorName: "Meera Lobo", action: "uploaded", detail: "412 KB · rough transcript", at: "2026-09-22T19:40:00Z" },
+  { id: "lact_011", itemId: "lib_clause_mae_definition", itemName: "Material Adverse Effect definition (buyer-favorable)", actorId: P.dhruvOberoi, actorName: "Dhruv Oberoi", action: "created", detail: "Draft for Project Harbor SPA", at: "2026-08-04T14:00:00Z" },
+  { id: "lact_012", itemId: "lib_note_vls_voss_admissions", itemName: "Vasudevan Vol. I — key admissions and follow-ups", actorId: P.eshaMathur, actorName: "Esha Mathur", action: "starred", at: "2026-09-15T16:31:00Z" },
 ];
 
 // ---------------------------------------------------------------------------

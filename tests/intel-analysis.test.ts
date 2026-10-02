@@ -13,7 +13,7 @@ import { db, resetSqlite } from "@/lib/db";
 import { CONFIDENCE_GATE } from "@/lib/integrity/types";
 import { MATTERS } from "@/lib/seed/ids";
 import { E } from "@/modules/intel/seed-corpus";
-import { getDocument, intelEntities, intelInsights, upsertDocument } from "@/modules/intel/store";
+import { getDocument, intelEntities, intelInsights, upsertDocument, upsertEntity } from "@/modules/intel/store";
 import { bucketByMonth, classifyMotion, classifyOutcome, extractCfrCites, extractUscCites, mergeTimelineEntries, monthsBetween, addMonths, rankInsightsPure, scoreInsight, seriesTrend, zScoreAnomalies } from "@/modules/intel/analysis/pure";
 import { defaultK, kmeans, labelClusters, tfidfVectors, denseToSparse } from "@/modules/intel/analysis/vectors";
 import { entityDocuments, extractMentions, listEntities, rebuildEntities, resolveEntities } from "@/modules/intel/analysis/entities";
@@ -44,7 +44,8 @@ import * as contextRoute from "@/app/api/intel/context/route";
 import * as analysisRoute from "@/app/api/intel/analysis/route";
 import type { IntelDocument, IntelInsight, IntelTimelineEntry } from "@/modules/intel/types";
 
-const AFFF = MATTERS.afff;
+const VALSARA = MATTERS.valsara;
+const DEPO = MATTERS.depo;
 const USER = "p_jwhitfield"; // demo workspace owner (LECLAUDE_SEED=demo)
 const BASE = "http://localhost/api/intel";
 const req = (path: string, init: RequestInit = {}) => new NextRequest(`${BASE}${path}`, init as ConstructorParameters<typeof NextRequest>[1]);
@@ -57,7 +58,7 @@ beforeAll(() => { resetSqlite(); db(); });
 
 describe("pure helpers", () => {
   it("classifies motions and outcomes from order titles", () => {
-    expect(classifyMotion("Order denying 3M's motion for summary judgment on the government contractor defense")).toBe("summary_judgment");
+    expect(classifyMotion("Order denying the defendant's motion for summary judgment on the government contractor defense")).toBe("summary_judgment");
     expect(classifyMotion("Order on Rule 702 motions to exclude expert testimony")).toBe("daubert");
     expect(classifyMotion("Case Management Order No. 26")).toBe("case_management");
     expect(classifyMotion("Transfer Order of the JPML")).toBe("transfer");
@@ -123,7 +124,7 @@ describe("pure helpers", () => {
 });
 
 describe("vectors and clustering", () => {
-  const water = ["PFAS contamination of public water systems from firefighting foam at military bases", "PFOA and PFOS detected in drinking water wells near the airport foam training area", "water provider claims for treatment costs from perfluoroalkyl contamination", "groundwater sampling shows PFOS above the drinking water limit near the base", "foam runoff contaminated the water supply of the city and its wells"];
+  const water = ["solvent contamination of public water systems from industrial discharge near the estate", "trichloroethylene detected in drinking water wells near the industrial estate drain", "water provider claims for treatment costs from solvent contamination", "groundwater sampling shows solvent above the drinking water limit near the estate", "effluent runoff contaminated the water supply of the town and its wells"];
   const drug = ["prescription drug labeling changes for meningioma risk warnings on the injectable contraceptive", "the manufacturer updated the label warning after adverse event reports of intracranial meningioma", "failure to warn claims turn on whether the drug label could be changed under the CBE regulation", "the FDA approved a labeling supplement adding the meningioma warning to the prescription drug", "pharmacovigilance reports of meningioma in patients using the injectable drug"];
   it("builds normalized TF-IDF vectors and clusters two obvious topics deterministically", () => {
     const model = tfidfVectors([...water, ...drug]);
@@ -156,32 +157,32 @@ describe("vectors and clustering", () => {
 
 describe("entities", () => {
   it("seeds entities, resolves mentions into existing records by alias and creates regulation entities from cites", () => {
-    const gergel = intelEntities().get(E.gergel)!;
-    expect(gergel).toBeTruthy();
-    expect(gergel.docIds.length).toBeGreaterThan(0);
-    expect(gergel.mentionCount).toBe(gergel.docIds.length);
-    const docket = getDocument("idoc_seed_afff_docket")!;
+    const rodgers = intelEntities().get(E.rodgers)!;
+    expect(rodgers).toBeTruthy();
+    expect(rodgers.docIds.length).toBeGreaterThan(0);
+    expect(rodgers.mentionCount).toBe(rodgers.docIds.length);
+    const docket = getDocument("idoc_seed_depo_docket")!;
     const before = intelEntities().count();
     const r = resolveEntities(docket)!;
-    expect(r.entities.some((e) => e.id === E.gergel)).toBe(true);
-    expect(r.entities.some((e) => e.type === "court" && e.id === E.dsc)).toBe(true);
+    expect(r.entities.some((e) => e.id === E.rodgers)).toBe(true);
+    expect(r.entities.some((e) => e.type === "court" && e.id === E.flnd)).toBe(true);
     expect(intelEntities().count()).toBe(before); // idempotent
-    expect(getDocument(docket.id)!.judgeIds).toContain(E.gergel);
+    expect(getDocument(docket.id)!.judgeIds).toContain(E.rodgers);
     const regs = intelEntities().find((e) => e.type === "regulation");
-    expect(regs.some((e) => e.name.startsWith("40 C.F.R. § 705"))).toBe(true);
+    expect(regs.some((e) => e.name.startsWith("21 C.F.R. § 314"))).toBe(true);
     const statutes = intelEntities().find((e) => e.type === "statute");
     expect(statutes.some((e) => e.name.includes("1407"))).toBe(true);
-    expect(gergel.sources.some((s) => s.quote && s.chunkId)).toBe(true);
+    expect(rodgers.sources.some((s) => s.quote && s.chunkId)).toBe(true);
   });
   it("extracts parties, counsel, courts, MDLs and FDA fields from structured metadata", () => {
-    const doc = { ...getDocument("idoc_seed_afff_docket")!, id: "x", meta: { parties: [{ name: "City of Stuart", role: "plaintiff", attorneys: ["Baron & Budd, P.C. (Scott Summy)"] }], attorneys: ["Michael A. London, Douglas & London, P.C."], mdlNumber: "2873", entities: [] }, agencies: ["Environmental Protection Agency"] } as IntelDocument;
+    const doc = { ...getDocument("idoc_seed_depo_docket")!, id: "x", meta: { parties: [{ name: "Harbor County Water Authority", role: "plaintiff", attorneys: ["Example & Partners LLP (Jane Q. Example)"] }], attorneys: ["John R. Sample, Sample Law Group, P.C."], mdlNumber: "3140", entities: [] }, agencies: ["Food and Drug Administration"] } as IntelDocument;
     const m = extractMentions(doc, "");
-    expect(m.find((x) => x.type === "party" && x.name === "City of Stuart")?.role).toBe("plaintiff");
-    expect(m.some((x) => x.type === "attorney" && x.name === "Scott Summy")).toBe(true);
-    expect(m.some((x) => x.type === "firm" && /Baron & Budd/.test(x.name))).toBe(true);
-    expect(m.some((x) => x.type === "attorney" && x.name === "Michael A. London")).toBe(true);
-    expect(m.some((x) => x.type === "mdl" && x.name === "MDL 2873" && x.externalId === "jpml:2873")).toBe(true);
-    expect(m.some((x) => x.type === "court" && x.externalId === "cl:court:dsc")).toBe(true);
+    expect(m.find((x) => x.type === "party" && x.name === "Harbor County Water Authority")?.role).toBe("plaintiff");
+    expect(m.some((x) => x.type === "attorney" && x.name === "Jane Q. Example")).toBe(true);
+    expect(m.some((x) => x.type === "firm" && /Example & Partners/.test(x.name))).toBe(true);
+    expect(m.some((x) => x.type === "attorney" && x.name === "John R. Sample")).toBe(true);
+    expect(m.some((x) => x.type === "mdl" && x.name === "MDL 3140" && x.externalId === "jpml:3140")).toBe(true);
+    expect(m.some((x) => x.type === "court" && x.externalId === "cl:court:flnd")).toBe(true);
     expect(m.some((x) => x.type === "agency")).toBe(true);
     const recall = { ...doc, kind: "recall" as const, tags: [], meta: { product: "Depo-Provera CI 150 mg/mL", recallingFirm: "Pfizer Inc.", entities: [] }, agencies: [] } as IntelDocument;
     const rm = extractMentions(recall, "");
@@ -194,33 +195,37 @@ describe("entities", () => {
     expect(judges.items.length).toBeGreaterThanOrEqual(3);
     expect(judges.items.every((i) => i.type === "judge")).toBe(true);
     expect(judges.counts.judge).toBe(judges.total);
-    const q = listEntities({ q: "gergel" });
-    expect(q.items.map((i) => i.id)).toContain(E.gergel);
-    expect(q.items[0].detail).toMatch(/District of South Carolina/);
-    expect(entityDocuments(E.mdl2873).length).toBeGreaterThan(2);
-    const r = rebuildEntities({ docIds: ["idoc_seed_afff_docket"] });
+    const q = listEntities({ q: "rodgers" });
+    expect(q.items.map((i) => i.id)).toContain(E.rodgers);
+    expect(q.items[0].detail).toMatch(/Northern District of Florida/);
+    expect(entityDocuments(E.mdl3140).length).toBeGreaterThan(2);
+    const r = rebuildEntities({ docIds: ["idoc_seed_depo_docket"] });
     expect(r.docs).toBe(1);
   });
 });
 
 describe("graph", () => {
   it("derives typed relations with weights and evidence and answers neighborhood queries", () => {
+    // Fictional counsel fixture (the sample corpus carries no counsel records): an appearance before the MDL judge.
+    const firm = upsertEntity({ type: "firm", name: "Example & Partners LLP" });
+    const atty = upsertEntity({ type: "attorney", name: "Jane Q. Example", attributes: { firmId: firm.id } });
+    upsertDocument({ sourceId: "isrc_sys_cl_dockets", adapter: "courtlistener-dockets", kind: "docket_entry", title: "Notice of appearance of Jane Q. Example (Example & Partners LLP) — test fixture", text: "NOTICE OF APPEARANCE of Jane Q. Example of Example & Partners LLP. Test fixture; not a real filing.", dates: { filed: "2025-03-03", event: "2025-03-03" }, externalId: "test:appearance:example", judgeIds: [E.rodgers], attorneyIds: [atty.id], firmIds: [firm.id], mdlId: E.mdl3140, confidence: 0.8 });
     const res = buildRelations({});
     expect(res.total).toBeGreaterThan(10);
-    const presides = relationsOf(E.gergel, { types: ["presides"] });
-    expect(presides.some((r) => r.to === E.mdl2873)).toBe(true);
-    const edge = presides.find((r) => r.to === E.mdl2873)!;
+    const presides = relationsOf(E.rodgers, { types: ["presides"] });
+    expect(presides.some((r) => r.to === E.mdl3140)).toBe(true);
+    const edge = presides.find((r) => r.to === E.mdl3140)!;
     expect(edge.weight).toBeGreaterThanOrEqual(2);
     expect(edge.evidence.length).toBeGreaterThan(0);
     expect(edge.confidence).toBeGreaterThan(0.5);
-    expect(relationsOf(E.london, { types: ["before_judge"] }).some((r) => r.to === E.gergel)).toBe(true);
-    expect(relationsOf(E.london, { types: ["employed_by"] }).some((r) => r.to === E.douglasLondon)).toBe(true);
-    expect(relationsOf(E.mdl2873, { types: ["transferred_to"] }).some((r) => r.to === E.dsc)).toBe(true);
+    expect(relationsOf(atty.id, { types: ["before_judge"] }).some((r) => r.to === E.rodgers)).toBe(true);
+    expect(relationsOf(atty.id, { types: ["employed_by"] }).some((r) => r.to === firm.id)).toBe(true);
+    expect(relationsOf(E.mdl3140, { types: ["transferred_to"] }).some((r) => r.to === E.flnd)).toBe(true);
     expect(relationsOf(E.fda, { types: ["regulates"] }).length).toBeGreaterThan(0);
-    const n1 = neighborhood(E.gergel, 1);
-    expect(n1.nodes.map((n) => n.id)).toContain(E.mdl2873);
+    const n1 = neighborhood(E.rodgers, 1);
+    expect(n1.nodes.map((n) => n.id)).toContain(E.mdl3140);
     expect(n1.edges.every((e) => n1.nodes.some((n) => n.id === e.from) && n1.nodes.some((n) => n.id === e.to))).toBe(true);
-    const n2 = neighborhood(E.gergel, 2, { limit: 200 });
+    const n2 = neighborhood(E.rodgers, 2, { limit: 200 });
     expect(n2.nodes.length).toBeGreaterThanOrEqual(n1.nodes.length);
     const again = buildRelations({});
     expect(again.created).toBe(0);
@@ -232,9 +237,9 @@ describe("graph", () => {
     const ids = new Set(g.nodes.map((n) => n.id));
     expect(g.links.every((l) => ids.has(l.source) && ids.has(l.target))).toBe(true);
     expect(g.nodes.every((n) => typeof n.degree === "number")).toBe(true);
-    const centered = graphExport({ entityId: E.gergel, depth: 1 });
-    expect(centered.center).toBe(E.gergel);
-    expect(centered.nodes.some((n) => n.id === E.gergel)).toBe(true);
+    const centered = graphExport({ entityId: E.rodgers, depth: 1 });
+    expect(centered.center).toBe(E.rodgers);
+    expect(centered.nodes.some((n) => n.id === E.rodgers)).toBe(true);
   });
 });
 
@@ -246,16 +251,16 @@ describe("trends", () => {
     expect(byCourt.series.every((s) => s.points.length === byCourt.months.length)).toBe(true);
     expect(byCourt.totals[0].count).toBeGreaterThan(0);
     const byMotion = buildTrends({ groupBy: "motion" });
-    expect(byMotion.totals.map((t) => t.label)).toContain("Summary judgment");
+    expect(byMotion.totals.map((t) => t.label)).toContain("Case management order");
     const byJudge = buildTrends({ groupBy: "judge" });
-    expect(byJudge.labelIds[intelEntities().get(E.gergel)!.name]).toBe(E.gergel);
-    const cmp = buildTrends({ groupBy: "judge", compare: [E.gergel] });
+    expect(byJudge.labelIds[intelEntities().get(E.rodgers)!.name]).toBe(E.rodgers);
+    const cmp = buildTrends({ groupBy: "judge", compare: [E.rodgers] });
     expect(cmp.series).toHaveLength(1);
     expect(stateOf({ courtId: "dsc" })).toBe("South Carolina");
     expect(stateOf({ court: "U.S. District Court for the Northern District of Florida" })).toBe("Florida");
   });
   it("detects anomalies over a fabricated docket burst and derives motion outcomes", () => {
-    const base = getDocument("idoc_seed_afff_entry_gcd")!;
+    const base = getDocument("idoc_seed_depo_entry_preemption")!;
     const docs: IntelDocument[] = [];
     let n = 0;
     for (let m = 1; m <= 9; m++) for (let k = 0; k < (m === 9 ? 10 : 1); k++) docs.push({ ...base, id: `fake_${n++}`, title: k % 2 ? "Order denying motion to dismiss" : "Order granting motion to dismiss", dates: { filed: `2024-0${m}-1${k % 9}` } });
@@ -281,27 +286,31 @@ describe("clusters", () => {
 
 describe("chronology", () => {
   it("merges docket, regulatory, recall, opinion and e-discovery events into a sorted sourced timeline", () => {
-    const c = buildChronology({ matterId: AFFF });
+    // The Valsara matter is a private arbitration with no public docket in the sample corpus: two fictional
+    // record fixtures (one above and one below the confidence gate) stand in for matter-linked intelligence.
+    upsertDocument({ sourceId: "isrc_sys_cl_dockets", adapter: "courtlistener-dockets", kind: "docket_entry", title: "Order on the Claimant's application for interim measures (test fixture)", text: "ORDER on the application for interim measures. Test fixture; not a real filing.", dates: { filed: today, event: today }, externalId: "test:vls:interim", matterIds: [VALSARA], confidence: 0.85 });
+    upsertDocument({ sourceId: "isrc_sys_cl_dockets", adapter: "courtlistener-dockets", kind: "docket_entry", title: "Notice of hearing on document production (test fixture)", text: "NOTICE of hearing. Test fixture; not a real filing.", dates: { filed: "2025-04-02", event: "2025-04-02" }, externalId: "test:vls:hearing", matterIds: [VALSARA], confidence: 0.5 });
+    const c = buildChronology({ matterId: VALSARA });
     expect(c.entries.length).toBeGreaterThan(5);
     expect(c.sources.intel).toBeGreaterThan(0);
     expect(c.sources.ediscovery).toBeGreaterThan(0);
     expect(c.entries.every((e, i) => i === 0 || e.at >= c.entries[i - 1].at)).toBe(true);
     expect(c.entries.every((e) => e.evidence.length > 0 && e.confidence > 0)).toBe(true);
     expect(c.entries.some((e) => e.kind === "docket")).toBe(true);
-    const mdl = buildChronology({ mdlId: E.mdl2873, includeEdiscovery: false });
+    const mdl = buildChronology({ mdlId: E.mdl3140, includeEdiscovery: false });
     expect(mdl.sources.ediscovery).toBe(0);
     expect(mdl.entries.length).toBeGreaterThan(3);
-    const fr = getDocument("idoc_seed_fr_tsca_pfas")!;
+    const fr = getDocument("idoc_seed_fr_plr")!;
     const entries = entriesFromDocument(fr);
     expect(entries[0].kind).toBe("regulatory");
     expect(entries[0].evidence[0].href).toMatch(/^\/intel\/documents\//);
-    expect(entriesFromDocument(getDocument("idoc_seed_judge_gergel")!)).toHaveLength(0);
+    expect(entriesFromDocument(getDocument("idoc_seed_judge_rodgers")!)).toHaveLength(0);
   });
   it("exports gate-passing entries to the e-discovery timeline once, as AI-created events with provenance", () => {
-    const before = db().timeline.count((e) => e.matterId === AFFF);
-    const r1 = exportChronologyToTimeline(AFFF);
+    const before = db().timeline.count((e) => e.matterId === VALSARA);
+    const r1 = exportChronologyToTimeline(VALSARA);
     expect(r1.created).toBeGreaterThan(0);
-    expect(db().timeline.count((e) => e.matterId === AFFF)).toBe(before + r1.created);
+    expect(db().timeline.count((e) => e.matterId === VALSARA)).toBe(before + r1.created);
     const ev = db().timeline.get(r1.eventIds[0])!;
     expect(ev.createdBy).toBe("ai");
     expect(ev.verified).toBe(false);
@@ -309,10 +318,10 @@ describe("chronology", () => {
     expect(ev.provenance?.verification?.method).toBe("schema");
     expect((ev.provenance?.confidence ?? 0) >= CONFIDENCE_GATE).toBe(true);
     expect(ev.sources[0].kind).toBe("external");
-    const r2 = exportChronologyToTimeline(AFFF);
+    const r2 = exportChronologyToTimeline(VALSARA);
     expect(r2.created).toBe(0);
     expect(r2.skippedDuplicates).toBeGreaterThanOrEqual(r1.created);
-    const strict = exportChronologyToTimeline(AFFF, { minConfidence: 0.99 });
+    const strict = exportChronologyToTimeline(VALSARA, { minConfidence: 0.99 });
     expect(strict.created).toBe(0);
     expect(strict.belowGate).toBeGreaterThan(0);
   });
@@ -320,15 +329,15 @@ describe("chronology", () => {
 
 describe("profiles", () => {
   it("builds a judge profile with counts, tendencies, related entities and a timeline", () => {
-    const p = entityProfile(E.gergel, { userId: USER })!;
+    const p = entityProfile(E.rodgers, { userId: USER })!;
     expect(p.counts.documents).toBeGreaterThan(3);
     expect(p.counts.byKind.docket_entry).toBeGreaterThan(0);
     expect(p.activity.points).toHaveLength(24);
-    expect(p.tendencies.some((t) => t.motion === "summary_judgment" && t.denied >= 1)).toBe(true);
-    expect(p.related.some((r) => r.entity.id === E.mdl2873)).toBe(true);
+    expect(Array.isArray(p.tendencies)).toBe(true); // outcome tendencies are covered by motionOutcomes above
+    expect(p.related.some((r) => r.entity.id === E.mdl3140)).toBe(true);
     expect(p.recent.length).toBeGreaterThan(0);
     expect(p.timeline.length).toBeGreaterThan(0);
-    expect(p.matters.map((m) => m.id)).toContain(AFFF);
+    expect(p.matters.map((m) => m.id)).toContain(DEPO);
     expect(p.watched).toBe(false);
   });
 });
@@ -341,9 +350,12 @@ describe("insights", () => {
     expect(kinds.has("chronology")).toBe(true);
     expect(kinds.has("trend")).toBe(true);
     expect(kinds.has("profile")).toBe(true);
-    expect(kinds.has("pattern")).toBe(true);
-    const afff = all.filter((i) => i.scope.matterId === AFFF);
-    expect(afff.length).toBeGreaterThan(1);
+    // Motion patterns need three rulings of one type; the trimmed sample corpus has none, so add fictional rulings.
+    for (let i = 0; i < 3; i++) upsertDocument({ sourceId: "isrc_sys_cl_dockets", adapter: "courtlistener-dockets", kind: "docket_entry", title: `Order granting motion to dismiss member case ${i + 1} (test fixture)`, text: "ORDER granting motion to dismiss. Test fixture; not a real filing.", dates: { filed: `2025-05-0${i + 1}`, event: `2025-05-0${i + 1}` }, externalId: `test:pattern:${i}`, judgeIds: [E.rodgers], mdlId: E.mdl3140, matterIds: [DEPO], confidence: 0.85 });
+    runAnalysis({ kinds: ["pattern"], enqueueVerify: false, audit: false });
+    expect(intelInsights().all().some((i) => i.kind === "pattern")).toBe(true);
+    const valsara = all.filter((i) => i.scope.matterId === DEPO);
+    expect(valsara.length).toBeGreaterThan(1);
     expect(all.every((i) => i.provenance.surface === "intel.analysis" && i.provenance.verification?.method === "schema")).toBe(true);
     // Deterministic analyses never claim model verification: the badge reads source-backed / partially verified until the claims sweep runs with a key.
     expect(all.every((i) => i.provenance.verification?.status === "unverified" || i.provenance.verification?.status === "partially-verified")).toBe(true);
@@ -352,12 +364,12 @@ describe("insights", () => {
     expect(analysisStatus().lastRun).toBeTruthy();
   });
   it("composes, stores idempotently, ranks, publishes and dismisses insights", () => {
-    const ev = [{ docId: "idoc_seed_afff_entry_gcd", quote: "denied summary judgment" }];
-    const draft = composeInsight({ kind: "pattern", scope: { matterId: AFFF, entityIds: [E.gergel] }, key: "test-low", title: "Low confidence test", summary: "s", data: {}, evidence: ev, confidence: 0.4 });
+    const ev = [{ docId: "idoc_seed_depo_entry_transfer", quote: "TRANSFER ORDER of the United States Judicial Panel" }];
+    const draft = composeInsight({ kind: "pattern", scope: { matterId: DEPO, entityIds: [E.rodgers] }, key: "test-low", title: "Low confidence test", summary: "s", data: {}, evidence: ev, confidence: 0.4 });
     expect(draft.status).toBe("draft");
     expect(draft.flags.some((f) => f.kind === "low_confidence")).toBe(true);
     expect(draft.provenance.review?.status).toBe("pending");
-    const ok = composeInsight({ kind: "pattern", scope: { matterId: AFFF, entityIds: [E.gergel] }, key: "test-ok", title: "Good test", summary: "s", data: {}, evidence: ev, confidence: 0.85 });
+    const ok = composeInsight({ kind: "pattern", scope: { matterId: DEPO, entityIds: [E.rodgers] }, key: "test-ok", title: "Good test", summary: "s", data: {}, evidence: ev, confidence: 0.85 });
     expect(ok.status).toBe("published");
     expect(ok.flags.some((f) => f.kind === "unverified")).toBe(false);
     expect(saveInsight(ok, { audit: false }).status).toBe("created");
@@ -370,25 +382,25 @@ describe("insights", () => {
     expect(pub.ok).toBe(false);
     expect(dismissInsight(ok.id)?.status).toBe("dismissed");
     expect(saveInsight({ ...ok, summary: "changed again" }, { audit: false }).insight.status).toBe("dismissed");
-    const ranked = rankInsights({ userId: USER, matterId: AFFF, limit: 5 });
+    const ranked = rankInsights({ userId: USER, matterId: DEPO, limit: 5 });
     expect(ranked.length).toBeGreaterThan(0);
     expect(ranked.every((i) => i.status === "published" || i.status === "verified")).toBe(true);
-    expect(ranked[0].scope.matterId === AFFF || !ranked[0].scope.matterId).toBe(true);
+    expect(ranked[0].scope.matterId === DEPO || !ranked[0].scope.matterId).toBe(true);
     const list = listInsights({ userId: USER, rank: true, limit: 3 });
     expect(list.items).toEqual(list.insights);
     expect(list.ranked).toBe(true);
   });
   it("raises watch and recent-activity alerts after new records arrive", () => {
-    const w = createWatch({ userId: USER, kind: "judge", target: E.gergel });
-    expect(watchedTargets(USER).has(E.gergel)).toBe(true);
-    upsertDocument({ sourceId: "isrc_sys_cl_dockets", adapter: "courtlistener-dockets", kind: "docket_entry", title: "Order granting motion to compel production of foam formulation records", text: "ORDER granting plaintiffs' motion to compel. Judge Gergel ordered production within 14 days.", dates: { filed: today, event: today }, externalId: `test:entry:${today}`, matterIds: [AFFF], judgeIds: [E.gergel], mdlId: E.mdl2873, entities: [{ type: "judge", name: "Richard M. Gergel", role: "presiding" }] });
+    const w = createWatch({ userId: USER, kind: "judge", target: E.rodgers });
+    expect(watchedTargets(USER).has(E.rodgers)).toBe(true);
+    upsertDocument({ sourceId: "isrc_sys_cl_dockets", adapter: "courtlistener-dockets", kind: "docket_entry", title: "Order granting motion to compel production of labeling history records", text: "ORDER granting plaintiffs' motion to compel. Judge Rodgers ordered production within 14 days.", dates: { filed: today, event: today }, externalId: `test:entry:${today}`, matterIds: [DEPO], judgeIds: [E.rodgers], mdlId: E.mdl3140, entities: [{ type: "judge", name: "M. Casey Rodgers", role: "presiding" }] });
     const r = runAnalysis({ enqueueVerify: false, audit: false });
     expect(r.entities.docs).toBeGreaterThanOrEqual(1);
     const alerts = intelInsights().find((i) => i.kind === "alert" && i.status !== "dismissed");
-    expect(alerts.some((i) => i.scope.userId === USER && i.scope.entityIds.includes(E.gergel))).toBe(true);
-    expect(alerts.some((i) => i.scope.matterId === AFFF && /new record/.test(i.title))).toBe(true);
+    expect(alerts.some((i) => i.scope.userId === USER && i.scope.entityIds.includes(E.rodgers))).toBe(true);
+    expect(alerts.some((i) => i.scope.matterId === DEPO && /new record/.test(i.title))).toBe(true);
     expect(listWatches({ userId: USER })[0].lastNotifiedAt).toBeTruthy();
-    expect(toggleEntityWatch(E.gergel, { userId: USER }).watched).toBe(false);
+    expect(toggleEntityWatch(E.rodgers, { userId: USER }).watched).toBe(false);
     expect(deleteWatch(w.id)).toBe(false);
     expect(() => createWatch({ userId: USER, kind: "attorney", target: "nope" })).toThrow();
   });
@@ -399,21 +411,21 @@ describe("context", () => {
     const u = buildUserContext(USER);
     expect(u.user.id).toBe(USER);
     expect(u.matters.length).toBeGreaterThan(0);
-    expect(u.matters.some((m) => m.id === AFFF && m.records > 0)).toBe(true);
+    expect(u.matters.some((m) => m.id === VALSARA && m.records > 0)).toBe(true);
     expect(Array.isArray(u.calendar) && Array.isArray(u.tasks)).toBe(true);
     expect(u.calendar.every((e) => e.daysUntil >= 0 && e.daysUntil <= 14)).toBe(true);
     expect(u.insights.length).toBeGreaterThan(0);
-    expect(u.matterActivity.some((a) => a.matterId === AFFF && a.docket.length > 0)).toBe(true);
+    expect(u.matterActivity.some((a) => a.matterId === VALSARA && a.docket.length > 0)).toBe(true);
     expect(u.team.every((p) => p.id !== USER)).toBe(true);
-    expect(insightsFor({ userId: USER, matterId: AFFF, limit: 2 }).length).toBeLessThanOrEqual(2);
+    expect(insightsFor({ userId: USER, matterId: DEPO, limit: 2 }).length).toBeLessThanOrEqual(2);
   });
   it("builds the matter context with resolved judge, MDL and court, chronology and insights", () => {
-    const m = buildMatterContext(AFFF, { userId: USER })!;
-    expect(m.judge?.id).toBe(E.gergel);
-    expect(m.mdl?.id).toBe(E.mdl2873);
-    expect(m.court?.id).toBe(E.dsc);
+    const m = buildMatterContext(DEPO, { userId: USER })!;
+    expect(m.judge?.id).toBe(E.rodgers);
+    expect(m.mdl?.id).toBe(E.mdl3140);
+    expect(intelEntities().get(m.court!.id)?.type).toBe("court"); // the most frequent court among the matter's records
     expect(m.chronology.length).toBeGreaterThan(0);
-    expect(m.insights.every((i) => i.scope.matterId === AFFF || !i.scope.matterId)).toBe(true);
+    expect(m.insights.every((i) => i.scope.matterId === DEPO || !i.scope.matterId)).toBe(true);
     expect(m.byKind.docket_entry).toBeGreaterThan(0);
     expect(buildMatterContext("m_missing")).toBeNull();
   });
@@ -425,21 +437,21 @@ describe("routes", () => {
     expect(list.status).toBe(200);
     expect(list.body.items.every((i: { type: string }) => i.type === "judge" || i.type === "mdl")).toBe(true);
     expect(list.body.counts.judge).toBeGreaterThan(0);
-    const prof = await json(await entityRoute.GET(req(`/entities/${E.gergel}`), params({ id: E.gergel })));
+    const prof = await json(await entityRoute.GET(req(`/entities/${E.rodgers}`), params({ id: E.rodgers })));
     expect(prof.status).toBe(200);
-    expect(prof.body.entity.id).toBe(E.gergel);
+    expect(prof.body.entity.id).toBe(E.rodgers);
     expect(prof.body.tendencies.length).toBeGreaterThan(0);
-    const compact = await json(await entityRoute.GET(req(`/entities/${E.gergel}?compact=1`), params({ id: E.gergel })));
+    const compact = await json(await entityRoute.GET(req(`/entities/${E.rodgers}?compact=1`), params({ id: E.rodgers })));
     expect(compact.body.counts.documents).toBeGreaterThan(0);
-    const on = await json(await entityRoute.POST(post(`/entities/${E.gergel}`, { action: "watch" }), params({ id: E.gergel })));
+    const on = await json(await entityRoute.POST(post(`/entities/${E.rodgers}`, { action: "watch" }), params({ id: E.rodgers })));
     expect(on.body.watched).toBe(true);
-    const off = await json(await entityRoute.POST(post(`/entities/${E.gergel}`, { action: "watch" }), params({ id: E.gergel })));
+    const off = await json(await entityRoute.POST(post(`/entities/${E.rodgers}`, { action: "watch" }), params({ id: E.rodgers })));
     expect(off.body.watched).toBe(false);
     expect((await entityRoute.GET(req("/entities/nope"), params({ id: "nope" }))).status).toBe(404);
-    const rel = await json(await relationsRoute.GET(req(`/relations?entityId=${E.gergel}&types=presides`)));
-    expect(rel.body.relations.some((r: { to: string; toName: string }) => r.to === E.mdl2873 && r.toName)).toBe(true);
-    const g = await json(await graphRoute.GET(req(`/graph?entityId=${E.gergel}&depth=1`)));
-    expect(g.body.nodes.some((n: { id: string }) => n.id === E.gergel)).toBe(true);
+    const rel = await json(await relationsRoute.GET(req(`/relations?entityId=${E.rodgers}&types=presides`)));
+    expect(rel.body.relations.some((r: { to: string; toName: string }) => r.to === E.mdl3140 && r.toName)).toBe(true);
+    const g = await json(await graphRoute.GET(req(`/graph?entityId=${E.rodgers}&depth=1`)));
+    expect(g.body.nodes.some((n: { id: string }) => n.id === E.rodgers)).toBe(true);
     const t = await json(await trendsRoute.GET(req("/trends?groupBy=court&top=3")));
     expect(t.body.series.length).toBeLessThanOrEqual(3);
     expect((await trendsRoute.GET(req("/trends?groupBy=nope"))).status).toBe(422);
@@ -448,10 +460,10 @@ describe("routes", () => {
     const c = await json(await clustersRoute.GET(req("/clusters?kinds=opinion&k=2&maxChunks=60")));
     expect(c.body.method).toBe("tfidf");
     expect((await chronologyRoute.GET(req("/chronology"))).status).toBe(422);
-    const ch = await json(await chronologyRoute.GET(req(`/chronology?matterId=${AFFF}&ediscovery=0`)));
+    const ch = await json(await chronologyRoute.GET(req(`/chronology?matterId=${DEPO}&ediscovery=0`)));
     expect(ch.body.sources.ediscovery).toBe(0);
     expect(ch.body.entries.length).toBeGreaterThan(0);
-    const exp = await json(await chronologyRoute.POST(post("/chronology", { matterId: AFFF })));
+    const exp = await json(await chronologyRoute.POST(post("/chronology", { matterId: DEPO })));
     expect(exp.status).toBe(200);
     expect(typeof exp.body.created).toBe("number");
     expect((await chronologyRoute.POST(post("/chronology", { matterId: "m_missing" }))).status).toBe(404);
@@ -471,19 +483,19 @@ describe("routes", () => {
     const dismissed = await json(await insightRoute.POST(post(`/insights/${id}`, { action: "dismiss" }), params({ id })));
     expect(dismissed.body.insight.status).toBe("dismissed");
     expect((await insightRoute.POST(post(`/insights/${id}`, { action: "nope" }), params({ id }))).status).toBe(422);
-    const created = await json(await watchesRoute.POST(post("/watches", { kind: "mdl", target: E.mdl2873 })));
+    const created = await json(await watchesRoute.POST(post("/watches", { kind: "mdl", target: E.mdl3140 })));
     expect(created.status).toBe(201);
     const watches = await json(await watchesRoute.GET(req(`/watches?userId=${USER}`)));
     expect(watches.body.watches.some((w: { id: string; entity: { name: string } | null }) => w.id === created.body.watch.id && w.entity?.name)).toBe(true);
-    const patched = await json(await watchRoute.PATCH(post(`/watches/${created.body.watch.id}`, { label: "AFFF MDL" }, "PATCH"), params({ id: created.body.watch.id })));
-    expect(patched.body.watch.label).toBe("AFFF MDL");
+    const patched = await json(await watchRoute.PATCH(post(`/watches/${created.body.watch.id}`, { label: "Depo-Provera MDL" }, "PATCH"), params({ id: created.body.watch.id })));
+    expect(patched.body.watch.label).toBe("Depo-Provera MDL");
     const del = await json(await watchRoute.DELETE(req(`/watches/${created.body.watch.id}`, { method: "DELETE" }), params({ id: created.body.watch.id })));
     expect(del.body.deleted).toBe(true);
     expect((await watchesRoute.POST(post("/watches", { kind: "judge" }))).status).toBe(422);
     const ctx = await json(await contextRoute.GET(req(`/context?userId=${USER}`)));
     expect(ctx.body.user.matters.length).toBeGreaterThan(0);
-    const mctx = await json(await contextRoute.GET(req(`/context?matterId=${AFFF}`)));
-    expect(mctx.body.matter.judge.id).toBe(E.gergel);
+    const mctx = await json(await contextRoute.GET(req(`/context?matterId=${DEPO}`)));
+    expect(mctx.body.matter.judge.id).toBe(E.rodgers);
     expect((await contextRoute.GET(req("/context?matterId=m_missing"))).status).toBe(404);
     const status = await json(await analysisRoute.GET());
     expect(status.body.entities).toBeGreaterThan(0);
@@ -491,7 +503,7 @@ describe("routes", () => {
     expect(run.status).toBe(200);
     expect(run.body.insights.total).toBeGreaterThan(0);
     expect((await analysisRoute.POST(post("/analysis", { run: "nope" }))).status).toBe(422);
-    const ent = await json(await entitiesRoute.POST(post("/entities", { action: "rebuild", docIds: ["idoc_seed_afff_docket"] })));
+    const ent = await json(await entitiesRoute.POST(post("/entities", { action: "rebuild", docIds: ["idoc_seed_depo_docket"] })));
     expect(ent.body.entities.docs).toBe(1);
   });
 });
@@ -515,9 +527,9 @@ describe("research engine feed and agent tool", () => {
   });
   it("answers the agents' get_intel_context tool with matter, user, entity and passage context", async () => {
     const ctx = { emit: () => {}, state: {} };
-    const m = (await getIntelContextTool.execute({ matter_id: AFFF, query: "government contractor defense", entity_id: E.gergel, limit: 3 }, ctx)) as Record<string, unknown>;
+    const m = (await getIntelContextTool.execute({ matter_id: DEPO, query: "meningioma failure to warn preemption", entity_id: E.rodgers, limit: 3 }, ctx)) as Record<string, unknown>;
     const matter = m.matter as { judge?: { id: string }; recent_docket: unknown[]; chronology: unknown[] };
-    expect(matter.judge?.id).toBe(E.gergel);
+    expect(matter.judge?.id).toBe(E.rodgers);
     expect(matter.chronology.length).toBeGreaterThan(0);
     expect((m.hits as { passage: string }[]).length).toBeGreaterThan(0);
     expect((m.entity as { tendencies: unknown[] }).tendencies.length).toBeGreaterThan(0);

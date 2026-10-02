@@ -83,6 +83,6 @@ describe("a new matter with no documents", () => {
     expect(listIssueCodes(M).map((c) => c.code).sort()).toEqual(["CONF", "HOT", "NR", "PRIV-AC", "PRIV-WP", "RESP"]);
     expect(addStandardIssueCodes(M).created).toHaveLength(0);
     // Nothing case-specific leaks into a new matter.
-    expect(listIssueCodes(M).some((c) => /TOX|PFOS|AFFF|MFC/.test(`${c.code} ${c.label}`))).toBe(false);
+    expect(listIssueCodes(M).some((c) => /TOX|PFOS|VALSARA|MFC/.test(`${c.code} ${c.label}`))).toBe(false);
   });
 });

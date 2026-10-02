@@ -36,8 +36,8 @@ import { digestDeposition, preserveQualifications } from "@/modules/ediscovery/a
 import { segmentTranscript } from "@/modules/ediscovery/analysis/transcript";
 import { getProvenance } from "@/lib/integrity/store";
 
-const ADMISSION = "Yes. I knew in March that the Whitfield report was final.";
-const QUALIFICATION = "I need to correct my answer at page 20: in March the Whitfield report was only a draft; it became final in June.";
+const ADMISSION = "Yes. I knew in March that the Sundaram report was final.";
+const QUALIFICATION = "I need to correct my answer at page 20: in March the Sundaram report was only a draft; it became final in June.";
 
 function longDeposition(id: string): Deposition {
   const transcript: DepositionQA[] = [];
@@ -45,12 +45,12 @@ function longDeposition(id: string): Deposition {
     for (const line of [1, 13]) {
       let answer = `On page ${page} the witness described the plant's sampling schedule, the laboratory turnaround and the reporting chain in general terms without committing to dates or to the content of any report. He explained that the laboratory batches arrived weekly, that a technician logged each one, and that summaries went first to the plant manager and later to the regional environmental group for review.`;
       let question = `Directing your attention to the sampling records discussed at page ${page}, what did the laboratory send you and when?`;
-      if (page === 20 && line === 1) { question = "Did you know in March that the Whitfield report was final?"; answer = ADMISSION; }
+      if (page === 20 && line === 1) { question = "Did you know in March that the Sundaram report was final?"; answer = ADMISSION; }
       if (page === 220 && line === 1) { question = "Is there anything you want to change about your earlier testimony?"; answer = QUALIFICATION; }
       transcript.push({ page, line, question, answer });
     }
   }
-  return { id, matterId: MATTERS.afff, witnessId: "w_test", witnessName: "Helen Testwitness", date: "2026-06-01", takenBy: "Plaintiffs", pages: 230, transcript, status: "transcribed" };
+  return { id, matterId: MATTERS.valsara, witnessId: "w_test", witnessName: "Helen Testwitness", date: "2026-06-01", takenBy: "Plaintiffs", pages: 230, transcript, status: "transcribed" };
 }
 
 beforeAll(() => {
@@ -68,9 +68,9 @@ function segmentFake(fail?: (input: string) => boolean) {
   return (c: Call) => {
     const input = String(c.input);
     if (fail?.(input)) throw new Error("provider_unavailable: window failed");
-    const admissions = input.includes(ADMISSION) ? [{ cite: "20:01", text: "Knew in March the Whitfield report was final." }] : [];
+    const admissions = input.includes(ADMISSION) ? [{ cite: "20:01", text: "Knew in March the Sundaram report was final." }] : [];
     const qualifications = input.includes(QUALIFICATION) ? [{ cite: "220:01", text: "Corrected p.20: in March the report was only a draft; final in June.", qualifies: "the admission at 20:01" }] : [];
-    return { summary: "Window summary.", admissions, qualifications, themes: ["Whitfield report status"], credibilityNotes: [], followUps: [] };
+    return { summary: "Window summary.", admissions, qualifications, themes: ["Sundaram report status"], credibilityNotes: [], followUps: [] };
   };
 }
 
@@ -89,7 +89,7 @@ describe("whole-transcript deposition digest", () => {
     calls.length = 0;
     script.deposition_segment = segmentFake();
     // The synthesis keeps only the early admission — the counterevidence scan must restore the qualification.
-    script.deposition_digest = () => ({ summary: "The witness admitted knowing the report was final in March (20:01).", keyAdmissions: [{ cite: "20:01", text: "Knew in March the Whitfield report was final." }], themes: ["report status"], credibilityNotes: [], followUps: ["Ask about the June finalisation (220:01)"], confidence: 0.8 });
+    script.deposition_digest = () => ({ summary: "The witness admitted knowing the report was final in March (20:01).", keyAdmissions: [{ cite: "20:01", text: "Knew in March the Sundaram report was final." }], themes: ["report status"], credibilityNotes: [], followUps: ["Ask about the June finalisation (220:01)"], confidence: 0.8 });
     const d = await digestDeposition("dep_test_long", { force: true });
     const segmentCalls = calls.filter((c) => c.name === "deposition_segment");
     expect(segmentCalls.length).toBeGreaterThan(1);
@@ -115,7 +115,7 @@ describe("whole-transcript deposition digest", () => {
 
   it("an unanalysed window makes the digest partial: it says so and is never labelled verified", async () => {
     script.deposition_segment = segmentFake((input) => input.includes(QUALIFICATION));
-    script.deposition_digest = () => ({ summary: "The witness admitted knowing the report was final in March (20:01).", keyAdmissions: [{ cite: "20:01", text: "Knew in March the Whitfield report was final." }], themes: [], credibilityNotes: [], followUps: [], confidence: 0.9 });
+    script.deposition_digest = () => ({ summary: "The witness admitted knowing the report was final in March (20:01).", keyAdmissions: [{ cite: "20:01", text: "Knew in March the Sundaram report was final." }], themes: [], credibilityNotes: [], followUps: [], confidence: 0.9 });
     const d = await digestDeposition("dep_test_long_fail", { force: true });
     expect(d.coverage?.complete).toBe(false);
     expect(d.coverage?.failed).toBe(1);

@@ -48,7 +48,7 @@ export function loadCases(): EvalCase[] {
   return fs.readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort().map((f) => JSON.parse(fs.readFileSync(path.join(CASES_DIR, f), "utf8")) as EvalCase);
 }
 
-const TENANT = "seeger-weiss";
+const TENANT = "mehra-rao";
 const scope = (...matterIds: string[]): MatterScope => ({ tenantId: TENANT, matterIds });
 const principal = (roles: Role[], matterIds: Principal["matterIds"] = "*"): Principal => ({ id: `eval_${roles.join("_")}`, name: roles.join("+"), tenantId: TENANT, roles, matterIds, source: "header" });
 
@@ -92,7 +92,7 @@ const EXECUTORS: Record<string, Executor> = {
     k.check("early cite resolves to page 20", early.state === "resolved" && early.ref?.page === 20, { state: early.state, page: early.ref?.page });
     k.check("late cite resolves to page 220 (coverage is not a transcript prefix)", late.state === "resolved" && late.ref?.page === 220 && late.ref?.id === c.input.depositionId, { state: late.state, page: late.ref?.page, id: late.ref?.id });
     if (!modelAvailable()) { k.skip("[model] verifyClaims status is not verified"); k.skip("[model] page-20 passage alone does not support the unqualified claim"); return; }
-    const sources = (c.input.sources as { cite: string; text: string }[]).map((x, i) => ({ kind: "deposition" as const, id: c.input.depositionId as string, matterId: c.input.matterId as string, witness: "Gregory Hale", page: i === 0 ? 20 : 220, title: x.cite, text: x.text }));
+    const sources = (c.input.sources as { cite: string; text: string }[]).map((x, i) => ({ kind: "deposition" as const, id: c.input.depositionId as string, matterId: c.input.matterId as string, witness: "Girish Hegde", page: i === 0 ? 20 : 220, title: x.cite, text: x.text }));
     const v = await verifyClaims({ artifactText: c.input.artifact as string, artifactHash: artifactHashSync(c.input.artifact as string), sources, scope: s });
     k.check("[model] verifyClaims status is not verified", v.status !== "verified", v.status);
     const supportedByEarlyOnly = v.claims.some((cl) => cl.support === "supported" && cl.evidence.every((e) => e.page === 20));
@@ -114,20 +114,20 @@ const EXECUTORS: Record<string, Executor> = {
   async "cross-matter-name-collision"(c, k) {
     const A = c.input.matterA as string;
     const B = c.input.matterB as string;
-    const ng: Deposition = { id: "dep_eval_ng_hale", matterId: B, witnessId: PEOPLE.gregoryHale, witnessName: c.input.witnessInB as string, date: "2026-01-01", takenBy: "eval", volume: 1, pages: 80, transcript: [], exhibits: [], status: "transcribed" };
+    const ng: Deposition = { id: "dep_eval_ng_hale", matterId: B, witnessId: PEOPLE.girishHegde, witnessName: c.input.witnessInB as string, date: "2026-01-01", takenBy: "eval", volume: 1, pages: 80, transcript: [], exhibits: [], status: "transcribed" };
     db().depositions.put(ng);
     try {
       const inA = resolveCitation(c.input.cite as string, scope(A));
       const inB = resolveCitation(c.input.cite as string, scope(B));
       const both = resolveCitation(c.input.cite as string, scope(A, B));
-      k.check("scope A binds only A's Hale", inA.state === "resolved" && inA.ref?.matterId === A, { state: inA.state, matterId: inA.ref?.matterId, id: inA.ref?.id });
-      k.check("scope B binds only B's Hale", inB.state === "resolved" && inB.ref?.matterId === B && inB.ref?.id === ng.id, { state: inB.state, matterId: inB.ref?.matterId });
+      k.check("scope A binds only A's Hegde", inA.state === "resolved" && inA.ref?.matterId === A, { state: inA.state, matterId: inA.ref?.matterId, id: inA.ref?.id });
+      k.check("scope B binds only B's Hegde", inB.state === "resolved" && inB.ref?.matterId === B && inB.ref?.id === ng.id, { state: inB.state, matterId: inB.ref?.matterId });
       k.check("scope A+B is requires_review with no ref", both.state === "requires_review" && both.ref === undefined, { state: both.state, reason: both.reason });
       const p = principal(["associate"], c.input.principalWithAccessTo as string[]);
       const deny = authorize({ principal: p, action: "read", resource: { kind: "deposition", id: ng.id, matterId: B } });
       k.check("policy denies B's deposition to a principal without access to B", deny.allow === false && /no access to matter/.test(deny.reason), deny.reason);
       k.check("scope narrows to A, never widens", JSON.stringify(narrowScope(p, [A, B]).matterIds) === JSON.stringify([A]), narrowScope(p, [A, B]));
-      k.throws("binding B's resolution to A's deposition throws", () => assertNoSubstitution(inB, { kind: "deposition", id: "dep_afff_hale_v1", matterId: A }), EvidenceSubstitutionError);
+      k.throws("binding B's resolution to A's deposition throws", () => assertNoSubstitution(inB, { kind: "deposition", id: "dep_vls_hale_v1", matterId: A }), EvidenceSubstitutionError);
     } finally {
       db().depositions.delete(ng.id);
     }
@@ -173,7 +173,7 @@ const EXECUTORS: Record<string, Executor> = {
     ensureTrust(id, h1, "1");
     recordSources(id, [source], { read: true });
     recordVerification(id, verdict(h1));
-    const approved = recordReview(id, { reviewerId: PEOPLE.jordanWhitfield, decision: "approved", artifactVersion: "1", artifactHash: h1, at: new Date().toISOString() });
+    const approved = recordReview(id, { reviewerId: PEOPLE.arjunMehra, decision: "approved", artifactVersion: "1", artifactHash: h1, at: new Date().toISOString() });
     k.check("v1 verified and approved → human_approved", approved.state === "human_approved", approved.state);
     const rebound = touchArtifact(id, h2, "2");
     k.check("edit rebinds to the new hash and drops to source_linked", rebound.artifactHash === h2 && rebound.state === "source_linked", { hash: rebound.artifactHash.slice(0, 12), state: rebound.state });
@@ -187,7 +187,7 @@ const EXECUTORS: Record<string, Executor> = {
   async "privilege-cc"(c, k) {
     const cc = db().edocs.get(c.input.ccDocument as string)!;
     const priv = db().edocs.get(c.input.privilegedDocument as string)!;
-    k.check("fixture: cc document has counsel on cc and no privilege coding", (cc.cc ?? []).some((x) => /Kaine|Suarez/.test(x)) && cc.coding.privileged !== true, { cc: cc.cc, privileged: cc.coding.privileged });
+    k.check("fixture: cc document has counsel on cc and no privilege coding", (cc.cc ?? []).some((x) => /Kapur|Sood/.test(x)) && cc.coding.privileged !== true, { cc: cc.cc, privileged: cc.coding.privileged });
     k.check("fixture: privileged document is coded privileged", priv.coding.privileged === true);
     k.check("sensitivityOf(cc document) === normal", sensitivityOf(cc) === "normal", sensitivityOf(cc));
     k.check("documentResource(privileged).sensitivity === privileged", documentResource(priv).sensitivity === "privileged");
@@ -203,13 +203,15 @@ const EXECUTORS: Record<string, Executor> = {
   async "adverse-authority"(c, k) {
     const s = scope(c.input.matterId as string);
     const cite = resolveCitation(c.input.contraryAuthority as string, s);
-    k.check("contrary authority is in the local record and resolves in scope", cite.state === "resolved" && /Boyle/.test(cite.ref?.title ?? ""), { state: cite.state, title: cite.ref?.title });
+    const title = c.input.contraryTitle as string;
+    const short = title.split(" v. ")[0];
+    k.check("contrary authority is in the local record and resolves in scope", cite.state === "resolved" && (cite.ref?.title ?? "").includes(short), { state: cite.state, title: cite.ref?.title });
     const tags = tagHighRisk("The adverse controlling authority is distinguishable on its facts.");
     k.check("adverse-authority language is tagged high-risk", tags.includes("adverse_authority"), tags);
-    if (!modelAvailable()) { k.skip("[model] an answer that ignores Boyle is not verified against Boyle's text"); return; }
-    const boyle = "Liability for design defects in military equipment cannot be imposed, pursuant to state law, when (1) the United States approved reasonably precise specifications; (2) the equipment conformed to those specifications; and (3) the supplier warned the United States about the dangers in the use of the equipment that were known to the supplier but not to the United States.";
-    const v = await verifyClaims({ artifactText: "No controlling authority bars a state-law design-defect claim against a military equipment supplier.", artifactHash: artifactHashSync("adverse"), sources: [{ kind: "opinion", id: cite.ref?.id ?? "boyle", title: c.input.contraryTitle as string, citation: c.input.contraryAuthority as string, text: boyle }], scope: s });
-    k.check("[model] an answer that ignores Boyle is not verified against Boyle's text", v.status !== "verified", { status: v.status });
+    if (!modelAvailable()) { k.skip(`[model] an answer that ignores ${short} is not verified against its text`); return; }
+    const wyeth = "Federal law does not pre-empt a state-law failure-to-warn claim against a brand-name drug manufacturer. Under the changes-being-effected regulation the manufacturer could unilaterally strengthen its warning, and absent clear evidence that the FDA would not have approved a change to the label, it was not impossible to comply with both federal and state requirements.";
+    const v = await verifyClaims({ artifactText: "No controlling authority rejects an impossibility-preemption defense to a state-law failure-to-warn claim against a drug manufacturer.", artifactHash: artifactHashSync("adverse"), sources: [{ kind: "opinion", id: cite.ref?.id ?? "wyeth", title, citation: c.input.contraryAuthority as string, text: wyeth }], scope: s });
+    k.check(`[model] an answer that ignores ${short} is not verified against its text`, v.status !== "verified", { status: v.status });
   },
 
   async "high-risk-deadline"(c, k) {
@@ -232,14 +234,14 @@ const EXECUTORS: Record<string, Executor> = {
 
   async "oversized-artifact"(c, k) {
     const n = c.input.paragraphs as number;
-    const text = Array.from({ length: n }, (_, i) => `Paragraph ${i}: Voss Dep. ${(i % 240) + 1}:${(i % 24) + 1} and the memo MFC-00${String(41877 + (i % 90)).padStart(5, "0")}; also MFC-9${String(i).padStart(6, "0")}. `).join("\n");
+    const text = Array.from({ length: n }, (_, i) => `Paragraph ${i}: Vasudevan Dep. ${(i % 240) + 1}:${(i % 24) + 1} and the memo MFC-00${String(41877 + (i % 90)).padStart(5, "0")}; also MFC-9${String(i).padStart(6, "0")}. `).join("\n");
     k.check("artifact is at least 200k characters", text.length >= (c.input.minChars as number), text.length);
     const sync = artifactHashSync(text);
     const async_ = await artifactHash(text);
     k.check("sync and async hashes agree", sync === async_, sync.slice(0, 12));
     const started = Date.now();
     let check;
-    try { check = checkCitations(text, scope(MATTERS.afff), sync); } catch (e) { k.check("checkCitations does not throw", false, (e as Error).message); return; }
+    try { check = checkCitations(text, scope(MATTERS.valsara), sync); } catch (e) { k.check("checkCitations does not throw", false, (e as Error).message); return; }
     const ms = Date.now() - started;
     k.check(`checkCitations completes within ${c.input.budgetMs}ms`, ms < (c.input.budgetMs as number), `${ms}ms, ${check.citations.length} cites`);
     k.check("resolved and unresolved cites are both counted", check.resolved > 0 && check.unresolved > 0, { resolved: check.resolved, unresolved: check.unresolved, review: check.requiresReview });
@@ -254,8 +256,8 @@ const EXECUTORS: Record<string, Executor> = {
     k.check("no parsed citation carries injected fields", hostile.every((x) => !("state" in x) && !("privileged" in x)));
     const check = checkCitations(c.input.documentText as string, s, "eval-hostile");
     const byRaw = (raw: string) => check.citations.find((x) => x.raw === raw);
-    k.check("MFC-0041877 and Voss Dep. 45:12 stay resolved; MFC-9999999 stays unresolved", byRaw("MFC-0041877")?.state === "resolved" && byRaw("Voss Dep. 45:12")?.state === "resolved" && byRaw("MFC-9999999")?.state === "unresolved", check.citations.map((x) => [x.raw, x.state]));
-    const doc = db().edocs.get("ed_afff_0001")!;
+    k.check("MFC-0041877 and Vasudevan Dep. 45:12 stay resolved; MFC-9999999 stays unresolved", byRaw("MFC-0041877")?.state === "resolved" && byRaw("Vasudevan Dep. 45:12")?.state === "resolved" && byRaw("MFC-9999999")?.state === "unresolved", check.citations.map((x) => [x.raw, x.state]));
+    const doc = db().edocs.get("ed_vls_0001")!;
     k.check("sensitivity comes from coding, not from text", sensitivityOf({ ...doc, text: c.input.documentText as string, coding: { ...doc.coding, privileged: null } } as EDocument) === "normal");
     k.throws("substitution guard still throws for the injected mapping", () => assertNoSubstitution(byRaw("MFC-9999999")!, { kind: "document", id: doc.id, matterId: doc.matterId }), EvidenceSubstitutionError);
   },

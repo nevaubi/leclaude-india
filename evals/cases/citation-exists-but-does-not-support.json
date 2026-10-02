@@ -4,11 +4,11 @@
   "title": "Authority exists but the proposition is wrong",
   "constitution": "§23 separate states (citation location valid ≠ proposition supported); §56 citation existence treated as proposition support is forbidden",
   "input": {
-    "matterId": "m_afff_2873",
-    "cite": "550 U.S. 544",
-    "claim": "Twombly holds that a complaint must prove its allegations by a preponderance of the evidence at the pleading stage.",
-    "sourceText": "Factual allegations must be enough to raise a right to relief above the speculative level. A complaint must contain enough facts to state a claim to relief that is plausible on its face.",
-    "modelQuote": "a complaint must prove its allegations by a preponderance of the evidence"
+    "matterId": "m_depo_provera_3140",
+    "cite": "139 S. Ct. 1668",
+    "claim": "Albrecht holds that whether the FDA would have rejected a label change is a question of fact for the jury.",
+    "sourceText": "The question of agency disapproval is primarily one of law for a judge to decide. Clear evidence is evidence that shows the court that the drug manufacturer fully informed the FDA of the justifications for the warning required by state law and that the FDA, in turn, informed the drug manufacturer that the FDA would not approve changing the drug's label to include that warning.",
+    "modelQuote": "a question of fact for the jury"
   },
   "expected": "The citation resolves (the authority exists), but the claim is unsupported: the quote offered for it does not appear in the source, so the guard demotes it, and the verdict is not 'verified'.",
   "passCriteria": [

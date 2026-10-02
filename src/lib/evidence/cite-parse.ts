@@ -1,9 +1,9 @@
 /**
  * Citation parsing (constitution §23 exact source identity). Pure and client-safe.
  *
- * Recognizes Bates numbers and ranges (AFFF-0001234–0001240, DEF_00012, MFC-0041877 – MFC-0041880), deposition
- * page:line cites (Smith Dep. 45:12–46:3, Deposition of Helen Voss, 45:12, Voss Tr. Vol. 2, 12:4), exhibit
- * references (Ex. 12, Exhibit Voss-3, Voss Ex. 3), docket entries (ECF No. 2600, Dkt. 15, D.E. 12) and reporter
+ * Recognizes Bates numbers and ranges (ABC-0001234–0001240, DEF_00012, MFC-0041877 – MFC-0041880), deposition
+ * page:line cites (Smith Dep. 45:12–46:3, Deposition of Hema Vasudevan, 45:12, Vasudevan Tr. Vol. 2, 12:4), exhibit
+ * references (Ex. 12, Exhibit Vasudevan-3, Vasudevan Ex. 3), docket entries (ECF No. 2600, Dkt. 15, D.E. 12) and reporter
  * citations (550 U.S. 544, 860 F.3d 249, 716 F. Supp. 2d 100). Parsing never touches the record; resolution
  * against the record happens in `resolve.ts`, strictly inside a MatterScope.
  *
@@ -41,7 +41,7 @@ const NOT_REPORTERS: ReadonlySet<string> = new Set(["Jan.", "Feb.", "Mar.", "Apr
 
 const ROMAN: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10 };
 
-/** Words that precede a cite but are not part of a witness name ("See Voss Dep.", "Compare Hale Tr."). */
+/** Words that precede a cite but are not part of a witness name ("See Vasudevan Dep.", "Compare Hegde Tr."). */
 const LEAD_IN_RE = /^(?:(?:See|Cf\.?|Compare|Also|And|But|Per|At|In|On|The|Id\.?|Accord|Citing|Quoting|Contra|E\.g\.?|Generally|Trial|Hearing|Plaintiffs?|Defendants?|Joint|Pl\.?|Def\.?)\s+)+/i;
 
 /** Strip lead-in words from a captured name; returns the name and how many characters were dropped. */

@@ -64,7 +64,7 @@ export function mentionsFromCounselString(s: string): IntelEntityMention[] {
   return dedupeMentions(out);
 }
 
-/** Split a CourtListener "judge" field ("Gergel; Richard Mark Gergel") into judge mentions. */
+/** Split a CourtListener "judge" field ("Rodgers; Margaret Catharine Rodgers") into judge mentions. */
 export function mentionsFromJudgeField(field: string | undefined | null): IntelEntityMention[] {
   if (!field) return [];
   return dedupeMentions(field.split(/;|,\s+and\s+|\s+and\s+|\//).map((n) => mention("judge", n)));

@@ -53,7 +53,7 @@ export function TermReportDialog({ open, onOpenChange }: { open: boolean; onOpen
         <DialogHeader><DialogTitle>Search-term report</DialogTitle><DialogDescription>One term or query per line. Hits count occurrences; families add parents and attachments of the hits.</DialogDescription></DialogHeader>
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
           <div className="space-y-2">
-            <Field label="Terms" hint={`${terms.length} term${terms.length === 1 ? "" : "s"}`}><Textarea value={text} onChange={(e) => setText(e.target.value)} className="min-h-[200px] font-mono text-[12px]" placeholder={'bioassay\n"monitoring well"\nliver w/5 study\ncustodian:kaine priv:yes'} spellCheck={false} /></Field>
+            <Field label="Terms" hint={`${terms.length} term${terms.length === 1 ? "" : "s"}`}><Textarea value={text} onChange={(e) => setText(e.target.value)} className="min-h-[200px] font-mono text-[12px]" placeholder={'bioassay\n"monitoring well"\nliver w/5 study\ncustodian:kapur priv:yes'} spellCheck={false} /></Field>
             <label className="flex items-center gap-2 text-[12px]"><Checkbox size="sm" checked={scoped} onCheckedChange={(v) => setScoped(!!v)} /> Limit to the current view and facets</label>
             <label className="flex items-center gap-2 text-[12px]"><Checkbox size="sm" checked={save} onCheckedChange={(v) => setSave(!!v)} /> Keep this report in the matter</label>
           </div>

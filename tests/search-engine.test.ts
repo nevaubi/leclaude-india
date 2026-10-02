@@ -430,14 +430,14 @@ describe("research run (fakes, no key needed)", () => {
 
 describe("seeded threads", () => {
   it("derives one thread per cached run with citation numbers mapped to hits", () => {
-    const t = getThread("thr_seed_pfas_ftw_01")!;
+    const t = getThread("thr_seed_vls_ld_01")!;
     expect(t).toBeTruthy();
     expect(t.messages.length).toBe(2);
     expect(t.sources.length).toBe(7);
-    expect(t.messages[1].citeMap?.[2]).toBe("caselaw:112120");
+    expect(t.messages[1].citeMap?.[2]).toBe("caselaw:kailash-nath-dda");
     expect(t.messages[1].provenance?.surface).toBe("research");
-    expect(SEARCH_SEED_IDS.threads).toContain("thr_seed_mcl_08");
-    expect(searchRuns().get("run_seed_pfas_ftw_01")?.threadId).toBe("thr_seed_pfas_ftw_01");
+    expect(SEARCH_SEED_IDS.threads).toContain("thr_seed_vls_polluter_08");
+    expect(searchRuns().get("run_seed_vls_ld_01")?.threadId).toBe("thr_seed_vls_ld_01");
     const hit: SearchHit = { ...sc };
     expect(citeMapFromSynthesis("## Sources\n[1] Meera Nair v. State of Karnataka, 2023 INSC 212\n[2] nothing", [hit])).toEqual({ 1: "judgment:j_sc_meera_nair" });
   });

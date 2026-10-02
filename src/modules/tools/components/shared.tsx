@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { toast } from "sonner";
-import { AlertTriangle, Copy } from "lucide-react";
+import { AlertTriangle, ChevronRight, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -178,9 +178,9 @@ export function CalendarSelect({ id, value, onChange, cals, label = "Court calen
 export function KeyDate({ label, date, sub, tone }: { label: string; date?: string; sub?: React.ReactNode; tone?: "warning" | "destructive" }) {
   if (!date) return null;
   return (
-    <div className="min-w-0">
-      <div className="text-[11.5px] text-muted-foreground">{label}</div>
-      <div className={cn("mt-0.5 text-[20px] font-semibold tracking-[-0.01em] tabular", tone === "destructive" && "text-destructive")}>{formatIsoDate(date)}</div>
+    <div className="min-w-0 rounded-md border border-primary/15 bg-primary/5 px-3 py-2">
+      <div className="text-[11.5px] font-medium text-muted-foreground">{label}</div>
+      <div className={cn("mt-0.5 text-[20px] font-semibold tracking-[-0.01em] text-primary tabular", tone === "destructive" && "text-destructive")}>{formatIsoDate(date)}</div>
       <div className="mt-0.5 text-[11.5px] text-muted-foreground tabular">{date}{sub ? <> · {sub}</> : null}</div>
     </div>
   );
@@ -189,9 +189,11 @@ export function KeyDate({ label, date, sub, tone }: { label: string; date?: stri
 export function StepsList({ steps }: { steps: LimitationStep[] }) {
   if (!steps.length) return null;
   return (
-    <section aria-label="Computation steps" className="mt-4">
-      <h4 className="mb-1.5 text-[12px] font-medium text-muted-foreground">Steps</h4>
-      <ol className="divide-y rounded-md border">
+    <details className="group mt-4" aria-label="Computation steps">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-[12px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />Show working ({steps.length} {steps.length === 1 ? "step" : "steps"})
+      </summary>
+      <ol className="mt-2 divide-y rounded-md border bg-surface-quiet">
         {steps.map((s, i) => (
           <li key={i} className="grid grid-cols-[20px_minmax(0,1fr)] gap-2 px-3 py-2 text-[12.5px] leading-snug">
             <span className="text-muted-foreground tabular">{i + 1}.</span>
@@ -202,7 +204,7 @@ export function StepsList({ steps }: { steps: LimitationStep[] }) {
           </li>
         ))}
       </ol>
-    </section>
+    </details>
   );
 }
 
@@ -230,8 +232,8 @@ export function Caveats({ uncertain, notes }: { uncertain: string[]; notes: stri
 export function ResultCard({ title, status, copyText, children }: { title: React.ReactNode; status?: string; copyText: string | null; children: React.ReactNode }) {
   const id = React.useId();
   return (
-    <section aria-labelledby={id} aria-live="polite" data-result className="rounded-lg border bg-card">
-      <header className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+    <section aria-labelledby={id} aria-live="polite" data-result className="overflow-hidden rounded-lg border bg-card shadow-sm">
+      <header className="flex flex-wrap items-center gap-2 border-b bg-surface-quiet px-4 py-2">
         <h3 id={id} className="min-w-0 truncate text-[13px] font-medium">{title}</h3>
         {status ? <StatusChip status={status} /> : null}
         <div className="flex-1" />
@@ -243,14 +245,14 @@ export function ResultCard({ title, status, copyText, children }: { title: React
 }
 
 export function Placeholder({ children }: { children: React.ReactNode }) {
-  return <div role="status" className="rounded-lg border border-dashed px-4 py-8 text-center text-[12.5px] text-muted-foreground">{children}</div>;
+  return <div role="status" className="rounded-lg border border-dashed bg-surface-quiet px-4 py-8 text-center text-[12.5px] text-muted-foreground">{children}</div>;
 }
 
 export function ToolHeader({ title, description }: { title: string; description: React.ReactNode }) {
   return (
-    <div className="mb-4">
-      <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
-      <p className="mt-0.5 max-w-[72ch] text-[12.5px] leading-snug text-muted-foreground">{description}</p>
+    <div className="mb-4 border-b pb-3">
+      <h2 className="text-[16px] font-semibold tracking-[-0.01em]">{title}</h2>
+      <p className="mt-1 max-w-[72ch] text-[12.5px] leading-snug text-muted-foreground">{description}</p>
     </div>
   );
 }

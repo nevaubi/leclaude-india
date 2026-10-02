@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { ChevronRight } from "lucide-react";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Chip } from "@/components/ui/misc";
 import { isValidIsoDate } from "@/lib/india/holidays";
@@ -49,9 +50,9 @@ export function LimitationPanel() {
 
   return (
     <div>
-      <ToolHeader title="Limitation calculator" description="Last day for filing under a coded article or section, with each step's authority. Days are counted excluding the first day (s.12(1)); certified-copy time is excluded for appeals, revisions and reviews (s.12(2))." />
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Field id="lim-rule" label="Proceeding" hint={<><span className="text-foreground">{rule.authority}</span> · {periodText(rule)} from {rule.runsFrom}</>} className="lg:col-span-2">
+      <ToolHeader title="Limitation calculator" description="Pick what you are filing, enter the date the period starts, and get the last day. Working is shown on request." />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field id="lim-rule" label="1. What are you filing?" hint={<><span className="text-foreground">{rule.authority}</span> · {periodText(rule)} from {rule.runsFrom}</>} className="sm:col-span-2">
           <Select value={ruleId} onValueChange={setRuleId}>
             <SelectTrigger id="lim-rule" size="sm" className="w-full max-w-[560px]"><SelectValue>{rule.title}</SelectValue></SelectTrigger>
             <SelectContent className="max-h-[360px]">
@@ -75,15 +76,22 @@ export function LimitationPanel() {
             </SelectContent>
           </Select>
         </Field>
-        <DateField id="lim-from" label="Period runs from" value={from} onChange={setFrom} hint={`The period runs from ${rule.runsFrom}.`} />
-        <CalendarSelect id="lim-cal" value={cal} onChange={setCal} cals={cals} />
-        {rule.copyExclusion ? (
-          <>
-            <DateField id="lim-applied" label="Certified copy applied for" optional value={applied} onChange={setApplied} />
-            <DateField id="lim-ready" label="Certified copy ready for delivery" optional value={ready} onChange={setReady} hint={copyIncomplete ? "Give both dates to exclude the copying time." : undefined} />
-          </>
-        ) : null}
+        <DateField id="lim-from" label="2. Date the period starts" value={from} onChange={setFrom} hint={`The period runs from ${rule.runsFrom}.`} />
       </div>
+      <details className="group mt-3 rounded-md border bg-surface-quiet px-3 py-2" open={cal !== "none" || !!applied || !!ready || undefined}>
+        <summary className="flex cursor-pointer list-none items-center gap-1 rounded text-[12px] font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />Court holidays{rule.copyExclusion ? " and certified-copy time" : ""} (optional)
+        </summary>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <CalendarSelect id="lim-cal" value={cal} onChange={setCal} cals={cals} />
+          {rule.copyExclusion ? (
+            <>
+              <DateField id="lim-applied" label="Certified copy applied for" optional value={applied} onChange={setApplied} hint="Copying time is excluded under s.12(2)." />
+              <DateField id="lim-ready" label="Certified copy ready for delivery" optional value={ready} onChange={setReady} hint={copyIncomplete ? "Give both dates to exclude the copying time." : undefined} />
+            </>
+          ) : null}
+        </div>
+      </details>
 
       <div className="mt-5">
         {!result ? (
@@ -138,8 +146,11 @@ export function ChequePanel() {
       <div className="grid gap-4 lg:grid-cols-2">
         <DateField id="chq-info" label="Information of dishonour received from the bank" optional value={info} onChange={setInfo} hint="Starts the 30 days for the demand notice." />
         <DateField id="chq-notice" label="Demand notice received by the drawer" optional value={received} onChange={setReceived} hint="Starts the drawer's 15 days to pay." />
-        <CalendarSelect id="chq-cal" value={cal} onChange={setCal} cals={cals} />
       </div>
+      <details className="group mt-3 rounded-md border bg-surface-quiet px-3 py-2" open={cal !== "none" || undefined}>
+        <summary className="flex cursor-pointer list-none items-center gap-1 rounded text-[12px] font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />Court holidays (optional)</summary>
+        <div className="mt-3"><CalendarSelect id="chq-cal" value={cal} onChange={setCal} cals={cals} /></div>
+      </details>
       <div className="mt-5">
         {!result ? (
           <Placeholder>Enter the date the bank&apos;s dishonour memo was received, the date the drawer received the notice, or both.</Placeholder>
@@ -183,8 +194,11 @@ export function ArbitrationPanel() {
       <ToolHeader title="Arbitration award set-aside (s.34)" description="Three months from receipt of the award under s.34(3) of the Arbitration and Conciliation Act, 1996, and the outer limit of a further 30 days on sufficient cause, “but not thereafter”. Section 5 of the Limitation Act does not apply." />
       <div className="grid gap-4 lg:grid-cols-2">
         <DateField id="arb-received" label="Arbitral award received" value={received} onChange={setReceived} hint="Or the date a s.33 request was disposed of." />
-        <CalendarSelect id="arb-cal" value={cal} onChange={setCal} cals={cals} />
       </div>
+      <details className="group mt-3 rounded-md border bg-surface-quiet px-3 py-2" open={cal !== "none" || undefined}>
+        <summary className="flex cursor-pointer list-none items-center gap-1 rounded text-[12px] font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />Court holidays (optional)</summary>
+        <div className="mt-3"><CalendarSelect id="arb-cal" value={cal} onChange={setCal} cals={cals} /></div>
+      </details>
       <div className="mt-5">
         {!result ? (
           <Placeholder>{received ? "Enter a full date." : "Enter the date the applicant received the award."}</Placeholder>

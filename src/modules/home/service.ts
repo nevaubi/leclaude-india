@@ -348,11 +348,12 @@ export function saveNewsToLibrary(newsId: string, userId = currentUser().id): Li
 // Matters overview
 // ---------------------------------------------------------------------------
 
-export function matterOverview(now = new Date(), userId = currentUser().id): MatterOverview[] {
+export function matterOverview(now = new Date(), userId = currentUser().id, principal: Principal | null = currentPrincipal()): MatterOverview[] {
+  if (!principal) return [];
   const d = db();
   const todayKey = dateKey(now);
   return d.matters
-    .list({ where: (m) => m.status !== "closed", sortBy: "shortName" })
+    .list({ where: (m) => m.status !== "closed" && hasMatterAccess(principal, m.id), sortBy: "shortName" })
     .map((m) => {
       const tasks = d.tasks.find((t) => t.matterId === m.id && t.status !== "done");
       const keyDates = (m.keyDates ?? []).map((k) => ({ ...k, daysUntil: daysBetween(now, toDate(k.date)) })).sort((a, b) => a.date.localeCompare(b.date));
@@ -477,7 +478,7 @@ export function loadHomeInitialData(opts: { now?: Date; userId?: string; aiConfi
     events: listEvents({ from: dateKey(addDays(now, -120)), to: dateKey(addDays(now, 240)) }),
     news: listNews({ sort: "relevance" }),
     updates: listUpdates({ userId }),
-    matterOverview: matterOverview(now, userId),
+    matterOverview: matterOverview(now, userId, principal),
     brief: getOrComputeBrief(now, userId),
   };
 }

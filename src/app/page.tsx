@@ -14,6 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function Page() {
   await pageDb();
-  const initial = await withDocumentSetFiles(loadHomeInitialData({ aiConfigured: aiConfig().hasKey }), await pagePrincipal("/"));
+  const principal = await pagePrincipal("/");
+  const initial = await withDocumentSetFiles(loadHomeInitialData({ aiConfigured: aiConfig().hasKey, principal }), principal);
   return <HomePage initial={initial} />;
 }

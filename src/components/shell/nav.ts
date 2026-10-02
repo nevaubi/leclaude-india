@@ -1,5 +1,5 @@
 import { FEATURES, type FeatureFlags } from "@/lib/features";
-import { BookOpen, Home, MessageCircle, Briefcase, Files, Gavel, Landmark, Newspaper, Search, Radar, FileSearch, Workflow, LayoutGrid, Library, Settings, UserRound, FileText, FileSpreadsheet, Presentation, FileType, PenLine, Scale, type LucideIcon } from "lucide-react";
+import { BookOpen, Home, MessageCircle, Briefcase, Files, Gavel, Landmark, Newspaper, Search, Radar, FileSearch, Workflow, LayoutGrid, Library, Settings, UserRound, FileText, FileSpreadsheet, Presentation, FileType, PenLine, Scale, Calculator, type LucideIcon } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/catalog";
 
 /**
@@ -38,6 +38,7 @@ const LAW_CHILDREN: NavChild[] = [
   { label: "Statutes", labelKey: "nav.statutes", href: "/law", icon: BookOpen, shortcut: "G A", description: "Central and State Acts and regulator regulations: browse, search and read section by section", descriptionKey: "nav.desc.statutes" },
   { label: "Courts", labelKey: "nav.courts", href: "/courts", icon: Landmark, shortcut: "G K", description: "Courts, tribunals and local law by city: official websites, e-filing, cause lists and case status", descriptionKey: "nav.desc.courts" },
   { label: "Judges", labelKey: "nav.judges", href: "/judges", icon: UserRound, shortcut: "G U", description: "Supreme Court and High Court judges from official rosters, with their judgments in the case law index", descriptionKey: "nav.desc.judges" },
+  { label: "Tools", labelKey: "nav.tools", href: "/tools", icon: Calculator, shortcut: "G T", description: "Limitation, cheque-dishonour and arbitration deadlines, IPC to BNS section converter and court-fee calculator", descriptionKey: "nav.desc.tools" },
 ];
 
 /** The primary navigation for a set of product switches (pure; `NAV` is this for the build's `FEATURES`). */
@@ -130,7 +131,7 @@ export function isHrefActive(href: string, pathname: string): boolean {
   return pathname === path || pathname.startsWith(`${path}/`);
 }
 
-/** A nav item is active on its own route and on any of its children's routes (Law: /cases, /law, /courts, /judges). */
+/** A nav item is active on its own route and on any of its children's routes (Law: /cases, /law, /courts, /judges, /tools). */
 export function isNavItemActive(item: Pick<NavItem, "href" | "children">, pathname: string): boolean {
   return isHrefActive(item.href, pathname) || (item.children ?? []).some((c) => isHrefActive(c.href, pathname));
 }

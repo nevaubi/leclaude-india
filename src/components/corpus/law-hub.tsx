@@ -14,7 +14,7 @@ import { areaOfPath, routeLawQuery, type LawArea, type LawScope } from "./law-in
 import { loadVisuals } from "@/modules/media/use-visuals";
 
 /**
- * The Law area header shared by Case law, Statutes, Courts and Judges: a compact row with the area tabs and one search
+ * The Law area header shared by Case law, Statutes, Courts, Judges and Practice tools: a compact row with the area tabs and one search
  * box that routes by what the query looks like (citation → case law, "s. 303 BNS" → that section, a judge → judges,
  * a city → its courts), with a small scope switch. On the four start pages a second quiet line carries the page's
  * coverage counts and its attribution, which the page supplies through <LawHubMeta>.
@@ -26,7 +26,8 @@ const TABS = [
   { area: "law", labelKey: "nav.statutes", href: "/law" },
   { area: "courts", labelKey: "nav.courts", href: "/courts" },
   { area: "judges", labelKey: "nav.judges", href: "/judges" },
-] as const satisfies readonly { area: LawArea; labelKey: string; href: string }[];
+  { area: "tools", labelKey: "nav.tools", href: "/tools" },
+] as const satisfies readonly { area: LawArea | "tools"; labelKey: string; href: string }[];
 
 const SCOPES: { value: LawScope; label: string }[] = [
   { value: "auto", label: "All" },
@@ -70,6 +71,8 @@ export function LawHub({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const t = useT();
   const area = areaOfPath(pathname);
+  // Practice tools have a tab but no search area of their own: the hub search there behaves as on Case law.
+  const tabArea: LawArea | "tools" = pathname === "/tools" || pathname?.startsWith("/tools/") ? "tools" : area;
   const landing = LANDINGS.has(pathname ?? "");
   const [meta, setMeta] = React.useState<HTMLElement | null>(null);
 
@@ -127,12 +130,12 @@ export function LawHub({ children }: { children: React.ReactNode }) {
           <div className="flex h-11 items-center gap-3 px-4 sm:px-6">
             <nav aria-label="Law" className="flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none]">
               {TABS.map((tab) => {
-                const active = tab.area === area;
+                const active = tab.area === tabArea;
                 return (
                   <Link
                     key={tab.area}
                     href={tab.href}
-                    aria-current={active ? (landing ? "page" : "location") : undefined}
+                    aria-current={active ? (landing || pathname === tab.href ? "page" : "location") : undefined}
                     className={cn(
                       "inline-flex h-7 shrink-0 items-center rounded-md px-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                       active ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",

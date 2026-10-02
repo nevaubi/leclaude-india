@@ -1,7 +1,7 @@
 import "server-only";
 import type { CauseListEntry, CauseListType, ListingMatch, MatterCaseIdentifier, SourceDocument, SourceId, SourceKind, DocumentStatus, ExtractionMethod } from "../types";
 import type { CauseListQuery } from "../service";
-import { isCaseKey, isDiaryKey, normalizeCaseNumber, normalizeDiaryNo, qualifiedCaseKey } from "../case-numbers";
+import { findDiaryNos, isCaseKey, isDiaryKey, normalizeCaseNumber, normalizeDiaryNo, qualifiedCaseKey } from "../case-numbers";
 import { bool, bounded, int, isoTs, officialStore, parseJson, parsePgArray, pgTextArray, type RemoteStore, type Row, type SqlValue } from "./db";
 import { CAPTION_SCOPE, caseKeyBindable, caseKeyListable, expandForum, forumFilterSql, forumMatches, identifierCanBind, unqualifiedNcltListable } from "./forums";
 import { squash } from "./text";
@@ -86,10 +86,19 @@ function unqualifiedKeySql(keysParam: string): string {
 
 const NOT_NCLT_FORUM = (column: string) => `(${column} <> 'nclt' AND ${column} NOT LIKE 'nclt-%')`;
 
-/** A diary parameter ("54583/2026", "Diary No. 54583-2026") → "54583/2026"; null otherwise. */
+/**
+ * A diary parameter → "54583/2026": either a bare number ("54583/2026", "54583-2026") or text naming exactly one
+ * labelled diary number ("SLP(C) 1234/2026 (Diary No. 54583/2026)"). Never the first N/YYYY of free text (that is
+ * usually a case number); null otherwise.
+ */
 export function diaryKeyOf(v: string): string | null {
-  const d = normalizeDiaryNo(v);
-  return d && isDiaryKey(d) ? d : null;
+  const s = v.replace(/\s+/g, " ").trim();
+  if (/^\d{1,7}\s*[-/]\s*(?:19|20)\d{2}$/.test(s)) {
+    const d = normalizeDiaryNo(s);
+    return d && isDiaryKey(d) ? d : null;
+  }
+  const labelled = findDiaryNos(s);
+  return labelled.length === 1 && isDiaryKey(labelled[0]) ? labelled[0] : null;
 }
 
 function normAdvocate(v: string | undefined): string | null {

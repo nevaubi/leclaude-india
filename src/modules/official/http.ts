@@ -5,6 +5,7 @@ import { rateLimiter, type TokenBucket } from "@/lib/ai/toolkit/http";
 import type { EgressPolicy } from "@/lib/net/safe-fetch";
 import { isSafeFetchError, validateEgressUrl } from "@/lib/net/safe-fetch";
 import { isLegacyTlsError, legacyTlsAllowed } from "@/modules/media/legacy-tls";
+import { completeChain, isIncompleteChainError, knownChainAgent } from "./tls-chain";
 import { isProviderError, ProviderError } from "@/modules/intel/providers/base";
 import { createFirecrawl, type FirecrawlRichOptions, type FirecrawlRichPage } from "@/modules/intel/providers/firecrawl";
 import { SourceHttp, type SourceResponse } from "@/modules/india/sources/http";
@@ -20,6 +21,8 @@ import type { FetchProvenance, SourceDef } from "./types";
  *   browser-like User-Agent (many NIC/gov.in WAFs refuse others), retries for transient failures.
  * - Legacy TLS: gov.in / nic.in servers that still need unsafe legacy renegotiation are retried once with a node:https
  *   transport that allows it (certificates still verified); the host is remembered for the process.
+ * - Incomplete certificate chains (the server omits its intermediate): the chain is completed from the certificate's
+ *   AIA "CA Issuers" URL (see ./tls-chain.ts) and the request retried with full verification.
  * - Firecrawl (location IN) for pages when the direct fetch fails (not on a 404, which means "not published", and not
  *   on an egress-policy denial) and the source fetches via `firecrawl_in` or the caller asks for it; pages that need
  *   browser actions go to Firecrawl directly. Firecrawl's IN location can silently fall back to another country, so
@@ -129,14 +132,20 @@ const legacyHosts = new Set<string>();
 const legacyAgent = new https.Agent({ secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT, keepAlive: false });
 
 function legacyFetchFor(maxBytes: number): typeof fetch {
+  return agentFetch(maxBytes, legacyAgent, (url) => (legacyTlsAllowed(url) ? null : "legacy TLS is allowed only for https government hosts"));
+}
+
+/** fetch over node:https with a given agent (no automatic redirects; safeFetch follows and validates them). */
+function agentFetch(maxBytes: number, agent: https.Agent, refuse: (url: string) => string | null): typeof fetch {
   return (input, init) => new Promise<Response>((resolve, reject) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-    if (!legacyTlsAllowed(url)) { reject(new Error("legacy TLS is allowed only for https government hosts")); return; }
+    const why = refuse(url);
+    if (why) { reject(new Error(why)); return; }
     const headers: Record<string, string> = {};
     new Headers(init?.headers ?? {}).forEach((v, k) => { headers[k] = v; });
     const body = typeof init?.body === "string" ? init.body : init?.body instanceof URLSearchParams ? init.body.toString() : null;
     if (body != null) headers["content-length"] = String(Buffer.byteLength(body));
-    const req = https.request(url, { method: init?.method ?? "GET", headers, agent: legacyAgent }, (res) => {
+    const req = https.request(url, { method: init?.method ?? "GET", headers, agent }, (res) => {
       const chunks: Buffer[] = [];
       let size = 0;
       res.on("data", (c: Buffer) => {
@@ -207,21 +216,22 @@ export function createOfficialHttp(def: SourceDef, opts: OfficialHttpOptions = {
     return rateLimiter(`official:${host}`, { capacity: DEFAULT_HOST_BURST, refillPerSecond: rps });
   }
 
-  function client(url: string, legacy: boolean): SourceHttp {
+  function client(url: string, legacy: boolean, chain: https.Agent | null = null): SourceHttp {
     const host = hostOf(url);
-    const key = `${host}|${legacy ? "legacy" : "std"}`;
+    const key = `${host}|${chain ? "chain" : legacy ? "legacy" : "std"}`;
     let c = clients.get(key);
     if (!c) {
+      const cap = Math.max(fileCap, PAGE_MAX_BYTES);
       c = new SourceHttp({
         name: `official:${def.id}`,
-        egress: legacy ? { ...egress, dnsCheck: true } : egress,
+        egress: legacy || chain ? { ...egress, dnsCheck: true } : egress,
         limiter: limiter(host),
         timeoutMs: opts.timeoutMs ?? 60_000,
         retries: opts.retries ?? 2,
         backoffMs: 800,
         sleep: opts.sleep,
         userAgent: ua,
-        fetchImpl: legacy ? legacyFetchFor(Math.max(fileCap, PAGE_MAX_BYTES)) : opts.fetchImpl,
+        fetchImpl: chain ? agentFetch(cap, chain, (u) => (u.startsWith("https:") ? null : "chain completion applies to https only")) : legacy ? legacyFetchFor(cap) : opts.fetchImpl,
       });
       clients.set(key, c);
     }
@@ -240,24 +250,29 @@ export function createOfficialHttp(def: SourceDef, opts: OfficialHttpOptions = {
     return { signal: opts.signal ? AbortSignal.any([opts.signal, timer]) : timer, cut: () => timer.aborted && !opts.signal?.aborted, timeoutMs: left };
   }
 
-  /** Direct request with the legacy-TLS retry for government hosts. */
+  /** Direct request with the legacy-TLS retry for government hosts and chain completion for incomplete chains. */
   async function direct(url: string, req: { method?: "GET" | "POST"; headers?: Record<string, string>; body?: string; maxBytes: number }): Promise<SourceResponse> {
     validateEgressUrl(url, egress); // fail fast (and without a token) on hosts outside the source's allowlist
     const host = hostOf(url);
-    const useLegacy = !opts.fetchImpl && legacyHosts.has(host) && legacyTlsAllowed(url);
+    const https_ = url.startsWith("https:");
+    const chain = !opts.fetchImpl && https_ ? knownChainAgent(host) : null;
+    const useLegacy = !chain && !opts.fetchImpl && legacyHosts.has(host) && legacyTlsAllowed(url);
     const b = bounded();
+    const send = (c: SourceHttp) => c.request(url, { method: req.method ?? "GET", headers: req.headers, body: req.body, maxBytes: req.maxBytes, signal: b.signal });
+    const retry = async (c: SourceHttp) => {
+      try { return await send(c); } catch (e2) { if (b.cut()) throw new OfficialDeadlineError(); throw e2; }
+    };
     try {
-      return await client(url, useLegacy).request(url, { method: req.method ?? "GET", headers: req.headers, body: req.body, maxBytes: req.maxBytes, signal: b.signal });
+      return await send(client(url, useLegacy, chain));
     } catch (e) {
       if (b.cut()) throw new OfficialDeadlineError();
-      if (!useLegacy && !opts.fetchImpl && isLegacyTlsError(e) && legacyTlsAllowed(url)) {
+      if (!chain && !useLegacy && !opts.fetchImpl && isLegacyTlsError(e) && legacyTlsAllowed(url)) {
         legacyHosts.add(host);
-        try {
-          return await client(url, true).request(url, { method: req.method ?? "GET", headers: req.headers, body: req.body, maxBytes: req.maxBytes, signal: b.signal });
-        } catch (e2) {
-          if (b.cut()) throw new OfficialDeadlineError();
-          throw e2;
-        }
+        return retry(client(url, true));
+      }
+      if (!chain && !opts.fetchImpl && https_ && isIncompleteChainError(e)) {
+        const agent = await completeChain(host);
+        if (agent) return retry(client(url, false, agent));
       }
       throw e;
     }

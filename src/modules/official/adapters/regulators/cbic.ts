@@ -103,7 +103,12 @@ export function decodeCbicPdf(answer: unknown): { bytes: Uint8Array; fileName: s
 
 const yes = (v: string | null | undefined) => (v ?? "").trim().toUpperCase() === "Y";
 
-/** Category list records → items, newest first (records without an English PDF path are skipped). */
+/**
+ * Category list records → items in upload order, newest first: by the portal's record id (a JHipster entity id,
+ * assigned in sequence when a record is created; it rises with the date in every list read on 2026-10-02), not by the
+ * printed date, so a backdated or late-uploaded notification sorts above everything the previous pass saw. Records
+ * without an English PDF path are skipped.
+ */
 export function cbicItems(records: CbicRecord[], tax: CbicTax, kind: "notification" | "circular"): DiscoveredDoc[] {
   const out: DiscoveredDoc[] = [];
   for (const r of records) {
@@ -141,7 +146,22 @@ export function cbicItems(records: CbicRecord[], tax: CbicTax, kind: "notificati
       },
     });
   }
-  return out.sort((a, b) => (b.docDate ?? "").localeCompare(a.docDate ?? "") || Number(b.meta?.cbicId) - Number(a.meta?.cbicId));
+  return out.sort((a, b) => Number(b.meta?.cbicId) - Number(a.meta?.cbicId));
+}
+
+/** Walker key of a CBIC item: kind + portal record id ("n:1010680", "c:1003335"); the stream marker is the highest one. */
+export function cbicKey(d: DiscoveredDoc): string {
+  return `${d.kind === "notification" ? "n" : "c"}:${Number(d.meta?.cbicId)}`;
+}
+
+/**
+ * Already seen when the record id is at or below the previous pass's highest id. A marker stored before ids were used
+ * (a file URL, from date ordering that could miss backdated uploads) is never met, so that list is walked in full once.
+ */
+export function cbicAtMarker(d: DiscoveredDoc, _key: string, marker: string): boolean {
+  const m = /^[nc]:(\d{1,12})$/.exec(marker);
+  const id = Number(d.meta?.cbicId);
+  return !!m && Number.isFinite(id) && id <= Number(m[1]);
 }
 
 /** Stream id → (kind, tax, category|"*"). */
@@ -166,6 +186,7 @@ function streamFor(id: string): StreamSpec | null {
     backfill: true,
     firstPage: 1,
     incrementalPages: 1,
+    atMarker: cbicAtMarker,
     async fetch(_page: number, ctx: AdapterContext): Promise<ListingPage> {
       const cat = encodeURIComponent(p.category);
       const url = p.kind === "notification"
@@ -246,6 +267,7 @@ export const adapter: SourceAdapter = {
         return only ? p.ids.filter((id) => only.includes(id)) : p.ids;
       },
       stream: streamFor,
+      key: cbicKey,
     }).then((r) => (planNotes.length ? { ...r, notes: [...planNotes, ...(r.notes ?? [])] } : r));
   },
 };

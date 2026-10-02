@@ -8,6 +8,7 @@ import { adapter as ibbi, corporateDebtorFromTitle, ibbiAnnouncementsUrl, ibbiLa
 import {
   SEBI_PAGER_URL, SEBI_RSS_URL, adapter as sebi, parseSebiDetail, parseSebiListing, parseSebiOrderText, parseSebiRss, sebiListingUrl, sebiPagerFields, sebiPagerRange,
 } from "@/modules/official/adapters/regulators/sebi";
+import { orderBindingKeys } from "@/modules/official/causelist/query";
 import { CCI_SEED_ID, adapter as cci, cciCaseKey, cciDetailUrl, parseCciCombinations, parseCciDetail } from "@/modules/official/adapters/regulators/cci";
 import { adapter as egazette, egazettePdfUrl, parseEgazetteHome, parseGazetteText, parseUgid } from "@/modules/official/adapters/regulators/egazette";
 import { adapter as gst, meetingDates, meetingNumber, parseGstCouncilMeetings } from "@/modules/official/adapters/regulators/gst-council";
@@ -70,6 +71,8 @@ function makeCtx(o: FakeOpts = {}) {
 }
 
 const pdfBytes = () => new TextEncoder().encode("%PDF-1.7\n%âãÏÓ\n");
+/** The core's fetchJson error for a body that is not JSON (ProviderError code "parse"). */
+const notJson = () => Object.assign(new Error("official:cci-orders: invalid JSON (Unexpected token < in JSON)"), { code: "parse", status: 200 });
 
 function parseInput(markdown: string, over: Partial<ParseInput> = {}): ParseInput {
   return { id: "doc1", url: "https://example.gov.in/x.pdf", title: "x", docDate: null, meta: {}, markdown, pages: [{ page: 1, text: markdown }], fetchedAt: "2026-10-02T00:00:00Z", ...over };
@@ -254,10 +257,54 @@ describe("SEBI orders (live fixtures)", () => {
 
   it("reads order and SAT appeal numbers from order text", () => {
     const text = "BEFORE THE ADJUDICATING OFFICER SECURITIES AND EXCHANGE BOARD OF INDIA [ADJUDICATION ORDER NO.: Order/AK/GN/2026-27/32758] UNDER SECTION 15-I OF SECURITIES AND EXCHANGE BOARD OF INDIA ACT, 1992";
-    expect(parseSebiOrderText(parseInput(text)).records).toEqual([{ meta: { orderNumbers: ["Order/AK/GN/2026-27/32758"], appealNumbers: [], caseKeys: [] } }]);
-    const sat = parseSebiOrderText(parseInput("BEFORE THE SECURITIES APPELLATE TRIBUNAL MUMBAI ... Appeal No. 123 of 2025 ... Misc. Application No. 4 of 2025"));
-    expect(sat.records[0].meta).toMatchObject({ appealNumbers: ["Appeal No. 123 of 2025"], caseKeys: ["APPEAL/123/2025"] });
-    expect(parseSebiOrderText(parseInput("nothing here")).unparsed).toBe(1);
+    expect(parseSebiOrderText(parseInput(text)).records).toEqual([{
+      meta: { orderNumbers: ["Order/AK/GN/2026-27/32758"], appealNumbers: [], caseKeys: [], caseKeysScope: "caption", mentionedAppealNumbers: [], mentionedCaseKeys: [], caseNumbersFrom: "caption" },
+    }]);
+    const sat = parseSebiOrderText(parseInput("BEFORE THE SECURITIES APPELLATE TRIBUNAL MUMBAI ... Appeal No. 123 of 2025 ... Misc. Application No. 4 of 2025", { meta: { forum: "sat" } }));
+    expect(sat.records[0].meta).toMatchObject({ appealNumbers: ["Appeal No. 123 of 2025"], caseKeys: ["APPEAL/123/2025"], caseKeysScope: "caption" });
+    // Always one record (a re-parse replaces keys stored by an earlier parse), counted unparsed when nothing was read.
+    const none = parseSebiOrderText(parseInput("nothing here"));
+    expect(none.unparsed).toBe(1);
+    expect(none.records[0].meta).toMatchObject({ caseKeys: [], mentionedCaseKeys: [] });
+  });
+
+  const satOrder = (caption: string, body: string) =>
+    `BEFORE THE SECURITIES APPELLATE TRIBUNAL\nMUMBAI\nOrder Reserved On : 18.08.2026\nDate of Decision : 25.09.2026\n${caption}\nMr. A. Shah, Advocate for the Appellant.\nMr. B. Rao, Advocate for the Respondent.\nCORAM : Justice P.S. Dinesh Kumar, Presiding Officer\nPer : Justice P.S. Dinesh Kumar\n${body}`;
+  const sat = (text: string) => parseSebiOrderText(parseInput(text, { meta: { forum: "sat", smid: 1 } })).records[0].meta;
+
+  it("binds a SAT order only to its caption's appeal numbers; cited precedents and other courts' appeals never bind", () => {
+    // Review finding: every "Appeal No. N of YYYY" on the first pages became a binding key, incl. cited precedents and
+    // the tail of "Civil Appeal No." (Supreme Court).
+    const text = satOrder(
+      "Appeal No. 123 of 2025\nXYZ Securities Ltd.\n...Appellant\nVersus\nSecurities and Exchange Board of India\n...Respondent",
+      "1. The appeal is against the order of the WTM. As held in Appeal No. 456 of 2019, and by the Supreme Court in Civil Appeal No. 7890 of 2020, the noticee ...",
+    );
+    expect(sat(text)).toMatchObject({
+      appealNumbers: ["Appeal No. 123 of 2025"], caseKeys: ["APPEAL/123/2025"], caseKeysScope: "caption",
+      mentionedAppealNumbers: ["Appeal No. 456 of 2019", "Civil Appeal No. 7890 of 2020"], mentionedCaseKeys: ["APPEAL/456/2019", "CA/7890/2020"],
+    });
+    // The order-binding query reads meta.caseKeys only: the caption.
+    expect(orderBindingKeys({ sourceId: "sebi-orders", meta: sat(text) })).toEqual(["APPEAL/123/2025"]);
+    // A cited appeal never binds even when it is the only number: the caption has none (body starts first).
+    expect(sat(satOrder("XYZ Securities Ltd. ...Appellant Versus SEBI ...Respondent", "As held in Appeal No. 456 of 2019 ..."))).toMatchObject({ caseKeys: [], mentionedCaseKeys: ["APPEAL/456/2019"] });
+  });
+
+  it("binds every appeal of a combined SAT caption (each with its parties) and an appeal named after a Misc. Application", () => {
+    const combined = satOrder(
+      "Appeal No. 100 of 2025\nABC Ltd. ...Appellant\nVersus\nSEBI ...Respondent\nWith\nAppeal No. 101 of 2025\nDEF Ltd. ...Appellant\nVersus\nSEBI ...Respondent\nAnd\nMisc. Application No. 5 of 2026 in Appeal No. 102 of 2025\nGHI Ltd. ...Appellant\nVersus\nSEBI ...Respondent",
+      "1. These appeals arise from a common order; see also Appeal No. 77 of 2018.",
+    );
+    expect(sat(combined)).toMatchObject({
+      caseKeys: ["APPEAL/100/2025", "APPEAL/101/2025", "APPEAL/102/2025"],
+      mentionedCaseKeys: ["APPEAL/77/2018"],
+    });
+    expect(sat(satOrder("Misc. Application No. 5 of 2026\nIN\nAppeal No. 456 of 2025\nXYZ ...Appellant\nVersus\nSEBI ...Respondent", "1. ...")).caseKeys).toEqual(["APPEAL/456/2025"]);
+  });
+
+  it("never binds appeal numbers printed in orders that are not SAT orders", () => {
+    const r = parseSebiOrderText(parseInput("WHOLE TIME MEMBER ... Appeal No. 123 of 2025 ... ORDER NO.: WTM/AN/MIRSD/12345/2026-27", { meta: { forum: "sebi", smid: 2 } }));
+    expect(r.records[0].meta).toMatchObject({ caseKeys: [], appealNumbers: [], mentionedAppealNumbers: ["Appeal No. 123 of 2025"], mentionedCaseKeys: ["APPEAL/123/2025"] });
+    expect(r.unparsed).toBe(0);
   });
 });
 
@@ -301,17 +348,46 @@ describe("CCI orders", () => {
       if (!m) return undefined;
       return live.has(Number(m[1])) ? html : serverError(url);
     };
-    const { ctx, calls } = makeCtx({ pages, json: () => new Error("Unexpected token < in JSON") });
+    const { ctx, calls } = makeCtx({ pages, json: () => notJson() });
     const r = await cci.discover(ctx);
     expect(r.items.map((d) => d.meta?.detailId)).toEqual([1250, 1251, 1253]);
     expect(r.items[0]).toMatchObject({ url: cciDetailUrl(1250), fileUrl: null, mime: "text/html", docDate: "2025-04-16" });
     expect(r.items[0].meta).toMatchObject({ caseKeys: ["CASE/11/2020"], pdfLinkFound: false, track: "antitrust" });
     expect(calls.pages).toHaveLength(14); // 1250..1263: 3 found + 10 consecutive misses after 1253 + one gap
-    expect(r.notes?.join(" ")).toMatch(/combination listing did not answer with JSON/);
+    expect(r.notes?.join(" ")).toMatch(/combination listing page 0 did not answer with JSON/);
     expect(parseCursor(r.nextCursor)!.lastSeen.antitrust).toBe("1253");
     const again = makeCtx({ cursor: r.nextCursor, pages, json: () => ({ data: [] }) });
     await cci.discover(again.ctx);
     expect(again.calls.pages[0].url).toBe(cciDetailUrl(1254));
+  });
+
+  it("skips the unverified combinations listing only when it refuses or does not answer JSON; transient failures are not swallowed", async () => {
+    // Review finding: every error (timeouts, 503s) ended the combinations walk silently, also in a backfill.
+    const pages = (url: string): PageRoute | undefined => (/details\/(\d+)\/0$/.test(url) ? Object.assign(new Error(`HTTP 500 for ${url}`), { status: 500 }) : undefined);
+    const unavailable = Object.assign(new Error("HTTP 503 Service Unavailable"), { status: 503 });
+    const r = await cci.discover(makeCtx({ pages, json: () => unavailable }).ctx);
+    expect(r.notes?.join(" ")).toMatch(/combinations: HTTP 503 Service Unavailable; skipped for this pass/);
+    expect(r.notes?.join(" ")).not.toMatch(/endpoint unverified/);
+    // A backfill stops at the failing page and resumes there.
+    const rb = cci.discover(makeCtx({ cursor: backfillCursor({ only: ["combinations"] }), pages, json: () => unavailable }).ctx);
+    await expect(rb).rejects.toThrow(/503/);
+    // A later page that times out: the backfill keeps its place on that page.
+    const page0 = { recordsFiltered: 120, data: [{ combination_no: "C-1", order_files: '<a href="/images/combinationorders/en/c1.pdf">Order</a>' }] };
+    const timeout = Object.assign(new Error("request timed out"), { code: "timeout" });
+    const rb2 = await cci.discover(makeCtx({ cursor: backfillCursor({ only: ["combinations"] }), pages, json: (u) => (u.includes("start=0&") ? page0 : timeout) }).ctx);
+    expect(rb2.done).toBe(false);
+    expect(rb2.items).toHaveLength(1);
+    expect(parseCursor(rb2.nextCursor)!.page).toBe(1);
+    // A later page refused for good (not JSON): the stream ends with a note instead of holding the backfill forever.
+    const rb3 = await cci.discover(makeCtx({ cursor: rb2.nextCursor, pages, json: () => notJson() }).ctx);
+    expect(rb3.done).toBe(true);
+    expect(rb3.notes?.join(" ")).toMatch(/combination listing page 1 did not answer with JSON/);
+    // First page refused (session / CSRF) or not JSON: skipped with a note.
+    for (const refusal of [notJson(), Object.assign(new Error("HTTP 419"), { status: 419 })]) {
+      const rr = await cci.discover(makeCtx({ cursor: backfillCursor({ only: ["combinations"] }), pages, json: () => refusal }).ctx);
+      expect(rr.done).toBe(true);
+      expect(rr.notes?.join(" ")).toMatch(/combination listing page 0 did not answer with JSON/);
+    }
   });
 
   it("maps DataTables combination rows to one item per order PDF (endpoint unverified; fails closed)", () => {
@@ -402,6 +478,105 @@ describe("e-Gazette", () => {
     await expect(egazette.discover(c2)).rejects.toThrow(/429/);
   });
 
+  const homeRoute = (u: string) => (u === "https://egazette.gov.in/" ? home : undefined);
+  const incremental = (lastSeen: Record<string, string>) => JSON.stringify({ v: 1, mode: "incremental", plan: ["ids"], i: 0, page: null, skip: 0, misses: 0, walked: 0, lastSeen, newest: {}, only: null });
+  const gazetteFiles = (published: (id: number) => boolean, broken: (id: number) => Error | null = () => null) => (url: string) => {
+    const m = /WriteReadData\/(\d{4})\/(\d+)\.pdf$/.exec(url);
+    if (!m) return undefined;
+    const err = broken(Number(m[2]));
+    if (err) return err;
+    return m[1] === "2026" && published(Number(m[2])) ? { bytes: pdfBytes() } : undefined;
+  };
+
+  it("walks every id down to the previous pass's marker across a gap longer than the miss limit (never skips ids)", async () => {
+    // Review finding: an incremental walk that ended on a run of misses still moved the marker to the top id, so every
+    // id between the stop and the old marker was lost for good.
+    const published = (id: number) => (id >= 276700 && id <= 276731) || (id >= 276501 && id <= 276659);
+    const { ctx, calls } = makeCtx({ pages: homeRoute, files: gazetteFiles(published), cursor: incremental({ ids: "276500", floor: "276432", floorYear: "2026" }), limit: 500 });
+    const r = await egazette.discover(ctx);
+    expect(r.done).toBe(true);
+    const ids = r.items.map((d) => d.meta?.gazetteId as number);
+    expect(ids).toHaveLength(32 + 159);
+    expect(ids).toContain(276659);
+    expect(ids).toContain(276501);
+    expect(r.notes?.join(" ")).toMatch(/ids 276699\.\.276675 were not published in \/2026\/ or \/2025\/; the walk continues down to 276501/);
+    const probedIds = new Set(calls.files.map((f) => Number(/(\d+)\.pdf$/.exec(f.url)![1])));
+    for (let id = 276501; id <= 276731; id++) expect(probedIds.has(id)).toBe(true);
+    expect(probedIds.has(276500)).toBe(false);
+    expect(parseCursor(r.nextCursor)!.lastSeen).toMatchObject({ ids: "276731", floor: "276432" });
+  });
+
+  it("moves the marker only to the highest id found published, never to a listed id whose file is not up yet", async () => {
+    let published = (id: number): boolean => id === 276730;
+    const r1 = await egazette.discover(makeCtx({ pages: homeRoute, files: (u) => gazetteFiles(published)(u), cursor: incremental({ ids: "276729" }) }).ctx);
+    expect(r1.items.map((d) => d.meta?.gazetteId)).toEqual([276730]);
+    expect(parseCursor(r1.nextCursor)!.lastSeen.ids).toBe("276730");
+    published = (id: number) => id === 276730 || id === 276731;
+    const r2 = await egazette.discover(makeCtx({ pages: homeRoute, files: (u) => gazetteFiles(published)(u), cursor: r1.nextCursor }).ctx);
+    expect(r2.items.map((d) => d.meta?.gazetteId)).toEqual([276731]);
+  });
+
+  it("bounds an incremental walk to MAX_SPAN ids above the marker when the home page lists an id far above it", async () => {
+    const { ctx, calls } = makeCtx({ pages: homeRoute, files: gazetteFiles((id) => id === 275731), cursor: incremental({ ids: "270731" }), limit: 1 });
+    const r = await egazette.discover(ctx);
+    expect(calls.files[0].url).toBe(egazettePdfUrl(2026, 275731));
+    expect(r.items.map((d) => d.meta?.gazetteId)).toEqual([275731]);
+    expect(r.notes?.join(" ")).toMatch(/lists gazette 276731, more than 5000 ids above the previous pass's newest \(270731\)/);
+  });
+
+  it("steps over one gazette whose probe keeps failing, retries it on later passes and never counts it as published", async () => {
+    // Review finding: a persistent non-404 error on one id parked the cursor there and failed every later pass.
+    let down = true;
+    const broken = (id: number) => (id === 276729 && down ? Object.assign(new Error(`HTTP 500 for ${id}`), { status: 500 }) : null);
+    const files = gazetteFiles((id) => id >= 276726, broken);
+    const r1 = await egazette.discover(makeCtx({ pages: homeRoute, files, cursor: incremental({ ids: "276725" }) }).ctx);
+    expect(r1.done).toBe(true);
+    expect(r1.items.map((d) => d.meta?.gazetteId)).toEqual([276731, 276730, 276728, 276727, 276726]);
+    expect(r1.notes?.join(" ")).toMatch(/gazette 276729: probe failed while lower ids answered; skipped for now and recorded for retry/);
+    const c1 = parseCursor(r1.nextCursor)!;
+    expect(c1.lastSeen.ids).toBe("276731");
+    expect(c1.lastSeen["#retry:ids"]).toBe("276729@2026:0");
+    // Still failing: counted, kept.
+    const r2 = await egazette.discover(makeCtx({ pages: homeRoute, files, cursor: r1.nextCursor }).ctx);
+    expect(r2.items).toEqual([]);
+    expect(parseCursor(r2.nextCursor)!.lastSeen["#retry:ids"]).toBe("276729@2026:1");
+    // Answers again: ingested with its listing metadata, and the retry list is empty.
+    down = false;
+    const r3 = await egazette.discover(makeCtx({ pages: homeRoute, files, cursor: r2.nextCursor }).ctx);
+    expect(r3.items.map((d) => d.meta?.gazetteId)).toEqual([276729]);
+    expect(r3.items[0].meta).toMatchObject({ ugid: "CG-DL-E-02102026-276729", urlFromPattern: true });
+    expect(parseCursor(r3.nextCursor)!.lastSeen["#retry:ids"]).toBeUndefined();
+  });
+
+  it("stops at the first of FAIL_RUN consecutive failing ids when the id above them fails too (the host is failing)", async () => {
+    // An outage: from the first failure on, every request fails (also the check of the id above the run).
+    let down = false;
+    const outage = (id: number) => {
+      if (id <= 276729) down = true;
+      return down ? Object.assign(new Error("HTTP 503"), { status: 503 }) : null;
+    };
+    const r = await egazette.discover(makeCtx({ pages: homeRoute, files: gazetteFiles(() => true, outage), cursor: incremental({ ids: "276720" }) }).ctx);
+    expect(r.done).toBe(false);
+    expect(r.items.map((d) => d.meta?.gazetteId)).toEqual([276731, 276730]);
+    expect(r.notes?.join(" ")).toMatch(/3 consecutive ids failed and so did gazette 276730 \(the host is failing\); the walk resumes at 276729/);
+    const c = parseCursor(r.nextCursor)!;
+    expect(c.page).toBe(276729);
+    expect(c.lastSeen["#retry:ids"]).toBeUndefined();
+    // Nothing answers at all: the call fails (the stored cursor is kept by the runner).
+    await expect(egazette.discover(makeCtx({ pages: homeRoute, files: gazetteFiles(() => true, outage), cursor: r.nextCursor }).ctx)).rejects.toThrow(/503/);
+  });
+
+  it("steps over a run of failing ids while the host still answers, even when the walk starts at the run", async () => {
+    const broken = (id: number) => (id >= 276727 && id <= 276729 ? Object.assign(new Error("HTTP 403 Forbidden"), { status: 403 }) : null);
+    // The stored cursor is parked at the first failing id (as an older call left it): the walk must still get past.
+    const parked = JSON.stringify({ v: 1, mode: "incremental", plan: ["ids"], i: 0, page: 276729, skip: 0, misses: 0, walked: 2, lastSeen: { ids: "276720" }, newest: { ids: "276731", _year: "2026" }, only: null });
+    const r = await egazette.discover(makeCtx({ pages: homeRoute, files: gazetteFiles((id) => id > 276720, broken), cursor: parked }).ctx);
+    expect(r.done).toBe(true);
+    expect(r.items.map((d) => d.meta?.gazetteId)).toEqual([276726, 276725, 276724, 276723, 276722, 276721]);
+    expect(r.notes?.join(" ")).toMatch(/gazette 276729\.\.276727: probes failed while the host answered for gazette 276730; skipped for now and recorded for retry/);
+    expect(parseCursor(r.nextCursor)!.lastSeen).toMatchObject({ ids: "276731", "#retry:ids": "276729@2026:0,276728@2026:0,276727@2026:0" });
+  });
+
   it("extracts page-1 metadata from the English half of a gazette (live PDF text)", () => {
     const md = fx("egazette-276728.md");
     const r = parseGazetteText(parseInput(md, { pages: [] }));
@@ -436,12 +611,23 @@ describe("GST Council meetings (live fixture)", () => {
     expect(meetingDates("21-Dec-2024")).toEqual({ from: "2024-12-21", to: "2024-12-21" });
   });
 
-  it("returns nothing new on the second pass", async () => {
-    const pages = (u: string) => (u === "https://gstcouncil.gov.in/gst-council-meeting" ? fx("gst-council-meetings.html") : undefined);
+  it("lists the whole table on every pass, so minutes added to an older meeting are found", async () => {
+    // Review finding: the table is ordered by meeting, so a file added to an older row sorted below the stop marker.
+    const html = fx("gst-council-meetings.html");
+    let page = html;
+    const pages = (u: string) => (u === "https://gstcouncil.gov.in/gst-council-meeting" ? page : undefined);
     const r1 = await gst.discover(makeCtx({ pages }).ctx);
     expect(r1.items).toHaveLength(8);
     const r2 = await gst.discover(makeCtx({ pages, cursor: r1.nextCursor }).ctx);
-    expect(r2.items).toEqual([]);
     expect(r2.done).toBe(true);
+    // The same URLs again (the pipeline's upsert skips those it holds).
+    expect(r2.items.map((d) => d.url)).toEqual(r1.items.map((d) => d.url));
+    // A supplementary agenda added to the 2nd meeting's row (far below the newest file).
+    const agenda2 = '<a href="https://gstcouncil.gov.in/sites/default/files/Agenda/2.pdf">';
+    page = html.replace(agenda2, `<a href="https://gstcouncil.gov.in/sites/default/files/Agenda/2-supplementary.pdf">View</a> ${agenda2}`);
+    expect(page).not.toBe(html);
+    const r3 = await gst.discover(makeCtx({ pages, cursor: r2.nextCursor }).ctx);
+    const late = r3.items.find((d) => d.url === "https://gstcouncil.gov.in/sites/default/files/Agenda/2-supplementary.pdf");
+    expect(late?.meta).toMatchObject({ meetingNo: 2, document: "agenda" });
   });
 });

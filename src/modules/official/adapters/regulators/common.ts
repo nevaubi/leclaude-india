@@ -17,6 +17,13 @@ import type { DiscoveredDoc } from "../../types";
  *
  * Streams are either paged listings (newest first; `lastSeen` is the key of the newest item) or numeric sequences
  * (ascending identifiers probed one by one; `lastSeen` is the highest number that held a document).
+ *
+ * `lastSeen` keys starting with "#" are not stream markers (stream ids never start with "#"):
+ * - "#retry:<stream>"      numbers whose fetch failed while the numbers after them answered: "n:attempts,…" (or
+ *                          "n@tag:attempts"); every later incremental pass probes them again (RETRY_ATTEMPTS at most).
+ * - "#unverified:<stream>" numbers given up after RETRY_ATTEMPTS failed retries: never treated as published.
+ * - "#unmet:<stream>"      date of the first incremental pass that hit the stream's page bound without meeting the
+ *                          previous pass's newest item (older new items may be missing until a backfill completes).
  */
 
 export const GOV_TERMS = "Government publication; verify against the official copy";
@@ -36,6 +43,8 @@ export interface RegCursor {
   skip: number;
   /** Consecutive empty numbers (sequence streams). */
   misses: number;
+  /** Consecutive numbers just before `page` whose fetch failed (not 404) — unverified, neither found nor missing. */
+  fails: number;
   /** Pages / numbers walked in the current stream during this pass. */
   walked: number;
   /** Stop markers from the previous completed pass, per stream. */
@@ -46,8 +55,8 @@ export interface RegCursor {
   only: string[] | null;
 }
 
-function emptyCursor(mode: CursorMode, lastSeen: Record<string, string> = {}, only: string[] | null = null): RegCursor {
-  return { v: 1, mode, plan: [], i: 0, page: null, skip: 0, misses: 0, walked: 0, lastSeen, newest: {}, only };
+export function emptyCursor(mode: CursorMode, lastSeen: Record<string, string> = {}, only: string[] | null = null): RegCursor {
+  return { v: 1, mode, plan: [], i: 0, page: null, skip: 0, misses: 0, fails: 0, walked: 0, lastSeen, newest: {}, only };
 }
 
 const isStrRecord = (v: unknown): v is Record<string, string> =>
@@ -75,6 +84,7 @@ export function parseCursor(raw: string | null): RegCursor | null {
   if (o.page === null || isNat(o.page)) c.page = (o.page as number | null) ?? null;
   if (isNat(o.skip)) c.skip = o.skip;
   if (isNat(o.misses)) c.misses = o.misses;
+  if (isNat(o.fails) && o.fails < FAIL_RUN) c.fails = o.fails;
   if (isNat(o.walked)) c.walked = o.walked;
   if (isStrRecord(o.newest)) c.newest = o.newest;
   return c;
@@ -89,6 +99,97 @@ export function backfillCursor(opts: { only?: string[]; lastSeen?: Record<string
   return serializeCursor(emptyCursor("backfill", opts.lastSeen ?? {}, opts.only?.length ? opts.only : null));
 }
 
+// ---- numbers that failed: retry list ---------------------------------------------------------------------------------
+
+/**
+ * Numbers whose fetch failed (not 404) are skipped for now — never counted as published — and put on the retry list
+ * once the publisher answers for a later number. After FAIL_RUN consecutive failures one fetch of the number next to
+ * them decides: when it answers, they are recorded and skipped the same way; when it fails too, the publisher is taken
+ * to be failing and the walk stops, resuming at the first of them.
+ */
+export const FAIL_RUN = 3;
+/** Failed retries (one per later incremental pass) before a number is recorded as unverified and no longer probed. */
+export const RETRY_ATTEMPTS = 8;
+/** Entries kept per retry / unverified list. */
+const RETRY_MAX = 100;
+
+export const retryKey = (stream: string) => `#retry:${stream}`;
+export const unverifiedKey = (stream: string) => `#unverified:${stream}`;
+export const unmetKey = (stream: string) => `#unmet:${stream}`;
+
+export interface RetryEntry {
+  n: number;
+  /** Extra context needed to probe again (eGazette: the year folder). */
+  tag: string | null;
+  attempts: number;
+}
+
+const RETRY_RE = /^(\d{1,9})(?:@([0-9A-Za-z_-]{1,20}))?:(\d{1,3})$/;
+
+export function readRetry(lastSeen: Record<string, string>, key: string): RetryEntry[] {
+  const out: RetryEntry[] = [];
+  for (const part of (lastSeen[key] ?? "").split(",")) {
+    const m = RETRY_RE.exec(part.trim());
+    if (m && !out.some((e) => e.n === Number(m[1]))) out.push({ n: Number(m[1]), tag: m[2] ?? null, attempts: Number(m[3]) });
+  }
+  return out;
+}
+
+function writeRetry(lastSeen: Record<string, string>, key: string, entries: RetryEntry[]): void {
+  if (!entries.length) { delete lastSeen[key]; return; }
+  lastSeen[key] = entries.map((e) => `${e.n}${e.tag ? `@${e.tag}` : ""}:${e.attempts}`).join(",");
+}
+
+function recordUnverified(lastSeen: Record<string, string>, stream: string, n: number): void {
+  const k = unverifiedKey(stream);
+  const list = (lastSeen[k] ?? "").split(",").filter((x) => /^\d{1,9}$/.test(x) && Number(x) !== n);
+  list.push(String(n));
+  lastSeen[k] = list.slice(-RETRY_MAX).join(",");
+}
+
+/** Put a number on the stream's retry list (no-op when it is already there). */
+export function addRetry(lastSeen: Record<string, string>, stream: string, n: number, tag: string | null, notes: string[]): void {
+  const key = retryKey(stream);
+  const list = readRetry(lastSeen, key);
+  if (list.some((e) => e.n === n)) return;
+  list.push({ n, tag: tag && /^[0-9A-Za-z_-]{1,20}$/.test(tag) ? tag : null, attempts: 0 });
+  while (list.length > RETRY_MAX) {
+    const old = list.shift()!;
+    recordUnverified(lastSeen, stream, old.n);
+    notes.push(`${stream} #${old.n}: the retry list is full; recorded as unverified (not ingested).`);
+  }
+  writeRetry(lastSeen, key, list);
+}
+
+/** Outcome of probing a retry entry again: answered (found or not published) or failed once more. */
+export function settleRetry(lastSeen: Record<string, string>, stream: string, n: number, outcome: "answered" | "failed", notes: string[]): void {
+  const key = retryKey(stream);
+  const list = readRetry(lastSeen, key);
+  const i = list.findIndex((e) => e.n === n);
+  if (i < 0) return;
+  if (outcome === "answered") list.splice(i, 1);
+  else if (++list[i].attempts >= RETRY_ATTEMPTS) {
+    list.splice(i, 1);
+    recordUnverified(lastSeen, stream, n);
+    notes.push(`${stream} #${n}: still failing after ${RETRY_ATTEMPTS} retries; recorded as unverified (not ingested).`);
+  }
+  writeRetry(lastSeen, key, list);
+}
+
+/** True when an error means "stop this call now" (the run's deadline or abort), not a failure of the publisher. */
+export function isStopError(e: unknown, ctx?: Pick<AdapterContext, "signal">): boolean {
+  if (ctx?.signal?.aborted) return true;
+  const o = e as { name?: unknown; code?: unknown } | null;
+  return o?.name === "OfficialDeadlineError" || o?.code === "official_deadline";
+}
+
+/** True when ctx.fetchJson failed because the body was not JSON (the core's ProviderError code "parse"), not a transport or HTTP error. */
+export function isNotJsonError(e: unknown): boolean {
+  const o = e as { name?: unknown; code?: unknown } | null;
+  if (o?.name === "SyntaxError") return true;
+  return o?.code === "parse" && !isTooLargeError(e);
+}
+
 // ---- streams and the walker ------------------------------------------------------------------------------------------
 
 export interface ListingPage {
@@ -96,6 +197,11 @@ export interface ListingPage {
   items: DiscoveredDoc[];
   /** True when no older page exists. */
   last: boolean;
+  /**
+   * Rows the publisher returned on this page before filtering (e.g. questions without a file yet). When given, a page
+   * with no usable items ends the stream only when the publisher returned no rows at all.
+   */
+  rawCount?: number;
   notes?: string[];
 }
 
@@ -110,6 +216,17 @@ export interface ListingStream extends StreamBase {
   firstPage: number;
   /** Max pages an incremental pass walks when the stop marker is not met. */
   incrementalPages: number;
+  /**
+   * Every incremental pass walks the whole list, without a stop marker: for small single-page lists whose order is not
+   * the order of publication (a document added to an older row would sort below the marker). The pipeline's upsert
+   * skips URLs it already holds.
+   */
+  markerless?: boolean;
+  /**
+   * Whether `d` (key `key`) is at or below the previous pass's marker, i.e. already seen. Default: `key === marker`.
+   * Lists ordered by an upload id compare ids, so a marker that disappeared from the list still stops the walk.
+   */
+  atMarker?(d: DiscoveredDoc, key: string, marker: string): boolean;
   fetch(page: number, ctx: AdapterContext): Promise<ListingPage>;
 }
 
@@ -167,6 +284,7 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
     cur.page = null;
     cur.skip = 0;
     cur.misses = 0;
+    cur.fails = 0;
     cur.walked = 0;
   }
   const items: DiscoveredDoc[] = [];
@@ -177,11 +295,17 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
     if (why) notes.push(why);
     return { items, nextCursor: serializeCursor(c), done: false, notes: notes.length ? notes : undefined };
   };
+  // The run's deadline / abort cut a request: keep the position (resumed by the next call), never skip anything.
+  const stopped = (e: unknown): DiscoverResult => {
+    if (items.length || fetched) return partial("Stopped before the deadline.");
+    throw e;
+  };
   const nextStream = () => {
     c.i += 1;
     c.page = null;
     c.skip = 0;
     c.misses = 0;
+    c.fails = 0;
     c.walked = 0;
   };
   // Incremental passes skip a failing stream (its marker is kept, so the next pass retries it) instead of blocking
@@ -196,6 +320,18 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
     nextStream();
   };
   const allFailed = () => items.length === 0 && fetched === 0 && failures.length > 0;
+  /** Put numbers from..to (failed, unverified) on the stream's retry list; they are never counted as published. */
+  const recordFailed = (sid: string, from: number, to: number, why: string) => {
+    for (let n = from; n <= to; n++) addRetry(c.lastSeen, sid, n, null, notes);
+    notes.push(`${sid} #${from}${to > from ? `..${to}` : ""}: ${why}; skipped for now and recorded for retry (not counted as published).`);
+    c.fails = 0;
+  };
+  const push = (d: DiscoveredDoc) => {
+    const kk = key(d);
+    if (seen.has(kk)) return;
+    seen.add(kk);
+    items.push(d);
+  };
 
   while (c.i < c.plan.length) {
     const sid = c.plan[c.i];
@@ -216,6 +352,7 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
         fetched += 1;
       } catch (e) {
         if (isNotFound(e)) { notes.push(`${sid} page ${c.page}: not found; stream ended.`); nextStream(); continue; }
+        if (isStopError(e, ctx)) return stopped(e);
         if (c.mode === "backfill") {
           if (items.length) return partial(`${sid} page ${c.page}: ${errorText(e)}`);
           throw e;
@@ -225,12 +362,14 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
       }
       if (res.notes?.length) notes.push(...res.notes.map((n) => `${sid}: ${n}`));
       const rows = res.items;
-      if (c.page === s.firstPage && c.skip === 0 && rows.length && c.newest[sid] == null) c.newest[sid] = key(rows[0]);
+      // The pass's marker for this stream: the first item of the first page that has any.
+      if (rows.length && c.newest[sid] == null) c.newest[sid] = key(rows[0]);
+      const stopAt = c.mode === "incremental" && !s.markerless ? c.lastSeen[sid] : undefined;
       let reachedMarker = false;
       let failed = false;
       for (let k = c.skip; k < rows.length; k++) {
         const kk = key(rows[k]);
-        if (c.mode === "incremental" && c.lastSeen[sid] === kk) { reachedMarker = true; break; }
+        if (stopAt != null && (s.atMarker ? s.atMarker(rows[k], kk, stopAt) : stopAt === kk)) { reachedMarker = true; break; }
         if (items.length >= ctx.limit) { c.skip = k; return partial(); }
         if (nearDeadline(ctx, margin)) { c.skip = k; return partial("Stopped before the deadline."); }
         if (seen.has(kk)) continue;
@@ -241,6 +380,7 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
             d = await cfg.resolve(d, ctx);
           } catch (e) {
             if (isNotFound(e)) { notes.push(`${kk}: detail page not found; not ingested.`); continue; }
+            if (isStopError(e, ctx)) { c.skip = k; return stopped(e); }
             if (c.mode === "backfill") {
               c.skip = k;
               if (items.length) return partial(`${kk}: ${errorText(e)}`);
@@ -255,9 +395,14 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
       }
       if (failed) continue;
       c.walked += 1;
-      if (reachedMarker || res.last || rows.length === 0) { nextStream(); continue; }
+      // A page whose rows were all filtered out is not the end of the list when the publisher still returned rows.
+      const exhausted = rows.length === 0 && !((res.rawCount ?? 0) > 0);
+      if (reachedMarker || res.last || exhausted) { nextStream(); continue; }
       if (c.mode === "incremental" && c.walked >= s.incrementalPages) {
-        if (c.lastSeen[sid] != null) notes.push(`${sid}: the previous pass's newest item was not met within ${s.incrementalPages} page(s); older new items may be missing until a backfill runs.`);
+        if (stopAt != null) {
+          notes.push(`${sid}: the previous pass's newest item was not met within ${s.incrementalPages} page(s); older new items may be missing until a backfill runs.`);
+          if (c.lastSeen[unmetKey(sid)] == null) c.lastSeen[unmetKey(sid)] = ctx.today;
+        }
         nextStream();
         continue;
       }
@@ -269,17 +414,36 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
     // sequence stream (ascending numbers)
     const marker = c.lastSeen[sid] != null ? Number(c.lastSeen[sid]) : NaN;
     if (c.page == null) {
+      // Incremental: numbers that failed in earlier passes are probed again first (see FAIL_RUN / RETRY_ATTEMPTS).
+      if (c.mode === "incremental") {
+        for (const r of readRetry(c.lastSeen, retryKey(sid))) {
+          if (items.length >= ctx.limit) return partial();
+          if (nearDeadline(ctx, margin)) return partial("Stopped before the deadline.");
+          let d: DiscoveredDoc | null;
+          try {
+            d = await s.fetch(r.n, ctx);
+            fetched += 1;
+          } catch (e) {
+            if (isStopError(e, ctx)) return stopped(e);
+            if (!isNotFound(e)) { settleRetry(c.lastSeen, sid, r.n, "failed", notes); continue; }
+            d = null;
+          }
+          settleRetry(c.lastSeen, sid, r.n, "answered", notes);
+          notes.push(`${sid} #${r.n}: ${d ? "found" : "not published"} on retry.`);
+          if (d) push(d);
+        }
+      }
       c.page = c.mode === "incremental" ? (Number.isFinite(marker) ? marker + 1 : (s.incrementalStart ?? s.start)) : s.start;
       c.misses = 0;
+      c.fails = 0;
       c.walked = 0;
     }
     if (items.length >= ctx.limit) return partial();
     if (nearDeadline(ctx, margin)) return partial("Stopped before the deadline.");
     if (c.mode === "incremental" && s.incrementalMax && c.walked >= s.incrementalMax) {
+      // The marker stays at the highest number that held a document (c.newest): numbers probed after it (misses, or
+      // failures still pending) are probed again by the next pass, so nothing published there is skipped.
       notes.push(`${sid}: probed ${s.incrementalMax} numbers this pass; continuing next pass.`);
-      // Remember how far we got so the next pass resumes there.
-      const hi = Math.max(Number(c.newest[sid] ?? NaN) || 0, c.page - 1);
-      if (hi > 0) c.newest[sid] = String(hi);
       nextStream();
       continue;
     }
@@ -288,17 +452,43 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
       d = await s.fetch(c.page, ctx);
       fetched += 1;
     } catch (e) {
-      if (isNotFound(e)) {
-        d = null;
-      } else if (c.mode === "backfill") {
-        if (items.length) return partial(`${sid} #${c.page}: ${errorText(e)}`);
-        throw e;
-      } else {
+      if (isStopError(e, ctx)) return stopped(e);
+      if (!isNotFound(e)) {
+        c.fails += 1;
+        c.walked += 1;
+        if (c.fails < FAIL_RUN) { c.page += 1; continue; }
+        // FAIL_RUN consecutive numbers failed. One fetch of the number next to them tells failing documents (the
+        // publisher answers: record them and step over) from a failing publisher (resume at the first of them).
+        const first = c.page - c.fails + 1;
+        const probe = first - 1 >= s.start ? first - 1 : c.page + 1;
+        let answers = false;
+        try {
+          await s.fetch(probe, ctx);
+          answers = true;
+        } catch (e2) {
+          if (isStopError(e2, ctx)) return stopped(e2);
+          answers = isNotFound(e2);
+        }
+        if (answers) {
+          fetched += 1;
+          recordFailed(sid, first, c.page, `fetch failed while #${probe} answered`);
+          c.page += 1;
+          continue;
+        }
+        c.page = first;
+        c.fails = 0;
+        if (c.mode === "backfill") {
+          if (items.length) return partial(`${sid} #${c.page}: ${errorText(e)}`);
+          throw e;
+        }
         failStream(sid, e, false);
         continue;
       }
+      d = null;
     }
     c.walked += 1;
+    // The publisher answered for this number: the failures just before it are those documents' own problem.
+    if (c.fails) recordFailed(sid, c.page - c.fails, c.page - 1, "fetch failed while later numbers answered");
     if (!d) {
       c.misses += 1;
       const belowCeiling = c.mode === "backfill" && Number.isFinite(marker) && c.page < marker;
@@ -309,11 +499,7 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
     c.misses = 0;
     const hi = Math.max(Number(c.newest[sid] ?? NaN) || 0, c.page);
     c.newest[sid] = String(hi);
-    const kk = key(d);
-    if (!seen.has(kk)) {
-      seen.add(kk);
-      items.push(d);
-    }
+    push(d);
     c.page += 1;
   }
 
@@ -326,6 +512,8 @@ export async function walkStreams(ctx: AdapterContext, cfg: WalkConfig): Promise
     if (s?.kind === "sequence" && prev != null && Number(prev) > Number(v)) continue;
     lastSeen[sid] = v;
   }
+  // A completed backfill walked every listed stream to its oldest page: earlier "marker not met" records are moot.
+  if (c.mode === "backfill") for (const sid of c.plan) if (cfg.stream(sid)?.backfill) delete lastSeen[unmetKey(sid)];
   const next = emptyCursor("incremental", lastSeen);
   return { items, nextCursor: serializeCursor(next), done: true, notes: notes.length ? notes : undefined };
 }

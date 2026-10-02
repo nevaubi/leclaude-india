@@ -1,5 +1,6 @@
 import "server-only";
 import { normalizeCaseNumber } from "../../case-numbers";
+import { CAPTION_SCOPE } from "../../causelist/forums";
 import type { AdapterContext, ParseInput, ParseResult, SourceAdapter } from "../../adapter";
 import type { DiscoveredDoc, SourceDef } from "../../types";
 import {
@@ -223,14 +224,108 @@ function smidStream(smid: number): ListingStream {
 
 const STREAMS = new Map<string, StreamSpec>([["rss", rssStream()], ...SEBI_SMIDS.map((s) => [`smid:${s.smid}`, smidStream(s.smid)] as const)]);
 
-/** Order numbers ("Order/AK/GN/2026-27/32758", "WTM/AN/MIRSD/...") and SAT appeal numbers printed in an order's text. */
+/**
+ * Appeal numbers as printed: SAT's own form ("Appeal No. 123 of 2025", "Misc. Appeal No. …") and, as `qualifier`,
+ * the forms of other courts that end in "Appeal No." ("Civil Appeal No. 7890 of 2020" of the Supreme Court).
+ */
+const APPEAL_RE = /\b((?:Civil|Criminal|Crl\.?|Second|First|Regular|Special\s+Leave|Letters\s+Patent|Company|Comp\.?|Competition|Insolvency|Income[\s-]?Tax|Tax|Writ|Execution|Arbitration)\s+)?((?:Misc\.?\s+)?Appeal\s+No\.?\s*\d{1,6}\s*(?:of|\/)\s*(?:19|20)\d{2})/gi;
+
+/**
+ * Where the body of a SAT order starts: "CORAM" (always printed above the order on SAT orders), the parties' "Versus",
+ * or an upper-case ORDER / JUDGMENT heading ("ORDER RESERVED ON …", "ORDER DATED …" are dates, not the heading).
+ */
+const SAT_BODY_START = /\b(?:CORAM|Coram)\b|\b(?:Versus|VERSUS)\b|\bJ\s?U\s?D\s?G\s?E?\s?M\s?E\s?N\s?T\b|\bO\s?R\s?D\s?E\s?R\b(?!\s+(?:dated|DATED|Dated|passed|PASSED|reserved|RESERVED|Reserved|pronounced|PRONOUNCED|Pronounced|on|ON))/;
+
+/** Case numbers that may sit between caption appeal numbers: Misc. Applications, I.A.s, other appeals of the caption. */
+const CAPTION_NUMBER_RE = /\b(?:(?:Misc(?:ellaneous)?\.?\s+)?(?:Application|Appeal)s?|M\.?\s?A\.?|I\.?\s?A\.?)\s*(?:Nos?\.?)?\s*\d{1,6}(?:\s*(?:,|&|and)\s*\d{1,6})*\s*(?:of|\/)\s*(?:19|20)\d{2}/gi;
+
+/** Whether the text between two caption parts joins them: connectors, punctuation, bracketed asides and case numbers only. */
+function joinsCaption(gap: string): boolean {
+  let g = gap;
+  for (let i = 0; i < 6 && /\([^()]*\)|\[[^[\]]*\]/.test(g); i++) g = g.replace(/\([^()]*\)|\[[^[\]]*\]/g, " ");
+  g = g.replace(CAPTION_NUMBER_RE, " ");
+  return /^(?:[\s,;:&.\-–]|\b(?:with|and|in|along\s*with|alongwith|connected\s+with|tagged\s+with)\b)*$/i.test(g);
+}
+
+export interface SatCaptionNumbers {
+  /** Appeal numbers of the order's own caption, as printed (they bind the order to those appeals). */
+  printed: string[];
+  keys: string[];
+  /** Every other appeal number on the first pages (cited precedents, other courts' appeals): never bound. */
+  mentioned: string[];
+  mentionedKeys: string[];
+}
+
+/**
+ * The caption appeal numbers of a SAT order (text of its first pages). Caption: the first SAT-form appeal number
+ * printed before the body starts (CORAM / Versus / ORDER heading); then every further SAT-form number that is joined to
+ * the previous caption number only by connectors and case numbers, or — above CORAM, where SAT prints nothing but the
+ * caption, parties and counsel — that starts its own line (after any "With" / "And" / "In"). Numbers qualified by
+ * another court's type ("Civil Appeal No.") and every number in the body are mentioned only.
+ */
+export function satCaptionAppeals(text: string): SatCaptionNumbers {
+  const head = text.slice(0, 12_000);
+  const out: SatCaptionNumbers = { printed: [], keys: [], mentioned: [], mentionedKeys: [] };
+  const body = SAT_BODY_START.exec(head);
+  const bodyAt = body ? body.index : head.length;
+  const coram = /\b(?:CORAM|Coram)\b/.exec(head);
+  const coramAt = coram ? coram.index : -1;
+  let inCaption = true;
+  let prevEnd = -1;
+  for (const m of head.matchAll(APPEAL_RE)) {
+    const printed = clean(m[0]);
+    const at = (m.index ?? 0) + (m[1]?.length ?? 0);
+    let caption = false;
+    if (!m[1] && inCaption) {
+      if (prevEnd < 0) {
+        // The caption's first number is printed above the body; a page whose first number follows it has no caption number.
+        caption = at < bodyAt;
+        inCaption = caption;
+      } else {
+        const lineStart = head.lastIndexOf("\n", at - 1) + 1;
+        const ownLineAboveCoram = at < coramAt && lineStart >= prevEnd && joinsCaption(head.slice(lineStart, at));
+        caption = ownLineAboveCoram || joinsCaption(head.slice(prevEnd, at));
+        // Above CORAM a number that is not part of the caption (rare) does not end it; below, the caption is over.
+        if (!caption && !(at < coramAt)) inCaption = false;
+      }
+    }
+    if (caption) prevEnd = at + m[2].length;
+    if (out.printed.includes(printed) || out.mentioned.includes(printed)) continue;
+    const n = normalizeCaseNumber(printed);
+    if (caption) {
+      out.printed.push(printed);
+      if (n && !out.keys.includes(n.key)) out.keys.push(n.key);
+    } else {
+      out.mentioned.push(printed);
+      if (n && !out.keys.includes(n.key) && !out.mentionedKeys.includes(n.key)) out.mentionedKeys.push(n.key);
+    }
+  }
+  return out;
+}
+
+/**
+ * Order numbers ("Order/AK/GN/2026-27/32758", "WTM/AN/MIRSD/...") and, for SAT orders (forum "sat"), the caption's
+ * appeal numbers. Only the caption binds (meta.caseKeys, meta.caseKeysScope "caption"); appeal numbers cited further
+ * down, and every appeal number of a non-SAT order, are kept as meta.mentionedCaseKeys, which never bind. Always one
+ * record, so a re-parse replaces keys an earlier parse stored.
+ */
 export function parseSebiOrderText(doc: ParseInput): ParseResult<{ meta: Record<string, unknown> }> {
   const text = doc.pages.slice(0, 2).map((p) => p.text).join("\n") || doc.markdown.slice(0, 20000);
   const orderNumbers = [...new Set([...text.matchAll(/ORDER\s+NO\.?\s*[:.-]?\s*([A-Z][A-Za-z]{1,10}(?:\/[A-Za-z0-9-]{1,20}){2,8})/gi)].map((m) => m[1]))];
-  const appeals = [...new Set([...text.matchAll(/\b(?:Misc\.?\s+)?Appeal\s+No\.?\s*\d{1,6}\s+of\s+(?:19|20)\d{2}/gi)].map((m) => clean(m[0])))];
-  const caseKeys = appeals.map((a) => normalizeCaseNumber(a)?.key).filter((k): k is string => !!k);
-  if (!orderNumbers.length && !appeals.length) return { records: [], unparsed: 1 };
-  return { records: [{ meta: { orderNumbers, appealNumbers: appeals, caseKeys: [...new Set(caseKeys)] } }], unparsed: 0 };
+  const sat = doc.meta?.forum === "sat";
+  const found = satCaptionAppeals(text);
+  const caption = sat ? found : { printed: [], keys: [], mentioned: [...found.printed, ...found.mentioned], mentionedKeys: [...found.keys, ...found.mentionedKeys] };
+  const meta = {
+    orderNumbers,
+    appealNumbers: caption.printed,
+    caseKeys: caption.keys,
+    caseKeysScope: CAPTION_SCOPE,
+    mentionedAppealNumbers: caption.mentioned,
+    mentionedCaseKeys: caption.mentionedKeys,
+    caseNumbersFrom: "caption",
+  };
+  const notes = sat && !caption.keys.length ? ["no SAT appeal number in the caption; not bound to any appeal"] : [];
+  return { records: [{ meta }], unparsed: orderNumbers.length || caption.printed.length ? 0 : 1, notes };
 }
 
 export const def: SourceDef = {

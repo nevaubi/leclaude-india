@@ -65,6 +65,9 @@ const meetings: ListingStream = {
   backfill: true,
   firstPage: 1,
   incrementalPages: 1,
+  // One table ordered by meeting, not by upload: minutes added to an older meeting's row sort below the newest file, so
+  // every pass lists the whole table (about 110 files; the pipeline's upsert skips URLs it already holds).
+  markerless: true,
   async fetch(_page: number, ctx: AdapterContext): Promise<ListingPage> {
     const res = await ctx.fetchPage(PAGE_URL);
     const items = parseGstCouncilMeetings(res.html ?? "", res.finalUrl || PAGE_URL);

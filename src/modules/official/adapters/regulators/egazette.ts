@@ -1,7 +1,10 @@
 import "server-only";
 import type { AdapterContext, DiscoverResult, ParseInput, ParseResult, SourceAdapter } from "../../adapter";
 import type { DiscoveredDoc, SourceDef } from "../../types";
-import { GOV_TERMS, clean, errorStatus, htmlText, isNotFound, isTooLargeError, nearDeadline, parseCursor, printedDate, serializeCursor, type RegCursor } from "./common";
+import {
+  FAIL_RUN, GOV_TERMS, addRetry, clean, emptyCursor, errorStatus, htmlText, isNotFound, isStopError, isTooLargeError, nearDeadline, parseCursor, printedDate,
+  readRetry, retryKey, serializeCursor, settleRetry, type RegCursor,
+} from "./common";
 
 /**
  * e-Gazette of India (egazette.gov.in). Verified 2026-10-02:
@@ -15,7 +18,14 @@ import { GOV_TERMS, clean, errorStatus, htmlText, isNotFound, isTooLargeError, n
  * marker. Every URL is built from the documented pattern (meta.urlFromPattern = true) and probed with a small ranged
  * read; 404 (or a non-PDF answer) means "not published", never a reason to try a different id. The year folder of an id
  * that is not on the home page is inherited from the nearest newer gazette found; after a run of misses the previous
- * year's folder is tried once for the same ids (a year boundary), and a second run of misses ends the walk.
+ * year's folder is tried once for the same ids (a year boundary). A second run of misses ends a first pass, a backfill,
+ * or an incremental walk that has found nothing yet; once an incremental pass has found a gazette, every id below it
+ * down to the previous pass's marker is probed (ids are issued in sequence), so the marker never moves past unprobed
+ * ids. The marker is the highest id found published.
+ * A probe that fails (not 404) on one id while lower ids answer is skipped for now and kept on a retry list in the
+ * cursor ("#retry:ids"), re-probed at the end of later passes, and after RETRY_ATTEMPTS failures recorded as unverified
+ * ("#unverified:ids"); it is never counted as published. FAIL_RUN consecutive failures stop the walk when the id just
+ * above them fails too (the host is failing); when that id answers, they are recorded the same way and stepped over.
  * Hindi pages carry a legacy-font text layer that is garbled; the pipeline OCRs such pages (no font repair here).
  */
 
@@ -23,6 +33,8 @@ const BASE = "https://egazette.gov.in";
 const MAX_MISSES = 25;
 /** Ids probed by the first incremental pass (no marker yet); older gazettes come from a backfill. */
 const FIRST_PASS_IDS = 300;
+/** Ids above the previous pass's newest gazette that one incremental pass walks (about three months of gazettes). */
+const MAX_SPAN = 5000;
 
 export function egazettePdfUrl(year: number, id: number): string {
   return `${BASE}/WriteReadData/${year}/${id}.pdf`;
@@ -126,8 +138,11 @@ function gazetteDoc(id: number, year: number, row: GazetteRow | undefined): Disc
 }
 
 function freshCursor(mode: RegCursor["mode"], lastSeen: Record<string, string>): RegCursor {
-  return { v: 1, mode, plan: ["ids"], i: 0, page: null, skip: 0, misses: 0, walked: 0, lastSeen, newest: {}, only: null };
+  return { ...emptyCursor(mode, lastSeen), plan: ["ids"] };
 }
+
+/** Stream name of the id walk in the cursor's retry / unverified lists ("#retry:ids", "#unverified:ids"). */
+const STREAM = "ids";
 
 export async function discoverEgazette(ctx: AdapterContext): Promise<DiscoverResult> {
   const notes: string[] = [];
@@ -147,27 +162,34 @@ export async function discoverEgazette(ctx: AdapterContext): Promise<DiscoverRes
   }
   const byId = new Map(rows.map((r) => [r.id, r]));
   const marker = c.lastSeen.ids != null ? Number(c.lastSeen.ids) : NaN;
-  if (c.page == null) {
-    if (c.mode === "incremental") {
-      if (!rows.length) return { items: [], nextCursor: serializeCursor(c), done: true, notes: [...notes, "home page listed no gazettes; nothing to walk."] };
-      c.page = rows[0].id;
-      c.newest = { ids: String(rows[0].id), _year: String(rows[0].year) };
-    } else {
-      // Backfill continues below the lowest id any earlier pass probed (else below the newest listed id); the
-      // incremental marker (lastSeen.ids) is left untouched.
-      const floor = Number(c.lastSeen.floor);
-      const top = Number.isFinite(floor) ? floor - 1 : rows[0]?.id;
-      if (!top) return { items: [], nextCursor: serializeCursor(c), done: true, notes: [...notes, "no starting id for a backfill."] };
-      const year = Number(c.lastSeen.floorYear) || byId.get(top)?.year || rows[0]?.year || Number(ctx.today.slice(0, 4));
-      c.page = top;
-      c.newest = { _year: String(year) };
-    }
-    c.misses = 0;
-    c.walked = 0;
-  }
   const items: DiscoveredDoc[] = [];
-  const finish = (): DiscoverResult => {
+  let probed = 0;
+  /** Ids put on the retry list by this call (probed again from the next pass on). */
+  const recordedNow = new Set<number>();
+
+  /** Ids that failed in earlier passes (see FAIL_RUN): probed again at the end of a pass, within the call's budget. */
+  const retryFailed = async () => {
+    for (const r of readRetry(c.lastSeen, retryKey(STREAM))) {
+      if (recordedNow.has(r.n)) continue;
+      if (items.length >= ctx.limit || nearDeadline(ctx)) return;
+      const year = Number(r.tag) || Number(c.lastSeen.floorYear) || Number(ctx.today.slice(0, 4));
+      let res: ProbeResult;
+      try {
+        res = await probePdf(ctx, egazettePdfUrl(year, r.n));
+      } catch (e) {
+        if (isStopError(e, ctx)) return;
+        settleRetry(c.lastSeen, STREAM, r.n, "failed", notes);
+        continue;
+      }
+      settleRetry(c.lastSeen, STREAM, r.n, "answered", notes);
+      if (res === "exists") items.push(gazetteDoc(r.n, year, byId.get(r.n)));
+      notes.push(`gazette ${r.n}: ${res === "exists" ? "published" : `not published under /${year}/`} (answered on retry).`);
+    }
+  };
+  const finish = async (): Promise<DiscoverResult> => {
+    await retryFailed();
     const lastSeen = { ...c.lastSeen };
+    // The next pass stops at the highest id found published (never at a listed id that was not found).
     const top = Number(c.newest.ids);
     if (Number.isFinite(top) && !(Number(lastSeen.ids) > top)) lastSeen.ids = String(top);
     const low = Number(c.newest._low);
@@ -181,6 +203,55 @@ export async function discoverEgazette(ctx: AdapterContext): Promise<DiscoverRes
     if (why) notes.push(why);
     return { items, nextCursor: serializeCursor(c), done: false, notes: notes.length ? notes : undefined };
   };
+  /** Put the `count` failed ids from `low` upward on the retry list (never counted as published). */
+  const recordFailed = (low: number, count: number, what: string) => {
+    for (let fid = low + count - 1; fid >= low; fid--) {
+      addRetry(c.lastSeen, STREAM, fid, String(byId.get(fid)?.year ?? Number(c.newest._year)), notes);
+      recordedNow.add(fid);
+    }
+    notes.push(`${what}; skipped for now and recorded for retry (not counted as published).`);
+    c.fails = 0;
+  };
+  /** Whether the host gives a definitive answer (a PDF, or not published) for `id`; throws only on a stop. */
+  const hostHealthy = async (id: number): Promise<boolean> => {
+    try {
+      await probePdf(ctx, egazettePdfUrl(byId.get(id)?.year ?? Number(c.newest._year), id));
+      return true;
+    } catch (e) {
+      if (isStopError(e, ctx)) throw e;
+      return false;
+    }
+  };
+
+  if (c.page == null) {
+    if (c.mode === "incremental") {
+      if (!rows.length) {
+        notes.push("home page listed no gazettes; nothing to walk.");
+        return finish();
+      }
+      let start = rows[0].id;
+      if (Number.isFinite(marker) && start - marker > MAX_SPAN) {
+        // A listed id far above the previous pass's newest gazette (a long pause, or a misprinted UGID): walk the
+        // MAX_SPAN ids above the marker now; the next pass continues above the newest gazette found.
+        start = marker + MAX_SPAN;
+        notes.push(`the home page lists gazette ${rows[0].id}, more than ${MAX_SPAN} ids above the previous pass's newest (${marker}); this pass walks down from ${start}.`);
+      }
+      c.page = start;
+      c.newest = { _year: String(byId.get(start)?.year ?? rows[0].year) };
+    } else {
+      // Backfill continues below the lowest id any earlier pass probed (else below the newest listed id); the
+      // incremental marker (lastSeen.ids) is left untouched.
+      const floor = Number(c.lastSeen.floor);
+      const top = Number.isFinite(floor) ? floor - 1 : rows[0]?.id;
+      if (!top) return { items: [], nextCursor: serializeCursor(c), done: true, notes: [...notes, "no starting id for a backfill."] };
+      const year = Number(c.lastSeen.floorYear) || byId.get(top)?.year || rows[0]?.year || Number(ctx.today.slice(0, 4));
+      c.page = top;
+      c.newest = { _year: String(year) };
+    }
+    c.misses = 0;
+    c.fails = 0;
+    c.walked = 0;
+  }
 
   while (true) {
     const id: number = c.page!;
@@ -197,17 +268,48 @@ export async function discoverEgazette(ctx: AdapterContext): Promise<DiscoverRes
     let res: ProbeResult;
     try {
       res = await probePdf(ctx, egazettePdfUrl(year, id));
+      probed += 1;
     } catch (e) {
-      if (items.length) return partial(`gazette ${id}: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (isStopError(e, ctx)) {
+        if (items.length || probed) return partial("Stopped before the deadline.");
+        throw e;
+      }
+      // One id failing (403 from a WAF, 500, a TLS error on one file) must not stop discovery for good: the id is
+      // stepped over — unverified, never counted as published — and recorded for retry once a lower id answers.
+      // After FAIL_RUN consecutive failures one probe of the id just above them tells failing files (the host answers:
+      // they are recorded and stepped over) from a failing host (stop; the walk resumes at the first of them).
+      c.fails += 1;
+      c.walked += 1;
+      if (c.fails < FAIL_RUN) { c.page = id - 1; continue; }
+      const first = id + c.fails - 1;
+      let hostAnswers: boolean;
+      try {
+        hostAnswers = await hostHealthy(first + 1);
+      } catch (e2) {
+        if (items.length || probed) return partial("Stopped before the deadline.");
+        throw e2;
+      }
+      if (hostAnswers) {
+        recordFailed(id, c.fails, `gazette ${first}..${id}: probes failed while the host answered for gazette ${first + 1}`);
+        c.page = id - 1;
+        continue;
+      }
+      c.page = first;
+      c.fails = 0;
+      if (items.length) return partial(`gazette ${id}: ${msg}; ${FAIL_RUN} consecutive ids failed and so did gazette ${first + 1} (the host is failing); the walk resumes at ${c.page}.`);
       throw e;
     }
     c.walked += 1;
+    if (c.fails) recordFailed(id + 1, c.fails, `gazette ${id + c.fails}${c.fails > 1 ? `..${id + 1}` : ""}: probe failed while lower ids answered`);
     if (!(Number(c.newest._low) <= id)) c.newest._low = String(id);
     if (res === "exists") {
       items.push(gazetteDoc(id, year, row));
       c.misses = 0;
       c.newest._year = String(year);
       delete c.newest._switched;
+      delete c.newest._base;
+      if (c.mode === "incremental" && !(Number(c.newest.ids) >= id)) c.newest.ids = String(id);
       c.page = id - 1;
       continue;
     }
@@ -217,10 +319,24 @@ export async function discoverEgazette(ctx: AdapterContext): Promise<DiscoverRes
       if (!c.newest._switched && year > 1990) {
         // Year boundary: retry the same ids in the previous year's folder (documented pattern, same ids).
         c.newest._switched = "1";
+        c.newest._base = String(year);
         c.newest._year = String(year - 1);
         c.page = Number(c.newest._missFrom);
         c.misses = 0;
         notes.push(`ids ${c.page}..${id} were not in /${year}/; trying /${year - 1}/ for the same ids.`);
+        continue;
+      }
+      // Incremental, below a gazette found in this pass and above the previous pass's newest one: ids are issued in one
+      // sequence, so every id in between was issued and the walk goes on down to the marker (the marker never moves
+      // past ids that were not probed). A first pass or a backfill has no such bound and ends here.
+      if (c.mode === "incremental" && Number.isFinite(marker) && Number.isFinite(Number(c.newest.ids))) {
+        const base = Number(c.newest._base) || year;
+        notes.push(`ids ${c.newest._missFrom}..${id} were not published in /${base}/ or /${base - 1}/; the walk continues down to ${marker + 1}.`);
+        c.newest._year = String(base);
+        delete c.newest._switched;
+        delete c.newest._base;
+        c.misses = 0;
+        c.page = id - 1;
         continue;
       }
       notes.push(`${MAX_MISSES} consecutive ids not published below ${c.newest._missFrom}; walk ended.`);

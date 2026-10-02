@@ -32,6 +32,14 @@ const ELIB = "https://elibrary.sansad.in";
 const FILE_HOSTS = ["sansad.in"];
 const LS_PAGE = 50;
 const ELIB_PAGE = 20;
+/**
+ * Pages an incremental pass may walk in one Lok Sabha session before giving up on meeting the previous pass's newest
+ * question: a whole session (a session publishes about 4,500 questions, ~240 per sitting day; 120 × 50 = 6,000), so a
+ * delayed pass or a heavy day still reaches the marker. Passes normally stop at the marker after a few pages.
+ */
+const LS_INCREMENTAL_PAGES = 120;
+/** eLibrary pages per incremental pass (200 newest accessions per collection). */
+const ELIB_INCREMENTAL_PAGES = 10;
 
 /** eLibrary collections (collection UUID resolved from handle 123456789/28102 and /28106 on 2026-10-02). */
 export const ELIB_COLLECTIONS = {
@@ -80,7 +88,8 @@ interface LsQuestion {
   sessionNo?: string;
 }
 
-export function parseLsQuestions(answer: unknown): { items: DiscoveredDoc[]; total: number } | null {
+/** Questions with a file as items; `rows` is how many questions the page held before that filter. */
+export function parseLsQuestions(answer: unknown): { items: DiscoveredDoc[]; total: number; rows: number } | null {
   const first = Array.isArray(answer) ? (answer[0] as { listOfQuestions?: LsQuestion[]; totalRecordSize?: number } | undefined) : undefined;
   if (!first || !Array.isArray(first.listOfQuestions)) return null;
   const items: DiscoveredDoc[] = [];
@@ -112,7 +121,7 @@ export function parseLsQuestions(answer: unknown): { items: DiscoveredDoc[]; tot
       },
     });
   }
-  return { items, total: Number(first.totalRecordSize) || 0 };
+  return { items, total: Number(first.totalRecordSize) || 0, rows: first.listOfQuestions.length };
 }
 
 interface LsSessions { loksabha?: number; sessions?: { sessionNo?: number }[] }
@@ -133,11 +142,12 @@ function lsStream(ls: number, session: number): ListingStream {
     id: `ls:${ls}:${session}`,
     backfill: true,
     firstPage: 1,
-    incrementalPages: 4,
+    incrementalPages: LS_INCREMENTAL_PAGES,
     async fetch(page: number, ctx: AdapterContext): Promise<ListingPage> {
       const parsed = parseLsQuestions(await ctx.fetchJson(lsQuestionsUrl(ls, session, page)));
       if (!parsed) return { items: [], last: true, notes: ["answer had no question list"] };
-      return { items: parsed.items, last: !parsed.items.length || page * LS_PAGE >= parsed.total };
+      // A page of questions none of which has its file yet is not the end of the list: `last` follows the raw rows.
+      return { items: parsed.items, rawCount: parsed.rows, last: parsed.rows === 0 || page * LS_PAGE >= parsed.total };
     },
   };
 }
@@ -214,7 +224,7 @@ const mv = (m: MetaValues | undefined, k: string): string | null => clean(m?.[k]
 
 interface DspaceObject { uuid?: string; handle?: string; name?: string; metadata?: MetaValues }
 
-export function parseElibSearch(answer: unknown, collection: keyof typeof ELIB_COLLECTIONS): { items: DiscoveredDoc[]; totalPages: number } | null {
+export function parseElibSearch(answer: unknown, collection: keyof typeof ELIB_COLLECTIONS): { items: DiscoveredDoc[]; totalPages: number; rows: number } | null {
   const a = answer as { _embedded?: { searchResult?: { _embedded?: { objects?: { _embedded?: { indexableObject?: DspaceObject } }[] }; page?: { totalPages?: number } } } } | null;
   const sr = a?._embedded?.searchResult;
   if (!sr || !Array.isArray(sr._embedded?.objects)) return null;
@@ -251,7 +261,7 @@ export function parseElibSearch(answer: unknown, collection: keyof typeof ELIB_C
       },
     });
   }
-  return { items, totalPages: Number(sr.page?.totalPages) || 0 };
+  return { items, totalPages: Number(sr.page?.totalPages) || 0, rows: sr._embedded!.objects!.length };
 }
 
 interface Bitstream { name?: string; sizeBytes?: number; _links?: { content?: { href?: string } } }
@@ -294,11 +304,11 @@ function elibStream(collection: keyof typeof ELIB_COLLECTIONS): ListingStream {
     id: `elib:${collection}`,
     backfill: true,
     firstPage: 0,
-    incrementalPages: 3,
+    incrementalPages: ELIB_INCREMENTAL_PAGES,
     async fetch(page: number, ctx: AdapterContext): Promise<ListingPage> {
       const parsed = parseElibSearch(await ctx.fetchJson(elibSearchUrl(ELIB_COLLECTIONS[collection].uuid, page)), collection);
       if (!parsed) return { items: [], last: true, notes: ["answer was not a DSpace search result"] };
-      return { items: parsed.items, last: !parsed.items.length || page + 1 >= parsed.totalPages };
+      return { items: parsed.items, rawCount: parsed.rows, last: parsed.rows === 0 || page + 1 >= parsed.totalPages };
     },
   };
 }
@@ -351,7 +361,7 @@ export const def: SourceDef = {
   notes: [
     "rsdoc.nic.in accepts a raw SQL predicate in its whereclause parameter; only the official UI's exact equality form (ses_no=N and qno='Q' and qtype='STARRED'|'UNSTARRED') is ever sent, built from validated numbers.",
     "eLibrary committee reports and debates use DSpace's TEXT bundle (Apache Tika extraction, no page numbers) as text; the original PDF is linked in metadata for checking quotes.",
-    "Lok Sabha questions come from the Lok Sabha questions API (13th Lok Sabha onwards).",
+    "Lok Sabha questions come from the Lok Sabha questions API (13th Lok Sabha onwards); an incremental pass walks a current session down to the previous pass's newest question (up to 120 pages of 50).",
   ],
 };
 

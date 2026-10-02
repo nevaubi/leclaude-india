@@ -101,5 +101,7 @@ export async function askDocSet(principal: Principal, setId: string, input: AskI
   });
   const text = (result.text ?? "").trim();
   const { citations, unresolved } = mapMarkers(text, hits);
-  return { question, answer: text, citations, unresolved, noEvidence: false, passagesSearched: hits.length, model, durationMs: Date.now() - started };
+  // The model may conclude from the passages it was given that they do not answer the question.
+  const noEvidence = citations.length === 0 && text.trim().startsWith(NO_EVIDENCE_ANSWER);
+  return { question, answer: text, citations, unresolved, noEvidence, passagesSearched: hits.length, model, durationMs: Date.now() - started };
 }

@@ -219,6 +219,12 @@ function normalizeValue(c: ReviewColumn, raw: unknown): string | null {
   return v;
 }
 
+/** True when every line of a quote is an email/letter header line (From, To, Cc, Bcc, Date, Subject, Sent). */
+export function headerOnlyQuote(quote: string): boolean {
+  const lines = quote.split(/\n|(?=\b(?:From|To|Cc|Bcc|Date|Sent|Subject)\s*:)/i).map((l) => l.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every((l) => /^(from|to|cc|bcc|date|sent|subject)\s*:/i.test(l));
+}
+
 export function checkDocType(review: Pick<StoredReview, "docTypes">, raw: unknown): string {
   const v = str(raw, 200).toLowerCase();
   return review.docTypes.find((d) => d.toLowerCase() === v) ?? "Other";
@@ -235,6 +241,8 @@ export function processReviewWindow(review: StoredReview, win: Window, raw: RawW
     const value = r ? normalizeValue(c, r.value) : null;
     if (value == null) { cells[c.id] = noValue("not_stated"); continue; }
     const quote = str(r!.quote, 400);
+    // "No" with nothing quoted means the document is silent on the point, which is "not stated", not an unsupported answer.
+    if (c.kind === "yes_no" && value === "No" && !quote) { cells[c.id] = noValue("not_stated"); continue; }
     const loc = locateQuote(quote, r!.page, win, pageText, value);
     const supported = loc.found && valueInQuote(c.kind, value, quote);
     cells[c.id] = { value, status: supported ? "found" : "unverified", quote, page: loc.page, quoteFound: loc.found };
@@ -251,8 +259,13 @@ export function processReviewWindow(review: StoredReview, win: Window, raw: RawW
   let flag: PrivilegeFlag = FLAGS.includes(p.flag as PrivilegeFlag) ? (p.flag as PrivilegeFlag) : "none";
   const basis = str(p.basis, 500);
   if (flag !== "none" && !basis) flag = "none"; // a flag needs a stated basis
-  const pquote = flag === "none" ? "" : str(p.quote, 400);
-  const ploc = flag === "none" ? { page: null, found: false } : locateQuote(pquote, p.page, win, pageText);
+  let pquote = flag === "none" ? "" : str(p.quote, 400);
+  let ploc = flag === "none" ? { page: null as number | null, found: false } : locateQuote(pquote, p.page, win, pageText);
+  // An advocate in the To/Cc line of a business communication is not privilege by itself (BSA 2023 ss.132-134): a flag
+  // resting only on header lines is dropped. A flag whose quote is not in the text is kept for the reviewer (missing a
+  // privileged document is the costlier error) but never above "possible", and shows that its quote was not found.
+  if (flag !== "none" && headerOnlyQuote(pquote)) { flag = "none"; pquote = ""; ploc = { page: null, found: false }; }
+  else if (flag === "likely" && !ploc.found) flag = "possible";
   const privilege: PrivilegeScreen = { flag, basis: flag === "none" ? "" : basis, quote: pquote, page: ploc.page, quoteFound: ploc.found };
   const imp = Math.round(Number(raw?.importance));
   return {

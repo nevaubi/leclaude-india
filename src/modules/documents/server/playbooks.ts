@@ -81,7 +81,7 @@ const COMMERCIAL: ReviewPlaybook = {
     "Code of Civil Procedure, 1908",
   ],
   docTypes: [
-    "Agreement / contract", "Purchase order", "Work order", "Invoice", "Delivery challan", "Bank guarantee", "Notice invoking arbitration (s.21)",
+    "Agreement / contract", "Purchase order", "Work order", "Invoice", "Delivery challan", "Bank guarantee", "Legal notice / demand notice", "Notice invoking arbitration (s.21)",
     "Reply to notice", "Termination notice", "Statement of claim", "Statement of defence", "Counter-claim", "Petition under s.9", "Petition under s.11",
     "Petition under s.34", "Interim order (s.9 / s.17)", "Arbitral award", "Pre-institution mediation report (s.12A)", "Minutes of meeting",
     "Email / correspondence", "Board resolution",

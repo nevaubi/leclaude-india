@@ -15,7 +15,7 @@ export type AgentId = "coordinator" | "research" | "drafter" | "reviewer" | "cod
 
 export type AgentToolName =
   | "search_judgments" | "read_judgment" | "citing_references" | "search_statutes" | "read_section" | "map_criminal_section"
-  | "search_judgment_index" | "search_judgment_text" | "read_judgment_text" | "search_law" | "read_law_section" | "list_law_instruments" | "get_forum_info"
+  | "search_judgment_index" | "search_judgment_text" | "read_judgment_text" | "citator_check" | "search_law" | "read_law_section" | "list_law_instruments" | "get_forum_info"
   | "indian_kanoon_search" | "indian_kanoon_doc"
   | "search_library" | "get_library_item" | "search_ediscovery" | "get_ediscovery_document" | "get_matter_context"
   | "fetch_url" | "web_search" | "search_intel" | "handoff";
@@ -66,7 +66,7 @@ export const AGENT_PERSONAS: Record<AgentId, AgentPersona> = {
       "Deliver a memo in Markdown: **Bottom line**, **Analysis** (with citations), **Authorities relied on** (bulleted with one-line parentheticals), **Open questions / next steps**.",
       "When the request is really a drafting job, hand off to the drafter with the authorities you found; when it needs a final QA pass, hand off to the reviewer.",
     ].join("\n"),
-    tools: ["search_law", "read_law_section", "list_law_instruments", "search_judgment_text", "read_judgment_text", "search_judgment_index", "citing_references", "map_criminal_section", "get_forum_info", "search_judgments", "read_judgment", "search_statutes", "read_section", "indian_kanoon_search", "indian_kanoon_doc", "search_intel", "search_library", "get_library_item", "get_matter_context", "fetch_url", "web_search", "handoff"],
+    tools: ["search_law", "read_law_section", "list_law_instruments", "search_judgment_text", "read_judgment_text", "search_judgment_index", "citing_references", "citator_check", "map_criminal_section", "get_forum_info", "search_judgments", "read_judgment", "search_statutes", "read_section", "indian_kanoon_search", "indian_kanoon_doc", "search_intel", "search_library", "get_library_item", "get_matter_context", "fetch_url", "web_search", "handoff"],
     model: "primary",
     outputContract: "Markdown memo with sections Bottom line / Analysis / Authorities relied on / Open questions; every authority cited; [VERIFY] marks on unconfirmed points.",
     maxSteps: 14,
@@ -129,7 +129,7 @@ export const AGENT_PERSONAS: Record<AgentId, AgentPersona> = {
       "Deliver Markdown: **What the data shows** (with figures), **Why it matters for the matter**, **Evidence** (bulleted with ids/citations), **Caveats** (coverage gaps, low-confidence records). Never extrapolate beyond the records you have.",
       "Hand off to research when a legal question needs authority, or to the reviewer before a profile is published.",
     ].join("\n"),
-    tools: ["search_intel", "search_judgment_index", "search_judgment_text", "read_judgment_text", "search_judgments", "read_judgment", "citing_references", "get_matter_context", "search_library", "handoff"],
+    tools: ["search_intel", "search_judgment_index", "search_judgment_text", "read_judgment_text", "search_judgments", "read_judgment", "citing_references", "citator_check", "get_matter_context", "search_library", "handoff"],
     model: "primary",
     outputContract: "Markdown with sections What the data shows / Why it matters / Evidence / Caveats; every figure and event cites an id, citation or order.",
     maxSteps: 10,

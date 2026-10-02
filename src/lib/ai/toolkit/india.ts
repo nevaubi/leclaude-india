@@ -18,6 +18,7 @@ import { createIndianKanoon, courtForDocsource, type IndianKanoonClient } from "
 import { isCorpusScope, type RetrievalScope } from "../vector-store";
 import { mapCriminalSection } from "./india-criminal-map";
 import { JUDGMENT_TEXT_TOOLS } from "./india-judgment-text";
+import { CITATOR_TOOLS } from "./india-citator";
 import { jurisdictionLabel, lawCitation, lawSourceId, publisherLabel, statusLabel } from "@/modules/law/shared";
 
 /**
@@ -933,7 +934,7 @@ export const listLawInstrumentsTool = defineTool<{ query: string; jurisdiction?:
 
 /** Tools that exist only with a capability (fail closed: absent from the toolset without it). */
 export const INDIAN_KANOON_TOOLS = [indianKanoonSearchTool, indianKanoonDocTool];
-export const CORPUS_INDEX_TOOLS = [searchJudgmentIndexTool, ...JUDGMENT_TEXT_TOOLS];
+export const CORPUS_INDEX_TOOLS = [searchJudgmentIndexTool, ...JUDGMENT_TEXT_TOOLS, ...CITATOR_TOOLS];
 /** The statutes corpus (law_* tables in the same Postgres); errors explicitly when the tables are not loaded yet. */
 export const LAW_CORPUS_TOOLS = [searchLawTool, readLawSectionTool, listLawInstrumentsTool];
 

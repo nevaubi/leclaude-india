@@ -13,14 +13,14 @@
 /** Names of the Indian law tools the routing block refers to (tests pin that each exists in the toolkit). */
 export const ROUTED_INDIA_TOOLS = [
   "search_law", "read_law_section", "list_law_instruments", "search_judgment_text", "read_judgment_text", "search_judgment_index",
-  "citing_references", "get_forum_info", "map_criminal_section", "search_judgments", "read_judgment", "search_statutes", "read_section",
+  "citing_references", "citator_check", "get_forum_info", "map_criminal_section", "search_judgments", "read_judgment", "search_statutes", "read_section",
 ] as const;
 
 export const INDIAN_LAW_TOOL_ROUTING = `Indian law tool routing (choose by the job; chain search → read → cite):
 - Statute question (what a provision says, its ingredients, punishment, status): search_law → read_law_section (act_id + section). Know the Act but not the section: list_law_instruments → read_law_section. Without search_law: search_statutes → read_section.
 - Doctrine, holding, test or how courts applied a provision: search_judgment_text → read_judgment_text (the result's id, with the page of the passage) → cite that page.
 - Identify a case by neutral citation, CNR, case number, party or judge: search_judgment_index. If the result says text: full, read it with read_judgment_text (same id); otherwise it is metadata only — cite the record, never a holding.
-- Later judgments citing a judgment: citing_references with its sc:/hc: id or neutral citation; the results MENTION the citation (text match), they are not treatment until you read the passage.
+- Later judgments citing a judgment: citing_references with its sc:/hc: id or neutral citation; the results MENTION the citation (text match), they are not treatment until you read the passage. citator_check (same ids) adds exact-citation matches with text cues ("overruled", "distinguished") and a negative-signal summary; a cue is not a verified treatment and nothing establishes good law.
 - Courts, local Acts (rent, stamp, court fees) and filing links for a city or forum: get_forum_info.
 - IPC↔BNS, CrPC↔BNSS, Evidence Act↔BSA: map_criminal_section; report its status (requires_review, split, unmapped) as returned.
 - search_judgments / read_judgment are the local store (ijdg_… ids): judgments ingested into this workspace or linked to a matter.

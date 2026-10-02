@@ -12,6 +12,7 @@ import { caseApiHref, caseHref, formatCaseDate, urlHost, type CaseRecord, type C
 import { benchLabel, courtLabel } from "./case-labels";
 import { CaseApiError, fetchCaseJson } from "./fetch";
 import { JudgmentTextSection } from "./judgment-text";
+import { CitationsSection, NegativeSignalNotice, useCitator } from "./case-citations";
 import { CoramJudges } from "@/modules/judges/components/coram-judges";
 import { CoramAvatars } from "@/modules/judges/components/coram-avatars";
 import { PhotoBackdrop } from "@/components/corpus/visual-image";
@@ -159,6 +160,7 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
   const bench = r.bench ?? benchLabel(r);
   const visuals = useVisuals();
   const photo = courtVisual(visuals, r.court_id);
+  const citator = useCitator(r.id);
   return (
     <article className="mt-2">
       {/* Hero: the court's building as a quiet backdrop; parties as the title. */}
@@ -199,6 +201,7 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
           </span>
         </div>
       </header>
+      <NegativeSignalNotice state={citator} />
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
@@ -216,6 +219,8 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
               {r.pdf_url ? <Button asChild size="xs" variant="outline"><a href={r.pdf_url} target="_blank" rel="noopener noreferrer"><FileText className="size-3.5" />Open the official PDF<ExternalLink className="size-3 opacity-60" /></a></Button> : null}
             </section>
           )}
+
+          <CitationsSection state={citator} />
 
           {r.translations.length ? (
             <Section title="Translations">

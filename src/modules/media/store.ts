@@ -93,6 +93,8 @@ export interface StoredMedia {
 
 export interface MediaDeps {
   store?: RemoteStore | null;
+  /** User-Agent for the download (Wikimedia requires an identifying one with a contact URL). */
+  userAgent?: string;
   fetchImpl?: SafeFetchInit["fetchImpl"];
   egress?: EgressPolicy;
   signal?: AbortSignal;
@@ -126,7 +128,7 @@ export async function storeImageBytes(bytes: Uint8Array, declaredType: string | 
 
 /** Download an image from an official page (SSRF-safe) and store it. Throws SafeFetchError / MediaValidationError. */
 export async function storeImageFromUrl(url: string, meta: MediaMeta = {}, deps: MediaDeps = {}): Promise<StoredMedia> {
-  const get = (fetchImpl?: typeof fetch, legacy = false) => safeFetch(url, { headers: { accept: "image/png,image/jpeg,image/gif,image/webp;q=0.9,*/*;q=0.1", "user-agent": "LeClaude-Enrichment/1.0 (+court and judge identity; attribution kept)" }, signal: deps.signal, fetchImpl }, {
+  const get = (fetchImpl?: typeof fetch, legacy = false) => safeFetch(url, { headers: { accept: "image/png,image/jpeg,image/gif,image/webp;q=0.9,*/*;q=0.1", "user-agent": deps.userAgent ?? "LeClaude-Enrichment/1.0 (+court and judge identity; attribution kept)" }, signal: deps.signal, fetchImpl }, {
     name: "media",
     // Originals may be larger than the store limit; fitImageForStore validates and downsizes them below.
     maxBytes: MAX_SOURCE_BYTES,
@@ -143,6 +145,12 @@ export async function storeImageFromUrl(url: string, meta: MediaMeta = {}, deps:
     // Older government servers need TLS legacy renegotiation; retry once for those hosts only (see legacy-tls.ts).
     if (deps.fetchImpl || !isLegacyTlsError(e) || !legacyTlsAllowed(url)) throw e;
     res = await get(legacyTlsFetch, true);
+  }
+  if (res.status === 429 && !deps.fetchImpl) {
+    // Rate limited (Wikimedia's upload servers do this to bursts): wait as asked, at most 10 s, and try once more.
+    const after = Number(res.headers.get("retry-after"));
+    await new Promise((r) => setTimeout(r, Math.min(10_000, Number.isFinite(after) && after > 0 ? after * 1000 : 3000)));
+    res = await get();
   }
   if (!res.ok) throw new Error(`Image request failed with HTTP ${res.status}`);
   const fitted = await fitImageForStore(res.body, res.contentType || null);

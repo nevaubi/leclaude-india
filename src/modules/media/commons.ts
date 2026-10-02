@@ -23,7 +23,8 @@ export const COMMONS_THUMB_WIDTH = 1280;
 
 export function commonsUserAgent(env: NodeJS.ProcessEnv = process.env): string {
   const contact = (env.WIKIMEDIA_CONTACT ?? "").trim().slice(0, 120);
-  return `LeClaude-VisualLibrary/1.0 (Indian law reference pages; attribution kept${contact ? `; ${contact}` : ""}) node-fetch`;
+  // Wikimedia's User-Agent policy: tool name/version and a way to reach the operator; generic agents get rate limited.
+  return `LeClaude-VisualLibrary/1.0 (https://leclaude-india.vercel.app; Indian law reference pages, attribution kept${contact ? `; ${contact}` : ""}) node-fetch/undici`;
 }
 
 // ---------------------------------------------------------------------------

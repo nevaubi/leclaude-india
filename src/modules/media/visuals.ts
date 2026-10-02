@@ -6,7 +6,7 @@ import { cityById } from "@/lib/india/forums";
 import { remoteStore, type RemoteStore, type Row, type SqlQuery } from "@/lib/db/remote";
 import { createFirecrawl } from "@/modules/intel/providers/firecrawl";
 import { ensureJudgesSchema } from "@/modules/judges/schema";
-import { COMMONS_SOURCE_NAME, commonsTargets, rankCandidates, searchCommons, type CommonsCandidate, type CommonsQuery, type CommonsTarget } from "./commons";
+import { COMMONS_SOURCE_NAME, commonsTargets, rankCandidates, searchCommons, type CommonsCandidate, type CommonsQuery, type CommonsTarget, commonsUserAgent } from "./commons";
 import { decodeDataUri, fetchPublic, logoCandidatesFromHtml, logoHostAllowed, looksLikeSvg, rasteriseSvg, REGULATOR_SITES, REGULATORS_WITHOUT_LOGO, regulatorSite, type FetchedBytes, type LogoCandidate, type RegulatorSite } from "./logos";
 import { fitImageForStore } from "./resize";
 import { setMediaCredit, setMediaVision, storeImageBytes, storeImageFromUrl, type MediaMeta, type StoredMedia } from "./store";
@@ -410,7 +410,8 @@ export async function runVisuals(input: RunVisualsInput, deps: VisualsDeps = {})
     store,
     refresh: input.refresh === true,
     searchCommons: deps.searchCommons ?? ((q) => searchCommons(q)),
-    storeImage: deps.storeImage ?? ((url, meta) => storeImageFromUrl(url, meta, { store })),
+    // Wikimedia files are fetched with Wikimedia's required User-Agent; other hosts get the media store default.
+    storeImage: deps.storeImage ?? ((url, meta) => storeImageFromUrl(url, meta, { store, userAgent: /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(url) ? commonsUserAgent() : undefined })),
     storeBytes: deps.storeBytes ?? ((bytes, type, src, meta) => storeImageBytes(bytes, type, src, meta, { store })),
     fetchBytes: deps.fetchBytes ?? ((url, accept) => fetchPublic(url, accept)),
     scrapeBranding: deps.scrapeBranding ?? defaultScrapeBranding(),
@@ -426,7 +427,7 @@ export async function runVisuals(input: RunVisualsInput, deps: VisualsDeps = {})
   const results = new Map<Job, VisualItemReport>();
   let i = 0;
   let cut = false;
-  await Promise.all(Array.from({ length: Math.min(Math.max(1, deps.concurrency ?? 3), list.length || 1) }, async () => {
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, deps.concurrency ?? 2), list.length || 1) }, async () => {
     while (i < list.length) {
       if (Date.now() > deadline) { cut = true; return; }
       const j = list[i++];

@@ -75,10 +75,14 @@ describe("runAgent", () => {
 
 import { outputTokenBudget, parseModelJSON } from "@/lib/ai/agent";
 describe("output budgets and JSON parsing", () => {
-  it("gives reasoning models headroom and leaves others alone", () => {
+  it("gives reasoning models headroom, leaves others alone and never exceeds the model's maximum output", () => {
     expect(outputTokenBudget("gpt-5.4", 1800)).toBeGreaterThanOrEqual(17_800);
     expect(outputTokenBudget("gpt-4.1", 1800)).toBe(1800);
     expect(outputTokenBudget("gpt-5.4", undefined)).toBeUndefined();
+    // gpt-5.4: 128,000 max output (developers.openai.com/api/docs/models/gpt-5.4) — 3 × 60,000 is clamped to it.
+    expect(outputTokenBudget("gpt-5.4", 60_000)).toBe(128_000);
+    expect(outputTokenBudget("gpt-4o", 40_000)).toBe(16_384);
+    expect(outputTokenBudget("gpt-5.4", 20_000, 50_000)).toBe(50_000); // descriptor limit wins
   });
   it("parses fenced or prose-wrapped JSON", () => {
     expect(parseModelJSON('```json\n{"a":1}\n```')).toEqual({ a: 1 });

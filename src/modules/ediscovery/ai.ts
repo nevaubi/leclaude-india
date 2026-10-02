@@ -1,7 +1,8 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { generateJSON, generateText } from "@/lib/ai/agent";
-import { aiConfig, AIConfigError } from "@/lib/ai/config";
+import { aiBudget, aiConfig, AIConfigError } from "@/lib/ai/config";
+import { mapPool } from "@/lib/ai/pool";
 import { FIRM_NAME, LEGAL_STYLE_RULES, todayLine } from "@/lib/ai/prompts";
 import { crossCheckCitations, applyCiteCheck } from "@/lib/ai/verify";
 import { audit } from "@/lib/integrity/audit";
@@ -16,14 +17,17 @@ import { templatePrivilegeDescription } from "./privilege";
 import { quoteConfidenceCap, verifyQuotes } from "./quotes";
 
 const ANALYSIS_KEY = (docId: string) => `ediscovery:analysis:${docId}`;
-const MAX_TEXT = 24_000;
+/** Characters of a document given to the per-document analysis: the `ediscovery_doc` budget (never below 24,000). */
+function maxText(): number {
+  return Math.max(24_000, aiBudget("ediscovery_doc").perSourceChars);
+}
 
 export { AIConfigError };
 
 /** Analysis as stored and returned by the API: the review plus its provenance (TrustBadge reads `provenance`). */
 export type AIAnalysisRecord = AIAnalysis & { provenance?: Provenance };
 
-function clip(text: string, n = MAX_TEXT) {
+function clip(text: string, n = maxText()) {
   return text.length > n ? text.slice(0, n) + "\n…[truncated]" : text;
 }
 
@@ -119,7 +123,7 @@ ${rules}
 ## Issue code rubric
 ${issueRubric(codes)}`;
   const input = `Analyse the following document and return the structured review.\n\n${docHeader(d)}\n\n---\n${clip(d.text)}`;
-  const raw = await generateJSON<RawAnalysis>({ fast: true, instructions, input, schema: ANALYSIS_SCHEMA, name: "document_analysis", maxOutputTokens: 1800, signal: opts.signal });
+  const raw = await generateJSON<RawAnalysis>({ fast: true, instructions, input, schema: ANALYSIS_SCHEMA, name: "document_analysis", maxOutputTokens: Math.max(1_800, aiBudget("ediscovery_doc").maxOutputTokens), signal: opts.signal });
   const valid = new Set(codes.map((c) => c.code));
   const model = aiConfig().fastModel;
   const generatedAt = new Date().toISOString();
@@ -148,7 +152,7 @@ ${issueRubric(codes)}`;
   confidence = Math.min(confidence, quoteConfidenceCap(quotes));
   let provenance = recordGeneration({ surface: "ediscovery.analysis", instructions, input, sources: documentSources([d]), confidence, model, target: { kind: "edoc", id: d.id, label: d.bates, matterId: d.matterId }, meta: { responsive: analysis.suggestedCoding.responsive, privileged: analysis.suggestedCoding.privileged, issues: analysis.suggestedCoding.issues, rationale: analysis.suggestedCoding.rationale, quotes: quotes.length, unverifiedQuotes: quotes.filter((q) => !q.verified).length } });
   // Verification loop: the summary and key issues are re-read against the document text.
-  const checked = await verifyStructured(provenance, { label: "document summary and key issues", output: { summary: analysis.summary, keyIssues: analysis.keyIssues }, evidence: `${docHeader(d)}\n\n${clip(d.text, 30_000)}`, schema: ANALYSIS_CHECK_SCHEMA, verify: opts.verify, signal: opts.signal, count: (v) => 1 + v.keyIssues.length }, { kind: "edoc", id: d.id, label: d.bates, matterId: d.matterId });
+  const checked = await verifyStructured(provenance, { label: "document summary and key issues", output: { summary: analysis.summary, keyIssues: analysis.keyIssues }, evidence: `${docHeader(d)}\n\n${clip(d.text, Math.max(30_000, maxText()))}`, schema: ANALYSIS_CHECK_SCHEMA, verify: opts.verify, signal: opts.signal, count: (v) => 1 + v.keyIssues.length }, { kind: "edoc", id: d.id, label: d.bates, matterId: d.matterId });
   provenance = checked.provenance;
   analysis = { ...analysis, summary: checked.output.summary || analysis.summary, keyIssues: checked.output.keyIssues ?? analysis.keyIssues };
   const cite = crossCheckCitations(analysis.summary, { bates: [d.bates, ...(d.batesEnd ? [d.batesEnd] : [])] });
@@ -258,10 +262,14 @@ ${issueRubric(codes)}`;
   let likelyNonResponsive = 0;
   let uncertain = 0;
   let belowGate = 0;
-  for (let i = 0; i < docs.length; i += size) {
-    if (opts.signal?.aborted) break;
-    const batch = docs.slice(i, i + size);
-    const input = batch.map((d, n) => `### Document ${n + 1} (id: ${d.id})\n${docHeader(d)}\n\n${clip(d.text, 6000)}`).join("\n\n");
+  // Batches run in parallel (bounded by the e-discovery batch budget); each batch is applied as soon as it returns.
+  const budget = aiBudget("ediscovery_batch");
+  const perDoc = Math.max(6_000, budget.perSourceChars);
+  const batches: EDocument[][] = [];
+  for (let i = 0; i < docs.length; i += size) batches.push(docs.slice(i, i + size));
+  await mapPool(batches, budget.concurrency, async (batch) => {
+    if (opts.signal?.aborted) return;
+    const input = batch.map((d, n) => `### Document ${n + 1} (id: ${d.id})\n${docHeader(d)}\n\n${clip(d.text, perDoc)}`).join("\n\n");
     const res = await generateJSON<{ results: { id: string; score: number; issues: string[]; rationale: string; confidence?: number }[] }>({
       fast: true,
       instructions,
@@ -293,7 +301,7 @@ ${issueRubric(codes)}`;
     }
     if (updates.length) db().edocs.putMany(updates);
     emit({ type: "progress", done, total, scored });
-  }
+  });
   const summary = { scored, likelyResponsive, likelyNonResponsive, uncertain, tookMs: Date.now() - t0, belowGate };
   emit({ type: "done", done, total, scored, summary });
   return summary;

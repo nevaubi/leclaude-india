@@ -51,6 +51,12 @@ export function withTimeout(signal: AbortSignal | undefined, timeoutMs: number):
   return { signal: ctrl.signal, clear: () => { clearTimeout(timer); signal?.removeEventListener("abort", onAbort); }, timedOut: () => timedOut };
 }
 
+/** A provider message or code that says the input exceeded the model's context window (or the request size limit). */
+export function isContextLengthError(code: string | undefined | null, message: string | undefined | null): boolean {
+  if (code && /context_length_exceeded|string_above_max_length|request_too_large/i.test(code)) return true;
+  return /context[_ ]length|maximum context|context window|prompt is too long|input is too long|too many (input )?tokens|exceeds the (model'?s )?(maximum|context)|input tokens exceed|request_too_large/i.test(message ?? "");
+}
+
 export function errorCodeForStatus(status: number): InferenceErrorCode {
   if (status === 401 || status === 403) return "auth";
   if (status === 429) return "rate_limited";
@@ -72,7 +78,7 @@ export function providerError(provider: ProviderId, status: number, body: string
     if (j.error?.type) message = `${j.error.type}: ${message}`;
   } catch { /* plain text */ }
   // A 400 that rejects the credentials themselves (unscoped key without a workspace, invalid key) is an auth failure.
-  const code = status === 400 && /api[ -]?key|workspace|x-api-key|authentication|credential/i.test(message) ? "auth" : errorCodeForStatus(status);
+  const code = status === 400 && /api[ -]?key|workspace|x-api-key|authentication|credential/i.test(message) ? "auth" : (status === 400 || status === 413) && isContextLengthError(null, message) ? "context_length" : errorCodeForStatus(status);
   return new InferenceError(code, `${provider} HTTP ${status}${message ? `: ${message.slice(0, 600)}` : ""}${hint ? ` (${hint})` : ""}`, { status, provider, retryable: RETRYABLE_STATUS.has(status) });
 }
 

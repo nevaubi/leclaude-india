@@ -9,6 +9,7 @@
  * that cannot take search_result blocks render the same numbering as text. Pure and client-safe.
  */
 import type { SearchResultBlock } from "@/lib/ai/providers/types";
+import { estimateTokens } from "@/lib/ai/context-budget";
 import { languageInfo } from "@/lib/india/languages";
 import { benchLabel, hitCourtLabel, indianDate, judgmentCitations } from "../india-citations";
 import { formatBluebook } from "../normalize";
@@ -28,6 +29,8 @@ export function evidenceSourceId(s: Pick<ResearchSource, "id" | "kind" | "url" |
   if (ref?.kind === "section") return h.india?.enactment && h.india.section ? `statute://${enc(ref.id.split(/[:#]/)[0])}/s/${enc(h.india.section)}` : `statute://${enc(ref.id)}`;
   if (ref?.kind === "law") return lawSourceId(ref.actId, ref.section, ref.variant);
   if (ref?.kind === "url" && ref.url.startsWith("ik://")) return `authority://indiankanoon/doc/${enc(ref.url.slice(5))}`;
+  // Official publications: their src://<documentId>#p<page> reference is already stable and server-resolvable.
+  if (ref?.kind === "url" && ref.url.startsWith("src://")) return ref.url;
   // Judgments from the Postgres corpus (full text or metadata record): the same stable source the corpus tools emit.
   if (ref?.kind === "url" && ref.url.startsWith("corpus-text://")) return `corpus://judgment/${enc(ref.url.slice("corpus-text://".length))}`;
   if (s.kind === "caselaw" && h.india?.provider === "corpus" && h.india.judgmentId) return `corpus://judgment/${enc(h.india.judgmentId)}`;
@@ -74,6 +77,13 @@ export interface EvidenceOptions {
   maxTotalChars?: number;
   /** Characters per content block (citation granularity; default 1400). */
   maxBlockChars?: number;
+  /**
+   * How many READ sources are given in full (focused paragraphs up to `maxCharsPerSource`), in source-number order;
+   * later read sources carry their snippet, labelled as read but omitted for length (default: no limit).
+   */
+  maxFullSources?: number;
+  /** Estimated tokens across all sources (script-aware; Indic text costs more per character). Default: no token limit. */
+  maxTotalTokens?: number;
 }
 
 /**
@@ -118,19 +128,30 @@ export function buildEvidenceBlocks(sources: ResearchSource[], textOf: (s: Resea
   const per = opts.maxCharsPerSource ?? 6_000;
   const maxTotal = opts.maxTotalChars ?? 80_000;
   const maxBlock = opts.maxBlockChars ?? 1_400;
+  const maxFull = opts.maxFullSources ?? Number.POSITIVE_INFINITY;
+  const maxTokens = opts.maxTotalTokens ?? Number.POSITIVE_INFINITY;
   let total = 0;
+  let tokens = 0;
+  let full = 0;
   const ordered = [...sources].filter((s) => s.n != null).sort((a, b) => a.n! - b.n!);
   return ordered.map((s) => {
     const source = s.evidenceId ?? evidenceSourceId(s, { matterId: opts.matterId, tenantId: opts.tenantId });
     const title = evidenceTitle(s);
     const text = s.read ? textOf(s) ?? "" : "";
     let content: string[];
-    if (s.read && text && total < maxTotal) {
-      const paras = focusParagraphs(text, opts.terms, { maxChars: Math.min(per, maxTotal - total) });
+    if (s.read && text && total < maxTotal && tokens < maxTokens && full < maxFull) {
+      const paras = focusParagraphs(text, opts.terms, { maxChars: Math.min(per, maxTotal - total), maxParagraphChars: Math.max(400, maxBlock - 16), fill: Number.isFinite(maxFull) });
       content = groupBlocks(paras.map((p) => `¶${p.n} ${p.text}`), maxBlock);
+      // Script-aware token guard: drop trailing blocks that would push the evidence past the token budget.
+      if (Number.isFinite(maxTokens)) {
+        const kept: string[] = [];
+        for (const c of content) { const t = estimateTokens(c); if (kept.length && tokens + t > maxTokens) break; kept.push(c); tokens += t; }
+        content = kept;
+      }
       total += content.reduce((a, c) => a + c.length, 0);
+      full++;
     } else if (s.read && text) {
-      content = [`(read in full; text omitted for length) ${s.snippet ?? ""}`.trim()];
+      content = [`(read in full; text omitted for length — snippet only, do not characterize beyond it) ${s.snippet ?? ""}`.trim()];
     } else {
       content = [`(not read — search snippet only; do not characterize beyond it) ${s.snippet ?? ""}`.trim()];
     }

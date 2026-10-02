@@ -26,7 +26,7 @@ export class AnthropicProvider implements ModelProvider {
     if (!this.cfg.apiKey) throw new InferenceError("not_configured", "ANTHROPIC_API_KEY is not configured.", { provider: "anthropic" });
     const model = req.model ?? this.cfg.model;
     if (!model) throw new InferenceError("not_configured", "ANTHROPIC_MODEL is not configured.", { provider: "anthropic" });
-    const wire = buildAnthropicRequest(req, { platform: "anthropic", model, capabilities: CAPABILITIES.anthropic, defaultMaxTokens: this.cfg.maxOutputTokens, thinkingBudget: this.cfg.thinkingBudget, toolExamples: this.cfg.toolExamples, structuredOutput: this.cfg.structuredOutput });
+    const wire = buildAnthropicRequest(req, { platform: "anthropic", model, capabilities: CAPABILITIES.anthropic, defaultMaxTokens: this.cfg.maxOutputTokens, thinkingBudget: this.cfg.thinkingBudget, toolExamples: this.cfg.toolExamples, structuredOutput: this.cfg.structuredOutput, maxOutputLimit: this.descriptors.find((d) => d.id === model)?.maxOutput });
     const headers: Record<string, string> = { "content-type": "application/json", accept: "text/event-stream", "x-api-key": this.cfg.apiKey, "anthropic-version": ANTHROPIC_VERSION };
     if (wire.betas.length) headers["anthropic-beta"] = wire.betas.join(",");
     if (this.cfg.workspaceId) headers["anthropic-workspace-id"] = this.cfg.workspaceId;

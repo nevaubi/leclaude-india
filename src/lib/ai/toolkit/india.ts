@@ -19,6 +19,7 @@ import { isCorpusScope, type RetrievalScope } from "../vector-store";
 import { mapCriminalSection } from "./india-criminal-map";
 import { JUDGMENT_TEXT_TOOLS } from "./india-judgment-text";
 import { CITATOR_TOOLS } from "./india-citator";
+import { OFFICIAL_TOOLS } from "./india-official";
 import { jurisdictionLabel, lawCitation, lawSourceId, publisherLabel, statusLabel } from "@/modules/law/shared";
 
 /**
@@ -793,7 +794,7 @@ export const indianKanoonDocTool = defineTool<{ tid: number; start_paragraph?: n
 
 /** Official Indian legal hosts the research fetch tool may read without open-web scope (no subscription services). */
 export const INDIA_FETCH_ALLOWLIST = [
-  "indiacode.nic.in", "sci.gov.in", "main.sci.gov.in", "ecourts.gov.in", "judgments.ecourts.gov.in", "services.ecourts.gov.in", "egazette.gov.in", "egazette.nic.in", "legislative.gov.in", "lawmin.gov.in",
+  "indiacode.gov.in", "indiacode.nic.in", "sci.gov.in", "main.sci.gov.in", "ecourts.gov.in", "judgments.ecourts.gov.in", "services.ecourts.gov.in", "egazette.gov.in", "egazette.nic.in", "legislative.gov.in", "lawmin.gov.in",
   "karnatakajudiciary.kar.nic.in", "judiciary.karnataka.gov.in", "tshc.gov.in", "aphc.gov.in", "dpal.kar.nic.in", "mha.gov.in", "rbi.org.in", "sebi.gov.in", "incometaxindia.gov.in", "cbic-gst.gov.in", "prsindia.org",
 ];
 
@@ -937,6 +938,8 @@ export const INDIAN_KANOON_TOOLS = [indianKanoonSearchTool, indianKanoonDocTool]
 export const CORPUS_INDEX_TOOLS = [searchJudgmentIndexTool, ...JUDGMENT_TEXT_TOOLS, ...CITATOR_TOOLS];
 /** The statutes corpus (law_* tables in the same Postgres); errors explicitly when the tables are not loaded yet. */
 export const LAW_CORPUS_TOOLS = [searchLawTool, readLawSectionTool, listLawInstrumentsTool];
+/** Official publications (cause lists, orders, circulars, notifications, calendars) in the same Postgres; not-available results without it. */
+export { OFFICIAL_TOOLS };
 
 /** Always-available Indian research tools (local corpus, India Code, coded tables). */
 export const INDIA_CORE_TOOLS = [searchJudgmentsTool, readJudgmentTool, citingReferencesTool, searchStatutesIndiaTool, readSectionTool, mapCriminalSectionTool];
@@ -944,11 +947,11 @@ export const INDIA_CORE_TOOLS = [searchJudgmentsTool, readJudgmentTool, citingRe
 /** Indian research toolset for the current capabilities. */
 import { getForumInfoTool } from "./india-forums";
 export function indiaResearchTools(caps: IndiaCapabilities = indiaCapabilities()) {
-  return [...INDIA_CORE_TOOLS, ...(caps.corpus ? [...CORPUS_INDEX_TOOLS, ...LAW_CORPUS_TOOLS] : []), ...(caps.indianKanoon ? INDIAN_KANOON_TOOLS : []), getForumInfoTool];
+  return [...INDIA_CORE_TOOLS, ...(caps.corpus ? [...CORPUS_INDEX_TOOLS, ...LAW_CORPUS_TOOLS, ...OFFICIAL_TOOLS] : []), ...(caps.indianKanoon ? INDIAN_KANOON_TOOLS : []), getForumInfoTool];
 }
 
 /** Every Indian tool (for contract tests); runtime toolsets use indiaResearchTools(). */
-export const INDIA_TOOLS = [...INDIA_CORE_TOOLS, ...CORPUS_INDEX_TOOLS, ...LAW_CORPUS_TOOLS, ...INDIAN_KANOON_TOOLS];
+export const INDIA_TOOLS = [...INDIA_CORE_TOOLS, ...CORPUS_INDEX_TOOLS, ...LAW_CORPUS_TOOLS, ...OFFICIAL_TOOLS, ...INDIAN_KANOON_TOOLS];
 
 /** Intel documents that belong to the India source layer (judgments and India Code Acts); other feeds must not duplicate them. */
 export function isIndiaSourceDoc(doc: { meta?: Record<string, unknown> } | null | undefined): boolean {

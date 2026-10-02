@@ -4,7 +4,8 @@ import { aiConfig, AIConfigError, type AIConfig } from "./config";
 import { infer, routeRequest } from "./runtime";
 import * as toolsModule from "./tools";
 import { normalizeArgs, toolLabel, toStrictSchema, type AgentEmit, type ToolContext, type ToolDef } from "./tools";
-import { InferenceError, type BuiltinToolSpec, type ContentPart, type InferenceEvent, type InferenceMessage, type InferenceRequest, type InferenceResult, type ModelRole, type PrivacyBoundary, type SearchResultBlock, type TaskType, type ToolSpec } from "./providers/types";
+import { InferenceError, type BuiltinToolSpec, type ContentPart, type InferenceEvent, type InferenceMessage, type InferenceRequest, type InferenceResult, type ModelDescriptor, type ModelRole, type PrivacyBoundary, type RoutingDecision, type SearchResultBlock, type TaskType, type ToolSpec } from "./providers/types";
+import { estimateTokens, resolveContextBudget, type BudgetProfileId, type ResolvedBudget } from "./context-budget";
 
 export { outputTokenBudget } from "./providers/openai-models";
 
@@ -78,6 +79,11 @@ export interface RunAgentOptions {
   /** Run/trace ids propagated to tools and telemetry. */
   traceId?: string;
   runId?: string;
+  /**
+   * Context-budget profile (src/lib/ai/context-budget.ts), resolved against the model the router picks: supplies the
+   * default `maxOutputTokens` and `maxSteps` and the input-token limit of the context guard.
+   */
+  budget?: BudgetProfileId;
 }
 
 export interface RunAgentResult {
@@ -87,6 +93,10 @@ export interface RunAgentResult {
   toolCalls: { name: string; args: Record<string, unknown>; result?: unknown; error?: string }[];
   usage: { input: number; output: number; total: number; cacheRead?: number; cacheWrite?: number };
   json?: unknown;
+  /** The resolved budget when `budget` was given. */
+  budget?: ResolvedBudget;
+  /** Earlier tool results the context guard elided (0 when the history fit). */
+  elided?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +246,99 @@ function tryParse(text: string): unknown {
 }
 
 // ---------------------------------------------------------------------------
+// Context guard: keep the replayed history inside the model's input budget
+// ---------------------------------------------------------------------------
+
+const ELIDED_PREFIX = "[elided ";
+
+/** Estimated tokens of one message (typed content; provider-native replay content when larger). */
+export function estimateMessageTokens(m: InferenceMessage): number {
+  let t = 4;
+  for (const p of m.content) {
+    switch (p.type) {
+      case "text": t += estimateTokens(p.text); break;
+      case "tool_result": t += estimateTokens(p.content) + 6; break;
+      case "tool_call": t += estimateTokens(JSON.stringify(p.args ?? {})) + estimateTokens(p.name) + 8; break;
+      case "search_result": t += estimateTokens(p.title) + estimateTokens(p.source) + p.content.reduce((a, c) => a + estimateTokens(c), 0) + 8; break;
+      case "image": t += 1_600; break;
+      case "document": t += Math.ceil((p.data?.length ?? 0) / 40) + 500; break;
+      default: break;
+    }
+  }
+  if (m.raw && Array.isArray(m.raw.content) && m.role === "assistant") {
+    let rawChars = 0;
+    try { rawChars = JSON.stringify(m.raw.content).length; } catch { rawChars = 0; }
+    t = Math.max(t, Math.ceil(rawChars / 3.5));
+  }
+  return t;
+}
+
+/** Tokens of the fixed part of a request: instructions, tool definitions, application evidence. */
+export function estimateFixedTokens(req: Pick<InferenceRequest, "instructions" | "tools" | "evidence">): number {
+  let t = estimateTokens(req.instructions ?? "");
+  if (req.tools?.length) { try { t += estimateTokens(JSON.stringify(req.tools)); } catch { /* ignore */ } }
+  for (const e of req.evidence ?? []) t += estimateTokens(e.title) + estimateTokens(e.source) + e.content.reduce((a, c) => a + estimateTokens(c), 0) + 8;
+  return t;
+}
+
+export interface GuardResult {
+  /** Tool results replaced by an elision note in this pass. */
+  elided: number;
+  /** Characters removed. */
+  chars: number;
+  /** Estimated input tokens after the pass. */
+  tokens: number;
+}
+
+/**
+ * Elide the OLDEST tool-result contents until the estimated input fits `maxTokens` (`aggressive`: 60% of the smaller of
+ * it and the current estimate). The
+ * latest tool turn is never touched (the model is acting on it), nor are user turns or application evidence. Each
+ * elided result becomes `[elided N chars — re-read with <tool>]` so the model can fetch it again. Mutates `history`.
+ */
+export function guardHistory(history: InferenceMessage[], opts: { maxTokens: number; fixedTokens?: number; aggressive?: boolean; minChars?: number }): GuardResult {
+  const sizes = history.map(estimateMessageTokens);
+  let tokens = (opts.fixedTokens ?? 0) + sizes.reduce((a, b) => a + b, 0);
+  // Aggressive (the provider rejected the request as too long, so the estimate was low): shrink to 60% of the smaller
+  // of the budget and the current estimate, which elides every older tool result that is large enough to matter.
+  const target = Math.max(1, Math.floor(opts.aggressive ? Math.min(opts.maxTokens, tokens) * 0.6 : opts.maxTokens));
+  if (tokens <= target) return { elided: 0, chars: 0, tokens };
+  let lastTool = -1;
+  for (let i = history.length - 1; i >= 0; i--) if (history[i].role === "tool") { lastTool = i; break; }
+  const toolName = (callId: string): string => {
+    for (const m of history) for (const p of m.content) if (p.type === "tool_call" && p.id === callId) return p.name;
+    return "the tool that produced it";
+  };
+  let elided = 0, chars = 0;
+  const minChars = opts.minChars ?? 1_200;
+  for (let i = 0; i < history.length && tokens > target; i++) {
+    const m = history[i];
+    if (m.role !== "tool" || i === lastTool) continue;
+    let changed = false;
+    const content = m.content.map((p) => {
+      if (tokens <= target || p.type !== "tool_result" || p.content.length < minChars || p.content.startsWith(ELIDED_PREFIX)) return p;
+      const note = `${ELIDED_PREFIX}${p.content.length} chars — re-read with ${toolName(p.callId)}]`;
+      tokens -= Math.max(0, estimateTokens(p.content) - estimateTokens(note));
+      chars += p.content.length;
+      elided++;
+      changed = true;
+      return { ...p, content: note };
+    });
+    // The provider-native copy (OpenAI function_call_output items) would replay the full text: render the typed content.
+    if (changed) history[i] = { role: m.role, content };
+  }
+  return { elided, chars, tokens };
+}
+
+/** Input-token limit for the context guard: the budget's, else what the model accepts minus the output reservation. */
+export function contextLimit(descriptor: Pick<ModelDescriptor, "contextWindow" | "maxOutput" | "maxInput"> | undefined, budget: ResolvedBudget | null, maxOutputTokens: number | undefined): number {
+  if (budget) return budget.inputTokens;
+  const window = descriptor?.contextWindow ?? 128_000;
+  const maxInput = descriptor?.maxInput ?? window - (descriptor?.maxOutput ?? 16_000);
+  return Math.max(8_000, Math.min(maxInput, window - (maxOutputTokens ?? 16_000)) - 8_000);
+}
+
+// ---------------------------------------------------------------------------
 // runAgent
 // ---------------------------------------------------------------------------
 
@@ -249,7 +352,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   const cfg = aiConfig();
   const emit = opts.onEvent;
   const toolMap = new Map((opts.tools ?? []).map((t) => [t.name, t]));
-  const maxSteps = opts.maxSteps ?? 12;
   const traceId = opts.traceId ?? `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const state: Record<string, unknown> = opts.state ?? {};
   state.traceId ??= traceId;
@@ -284,8 +386,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     traceId,
   };
 
-  let decisionModel: string;
-  try { decisionModel = routeRequest(base).model; } catch (e) { throw mapConfigError(e); }
+  let decision: RoutingDecision;
+  try { decision = routeRequest(base); } catch (e) { throw mapConfigError(e); }
+  const decisionModel = decision.model;
+  // Budget: resolved against the model the router chose; it fills only what the caller left open.
+  const budget = opts.budget ? resolveContextBudget(opts.budget, decision.descriptor) : null;
+  if (budget && base.maxOutputTokens == null) base.maxOutputTokens = budget.maxOutputTokens;
+  const maxSteps = opts.maxSteps ?? budget?.maxSteps ?? 12;
+  const inputLimit = contextLimit(decision.descriptor, budget, base.maxOutputTokens);
+  const fixedTokens = estimateFixedTokens(base);
+  let historyEdited = false;
+  let contextRetried = false;
+  let elidedTotal = 0;
   emit({ type: "start", model: decisionModel });
 
   let previousResponseId: string | null = opts.previousResponseId ?? null;
@@ -312,11 +424,33 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     if (opts.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     emit({ type: "step", step });
 
+    // Context guard: elide the oldest tool results (never the latest tool turn or the evidence) before the request
+    // would exceed the input budget.
+    const guard = guardHistory(history, { maxTokens: inputLimit, fixedTokens });
+    if (guard.elided) {
+      historyEdited = true;
+      elidedTotal += guard.elided;
+      emit({ type: "status", message: `Context budget: elided ${guard.elided} earlier tool result${guard.elided === 1 ? "" : "s"} (${guard.chars.toLocaleString("en-US")} chars); the agent can re-read them.` });
+    }
+
     let res: InferenceResult;
     try {
       // A copy per round: the provider (and any SDK retry) must never see later mutations of the live history.
-      res = await infer({ ...base, messages: history.slice(), previousResponseId, containerId }, forward, { onFallback });
+      res = await infer({ ...base, messages: history.slice(), previousResponseId, containerId, historyEdited: historyEdited || undefined }, forward, { onFallback });
     } catch (e) {
+      // One retry after aggressive elision when the provider says the context window was exceeded.
+      if (e instanceof InferenceError && e.code === "context_length" && !contextRetried) {
+        contextRetried = true;
+        const again = guardHistory(history, { maxTokens: inputLimit, fixedTokens, aggressive: true, minChars: 400 });
+        if (again.elided || previousResponseId) {
+          if (again.elided) { historyEdited = true; elidedTotal += again.elided; }
+          // A server-side continuation cannot be shortened locally: replay the (elided) local history instead.
+          previousResponseId = null;
+          emit({ type: "status", message: `Context window exceeded; elided ${again.elided} earlier tool result${again.elided === 1 ? "" : "s"} and retrying once.` });
+          step--;
+          continue;
+        }
+      }
       throw mapConfigError(e);
     }
     lastResult = res;
@@ -373,7 +507,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   let json: unknown;
   if (opts.jsonSchema) json = lastResult?.json ?? tryParse(fullText) ?? tryParse(lastStepText);
   emit({ type: "done", responseId, usage, text: fullText });
-  return { text: fullText, responseId, steps: toolCalls.length, toolCalls, usage, json };
+  return { text: fullText, responseId, steps: toolCalls.length, toolCalls, usage, json, ...(budget ? { budget } : {}), elided: elidedTotal };
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +533,8 @@ export interface GenerateOptions {
   cacheStablePrefix?: boolean;
   traceId?: string;
   metadata?: Record<string, string>;
+  /** Context-budget profile: supplies the default `maxOutputTokens` for the model the router picks. */
+  budget?: BudgetProfileId;
 }
 
 /** Usage in the OpenAI Responses shape callers already read (`input_tokens` …), whichever provider answered. */
@@ -446,20 +582,31 @@ function assertComplete(res: InferenceResult, what: string) {
   if (res.stopReason === "unknown") throw new Error(`${what} stopped with an unrecognised stop reason (${res.rawStopReason ?? "unknown"}).`);
 }
 
+/** Fill `maxOutputTokens` from the budget profile, resolved against the model the router picks for this request. */
+function applyGenerateBudget(req: InferenceRequest, budget: BudgetProfileId | undefined): InferenceRequest {
+  if (!budget || req.maxOutputTokens != null) return req;
+  let descriptor: ModelDescriptor | undefined;
+  try { descriptor = routeRequest(req).descriptor; } catch (e) { throw mapConfigError(e); }
+  return { ...req, maxOutputTokens: resolveContextBudget(budget, descriptor).maxOutputTokens };
+}
+
 async function runInference(req: InferenceRequest): Promise<InferenceResult> {
-  try { return await infer(req); } catch (e) { throw mapConfigError(e); }
+  try { return await infer(req); } catch (e) {
+    if (e instanceof InferenceError && e.code === "context_length") throw new InferenceError("context_length", `${e.message} — the input is larger than the model accepts; narrow the material or split it.`, { provider: e.provider, status: e.status, retryable: false });
+    throw mapConfigError(e);
+  }
 }
 
 export async function generateText(opts: GenerateOptions): Promise<{ text: string; responseId: string; usage?: GenerateUsage }> {
   const cfg = aiConfig();
-  const res = await runInference(buildGenerateRequest(opts, cfg));
+  const res = await runInference(applyGenerateBudget(buildGenerateRequest(opts, cfg), opts.budget));
   if (!res.text?.trim()) assertComplete(res, "Generation");
   return { text: res.text, responseId: res.responseId ?? res.messageId ?? "", usage: toGenerateUsage(res.usage) };
 }
 
 export async function generateJSON<T = unknown>(opts: GenerateOptions & { schema: Record<string, unknown>; name?: string }): Promise<T> {
   const cfg = aiConfig();
-  const res = await runInference(buildGenerateRequest(opts, cfg, { name: opts.name ?? "result", schema: strictJsonSchema(opts.schema) }));
+  const res = await runInference(applyGenerateBudget(buildGenerateRequest(opts, cfg, { name: opts.name ?? "result", schema: strictJsonSchema(opts.schema) }), opts.budget));
   assertComplete(res, "Structured generation");
   if (res.json !== undefined && res.json !== null && typeof res.json === "object") return res.json as T;
   const text = res.text?.trim();

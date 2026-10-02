@@ -85,7 +85,7 @@ export interface FocusedParagraph {
  * posture) plus the paragraphs that best match the research terms, kept in document order
  * with their original numbers, within `maxChars`. Deterministic.
  */
-export function focusParagraphs(text: string, terms: string[], opts: { maxChars?: number; lead?: number; maxParagraphChars?: number } = {}): FocusedParagraph[] {
+export function focusParagraphs(text: string, terms: string[], opts: { maxChars?: number; lead?: number; maxParagraphChars?: number; fill?: boolean } = {}): FocusedParagraph[] {
   const maxChars = opts.maxChars ?? 6_000;
   const lead = opts.lead ?? 2;
   const maxPara = opts.maxParagraphChars ?? 1_400;
@@ -108,7 +108,8 @@ export function focusParagraphs(text: string, terms: string[], opts: { maxChars?
   for (const p of paras.slice(0, lead)) take(p);
   const ranked = paras.slice(lead).map((p) => ({ p, s: score(p) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s || a.p.n - b.p.n);
   for (const { p } of ranked) take(p);
-  // Nothing matched: fall back to the document's opening within budget.
-  if (chosen.size <= lead) for (const p of paras) take(p);
+  // Nothing matched: fall back to the document's opening within budget. With `fill` (a large per-source budget), the
+  // remaining budget is filled with the other paragraphs in document order, so the source is given as fully as it fits.
+  if (chosen.size <= lead || opts.fill) for (const p of paras) take(p);
   return paras.filter((p) => chosen.has(p.n));
 }

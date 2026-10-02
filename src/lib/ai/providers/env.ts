@@ -10,6 +10,7 @@
 import { CAPABILITIES } from "../capabilities";
 import { isReasoningModel } from "./openai-models";
 import { claudeFamily } from "./claude-models";
+import { modelLimits, type LimitsEnv } from "./model-limits";
 import type { ModelDescriptor, ModelRole, ProviderId } from "./types";
 
 export type Env = Record<string, string | undefined>;
@@ -67,6 +68,8 @@ export interface OpenRouterEnv {
 export interface RuntimeEnv {
   preferred: ProviderId | null;
   allowExternalForMatterData: boolean;
+  /** Model-limit overrides (OPENAI_CONTEXT_WINDOW, OPENAI_MAX_OUTPUT_TOKENS, ANTHROPIC_/BEDROCK_CONTEXT_WINDOW); see model-limits.ts. */
+  limits?: LimitsEnv;
   openai: OpenAIEnv;
   anthropic: AnthropicEnv;
   bedrock: BedrockEnv;
@@ -86,6 +89,7 @@ export function readRuntimeEnv(env: Env = process.env as Env): RuntimeEnv {
   return {
     preferred,
     allowExternalForMatterData: flag(env.ROUTER_ALLOW_MATTER_DATA),
+    limits: Object.fromEntries((["OPENAI_CONTEXT_WINDOW", "OPENAI_MAX_OUTPUT_TOKENS", "ANTHROPIC_CONTEXT_WINDOW", "BEDROCK_CONTEXT_WINDOW"] as const).map((k) => [k, trim(env[k])]).filter(([, v]) => v != null)) as LimitsEnv,
     openai: {
       apiKey: trim(env.OPENAI_API_KEY),
       baseURL: trim(env.OPENAI_BASE_URL),
@@ -166,6 +170,13 @@ export function describeModels(cfg: RuntimeEnv): ModelDescriptor[] {
   const push = (d: ModelDescriptor) => {
     const existing = out.find((m) => m.provider === d.provider && m.id === d.id);
     if (existing) { for (const r of d.roles) if (!existing.roles.includes(r)) existing.roles.push(r); return; }
+    // Coded context window / max output for chat-capable models (embedding and image models have no such budget).
+    if (d.capabilities.messages && d.contextWindow == null) {
+      const lim = modelLimits(d.provider, d.id, cfg.limits ?? {});
+      d.contextWindow = lim.contextWindow;
+      d.maxOutput = lim.maxOutput;
+      d.maxInput = lim.maxInput;
+    }
     out.push(d);
   };
   const chatRoles = (hasFast: boolean): ModelRole[] => (hasFast ? ["primary", "vision"] : ["primary", "vision", "fast", "router"]);

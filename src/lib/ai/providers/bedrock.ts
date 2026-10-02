@@ -13,7 +13,7 @@ import { AnthropicStreamParser, buildAnthropicRequest, type AnthropicWireRequest
 import { CAPABILITIES } from "../capabilities";
 import type { BedrockEnv } from "./env";
 import { EventStreamDecoder, decodeBedrockEvent } from "./eventstream";
-import { abortError, backoffMs, byteChunks, fetchWithRetry, isAbortError, sleep, toInferenceError } from "./http";
+import { abortError, backoffMs, byteChunks, fetchWithRetry, isAbortError, isContextLengthError, sleep, toInferenceError } from "./http";
 import { signV4 } from "./sigv4";
 import { InferenceError, type EmbedOptions, type InferenceErrorCode, type InferenceEvent, type InferenceRequest, type InferenceResult, type ModelDescriptor, type ModelProvider } from "./types";
 
@@ -31,8 +31,9 @@ export function bedrockModelPath(modelId: string, action: "invoke" | "invoke-wit
 }
 
 /** Bedrock exception names (HTTP `x-amzn-ErrorType` or event-stream `:exception-type`) → runtime error codes. */
-export function mapBedrockException(name: string): { code: InferenceErrorCode; retryable: boolean; status: number } {
+export function mapBedrockException(name: string, message?: string): { code: InferenceErrorCode; retryable: boolean; status: number } {
   const n = name.replace(/:.*$/, "").toLowerCase();
+  if (n.startsWith("validation") && isContextLengthError(null, message)) return { code: "context_length", retryable: false, status: 400 };
   if (n.startsWith("throttling") || n.includes("toomanyrequests")) return { code: "rate_limited", retryable: true, status: 429 };
   if (n.startsWith("modeltimeout")) return { code: "timeout", retryable: true, status: 504 };
   if (n.startsWith("modelstreamerror") || n.startsWith("internalserver") || n.startsWith("serviceunavailable") || n.startsWith("modelnotready") || n.startsWith("modelerror")) return { code: "provider_unavailable", retryable: true, status: 503 };
@@ -53,7 +54,7 @@ export class BedrockProvider implements ModelProvider {
   prepare(req: InferenceRequest): { model: string; wire: AnthropicWireRequest; body: Record<string, unknown> } {
     const model = req.model ?? this.cfg.model;
     if (!model) throw new InferenceError("not_configured", "BEDROCK_MODEL is not configured.", { provider: "bedrock" });
-    const wire = buildAnthropicRequest(req, { platform: "bedrock", model, capabilities: CAPABILITIES.bedrock, defaultMaxTokens: this.cfg.maxOutputTokens, thinkingBudget: this.cfg.thinkingBudget, toolExamples: false, structuredOutput: this.cfg.structuredOutput });
+    const wire = buildAnthropicRequest(req, { platform: "bedrock", model, capabilities: CAPABILITIES.bedrock, defaultMaxTokens: this.cfg.maxOutputTokens, thinkingBudget: this.cfg.thinkingBudget, toolExamples: false, structuredOutput: this.cfg.structuredOutput, maxOutputLimit: this.descriptors.find((d) => d.id === model)?.maxOutput });
     const body: Record<string, unknown> = { anthropic_version: BEDROCK_ANTHROPIC_VERSION, ...wire.body };
     if (wire.betas.length) body.anthropic_beta = wire.betas;
     return { model, wire, body };
@@ -96,7 +97,7 @@ export class BedrockProvider implements ModelProvider {
             const ev = decodeBedrockEvent(frame);
             if (ev.kind === "chunk") parser.handle(ev.event);
             else if (ev.kind === "exception") {
-              const m = mapBedrockException(ev.exceptionType);
+              const m = mapBedrockException(ev.exceptionType, ev.message);
               throw new InferenceError(m.code, `bedrock stream exception ${ev.exceptionType}: ${ev.message}`, { provider: "bedrock", status: m.status, retryable: m.retryable && !parser.emitted });
             } else if (ev.kind === "error") {
               throw new InferenceError("provider_unavailable", `bedrock stream error ${ev.errorCode}: ${ev.message}`, { provider: "bedrock", retryable: !parser.emitted });

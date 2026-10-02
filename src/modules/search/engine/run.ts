@@ -264,6 +264,10 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
   };
 
   const verifiableSources = () => numbered.filter((s) => s.read && (texts.get(s.id) ?? s.excerpt));
+  // Context budgets resolved against the configured models (real deps); fakes without `budget` keep the fixed bounds.
+  const synthBudget = deps.budget?.("deep_research_synthesis") ?? null;
+  const laneBudget = deps.budget?.("research_lane") ?? null;
+  const correctionChars = synthBudget ? Math.max(5_000, Math.min(synthBudget.perSourceChars, 20_000)) : 5_000;
   let terms: string[] = focusTerms([question]);
   let evidence: ReturnType<typeof buildEvidenceBlocks> = [];
   // The verifier sees the same focused, paragraph-numbered passages the synthesis cited (not an arbitrary prefix).
@@ -317,7 +321,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
     for (let round = 1; round <= maxRounds && !aborted(); round++) {
       if (round > 1 && (Date.now() - startedAt > policy.runTimeMs || remaining() < ms(MIN_ROUND_MS))) { timeExceeded = true; break; }
       rounds = round;
-      const planned: ResearchLane[] = planLanes({ question, settings, mode, hasMatter: Boolean(matter), round, refinements, searchQuery: searchQuery ?? undefined });
+      const planned: ResearchLane[] = planLanes({ question, settings, mode, hasMatter: Boolean(matter), round, refinements, searchQuery: searchQuery ?? undefined, readBoost: laneBudget ? Math.max(0, laneBudget.maxFullSources - 5) : 0 });
       // Regional-language question: every lane also searches the question's own words (judgments in that language).
       const regional: ResearchLane[] = searchQuery && round === 1 ? planned.map((l) => ({ ...l, queries: Array.from(new Set([...l.queries, l.kind === "contrary" ? l.queries[0] : question.slice(0, 200)])).slice(0, 3) })) : planned;
       // Lanes get what is left after keeping time back for synthesis and verification (never below 25s).
@@ -417,8 +421,11 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
       // Byte-stable per mode: the cacheable prefix. Date, matter, jurisdiction and the question travel in the user turn.
       synthesisInstructionsText = synthesisInstructions(mode, firmLabel(), LEGAL_STYLE_RULES);
       terms = focusTerms([question, ...lanes.flatMap((l) => l.queries), ...subQuestions]);
-      evidence = buildEvidenceBlocks(numbered, textOf, { terms, matterId: settings.matterId, tenantId });
-      const prior = thread.messages.slice(-4).filter((m) => m.content).map((m) => `${m.role === "user" ? "Earlier question" : "Earlier answer"}: ${m.content.slice(0, m.role === "user" ? 600 : 2500)}`).join("\n\n");
+      // With a budget (real deps), the top read sources go in full up to the synthesis budget (12 × ~40k characters on a
+      // large-context model, focused ≤2k-character blocks); the rest carry their snippets. Fakes keep the old bounds.
+      evidence = buildEvidenceBlocks(numbered, textOf, { terms, matterId: settings.matterId, tenantId, ...(synthBudget ? { maxCharsPerSource: synthBudget.perSourceChars, maxTotalChars: synthBudget.totalEvidenceChars, maxBlockChars: synthBudget.blockChars, maxFullSources: synthBudget.maxFullSources, maxTotalTokens: Math.floor(synthBudget.inputTokens * 0.8) } : {}) });
+      const priorAnswerChars = synthBudget ? Math.max(2_500, Math.floor(synthBudget.historyChars / 2)) : 2_500;
+      const prior = thread.messages.slice(-4).filter((m) => m.content).map((m) => `${m.role === "user" ? "Earlier question" : "Earlier answer"}: ${m.content.slice(0, m.role === "user" ? 600 : priorAnswerChars)}`).join("\n\n");
       const context = [
         todayLine(),
         matterLine,
@@ -492,7 +499,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
             const draftHash = artifactHash;
             emit({ type: "correction.started", artifactHash: draftHash, unsupported: first.unsupported, contradicted: first.contradicted });
             try {
-              const correctionInput = `ANSWER:\n${answer}\n\nSOURCES (read):\n${verifiable.map((s) => { const b = evidence[(s.n ?? 0) - 1]; return b ? `[${s.n}] ${b.title}\n${evidenceText(b).slice(0, 5000)}` : renderSourcesForPrompt([s], texts, { maxCharsPerSource: 4000 }); }).join("\n\n")}\n\nVERDICTS:\n${first.verdicts.map((x) => `- [${x.status}] ${x.claim}${x.sourceN ? ` (source [${x.sourceN}])` : ""}${x.quote ? ` — "${x.quote}"` : ""}${x.note ? ` — ${x.note}` : ""}`).join("\n")}`;
+              const correctionInput = `ANSWER:\n${answer}\n\nSOURCES (read):\n${verifiable.map((s) => { const b = evidence[(s.n ?? 0) - 1]; return b ? `[${s.n}] ${b.title}\n${evidenceText(b).slice(0, correctionChars)}` : renderSourcesForPrompt([s], texts, { maxCharsPerSource: Math.max(4_000, correctionChars - 1_000) }); }).join("\n\n")}\n\nVERDICTS:\n${first.verdicts.map((x) => `- [${x.status}] ${x.claim}${x.sourceN ? ` (source [${x.sourceN}])` : ""}${x.quote ? ` — "${x.quote}"` : ""}${x.note ? ` — ${x.note}` : ""}`).join("\n")}`;
               const correctStage = stage(Math.max(ms(20_000), remaining() - ms(40_000)));
               const revisedRaw = await timedModelCall(metrics, () => withRetry(() => deps.correct({ instructions: CORRECTION_INSTRUCTIONS, input: correctionInput, signal: correctStage.signal }), { ...modelRetry, signal: correctStage.signal }));
               agents++;

@@ -1,6 +1,7 @@
 import "server-only";
 import { remoteStore, type RemoteStore, type Row } from "@/lib/db/remote";
 import { courtById } from "@/lib/india/courts";
+import { isSourceId, SOURCE_IDS, type SourceId } from "@/modules/official/types";
 
 /**
  * What the Indian law corpus in Postgres actually holds, for prompts (research planner, lanes, chat, personas) so the
@@ -30,6 +31,9 @@ export interface StatuteCoverage {
   reports: number;
 }
 
+/** Indexed official publications per source (official_documents), for the official-sources tools. */
+export interface OfficialCoverage { sourceId: SourceId; label: string; count: number; latest: string | null }
+
 export interface CorpusCoverage {
   /** A database is configured on this deployment. */
   configured: boolean;
@@ -38,6 +42,8 @@ export interface CorpusCoverage {
   /** Judgments with full text per court (search_judgment_text / read_judgment_text). */
   texts: CourtCoverage[];
   statutes: StatuteCoverage | null;
+  /** Indexed official documents per source; null when the official_documents table is absent (not loaded yet). */
+  official?: OfficialCoverage[] | null;
   checkedAt: string | null;
   /** True when a refresh failed and an older summary is served. */
   stale: boolean;
@@ -45,7 +51,15 @@ export interface CorpusCoverage {
   missing: string[];
 }
 
-const EMPTY: CorpusCoverage = { configured: false, judgments: [], texts: [], statutes: null, checkedAt: null, stale: false, missing: [] };
+const EMPTY: CorpusCoverage = { configured: false, judgments: [], texts: [], statutes: null, official: null, checkedAt: null, stale: false, missing: [] };
+
+/** Short publisher labels for the prompt block (registry order). */
+const OFFICIAL_LABEL: Record<SourceId, string> = {
+  "sci-causelist": "SC cause lists", "sci-orders": "SC judgments and orders", "sci-calendar": "SC calendar", "hc-calendars": "HC calendars",
+  "dhc-causelist": "Delhi HC cause lists", nclt: "NCLT", nclat: "NCLAT", ibbi: "IBBI (incl. mirrored NCLT/NCLAT/SC IBC orders)",
+  "sebi-orders": "SEBI orders (incl. SAT orders)", "sat-orders": "SAT", "cci-orders": "CCI orders", "ngt-orders": "NGT orders", egazette: "e-Gazette",
+  cbic: "CBIC notifications and circulars", "gst-council": "GST Council", cbdt: "CBDT circulars and notifications", "mca-master": "MCA company records", sansad: "Parliament papers",
+};
 
 let cache: { at: number; value: CorpusCoverage } | null = null;
 let inflight: Promise<CorpusCoverage> | null = null;
@@ -79,16 +93,24 @@ async function compute(store: RemoteStore): Promise<CorpusCoverage> {
   const missing: string[] = [];
   const tables = await store.query({
     query: `SELECT to_regclass('public.corpus_judgments') IS NOT NULL AS j, to_regclass('public.corpus_texts') IS NOT NULL AS t,
-      to_regclass('public.law_instruments') IS NOT NULL AS l,
+      to_regclass('public.law_instruments') IS NOT NULL AS l, to_regclass('public.official_documents') IS NOT NULL AS o,
       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'corpus_texts' AND column_name = 'court_id') AS tc`,
   });
-  const has = { j: t(tables[0]?.j), t: t(tables[0]?.t), l: t(tables[0]?.l), tc: t(tables[0]?.tc) };
+  const has = { j: t(tables[0]?.j), t: t(tables[0]?.t), l: t(tables[0]?.l), o: t(tables[0]?.o), tc: t(tables[0]?.tc) };
   const settle = <T>(name: string, ok: boolean, run: () => Promise<T>, empty: T): Promise<T> => {
     if (!ok) { missing.push(name); return Promise.resolve(empty); }
     return run().catch(() => { missing.push(name); return empty; });
   };
   const textYear = has.tc ? `coalesce(extract(year FROM decision_date)::int, substr(neutral_citation, 1, 4)::int)` : `substr(neutral_citation, 1, 4)::int`;
-  const [judgments, texts, statutes] = await Promise.all([
+  // Official publications: absent before the first ingestion (null, not "missing"); a failed count is "missing".
+  const officialP: Promise<OfficialCoverage[] | null> = !has.o ? Promise.resolve(null) : store.query({
+    query: `SELECT source, count(*) AS n, max(doc_date)::text AS latest FROM official_documents WHERE status = 'indexed' GROUP BY source`,
+  }).then((rows) => rows
+    .filter((r) => isSourceId(r.source) && num(r.n) > 0)
+    .map((r) => ({ sourceId: r.source as SourceId, label: OFFICIAL_LABEL[r.source as SourceId], count: num(r.n), latest: r.latest ? String(r.latest).slice(0, 10) : null }))
+    .sort((a, b) => SOURCE_IDS.indexOf(a.sourceId) - SOURCE_IDS.indexOf(b.sourceId)))
+    .catch(() => { missing.push("official publications"); return null; });
+  const [judgments, texts, statutes, official] = await Promise.all([
     settle("judgment index", has.j, async () => rowsToCourts(await store.query({
       query: `SELECT court_id, count(*) AS n, min(year) AS y0, max(year) AS y1 FROM corpus_judgments GROUP BY court_id`,
     })), [] as CourtCoverage[]),
@@ -115,8 +137,9 @@ async function compute(store: RemoteStore): Promise<CorpusCoverage> {
       }
       return s.instruments ? s : null;
     }, null),
+    officialP,
   ]);
-  return { configured: true, judgments, texts, statutes, checkedAt: new Date().toISOString(), stale: false, missing: missing.sort() };
+  return { configured: true, judgments, texts, statutes, official, checkedAt: new Date().toISOString(), stale: false, missing: missing.sort() };
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -141,7 +164,7 @@ export async function corpusCoverage(opts: { store?: RemoteStore | null; now?: n
       .then((value) => { cache = { at: Date.now(), value }; return value; })
       .catch(() => {
         if (cache) { const value = { ...cache.value, stale: true }; cache = { at: Date.now() - COVERAGE_TTL_MS + 60_000, value }; return value; }
-        return { ...EMPTY, configured: true, missing: ["judgment index", "judgment full text", "statutes"] };
+        return { ...EMPTY, configured: true, missing: ["judgment index", "judgment full text", "official publications", "statutes"] };
       })
       .finally(() => { inflight = null; });
   }
@@ -178,6 +201,9 @@ export function coverageBlock(c: CorpusCoverage, opts: { includeUnconfigured?: b
   if (s) {
     lines.push(`- Statutes (search_law / list_law_instruments, then read_law_section): ${approx(s.instruments)} instruments, ${approx(s.provisions)} provisions — Central Acts ${approx(s.central)}; State and UT Acts ${approx(s.state)} (${s.states} States/UTs); regulator instruments ${approx(s.regulator)} (${s.regulators} regulators)${s.reports ? `; Law Commission reports ${approx(s.reports)} (regulator law-commission, context only, not law)` : ""}. Repealed and superseded instruments are included and labelled.`);
   } else lines.push("- Statutes corpus: not loaded; use search_statutes / read_section (curated India Code store).");
+  if (c.official?.length) {
+    lines.push(`- Official publications as published (search_official_sources, then read_official_document; cite publisher, document and page; cause lists: causelist_lookup): ${c.official.map((o) => `${o.label} ${approx(o.count)}${o.latest ? ` (latest ${o.latest})` : ""}`).join("; ")}. Sources not listed are not loaded.`);
+  } else if (c.official !== undefined) lines.push("- Official publications (orders, cause lists, circulars, notifications): not loaded yet; the official-sources tools return nothing.");
   if (c.stale) lines.push("- (Coverage figures are from an earlier check; the latest refresh failed.)");
   return lines.join("\n");
 }

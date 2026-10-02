@@ -18,15 +18,20 @@ export interface PlanInput {
   refinements?: Partial<Record<LaneKind, string[]>>;
   /** English search terms when the question was asked in another language (legal terms preserved). */
   searchQuery?: string;
+  /**
+   * Extra reads (and steps) per deep lane from the `research_lane` budget of the configured fast model (0 = the base
+   * caps). Bounded: at most +3; the lane timeouts are unchanged.
+   */
+  readBoost?: number;
 }
 
 const LANE_TOOLS: Record<LaneKind, string[]> = {
   controlling: ["search_judgments", "read_judgment", "citing_references", "resolve_citation", "compare_authorities", "build_citation", "search_statutes", "verify_citations"],
   persuasive: ["search_judgments", "read_judgment", "citing_references", "compare_authorities", "build_citation"],
   contrary: ["search_judgments", "read_judgment", "citing_references", "resolve_citation", "compare_authorities", "verify_citations"],
-  statute: ["search_statutes", "read_section", "map_criminal_section", "fetch_url", "build_citation"],
-  regulatory: ["search_statutes", "read_section", "map_criminal_section", "fetch_url", "build_citation"],
-  record: ["search_matter_documents", "read_matter_document", "get_matter_context"],
+  statute: ["search_statutes", "read_section", "map_criminal_section", "search_official_sources", "fetch_url", "build_citation"],
+  regulatory: ["search_statutes", "read_section", "map_criminal_section", "search_official_sources", "fetch_url", "build_citation"],
+  record: ["search_matter_documents", "read_matter_document", "get_matter_context", "search_official_sources"],
   secondary: ["web_search", "fetch_url", "search_library"],
   fast: ["search_judgments", "search_statutes", "search_library"],
 };
@@ -88,7 +93,11 @@ export function planLanes(input: PlanInput): ResearchLane[] {
   const s = input.settings;
   const has = (src: SearchSource) => s.sources.includes(src);
   const lanes: ResearchLane[] = [];
-  const mk = (kind: LaneKind, sources: SearchSource[], queries: string[], maxSteps: number, maxReads: number, courtFilter?: string[]): ResearchLane => ({
+  const boost = input.mode === "fast" ? 0 : Math.max(0, Math.min(3, Math.floor(input.readBoost ?? 0)));
+  const mk = (kind: LaneKind, sources: SearchSource[], queries: string[], baseSteps: number, baseReads: number, courtFilter?: string[]): ResearchLane => {
+    const maxSteps = baseSteps + boost;
+    const maxReads = baseReads + boost;
+    return {
     id: `lane_${kind}_r${round}`,
     kind,
     ...LANE_NAME[kind],
@@ -102,7 +111,8 @@ export function planLanes(input: PlanInput): ResearchLane[] {
     note: intelFeeds(kind, sources) || kind === "record" ? INTEL_LANE_NOTE[kind] : undefined,
     timeoutMs: round > 1 ? Math.min(LANE_TIMEOUT[kind], 75_000) : LANE_TIMEOUT[kind],
     ...(courtFilter?.length ? { courtFilter } : {}),
-  });
+    };
+  };
 
   if (input.mode === "fast") {
     const sources = s.sources.filter((x) => x !== "web");

@@ -186,7 +186,7 @@ describe("builder front-end editor operations", () => {
 describe("template front ends", () => {
   it("gives every user template a tailored front end whose fields cover the required inputs", () => {
     const templates = buildTemplates();
-    expect(templates).toHaveLength(16);
+    expect(templates).toHaveLength(19);
     for (const t of templates) {
       const fe = TEMPLATE_FRONTENDS[t.id];
       expect(fe, `${t.id} has no front end`).toBeTruthy();

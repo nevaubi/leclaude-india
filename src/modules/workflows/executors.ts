@@ -3,7 +3,11 @@ import { nanoid } from "nanoid";
 import type { ResponseInput } from "openai/resources/responses/responses";
 import { db } from "@/lib/db";
 import { runAgent, strictJsonSchema, type AgentEvent } from "@/lib/ai/agent";
-import { aiConfig } from "@/lib/ai/config";
+import { aiBudget, aiConfig } from "@/lib/ai/config";
+import { clipWithMarker, type BudgetProfileId, type ResolvedBudget } from "@/lib/ai/context-budget";
+import type { TaskType } from "@/lib/ai/providers/types";
+import { indiaRoutingFor } from "@/lib/ai/india-guidance";
+import { evidenceFromToolCalls } from "@/lib/ai/agents/registry";
 import { researchToolset, searchEdiscoveryTool, getLibraryItemTool, searchLibraryTool, fetchUrlTool, LEGAL_TOOLS, extractPlainText } from "@/lib/ai/toolkit";
 import type { ToolContext, ToolDef } from "@/lib/ai/tools";
 import { FIRM_NAME, LEGAL_STYLE_RULES, RESEARCH_METHOD, todayLine } from "@/lib/ai/prompts";
@@ -192,9 +196,27 @@ export interface ModelCall {
   research?: { web?: boolean; legal?: boolean; internal?: boolean };
   maxSteps?: number;
   reasoningEffort?: "low" | "medium" | "high";
+  /** Context-budget profile (default workflow_step): output size, context guard and evidence capture follow it. */
+  budget?: BudgetProfileId;
+  /** Routing / telemetry task type (default: research for research steps, else the runtime default). */
+  taskType?: TaskType;
+  /** Explicit output cap (otherwise the budget's). */
+  maxOutputTokens?: number;
 }
 
-export interface ModelResult { text: string; json?: unknown; usage: { input: number; output: number; total: number }; calls: number; citations: { title: string; url?: string; cite?: string; source?: string }[]; toolCalls: number; /** Tool results the model read (research evidence for verification). */ evidence: VerifySource[]; model: string; instructions: string; input: string | ResponseInput }
+export interface ModelResult { text: string; json?: unknown; usage: { input: number; output: number; total: number }; calls: number; citations: { title: string; url?: string; cite?: string; source?: string }[]; toolCalls: number; /** Tool results the model read (research evidence for verification). */ evidence: VerifySource[]; model: string; instructions: string; input: string | ResponseInput; /** The budget the step ran under. */ budget?: ResolvedBudget }
+
+/** The budget a step runs under, resolved for its model tier (pure lookups; no model call). */
+export function stepBudget(profile: BudgetProfileId, tier?: "fast" | "primary"): ResolvedBudget {
+  return aiBudget(profile, tier ? { fast: tier === "fast" } : {});
+}
+
+/** Clip step input to the budget (never below the size the step always accepted), logging when material is left out. */
+export function clipInput(x: Pick<ExecContext, "log">, text: string, max: number, what: string): string {
+  if (text.length <= max) return text;
+  x.log(`${what}: ${text.length.toLocaleString("en-US")} characters; the first ${max.toLocaleString("en-US")} were given to the model (budget).`);
+  return clipWithMarker(text, max, what);
+}
 
 export async function callModel(x: ExecContext, call: ModelCall): Promise<ModelResult> {
   const cfg = aiConfig();
@@ -202,16 +224,22 @@ export async function callModel(x: ExecContext, call: ModelCall): Promise<ModelR
   const research = call.research ?? {};
   const wantsResearch = Boolean(research.web || research.legal || research.internal);
   const toolset = wantsResearch ? researchToolset({ web: Boolean(research.web), legal: Boolean(research.legal), internal: Boolean(research.internal), webContextSize: "medium" }) : { tools: [] as ToolDef<never, unknown>[], builtinTools: [] };
+  const profile: BudgetProfileId = call.budget ?? "workflow_step";
+  const budget = stepBudget(profile, call.tier);
+  // Indian law tool routing (and the corpus coverage block) whenever the step holds Indian law tools.
+  let instructions = call.instructions;
+  const routing = indiaRoutingFor(toolset.tools.map((t) => t.name));
+  if (routing) {
+    let coverage = "";
+    try { coverage = await (await import("@/modules/india/corpus/coverage")).coveragePromptBlock({ waitMs: 1_500 }); } catch { coverage = ""; }
+    instructions = [call.instructions, routing, coverage].filter(Boolean).join("\n\n");
+  }
   const citations: { title: string; url?: string; cite?: string; source?: string }[] = [];
-  const evidence: VerifySource[] = [];
   let toolCalls = 0;
   const onEvent = (e: AgentEvent) => {
     switch (e.type) {
       case "tool.call": toolCalls++; x.progress(e.label); x.log(`tool: ${e.label}`); break;
-      case "tool.result":
-        if (!e.ok) x.log(`tool error: ${e.name}: ${e.error}`);
-        else if (e.result != null && evidence.length < 24) { const text = typeof e.result === "string" ? e.result : JSON.stringify(e.result); if (text.length > 40) evidence.push({ title: `tool ${e.name}`, text: text.slice(0, 8000) }); }
-        break;
+      case "tool.result": if (!e.ok) x.log(`tool error: ${e.name}: ${e.error}`); break;
       case "web_search": if (e.status === "completed") { toolCalls++; x.log(`web search: ${e.query ?? "(query)"}`); } break;
       case "citation": citations.push(e.citation); break;
       case "status": x.log(e.message); break;
@@ -220,23 +248,31 @@ export async function callModel(x: ExecContext, call: ModelCall): Promise<ModelR
     }
   };
   const res = await runAgent({
-    instructions: call.instructions,
+    instructions,
     input: call.input,
     model,
     tools: toolset.tools,
     builtinTools: toolset.builtinTools,
-    maxSteps: call.maxSteps ?? (wantsResearch ? 10 : 1),
+    maxSteps: call.maxSteps ?? (wantsResearch ? budget.maxSteps : 1),
     reasoningEffort: call.reasoningEffort ?? (call.tier === "fast" ? "low" : cfg.reasoningEffort === "none" ? "medium" : cfg.reasoningEffort),
     signal: x.signal,
     jsonSchema: call.json ? { name: call.json.name, schema: strictJsonSchema(call.json.schema) } : undefined,
     metadata: { workflowRunId: x.run.id, nodeId: x.node.id },
     onEvent,
+    budget: profile,
+    maxOutputTokens: call.maxOutputTokens,
+    taskType: call.taskType ?? (wantsResearch ? "research" : undefined),
+    matterId: x.run.matterId ?? undefined,
+    runId: x.run.id,
   });
   let json: unknown = res.json;
   if (call.json && json === undefined) {
     try { json = JSON.parse(res.text); } catch { throw new StepError("The model did not return valid JSON for the requested schema.", "bad_json"); }
   }
-  return { text: res.text, json, usage: res.usage, calls: 1 + res.steps, citations: dedupe(citations), toolCalls, evidence, model, instructions: call.instructions, input: call.input };
+  // Evidence for verification: the FULL tool results the model read (not the client previews), bounded by the budget.
+  const evidence = evidenceFromToolCalls(res.toolCalls, { maxSources: budget.maxFullSources, maxChars: budget.toolResultChars });
+  if (res.elided) x.log(`Context budget: ${res.elided} earlier tool result(s) were elided from the model's context.`);
+  return { text: res.text, json, usage: res.usage, calls: 1 + res.steps, citations: dedupe(citations), toolCalls, evidence, model, instructions, input: call.input, budget };
 }
 
 // ─────────────────────────── Provenance for AI steps ───────────────────────────
@@ -273,7 +309,15 @@ export function storeStepProvenance(x: ExecContext, p: Provenance, title?: strin
 
 /** Evidence set for narrative verification: what the model read (tool results) plus text the step was given. */
 export function evidenceFor(r: ModelResult, given: { title: string; text: string }[]): VerifySource[] {
-  return [...given.filter((g) => g.text.trim()).map((g) => ({ title: g.title, text: g.text.slice(0, 20_000) })), ...r.evidence].slice(0, 24);
+  // Given material and what the model read, bounded by the verifier's budget (never below 20,000 chars / 24 sources).
+  const v = stepBudget("verify", "fast");
+  const perGiven = Math.max(20_000, v.perSourceChars);
+  return [...given.filter((g) => g.text.trim()).map((g) => ({ title: g.title, text: g.text.slice(0, perGiven) })), ...r.evidence].slice(0, Math.max(24, v.maxFullSources));
+}
+
+/** Characters of evidence a structured self-correction may see (never below the 60,000 / 40,000 it always had). */
+function verifyEvidenceChars(): number {
+  return Math.max(60_000, stepBudget("verify", "fast").totalEvidenceChars);
 }
 
 /** Narrative verification (fail-soft): claims against evidence + record-cite cross-check; returns the text with [VERIFY] marks. */
@@ -374,7 +418,8 @@ const aiPrompt: Executor = async (x) => {
   let provenance = recordStep(x, r, { confidence: modelConfidence, meta: { output: wantsJson ? "json" : "text" } });
   if (wantsJson && schema) {
     const sourceText = str(c.prompt);
-    const checked = await verifyStructuredStep(x, provenance, "structured step output", j, `PROMPT CONTEXT:\n${sourceText.slice(0, 60_000)}\n\n${r.evidence.map((e) => e.text).join("\n\n").slice(0, 40_000)}`, schema);
+    const ev = verifyEvidenceChars();
+    const checked = await verifyStructuredStep(x, provenance, "structured step output", j, `PROMPT CONTEXT:\n${sourceText.slice(0, Math.floor(ev * 0.6))}\n\n${r.evidence.map((e) => e.text).join("\n\n").slice(0, Math.floor(ev * 0.4))}`, schema);
     provenance = storeStepProvenance(x, checked.provenance);
     return { output: { ...(checked.output as Record<string, unknown>), _citations: r.citations.length ? r.citations : undefined, _provenance: provenance }, usage: r.usage, calls: r.calls };
   }
@@ -391,13 +436,15 @@ const aiExtract: Executor = async (x) => {
   if (!fields.length) throw new StepError("No fields configured.", "no_fields");
   const schema = fieldsToSchema(fields);
   const instructions = `${firmPreamble(x)}\n\nExtract the requested fields from the source document exactly as they appear; normalize dates to YYYY-MM-DD and amounts to numbers. Use empty values (\"\", 0, false, []) when a field is genuinely absent — never guess. For every field add an _evidence entry quoting the supporting language.\n${c.instructions ? `Additional guidance: ${str(c.instructions)}` : ""}`;
-  const r = await callModel(x, { instructions, input: `SOURCE DOCUMENT:\n"""\n${source.slice(0, 120_000)}\n"""`, tier: c.modelTier === "fast" ? "fast" : "primary", json: { name: "extraction", schema } });
+  const tier = c.modelTier === "fast" ? "fast" : "primary";
+  const b = stepBudget("workflow_step", tier);
+  const r = await callModel(x, { instructions, input: `SOURCE DOCUMENT:\n"""\n${clipInput(x, source, Math.max(120_000, b.inputChars), "Source document")}\n"""`, tier, json: { name: "extraction", schema }, taskType: "extract" });
   x.log(`Extracted ${fields.length} field(s)`);
   const j = (r.json ?? {}) as Record<string, unknown>;
   const ev = Array.isArray(j._evidence) ? (j._evidence as { confidence?: number }[]).map((e) => Number(e.confidence)).filter((n) => Number.isFinite(n)) : [];
   const confidence = ev.length ? Math.max(0, Math.min(1, ev.reduce((a, b) => a + b, 0) / ev.length)) : undefined;
   let provenance = recordStep(x, r, { confidence, meta: { fields: fields.map((f) => f.name) } });
-  const checked = await verifyStructuredStep(x, provenance, "field extraction", j, source.slice(0, 60_000), schema);
+  const checked = await verifyStructuredStep(x, provenance, "field extraction", j, source.slice(0, verifyEvidenceChars()), schema);
   provenance = storeStepProvenance(x, checked.provenance);
   return { output: { ...(checked.output as Record<string, unknown>), _provenance: provenance }, usage: r.usage, calls: r.calls };
 };
@@ -414,7 +461,8 @@ const aiClassify: Executor = async (x) => {
     ? { type: "object", properties: { labels: { type: "array", items: { type: "object", properties: { label: { type: "string", enum: enumValues }, confidence: { type: "number" }, rationale: { type: "string" } }, required: ["label", "confidence", "rationale"] } } }, required: ["labels"] }
     : { type: "object", properties: { label: { type: "string", enum: enumValues }, confidence: { type: "number", description: "0..1" }, rationale: { type: "string", description: "One or two sentences citing the decisive language" } }, required: ["label", "confidence", "rationale"] };
   const instructions = `${firmPreamble(x)}\n\nClassify the text into ${multi ? "one or more" : "exactly one"} of these labels:\n${labels.map((l) => `- ${l.label}: ${l.description ?? ""}`).join("\n")}\nGive a calibrated confidence between 0 and 1 and a short rationale that quotes the decisive language.\n${c.instructions ? `Additional guidance: ${str(c.instructions)}` : ""}`;
-  const r = await callModel(x, { instructions, input: `TEXT:\n"""\n${source.slice(0, 80_000)}\n"""`, tier: c.modelTier === "fast" ? "fast" : "primary", json: { name: "classification", schema } });
+  const tier = c.modelTier === "fast" ? "fast" : "primary";
+  const r = await callModel(x, { instructions, input: `TEXT:\n"""\n${clipInput(x, source, Math.max(80_000, stepBudget("workflow_step", tier).inputChars), "Text")}\n"""`, tier, json: { name: "classification", schema }, taskType: "classify" });
   const j = r.json as Record<string, unknown>;
   const output = multi ? { labels: j.labels, label: (j.labels as { label: string }[])?.[0]?.label ?? "", confidence: (j.labels as { confidence: number }[])?.[0]?.confidence ?? 0, rationale: (j.labels as { rationale: string }[])?.map((l) => l.rationale).join(" ") } : { ...j, labels: [{ label: j.label, confidence: j.confidence, rationale: j.rationale }] };
   x.log(`Label: ${str(output.label)} (${Math.round(num(output.confidence, 0) * 100)}%)`);
@@ -435,8 +483,9 @@ const aiSummarize: Executor = async (x) => {
     qa: "Produce a deposition-style digest: for each key exchange give page:line, the question, the answer in substance, and a flag (admission, contradiction, evasive, key).",
   };
   const instructions = `${firmPreamble(x)}\n\n${LEGAL_STYLE_RULES}\n\nSummarize the source in Markdown. ${styles[str(c.style)] ?? styles.bullets} Target about ${words} words.${c.focus ? ` Focus on: ${str(c.focus)}.` : ""} Preserve names, dates, Bates numbers, page:line cites and dollar figures exactly.`;
-  const r = await callModel(x, { instructions, input: `SOURCE:\n"""\n${source.slice(0, 150_000)}\n"""`, tier: c.modelTier === "fast" ? "fast" : "primary" });
-  const verified = await verifyNarrativeStep(x, recordStep(x, r, { sources: [{ kind: "internal", title: "summarized source", cite: contentHash(source).slice(0, 12) }] }), r.text, [{ title: "Source", text: source.slice(0, 60_000) }], { maxClaims: 30 });
+  const tier = c.modelTier === "fast" ? "fast" : "primary";
+  const r = await callModel(x, { instructions, input: `SOURCE:\n"""\n${clipInput(x, source, Math.max(150_000, stepBudget("workflow_step", tier).inputChars), "Source")}\n"""`, tier, taskType: "summarize" });
+  const verified = await verifyNarrativeStep(x, recordStep(x, r, { sources: [{ kind: "internal", title: "summarized source", cite: contentHash(source).slice(0, 12) }] }), r.text, [{ title: "Source", text: source.slice(0, verifyEvidenceChars()) }], { maxClaims: 30 });
   const provenance = storeStepProvenance(x, verified.provenance);
   return { output: { text: verified.text, wordCount: verified.text.split(/\s+/).filter(Boolean).length, _provenance: provenance }, usage: r.usage, calls: r.calls };
 };
@@ -458,8 +507,10 @@ const aiDraft: Executor = async (x) => {
   const tones: Record<string, string> = { formal: "formal and precise", plain: "plain English, short sentences", persuasive: "persuasive but measured", neutral: "neutral and analytical" };
   const audiences: Record<string, string> = { partner: "a supervising partner", client: "the client (a sophisticated general counsel)", opposing: "opposing counsel", court: "the court", team: "the case team" };
   const instructions = `${firmPreamble(x)}\n\n${LEGAL_STYLE_RULES}\n\nDraft ${kinds[str(c.kind)] ?? kinds.memo}. Tone: ${tones[str(c.tone)] ?? tones.formal}. Audience: ${audiences[str(c.audience)] ?? audiences.partner}. Output Markdown only. Start with a single H1 title line. Use [VERIFY] for any fact or authority you could not confirm. Do not add commentary outside the document.`;
-  const input = `DRAFTING BRIEF:\n${brief}${c.context ? `\n\nADDITIONAL CONTEXT:\n${str(c.context).slice(0, 100_000)}` : ""}`;
-  const r = await callModel(x, { instructions, input, tier: c.modelTier === "fast" ? "fast" : "primary", research: c.research as ModelCall["research"], maxSteps: 8 });
+  const tier = c.modelTier === "fast" ? "fast" : "primary";
+  const draftBudget = stepBudget("litigation_draft", tier);
+  const input = `DRAFTING BRIEF:\n${brief}${c.context ? `\n\nADDITIONAL CONTEXT:\n${clipInput(x, str(c.context), Math.max(100_000, draftBudget.inputChars), "Drafting context")}` : ""}`;
+  const r = await callModel(x, { instructions, input, tier, research: c.research as ModelCall["research"], maxSteps: draftBudget.maxSteps, budget: "litigation_draft", taskType: "draft" });
   const title = r.text.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? `${x.workflow.name} — ${str(c.kind)}`;
   const verified = await verifyNarrativeStep(x, recordStep(x, r, { meta: { kind: str(c.kind), title } }), r.text, evidenceFor(r, [{ title: "Drafting brief", text: brief }, { title: "Additional context", text: c.context ? str(c.context) : "" }]), { maxClaims: 30 });
   const provenance = storeStepProvenance(x, verified.provenance, title);
@@ -482,7 +533,8 @@ const aiReview: Executor = async (x) => {
     required: ["findings", "summary", "score"],
   };
   const instructions = `${firmPreamble(x)}\n\nReview the document against each checklist item. For each item report pass / fail / unclear / n/a, a severity, a one-sentence note and the exact quote you relied on. Then give a two-sentence summary and an overall score (100 = every item passes).\n${c.instructions ? `Additional guidance: ${str(c.instructions)}` : ""}`;
-  const r = await callModel(x, { instructions, input: `CHECKLIST:\n${checklist.map((i, n) => `${n + 1}. ${i}`).join("\n")}\n\nDOCUMENT:\n"""\n${source.slice(0, 120_000)}\n"""`, tier: c.modelTier === "fast" ? "fast" : "primary", json: { name: "review", schema } });
+  const tier = c.modelTier === "fast" ? "fast" : "primary";
+  const r = await callModel(x, { instructions, input: `CHECKLIST:\n${checklist.map((i, n) => `${n + 1}. ${i}`).join("\n")}\n\nDOCUMENT:\n"""\n${clipInput(x, source, Math.max(120_000, stepBudget("workflow_step", tier).inputChars), "Document")}\n"""`, tier, json: { name: "review", schema }, taskType: "review" });
   const j = r.json as { findings: { status: string }[]; summary: string; score: number };
   const failed = (j.findings ?? []).filter((f) => f.status === "fail").length;
   x.log(`${failed} failing item(s), score ${Math.round(num(j.score, 0))}`);
@@ -490,7 +542,7 @@ const aiReview: Executor = async (x) => {
   const quoted = (j.findings as { quote?: string }[] | undefined)?.filter((f) => f.quote?.trim()).length ?? 0;
   const confidence = j.findings?.length ? Math.max(0.3, quoted / j.findings.length) : undefined;
   let provenance = recordStep(x, r, { confidence, sources: [{ kind: "internal", title: "reviewed document", cite: contentHash(source).slice(0, 12) }], meta: { failed, score: j.score } });
-  const checked = await verifyStructuredStep(x, provenance, "checklist review findings", j.findings ?? [], source.slice(0, 60_000), schema.properties.findings as Record<string, unknown>);
+  const checked = await verifyStructuredStep(x, provenance, "checklist review findings", j.findings ?? [], source.slice(0, verifyEvidenceChars()), schema.properties.findings as Record<string, unknown>);
   provenance = storeStepProvenance(x, checked.provenance);
   const findings = Array.isArray(checked.output) ? checked.output : (j.findings ?? []);
   return { output: { ...j, findings, failed: findings.filter((f) => f.status === "fail").length, passed: findings.filter((f) => f.status === "pass").length, _provenance: provenance }, usage: r.usage, calls: r.calls };
@@ -503,8 +555,8 @@ const aiResearch: Executor = async (x) => {
   const sources = (c.sources as { web?: boolean; legal?: boolean; internal?: boolean }) ?? { web: true, legal: true, internal: true };
   const depth = str(c.depth) || "standard";
   const maxSteps = depth === "quick" ? 4 : depth === "deep" ? 14 : 8;
-  const instructions = `${firmPreamble(x)}\n\n${RESEARCH_METHOD}\n\n${LEGAL_STYLE_RULES}\n\n${c.jurisdiction ? `Jurisdiction focus: ${str(c.jurisdiction)} (pass this as the jurisdiction argument to search_case_law).` : ""}\nDepth: ${depth}. ${depth === "deep" ? "Open and read the controlling opinions before quoting them." : depth === "quick" ? "Use at most four tool calls and answer from the search results." : ""}\nDeliver a research memo in Markdown: **Bottom line**, **Analysis** (with citations), **Authorities relied on** (bulleted with citations and one-line parentheticals), **Open questions / next steps**. Mark unverified points [VERIFY].\n${c.instructions ? `Additional guidance: ${str(c.instructions)}` : ""}`;
-  const r = await callModel(x, { instructions, input: question, tier: c.modelTier === "fast" ? "fast" : "primary", research: sources, maxSteps, reasoningEffort: depth === "deep" ? "high" : "medium" });
+  const instructions = `${firmPreamble(x)}\n\n${RESEARCH_METHOD}\n\n${LEGAL_STYLE_RULES}\n\n${c.jurisdiction ? `Jurisdiction focus: ${str(c.jurisdiction)}. Prefer authority binding in that forum (the Supreme Court, then that High Court) and pass its registry court ids (e.g. sci, hc-karnataka) to the judgment search tools' courts filter; say when an authority is only persuasive.` : ""}\nDepth: ${depth}. ${depth === "deep" ? "Open and read the controlling opinions before quoting them." : depth === "quick" ? "Use at most four tool calls and answer from the search results." : ""}\nDeliver a research memo in Markdown: **Bottom line**, **Analysis** (with citations), **Authorities relied on** (bulleted with citations and one-line parentheticals), **Open questions / next steps**. Mark unverified points [VERIFY].\n${c.instructions ? `Additional guidance: ${str(c.instructions)}` : ""}`;
+  const r = await callModel(x, { instructions, input: question, tier: c.modelTier === "fast" ? "fast" : "primary", research: sources, maxSteps, reasoningEffort: depth === "deep" ? "high" : "medium", budget: depth === "deep" ? "workflow_agent" : "workflow_step", taskType: "research" });
   // Research is verified against what the agent actually read (tool results); an answer with no sources is not source-backed.
   const verified = await verifyNarrativeStep(x, recordStep(x, r, { surface: "workflow.ai.research", meta: { depth, toolCalls: r.toolCalls } }), r.text, evidenceFor(r, []), { maxClaims: 30 });
   const provenance = storeStepProvenance(x, verified.provenance);

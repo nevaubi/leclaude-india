@@ -145,6 +145,7 @@ describe("source dedupe and numbering", () => {
   it("keys by provider id or normalised url and merges lanes/read state", () => {
     expect(sourceKey(sc)).toBe("judgment:j_sc_meera_nair");
     expect(sourceKey({ id: "web:0", source: "web", title: "India Code", url: "https://www.indiacode.nic.in/handle/1/?utm_source=x#top" })).toBe("web:indiacode.nic.in/handle/1");
+    expect(sourceKey({ id: "web:1", source: "web", title: "India Code", url: "https://indiacode.gov.in/handle/123456789/496413/?utm_source=x#top" })).toBe("web:indiacode.gov.in/handle/123456789/496413");
     expect(normalizeUrl("https://WWW.Example.com/a/b/")).toBe("example.com/a/b");
     const a = sourceFromHit(sc, "lane_a", 1);
     const b = { ...sourceFromHit(sc, "lane_b", 2), read: true, chars: 500, excerpt: "text" };
@@ -260,7 +261,7 @@ describe("provenance assembly", () => {
 
 describe("source cache", () => {
   it("stores external reads for 24h and skips local records (matter documents, corpus judgments, India Code)", () => {
-    const ref = { kind: "url" as const, url: "https://www.indiacode.nic.in/handle/424242" };
+    const ref = { kind: "url" as const, url: "https://indiacode.gov.in/handle/123456789/424242" };
     expect(getCached(ref)).toBeNull();
     putCached(ref, { title: "X", text: "hello" });
     expect(getCached(ref)?.text).toBe("hello");

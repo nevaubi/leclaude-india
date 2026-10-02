@@ -99,7 +99,10 @@ export function corpusFilters(o: CorpusQuery, params: SqlValue[]): string {
   if (ids.length || codes.length) {
     const parts: string[] = [];
     if (ids.length) { params.push(arrayLiteral(ids)); parts.push(`court_id = ANY($${params.length}::text[])`); }
-    if (codes.length) { params.push(arrayLiteral(codes)); parts.push(`(court_id IS NULL AND court_code = ANY($${params.length}::text[]))`); }
+    // "code:unknown" is the directory's key for records with neither a registry court nor a court code.
+    const named = codes.filter((c) => c !== "unknown");
+    if (named.length) { params.push(arrayLiteral(named)); parts.push(`(court_id IS NULL AND court_code = ANY($${params.length}::text[]))`); }
+    if (named.length < codes.length) parts.push(`(court_id IS NULL AND court_code IS NULL)`);
     where.push(parts.length > 1 ? `(${parts.join(" OR ")})` : parts[0]);
   }
   if (o.yearFrom) { params.push(o.yearFrom); where.push(`year >= $${params.length}`); }

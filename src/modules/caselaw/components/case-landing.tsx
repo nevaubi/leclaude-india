@@ -5,6 +5,7 @@ import { ArrowRight, ArrowUpRight, FileText, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { hasJudgmentText, textStatusLabel } from "@/modules/india/corpus/text-status";
 import { CoramAvatars } from "@/modules/judges/components/coram-avatars";
 import { caseHref, courtOptions, formatCaseDate, yearSpan, type CaseFacets, type CaseHit, type CourtOption } from "../shared";
 import { benchLabel, courtLabel } from "./case-labels";
@@ -152,7 +153,7 @@ function LatestRow({ h }: { h: CaseHit }) {
             <span className={cn("shrink-0", h.court && "text-foreground/75")}>{courtLabel(h)}</span>
             {bench ? <><span aria-hidden>·</span><span className="truncate">{bench}</span></> : null}
             {date ? <><span aria-hidden>·</span><span className="shrink-0 tabular">{date}</span></> : null}
-            {h.text_status === "full" ? <><span aria-hidden>·</span><span className="inline-flex shrink-0 items-center gap-1"><FileText className="size-3" aria-hidden />Full text</span></> : null}
+            {hasJudgmentText(h.text_status) ? <><span aria-hidden>·</span><span className="inline-flex shrink-0 items-center gap-1"><FileText className="size-3" aria-hidden />{textStatusLabel(h.text_status)}</span></> : null}
           </span>
         </span>
         <span className="hidden shrink-0 items-center gap-3 sm:flex">

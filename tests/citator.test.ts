@@ -33,9 +33,9 @@ class CorpusFake implements RemoteStore {
     if (s.startsWith("INSERT INTO corpus_state")) { this.state.set(String(p[0]), String(p[1])); return []; }
     if (/^\s*CREATE|^\s*ALTER|^\s*UPDATE corpus_judgments SET year/.test(s)) return [];
     if (s.includes("to_regclass('public.corpus_texts')")) return [{ ok: "t", hc: "t" }];
-    if (s.includes("WHERE text_status = 'full'")) {
+    if (s.includes("WHERE text_status IN ('full', 'full_text', 'ocr', 'partial')")) {
       const limit = Number(/LIMIT (\d+)/.exec(s)![1]);
-      return this.judgments.filter((j) => j.text_status === "full" && (!p.length || j.id > String(p[0]))).sort((a, b) => a.id.localeCompare(b.id)).slice(0, limit) as unknown as Row[];
+      return this.judgments.filter((j) => ["full", "full_text", "ocr", "partial"].includes(j.text_status) && (!p.length || j.id > String(p[0]))).sort((a, b) => a.id.localeCompare(b.id)).slice(0, limit) as unknown as Row[];
     }
     if (s.includes("FROM corpus_texts WHERE neutral_citation = $1")) {
       return (this.texts[String(p[0])] ?? []).map((text, i) => ({ chunk_index: String(i), page_start: String(i + 1), text }));

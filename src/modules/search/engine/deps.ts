@@ -35,6 +35,7 @@ import { searchCorpus, type CorpusHit } from "@/modules/india/corpus/search";
 import { caseHref } from "@/modules/caselaw/shared";
 import { courtById } from "@/lib/india/courts";
 import { chunksToText, readJudgmentText, searchJudgmentText, type TextSearchHit } from "@/modules/india/corpus/text";
+import { hasJudgmentText } from "@/modules/india/corpus/text-status";
 import { textKey } from "@/lib/ai/toolkit/india-judgment-text";
 import { readOfficialDocument, searchOfficial } from "@/modules/official/service";
 import { parseSourceRef, SOURCE_REF_PREFIX, type SourceSearchHit } from "@/modules/official/types";
@@ -150,8 +151,8 @@ function corpusHit(h: CorpusHit, nctx: { jurisdiction: SearchSettings["jurisdict
     docketNumber: h.case_number ?? undefined,
     authority: classifyAuthority(h.court_id, nctx.jurisdiction, nctx.courts, h.decision_date ?? undefined),
     india: { judgmentId: h.id, courtId: h.court_id, judges: h.judges, neutralCitation: h.neutral_citation ?? undefined, reporterCitations: h.reporter_citation ? [h.reporter_citation] : undefined, caseNumber: h.case_number ?? undefined, provider: "corpus" },
-    // Full text exists (Supreme Court text corpus): the reader can read it. Metadata-only records stay unreadable.
-    ...(h.text_status === "full" ? { readRef: { kind: "url" as const, url: `${CORPUS_TEXT_PREFIX}${h.id}` } } : {}),
+    // Full text exists (Open India Law or the court's PDF, incl. OCR / partial): the reader can read it. Metadata-only records stay unreadable.
+    ...(hasJudgmentText(h.text_status) ? { readRef: { kind: "url" as const, url: `${CORPUS_TEXT_PREFIX}${h.id}` } } : {}),
   };
 }
 

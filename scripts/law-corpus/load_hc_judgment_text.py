@@ -135,11 +135,27 @@ def load(conn, duck, name):
     return True
 
 
+# Rows written by the application's PDF text worker (src/modules/india/corpus/hc-text): dataset_version 'aws-hc-pdf:...'.
+PDF_ROWS = "dataset_version LIKE 'aws-hc-pdf%'"
+
+
 def mark(conn):
     with conn.cursor() as cur:
-        cur.execute("""UPDATE corpus_judgments j SET text_status = 'full'
+        # Open India Law text wins where both exist (docs/architecture/hc-judgment-text.md): the PDF-extracted rows for
+        # the same CNR + date are removed (one text per judgment, never interleaved) and the fact is recorded.
+        cur.execute("SELECT to_regclass('public.hc_text_units') IS NOT NULL")
+        if cur.fetchone()[0]:
+            cur.execute(f"""UPDATE hc_text_units u SET oil_text = true, updated_at = now(),
+                    note = 'superseded by Open India Law text (PDF text removed)'
+                WHERE EXISTS (SELECT 1 FROM corpus_texts p WHERE p.case_key = u.judgment_id AND p.{PDF_ROWS}
+                  AND EXISTS (SELECT 1 FROM corpus_texts o WHERE o.cnr = p.cnr AND o.decision_date = p.decision_date AND NOT (o.{PDF_ROWS})))""")
+            print("pdf-text units superseded by Open India Law:", cur.rowcount, flush=True)
+        cur.execute(f"""DELETE FROM corpus_texts p WHERE p.{PDF_ROWS} AND p.cnr IS NOT NULL
+            AND EXISTS (SELECT 1 FROM corpus_texts o WHERE o.cnr = p.cnr AND o.decision_date = p.decision_date AND NOT (o.{PDF_ROWS}))""")
+        print("pdf-text chunks replaced by Open India Law text:", cur.rowcount, flush=True)
+        cur.execute(f"""UPDATE corpus_judgments j SET text_status = 'full'
             WHERE j.court_id LIKE 'hc-%' AND j.text_status IS DISTINCT FROM 'full' AND j.cnr IS NOT NULL
-              AND EXISTS (SELECT 1 FROM corpus_texts t WHERE t.cnr = j.cnr AND t.decision_date = j.decision_date)""")
+              AND EXISTS (SELECT 1 FROM corpus_texts t WHERE t.cnr = j.cnr AND t.decision_date = j.decision_date AND NOT (t.{PDF_ROWS}))""")
         print("high court records marked full:", cur.rowcount, flush=True)
     conn.commit()
 

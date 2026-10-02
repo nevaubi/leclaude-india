@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/misc";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { hasJudgmentText } from "@/modules/india/corpus/text-status";
 import { languageInfo } from "@/lib/india/languages";
 import { caseApiHref, caseHref, formatCaseDate, urlHost, type CaseRecord, type CaseRecordResponse, type SameCaseRecord } from "../shared";
 import { benchLabel, courtLabel } from "./case-labels";
@@ -215,7 +216,7 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
             </section>
           ) : null}
 
-          {r.text_status === "full" ? <JudgmentTextSection id={r.id} citation={r.neutral_citation} /> : (
+          {hasJudgmentText(r.text_status) ? <JudgmentTextSection id={r.id} citation={r.neutral_citation} /> : (
             <section aria-label="Judgment text" className="flex flex-col items-start gap-2 rounded-lg border border-dashed px-4 py-5">
               <h2 className="text-[13px] font-medium">The judgment text is not available here</h2>
               <p className="max-w-[62ch] text-[12.5px] text-muted-foreground">Read the judgment in the official PDF published by the court. It is the text of record.</p>

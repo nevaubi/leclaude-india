@@ -59,11 +59,11 @@ describe("gate (AUTH_MODE=jwt)", () => {
   });
 
   it("allowlists only sign-in, bootstrap, health, cron routes, /login, /setup and static assets", async () => {
-    for (const p of ["/login", "/setup", "/api/auth/login", "/api/auth/logout", "/api/auth/bootstrap", "/api/health", "/api/official/run", "/api/intel/jobs/tick", "/_next/static/chunks/a.js", "/brand/sw-mark.svg", "/icon.svg"]) {
+    for (const p of ["/login", "/setup", "/api/auth/login", "/api/auth/logout", "/api/auth/bootstrap", "/api/health", "/api/official/run", "/api/intel/jobs/tick", "/api/india/hc-text/run", "/_next/static/chunks/a.js", "/brand/sw-mark.svg", "/icon.svg"]) {
       expect(isPublicPath(p), p).toBe(true);
       expect(await gate(input({ pathname: p })), p).toEqual({ kind: "next" });
     }
-    for (const p of ["/api/auth/session", "/api/auth/login/x", "/api/official", "/api/official/run/extra", "/api/intel/jobs", "/api/people", "/loginx", "/settings", "/api/health/x"]) {
+    for (const p of ["/api/auth/session", "/api/auth/login/x", "/api/official", "/api/official/run/extra", "/api/india/hc-text/run/x", "/api/india/hc-text/coverage", "/api/intel/jobs", "/api/people", "/loginx", "/settings", "/api/health/x"]) {
       expect(isPublicPath(p), p).toBe(false);
     }
   });

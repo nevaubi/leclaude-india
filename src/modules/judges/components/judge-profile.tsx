@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/misc";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { hasJudgmentText, textStatusLabel } from "@/modules/india/corpus/text-status";
 import { caseHref, formatCaseDate } from "@/modules/caselaw/shared";
 import { CaseApiError, fetchCaseJson } from "@/modules/caselaw/components/fetch";
 import { displayJudgeName } from "../names";
@@ -129,7 +130,7 @@ function Judgments({ j, judgments }: { j: JudgeProfile; judgments: JudgeJudgment
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted-foreground">
                   <span className="tabular">{formatCaseDate(r.decisionDate) ?? "undated"}</span>
                   {r.neutralCitation ? <span className="tabular">{r.neutralCitation}</span> : r.caseNumber ? <span>{r.caseNumber}</span> : null}
-                  <span className={cn("rounded-[var(--radius-chip)] border px-1 text-[10.5px]", r.textStatus === "full" ? "text-foreground/80" : "text-muted-foreground")}>{r.textStatus === "full" ? "Full text" : "PDF only"}</span>
+                  <span className={cn("rounded-[var(--radius-chip)] border px-1 text-[10.5px]", hasJudgmentText(r.textStatus) ? "text-foreground/80" : "text-muted-foreground")}>{textStatusLabel(r.textStatus)}</span>
                 </div>
               </li>
             ))}

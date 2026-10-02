@@ -11,6 +11,7 @@ import { Chip, EmptyState, Kbd, Spinner } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { hasJudgmentText, textStatusLabel } from "@/modules/india/corpus/text-status";
 import {
   caseFiltersToParams, caseHref, formatCaseDate, hasActiveFilters, MATCH_LABEL, MAX_YEAR, MIN_YEAR, parseCaseFilters,
   type CaseFacets, type CaseFilters, type CaseHit, type CaseListResponse, type CaseSort,
@@ -162,7 +163,7 @@ export function CaseDirectory() {
       },
     },
     { id: "decided", header: "Decided", width: 104, accessor: (h) => h.decision_date ?? "", render: (h) => <span className="tabular">{formatCaseDate(h.decision_date) ?? dash}</span> },
-    { id: "text", header: "Text", width: 96, accessor: (h) => h.text_status, render: (h) => (h.text_status === "full" ? <FullTextChip /> : <span className="text-[11.5px] text-muted-foreground">PDF only</span>) },
+    { id: "text", header: "Text", width: 96, accessor: (h) => h.text_status, render: (h) => (hasJudgmentText(h.text_status) ? <FullTextChip status={h.text_status} /> : <span className="text-[11.5px] text-muted-foreground">PDF only</span>) },
     { id: "neutral", header: "Neutral citation", width: 140, accessor: (h) => h.neutral_citation ?? "", render: (h) => <span className="truncate tabular" title={h.neutral_citation ?? undefined}>{h.neutral_citation ?? dash}</span> },
     { id: "case", header: "Case no.", width: 170, accessor: (h) => h.case_number ?? "", render: (h) => <span className="truncate tabular" title={h.case_number ?? undefined}>{h.case_number ?? dash}</span> },
     { id: "reporter", header: "Reporter", width: 150, defaultHidden: true, label: "Reporter citation", accessor: (h) => h.reporter_citation ?? "", render: (h) => <span className="truncate tabular">{h.reporter_citation ?? dash}</span> },
@@ -313,8 +314,8 @@ export function CaseDirectory() {
   );
 }
 
-function FullTextChip() {
-  return <Chip tone="muted" icon={FileText} title="The judgment text can be read on the case page" className="text-foreground/75">Full text</Chip>;
+function FullTextChip({ status }: { status: string }) {
+  return <Chip tone="muted" icon={FileText} title={status === "ocr" ? "The judgment text can be read on the case page; some pages were transcribed by OCR" : status === "partial" ? "Part of the judgment text can be read on the case page; some pages could not be read" : "The judgment text can be read on the case page"} className="text-foreground/75">{textStatusLabel(status)}</Chip>;
 }
 
 function MatchChip({ match }: { match: CaseHit["match"] }) {
@@ -341,7 +342,7 @@ function ResultRow({ h, compact }: { h: CaseHit; compact?: boolean }) {
           {h.neutral_citation ? <Chip tone="muted" className="ml-1 tabular text-foreground/75" title="Neutral citation">{h.neutral_citation}</Chip> : null}
           {h.reporter_citation ? <Chip tone="muted" className="tabular" title="Reporter citation">{h.reporter_citation}</Chip> : null}
           {!compact && h.case_number ? <Chip tone="outline" className="tabular" title="Case number">{h.case_number}</Chip> : null}
-          {h.text_status === "full" ? <FullTextChip /> : null}
+          {hasJudgmentText(h.text_status) ? <FullTextChip status={h.text_status} /> : null}
         </div>
         {!compact && h.snippet ? <p className="mt-1 line-clamp-2 max-w-[100ch] text-[12.5px] leading-relaxed text-foreground/70">{h.snippet}</p> : null}
         {!compact && (h.judges.length || h.disposal) ? (

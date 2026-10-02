@@ -358,6 +358,19 @@ export interface CorpusStatus {
   notes: { id: string; note: string }[];
   failed: { id: string; error: string | null; attempts: number }[];
   issues: { withIssues: number; unresolvedCourt: number; noDecisionDate: number };
+  /** Hosting limits read from the database: Neon's logical size cap (MB; null when not set or not Neon) and whether
+   *  the pgvector extension can be installed. */
+  storage?: { maxClusterSizeMb: number | null; pgvectorAvailable: boolean };
+}
+
+async function storageLimits(store: RemoteStore): Promise<{ maxClusterSizeMb: number | null; pgvectorAvailable: boolean }> {
+  try {
+    const r = await store.query({ query: `SELECT current_setting('neon.max_cluster_size', true) AS max, EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS pgvector` });
+    const max = Number(r[0]?.max);
+    return { maxClusterSizeMb: Number.isFinite(max) && max > 0 ? max : null, pgvectorAvailable: r[0]?.pgvector === "t" || r[0]?.pgvector === "true" };
+  } catch {
+    return { maxClusterSizeMb: null, pgvectorAvailable: false };
+  }
 }
 
 export async function corpusStatus(deps: BackfillDeps = {}): Promise<CorpusStatus> {
@@ -365,7 +378,7 @@ export async function corpusStatus(deps: BackfillDeps = {}): Promise<CorpusStatu
   const empty: CorpusStatus = { configured: false, enabled: false, dbBytes: null, limitBytes: limitBytes(), stop: null, units: {}, discovery: { done: 0, total: 0 }, judgments: 0, byCourt: [], archives: [], incomplete: [], notes: [], failed: [], issues: { withIssues: 0, unresolvedCourt: 0, noDecisionDate: 0 } };
   if (!store) return empty;
   await ensureCorpusSchema(store);
-  const [units, disc, total, byCourt, archives, incomplete, failed, issues, size, enabled, stop, notes] = await Promise.all([
+  const [units, disc, total, byCourt, archives, incomplete, failed, issues, size, enabled, stop, notes, storage] = await Promise.all([
     store.query({ query: `SELECT status, count(*)::int AS n FROM corpus_units WHERE id NOT LIKE 'discover:%' GROUP BY status` }),
     store.query({ query: `SELECT count(*) FILTER (WHERE status = 'done')::int AS done, count(*)::int AS total FROM corpus_units WHERE id LIKE 'discover:%'` }),
     store.query({ query: `SELECT count(*)::bigint AS n FROM corpus_judgments` }),
@@ -378,12 +391,14 @@ export async function corpusStatus(deps: BackfillDeps = {}): Promise<CorpusStatu
     enabledIn(store),
     getState<unknown>(store, "stop"),
     store.query({ query: `SELECT id, note FROM corpus_units WHERE note IS NOT NULL ORDER BY priority LIMIT 50` }),
+    storageLimits(store),
   ]);
   return {
     configured: true,
     enabled,
     dbBytes: size,
     limitBytes: limitBytes(),
+    storage,
     stop,
     units: Object.fromEntries(units.map((r) => [String(r.status), Number(r.n)])),
     discovery: { done: Number(disc[0]?.done ?? 0), total: Number(disc[0]?.total ?? 0) },

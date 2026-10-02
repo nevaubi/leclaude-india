@@ -2,7 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, CalendarRange, ChevronLeft, Files, FolderOpen, ListChecks, MessageSquareText, RotateCcw, ShieldAlert, Trash2 } from "lucide-react";
+import { AlertCircle, CalendarRange, ChevronLeft, ClipboardCheck, Files, FolderOpen, ListChecks, MessageSquareText, RotateCcw, ShieldAlert, Trash2 } from "lucide-react";
 import { PageTopbar } from "@/components/shell/page-topbar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,6 +13,7 @@ import { WORKSPACE_TABS, type WorkspaceTab } from "./format";
 import { FactsTab, TimelineTab, useExtraction } from "./extract-tabs";
 import { FilesTab } from "./files-tab";
 import { Notice, SurfaceState } from "./notice";
+import { ReviewTab } from "./review/review-tab";
 import { DeleteSetDialog, type MatterChoice } from "./sets-page";
 import { TextViewer, type ViewerTarget } from "./text-viewer";
 import { useDocUploads } from "./use-doc-uploads";
@@ -20,7 +21,7 @@ import { useDocUploads } from "./use-doc-uploads";
 
 type Load = { status: "loading" } | { status: "ready"; set: DocSet } | { status: "error"; message: string; kind: ApiErrorKind };
 
-/** /documents/[id]: one set, with Files | Ask | Facts | Timeline (tab in ?tab=). */
+/** /documents/[id]: one set, with Files | Ask | Facts | Timeline | Review (tab in ?tab=; the selected review in ?review=). */
 export function SetWorkspace({ setId, initialTab, matters }: { setId: string; initialTab: WorkspaceTab; matters: MatterChoice[] }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -35,6 +36,8 @@ export function SetWorkspace({ setId, initialTab, matters }: { setId: string; in
   const [deleting, setDeleting] = React.useState(false);
 
   const refreshSet = React.useCallback(() => setReload((n) => n + 1), []);
+  const [reviewOpened, setReviewOpened] = React.useState(initialTab === "review");
+  React.useEffect(() => { if (tab === "review") setReviewOpened(true); }, [tab]);
 
   // Deep link from Chat and Research sources: ?file=<fileId>&page=<n> opens the text viewer at that page.
   const linkFile = params.get("file");
@@ -119,6 +122,7 @@ export function SetWorkspace({ setId, initialTab, matters }: { setId: string; in
             <TabsTrigger value="ask"><MessageSquareText /> Ask</TabsTrigger>
             <TabsTrigger value="facts"><ListChecks /> Facts</TabsTrigger>
             <TabsTrigger value="timeline"><CalendarRange /> Timeline</TabsTrigger>
+            <TabsTrigger value="review"><ClipboardCheck /> Review</TabsTrigger>
           </TabsList>
           {set?.description && <span className="hidden min-w-0 truncate text-[12px] text-muted-foreground lg:inline" title={set.description}>{set.description}</span>}
         </div>
@@ -129,7 +133,7 @@ export function SetWorkspace({ setId, initialTab, matters }: { setId: string; in
           </div>
         ) : (
           <>
-            {aiReady === false && tab === "files" && <Notice tone="info" className="mx-3 mt-3">AI is not configured, so scanned pages cannot be read and Ask, Facts and Timeline are unavailable. Files can still be added and read.</Notice>}
+            {aiReady === false && tab === "files" && <Notice tone="info" className="mx-3 mt-3">AI is not configured, so scanned pages cannot be read and Ask, Facts, Timeline and Review are unavailable. Files can still be added and read.</Notice>}
             <TabsContent value="files" forceMount className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
               <FilesTab setId={setId} uploads={uploads} aiReady={aiReady} storageFull={storageFull} onView={setViewer} onChanged={refreshSet} refreshKey={filesKey} />
             </TabsContent>
@@ -141,6 +145,10 @@ export function SetWorkspace({ setId, initialTab, matters }: { setId: string; in
             </TabsContent>
             <TabsContent value="timeline" className="mt-0 min-h-0 flex-1">
               <TimelineTab setId={setId} setName={set?.name ?? "set"} extraction={extraction} aiReady={aiReady} refreshKey={extractKey + filesKey} onView={setViewer} />
+            </TabsContent>
+            {/* Mounted once opened and kept while switching tabs, so a running review is not cancelled by a tab change. */}
+            <TabsContent value="review" forceMount={reviewOpened || undefined} className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
+              {reviewOpened && <ReviewTab setId={setId} setName={set?.name ?? "set"} aiReady={aiReady} fileCount={set?.fileCount ?? 0} active={tab === "review"} onView={setViewer} onOpenFiles={() => selectTab("files")} />}
             </TabsContent>
           </>
         )}

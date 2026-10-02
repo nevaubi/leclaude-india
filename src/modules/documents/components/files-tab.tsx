@@ -177,7 +177,7 @@ export function FilesTab({ setId, uploads, aiReady, storageFull, onView, onChang
     >
       {!hasFiles && <Upload className="size-5 text-muted-foreground/70" aria-hidden />}
       <div className={cn("text-muted-foreground", hasFiles ? "text-[12px]" : "text-[13px]")}>
-        {hasFiles ? "Drop files or a folder here, or" : <><span className="font-medium text-foreground">Drop files or a whole folder here</span><br /><span className="text-[12px]">PDF up to {formatBytes(DOCS_LIMITS.maxPdfBytes)} and {DOCS_LIMITS.maxPdfPages.toLocaleString("en-IN")} pages (read in your browser); Word, text, CSV, HTML, email and JSON up to {formatBytes(DOCS_LIMITS.maxServerFileBytes)}.</span></>}
+        {hasFiles ? "Drop files, a folder or a ZIP archive here, or" : <><span className="font-medium text-foreground">Drop files, a whole folder or a ZIP archive here</span><br /><span className="text-[12px]">PDF up to {formatBytes(DOCS_LIMITS.maxPdfBytes)} and {DOCS_LIMITS.maxPdfPages.toLocaleString("en-IN")} pages (read in your browser); Word, text, CSV, HTML, email and JSON up to {formatBytes(DOCS_LIMITS.maxServerFileBytes)}. ZIP archives are unpacked in your browser, folders included.</span></>}
       </div>
       <div className="flex items-center gap-2">
         <Button size="xs" variant="outline" onClick={() => fileInput.current?.click()} disabled={!!storageFull}><Upload className="size-3.5" /> Add files</Button>
@@ -279,7 +279,7 @@ export function FilesTab({ setId, uploads, aiReady, storageFull, onView, onChang
 // ---------------------------------------------------------------------------------------------------------------------
 
 const STATE_LABEL: Record<UploadState, string> = {
-  queued: "Queued", reading: "Reading", uploading: "Uploading", created: "Added", duplicate: "Duplicate", rejected: "Rejected", failed: "Failed", cancelled: "Cancelled",
+  queued: "Queued", reading: "Reading", uploading: "Uploading", created: "Added", duplicate: "Duplicate", rejected: "Rejected", skipped: "Skipped", failed: "Failed", cancelled: "Cancelled",
 };
 
 function StateIcon({ s }: { s: UploadState }) {
@@ -287,11 +287,11 @@ function StateIcon({ s }: { s: UploadState }) {
   if (s === "created") return <CheckCircle2 className="size-3.5 text-success" />;
   if (s === "duplicate") return <Check className="size-3.5 text-muted-foreground" />;
   if (s === "rejected" || s === "failed") return <AlertCircle className="size-3.5 text-destructive" />;
-  if (s === "cancelled") return <Ban className="size-3.5 text-muted-foreground" />;
+  if (s === "cancelled" || s === "skipped") return <Ban className="size-3.5 text-muted-foreground" />;
   return <span className="inline-block size-1.5 rounded-full bg-muted-foreground/45" />;
 }
 
-const ORDER: Record<UploadState, number> = { failed: 0, rejected: 1, reading: 2, uploading: 2, queued: 3, cancelled: 4, duplicate: 5, created: 6 };
+const ORDER: Record<UploadState, number> = { failed: 0, rejected: 1, reading: 2, uploading: 2, queued: 3, skipped: 4, cancelled: 4, duplicate: 5, created: 6 };
 const MAX_ROWS = 300;
 
 function UploadPanel({ uploads, onOcr, aiReady, busyOcr }: { uploads: DocUploads; onOcr: (doc: DocFile) => void; aiReady: boolean | null; busyOcr: boolean }) {
@@ -299,11 +299,12 @@ function UploadPanel({ uploads, onOcr, aiReady, busyOcr }: { uploads: DocUploads
   const [open, setOpen] = React.useState(true);
   const rows = React.useMemo(() => [...items].sort((a, b) => ORDER[a.state] - ORDER[b.state]).slice(0, MAX_ROWS), [items]);
   const pct = total ? Math.round((settled / total) * 100) : 0;
-  const problems = counts.failed + counts.rejected;
+  const problems = counts.failed + counts.rejected + counts.skipped;
   const summary = [
     counts.created && `${counts.created} added`,
     counts.duplicate && `${counts.duplicate} duplicate`,
     counts.rejected && `${counts.rejected} rejected`,
+    counts.skipped && `${counts.skipped} skipped`,
     counts.failed && `${counts.failed} failed`,
     counts.cancelled && `${counts.cancelled} cancelled`,
   ].filter(Boolean).join(" · ");

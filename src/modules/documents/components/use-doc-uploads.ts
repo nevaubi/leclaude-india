@@ -7,14 +7,19 @@
  *
  * The original File objects are kept in memory for this session (by SHA-256 and by file id) so scanned pages can be
  * rasterised for OCR without asking the user to pick the file again.
+ *
+ * ZIP archives are unpacked in the browser (zip-entries.ts) when their turn in the queue comes: the archive row is
+ * replaced by one row per entry ("folder/sub/name.pdf"), each going through the same pipeline, and entries that are
+ * not unpacked (unsupported, too large, unsafe path, over the archive caps) are listed as skipped with the reason.
  */
 import * as React from "react";
 import { DOCS_ACCEPT, DOCS_LIMITS, type BrowserPdfUpload, type DocFile, type UploadResult } from "../types";
 import { DocsApiError, docsApi, errorMessage, isAbort, setUrl } from "./api";
 import { batchPages, extOf, formatBytes } from "./format";
 import { PdfReadError, readPdf, sha256Hex } from "./pdf-read";
+import { isZipName, unpackZip, ZIP_LIMITS, ZipOpenError } from "./zip-entries";
 
-export type UploadState = "queued" | "reading" | "uploading" | "created" | "duplicate" | "rejected" | "failed" | "cancelled";
+export type UploadState = "queued" | "reading" | "uploading" | "created" | "duplicate" | "rejected" | "skipped" | "failed" | "cancelled";
 
 export interface UploadItem {
   key: string;
@@ -29,14 +34,16 @@ export interface UploadItem {
   doc?: DocFile;
   /** Resume point after a failed page batch: the created file and the next batch to append. */
   resume?: { fileId: string; batch: number };
+  /** A ZIP archive waiting to be unpacked (its row is replaced by its entries). */
+  archive?: boolean;
 }
 
 /** Bytes of page text per request (the server caps request bodies near 4.5 MB). */
 const MAX_BATCH_BYTES = 3_400_000;
 const ACCEPT = new Set<string>(DOCS_ACCEPT);
-export const DOCS_ACCEPT_ATTR = DOCS_ACCEPT.join(",");
+export const DOCS_ACCEPT_ATTR = [...DOCS_ACCEPT, ".zip", "application/zip"].join(",");
 
-const isSettled = (s: UploadState) => s === "created" || s === "duplicate" || s === "rejected" || s === "failed" || s === "cancelled";
+const isSettled = (s: UploadState) => s === "created" || s === "duplicate" || s === "rejected" || s === "skipped" || s === "failed" || s === "cancelled";
 const isStorageReason = (r: string) => /storage|database (is )?full|upgrade/i.test(r);
 
 function precheck(file: File): string | null {
@@ -53,11 +60,29 @@ function precheck(file: File): string | null {
 
 let seq = 0;
 
+const relPath = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+const isHidden = (f: File) => /(^|\/)\.[^/]+$/.test(relPath(f)); // .DS_Store and other hidden files
+
+/** Upload rows for files (precheck applied; archives queued for unpacking). Exported for tests. */
+export function toUploadItems(files: File[], storageFull: string | null, prefix = ""): UploadItem[] {
+  return files.filter((f) => !isHidden(f)).map((file) => {
+    const name = prefix + relPath(file);
+    if (isZipName(file.name)) {
+      const reason = storageFull ?? (file.size > ZIP_LIMITS.maxArchiveBytes ? `The archive is ${formatBytes(file.size)}; archives up to ${formatBytes(ZIP_LIMITS.maxArchiveBytes)} are unpacked.` : null);
+      return { key: `u${++seq}`, file, name, size: file.size, state: reason ? "rejected" : "queued", reason: reason ?? undefined, archive: true };
+    }
+    const reason = storageFull ?? precheck(file);
+    return { key: `u${++seq}`, file, name, size: file.size, state: reason ? "rejected" : "queued", reason: reason ?? undefined };
+  });
+}
+
 export function useDocUploads(setId: string, opts: { onSettled?: () => void } = {}) {
   const [items, setItems] = React.useState<UploadItem[]>([]);
   const itemsRef = React.useRef(items);
   itemsRef.current = items;
   const [storageFull, setStorageFull] = React.useState<string | null>(null);
+  const storageFullRef = React.useRef(storageFull);
+  storageFullRef.current = storageFull;
   const active = React.useRef(new Map<string, AbortController>());
   const cancelled = React.useRef(false);
   /** Original files kept for OCR, by uploaded file id and by SHA-256. */
@@ -140,6 +165,23 @@ export function useDocUploads(setId: string, opts: { onSettled?: () => void } = 
     }
   }, [patch, setId]);
 
+  /** Replace an archive row by its entries: supported files queued, the rest listed as skipped with the reason. */
+  const unpackOne = React.useCallback(async (item: UploadItem, signal: AbortSignal) => {
+    const prefix = item.name.replace(/[^/]*$/, ""); // an archive inside a dropped folder keeps that folder in the display path
+    const { files, skipped } = await unpackZip(item.file, { signal, onProgress: (d, t) => { if (t && (d === t || d % 25 === 0)) patch(item.key, { progress: d / t }); } });
+    const sharedFull = storageFullRef.current;
+    const fresh: UploadItem[] = [
+      ...toUploadItems(files, sharedFull, prefix),
+      ...skipped.map((s): UploadItem => ({ key: `u${++seq}`, file: new File([], s.name), name: `${prefix}${s.name}`, size: s.size ?? 0, state: "skipped", reason: s.reason })),
+    ].map((it) => (it.archive ? { ...it, archive: false, state: "skipped" as const, reason: "Archives inside an archive are not unpacked. Upload it separately." } : it));
+    if (!fresh.length) fresh.push({ key: `u${++seq}`, file: new File([], item.name), name: item.name, size: item.size, state: "skipped", reason: "The archive contains no files that can be added." });
+    const at = itemsRef.current.findIndex((it) => it.key === item.key);
+    const list = [...itemsRef.current];
+    list.splice(at < 0 ? list.length : at, at < 0 ? 0 : 1, ...fresh);
+    itemsRef.current = list;
+    setItems(list);
+  }, [patch]);
+
   const pump = React.useCallback(() => {
     if (cancelled.current) return;
     while (active.current.size < DOCS_LIMITS.uploadConcurrency) {
@@ -147,6 +189,16 @@ export function useDocUploads(setId: string, opts: { onSettled?: () => void } = 
       if (!next) break;
       const ctrl = new AbortController();
       active.current.set(next.key, ctrl);
+      if (next.archive) {
+        patch(next.key, { state: "reading", reason: "Unpacking archive", progress: 0 });
+        void unpackOne(next, ctrl.signal)
+          .catch((e) => {
+            if (isAbort(e) || ctrl.signal.aborted) { patch(next.key, { state: "cancelled", progress: undefined, reason: undefined }); return; }
+            patch(next.key, { state: "rejected", progress: undefined, reason: e instanceof ZipOpenError ? e.message : `The archive could not be unpacked: ${errorMessage(e)}` });
+          })
+          .finally(() => { active.current.delete(next.key); pump(); });
+        continue;
+      }
       patch(next.key, { state: next.file.name.toLowerCase().endsWith(".pdf") ? "reading" : "uploading", reason: undefined });
       void uploadOne(next, ctrl.signal)
         .catch((e) => {
@@ -162,7 +214,7 @@ export function useDocUploads(setId: string, opts: { onSettled?: () => void } = 
           pump();
         });
     }
-  }, [notify, patch, uploadOne]);
+  }, [notify, patch, unpackOne, uploadOne]);
 
   // A full store stops the queue: the remaining files get the same explicit reason instead of failing one by one.
   React.useEffect(() => {
@@ -172,13 +224,7 @@ export function useDocUploads(setId: string, opts: { onSettled?: () => void } = 
 
   const add = React.useCallback((files: File[]) => {
     cancelled.current = false;
-    const fresh: UploadItem[] = files
-      .filter((f) => !/(^|\/)\.[^/]+$/.test((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name)) // hidden files (.DS_Store)
-      .map((file) => {
-        const name = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-        const reason = storageFull ?? precheck(file);
-        return { key: `u${++seq}`, file, name, size: file.size, state: reason ? "rejected" : "queued", reason: reason ?? undefined };
-      });
+    const fresh = toUploadItems(files, storageFull);
     if (!fresh.length) return;
     itemsRef.current = [...itemsRef.current, ...fresh];
     setItems(itemsRef.current);
@@ -216,7 +262,7 @@ export function useDocUploads(setId: string, opts: { onSettled?: () => void } = 
   }, []);
 
   const counts = React.useMemo(() => {
-    const c: Record<UploadState, number> = { queued: 0, reading: 0, uploading: 0, created: 0, duplicate: 0, rejected: 0, failed: 0, cancelled: 0 };
+    const c: Record<UploadState, number> = { queued: 0, reading: 0, uploading: 0, created: 0, duplicate: 0, rejected: 0, skipped: 0, failed: 0, cancelled: 0 };
     for (const it of items) c[it.state]++;
     return c;
   }, [items]);

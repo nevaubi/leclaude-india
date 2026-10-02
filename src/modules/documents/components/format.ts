@@ -5,7 +5,7 @@
 import type { DatePrecision, DocEvent, DocFile, DocFileStatus, ExtractionMethod } from "../types";
 
 /** Workspace tabs (in ?tab=). Kept here, not in the client component, so the server page can validate the param. */
-export const WORKSPACE_TABS = ["files", "ask", "facts", "timeline"] as const;
+export const WORKSPACE_TABS = ["files", "ask", "facts", "timeline", "review"] as const;
 export type WorkspaceTab = (typeof WORKSPACE_TABS)[number];
 
 export function formatBytes(n: number): string {
@@ -88,6 +88,15 @@ export function csvCell(v: unknown): string {
 
 export function toCsv(header: string[], rows: unknown[][]): string {
   return [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+}
+
+/** File name from a Content-Disposition header (filename* first), or null. */
+export function dispositionName(header: string | null): string | null {
+  if (!header) return null;
+  const star = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(header);
+  if (star) { try { return decodeURIComponent(star[1].trim().replace(/^"|"$/g, "")); } catch { /* fall through */ } }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+  return plain ? plain[1].trim() : null;
 }
 
 export function safeFileName(s: string): string {

@@ -53,23 +53,44 @@ export function SetsPage({ initialSets, matters, matterFilter = null }: { initia
   const sets = matterFilter ? allSets.filter((s) => s.matterId === matterFilter) : allSets;
   const filterMatter = matterFilter ? matters.find((m) => m.id === matterFilter) : null;
 
+  // Columns fit the panel: the set name takes the remaining width, and the lowest-priority columns (pages, facts
+  // extracted) drop out when the panel is narrow, so nothing clips and the table never scrolls sideways at 1024 px.
+  const tableRef = React.useRef<HTMLDivElement>(null);
+  const [tableWidth, setTableWidth] = React.useState(0);
+  React.useEffect(() => {
+    const el = tableRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setTableWidth(Math.floor(e.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const SIDE = { matter: 160, files: 70, pages: 80, extracted: 120, updated: 130 } as const;
+  const ACTIONS = 36 + 4; // row-actions column plus a hairline of slack
+  const fullFixed = Object.values(SIDE).reduce((a, b) => a + b, 0) + ACTIONS;
+  const compact = tableWidth > 0 && tableWidth - fullFixed < 300;
+  const fixed = compact ? fullFixed - SIDE.pages - SIDE.extracted : fullFixed;
+  const nameWidth = tableWidth > 0 ? Math.max(220, tableWidth - fixed) : 400;
+
   const columns = React.useMemo<DataTableColumn<DocSet>[]>(() => [
-    { id: "name", header: "Set", width: 400, minWidth: 180, sortable: true, locked: true, accessor: (s) => s.name, render: (s) => (
-      <span className="flex min-w-0 items-baseline gap-2" title={s.description ?? s.name}>
-        <span className="truncate font-medium text-foreground">{s.name}</span>
-        {s.description && <span className="min-w-0 truncate text-[11px] text-muted-foreground">{s.description}</span>}
+    { id: "name", header: "Set", width: nameWidth, minWidth: 180, sortable: true, locked: true, accessor: (s) => s.name, render: (s) => (
+      // The name has priority: it keeps its full width (truncating only when it alone is wider than the column) and
+      // the description takes what is left.
+      <span className="flex min-w-0 items-baseline gap-2" title={s.description ? `${s.name} — ${s.description}` : s.name}>
+        <span className="min-w-0 max-w-full shrink-0 truncate font-medium text-foreground">{s.name}</span>
+        {s.description && <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{s.description}</span>}
       </span>
     ) },
-    { id: "matter", header: "Matter", width: 180, sortable: true, accessor: (s) => (s.matterId ? matterName.get(s.matterId) ?? "" : ""), render: (s) => (
+    { id: "matter", header: "Matter", width: SIDE.matter, sortable: true, accessor: (s) => (s.matterId ? matterName.get(s.matterId) ?? "" : ""), render: (s) => (
       s.matterId ? <span className="truncate">{matterName.get(s.matterId) ?? "Matter"}</span> : <span className="text-muted-foreground">Personal</span>
     ) },
-    { id: "files", header: "Files", width: 80, align: "right", sortable: true, accessor: (s) => s.fileCount, render: (s) => <span className="tabular">{s.fileCount.toLocaleString("en-IN")}</span> },
-    { id: "pages", header: "Pages", width: 90, align: "right", sortable: true, accessor: (s) => s.pageCount, render: (s) => <span className="tabular text-muted-foreground">{s.pageCount.toLocaleString("en-IN")}</span> },
-    { id: "extracted", header: "Facts extracted", width: 130, align: "right", sortable: true, accessor: (s) => (s.fileCount ? s.extractedCount / s.fileCount : 0), render: (s) => (
+    { id: "files", header: "Files", width: SIDE.files, align: "right", sortable: true, accessor: (s) => s.fileCount, render: (s) => <span className="tabular">{s.fileCount.toLocaleString("en-IN")}</span> },
+    ...(compact ? [] : [
+    { id: "pages", header: "Pages", width: SIDE.pages, align: "right", sortable: true, accessor: (s) => s.pageCount, render: (s) => <span className="tabular text-muted-foreground">{s.pageCount.toLocaleString("en-IN")}</span> },
+    { id: "extracted", header: "Facts extracted", width: SIDE.extracted, align: "right", sortable: true, accessor: (s) => (s.fileCount ? s.extractedCount / s.fileCount : 0), render: (s) => (
       <span className="tabular text-muted-foreground">{s.fileCount ? `${s.extractedCount.toLocaleString("en-IN")} of ${s.fileCount.toLocaleString("en-IN")}` : "—"}</span>
-    ) },
-    { id: "updated", header: "Updated", width: 140, sortable: true, accessor: (s) => s.updatedAt, render: (s) => <RelativeTime value={s.updatedAt} className="text-muted-foreground" /> },
-  ], [matterName]);
+    ) }] satisfies DataTableColumn<DocSet>[]),
+    { id: "updated", header: "Updated", width: SIDE.updated, sortable: true, accessor: (s) => s.updatedAt, render: (s) => <RelativeTime value={s.updatedAt} className="text-muted-foreground" /> },
+  ], [compact, matterName, nameWidth]); // eslint-disable-line react-hooks/exhaustive-deps -- SIDE is a constant
 
   const empty = (
     <EmptyState icon={Files} title="No document sets yet"
@@ -94,7 +115,7 @@ export function SetsPage({ initialSets, matters, matterFilter = null }: { initia
       {status?.storage.full && (
         <Notice tone="warning" className="m-3 mb-0">Document storage is full ({Math.round(status.storage.usedMb)} of {status.storage.limitMb} MB). New files cannot be added until storage is increased.</Notice>
       )}
-      <div className="min-h-0 flex-1">
+      <div ref={tableRef} className="min-h-0 flex-1">
         {load.status === "error" ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             {load.code === 403 || load.kind === "auth" ? <ShieldAlert className="size-5 text-muted-foreground" aria-hidden /> : <AlertCircle className="size-5 text-muted-foreground" aria-hidden />}

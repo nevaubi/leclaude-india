@@ -1,7 +1,8 @@
 "use client";
-/** Client calls to /api/documents/** with errors classified for the UI (denied / not configured / storage / other). */
+/** Client calls to /api/documents/** with errors classified for the UI (denied / not configured / storage / conflict / other). */
+import { dispositionName } from "./format";
 
-export type ApiErrorKind = "denied" | "unconfigured" | "storage" | "auth" | "other";
+export type ApiErrorKind = "denied" | "unconfigured" | "storage" | "auth" | "conflict" | "other";
 
 export class DocsApiError extends Error {
   constructor(message: string, readonly status: number, readonly kind: ApiErrorKind) { super(message); this.name = "DocsApiError"; }
@@ -16,6 +17,7 @@ export function classify(status: number, body: { error?: string; code?: string }
   if (status === 401) return new DocsApiError("Sign in to continue.", status, "auth");
   if (status === 507 || /storage|database (is )?full|upgrade/i.test(msg) || body.code === "storage_full") return new DocsApiError(msg || "Document storage is full.", status, "storage");
   if (status === 503) return new DocsApiError(msg || UNCONFIGURED_MESSAGE, status, "unconfigured");
+  if (status === 409) return new DocsApiError(msg || "This changed since you opened it. Reload and try again.", status, "conflict");
   return new DocsApiError(msg || `Request failed (${status})`, status, "other");
 }
 
@@ -46,4 +48,17 @@ export function downloadText(name: string, text: string, mime = "text/csv;charse
   a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Download a file the server builds (exports): errors are classified like any other call instead of navigating away. */
+export async function downloadFrom(url: string, fallbackName: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw classify(res.status, (await res.json().catch(() => ({}))) as { error?: string; code?: string });
+  const name = dispositionName(res.headers.get("content-disposition")) || fallbackName;
+  const blob = await res.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 1000);
 }

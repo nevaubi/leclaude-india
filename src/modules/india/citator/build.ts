@@ -34,7 +34,7 @@ export interface CitatorBatchResult {
   noText: number;
   nextCursor: string | null;
   done: boolean;
-  stop: "batch_complete" | "deadline" | "pass_complete" | "text_not_loaded";
+  stop: "batch_complete" | "deadline" | "pass_complete" | "text_not_loaded" | "storage_budget";
 }
 
 interface JudgmentRow { id: string; courtId: string | null; year: number | null; neutral: string | null; reporter: string | null; cnr: string | null; date: string | null }
@@ -191,9 +191,22 @@ export async function buildCitationsBatch(o: { store: RemoteStore; limit?: numbe
 // Resumable runs (cursor in corpus_state)
 // ---------------------------------------------------------------------------
 
+/** Storage budget for citator writes: CITATOR_MAX_DB_MB (default 60,000 MB), checked before every batch. */
+export const DEFAULT_CITATOR_MAX_DB_MB = 60_000;
+
+export function citatorLimitBytes(env: Readonly<Record<string, string | undefined>> = process.env): number {
+  const mb = Number(env.CITATOR_MAX_DB_MB);
+  return (Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_CITATOR_MAX_DB_MB) * 1024 * 1024;
+}
+
+async function databaseBytes(store: RemoteStore): Promise<number> {
+  const r = await store.query({ query: `SELECT pg_database_size(current_database())::bigint AS b` });
+  return Number(r[0]?.b ?? 0);
+}
+
 export interface CitatorCursor { afterId: string | null; done: boolean; version: number; passStartedAt: string; updatedAt: string; scannedThisPass: number }
 
-export interface CitatorRunResult extends CitatorBatchResult { batches: number; cursor: CitatorCursor }
+export interface CitatorRunResult extends CitatorBatchResult { batches: number; cursor: CitatorCursor; dbBytes?: number; limitBytes?: number }
 
 const CURSOR_KEY = "citator_cursor";
 
@@ -220,7 +233,13 @@ export async function runCitatorBuild(o: { store?: RemoteStore | null; limit?: n
   }
   const total: CitatorRunResult = { processed: 0, citations: 0, resolved: 0, unresolved: 0, ambiguous: 0, statutes: 0, noText: 0, nextCursor: cursor.afterId, done: cursor.done, stop: cursor.done ? "pass_complete" : "batch_complete", batches: 0, cursor };
   if (cursor.done) return total;
+  const limitBytes = citatorLimitBytes();
+  total.limitBytes = limitBytes;
   while (now() - t0 < budget) {
+    // Storage budget: stop before writing when the database has reached CITATOR_MAX_DB_MB.
+    const dbBytes = await databaseBytes(store);
+    total.dbBytes = dbBytes;
+    if (dbBytes >= limitBytes) { total.stop = "storage_budget"; break; }
     const remaining = budget - (now() - t0);
     const r = await buildCitationsBatch({ store, limit: o.limit, afterId: cursor.afterId, deadlineMs: remaining, now });
     total.batches++;

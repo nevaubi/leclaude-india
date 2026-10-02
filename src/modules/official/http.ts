@@ -77,9 +77,31 @@ export interface OfficialHttpOptions {
   retries?: number;
   maxFileBytes?: number;
   signal?: AbortSignal;
+  /**
+   * Epoch ms by which the run must end: every request (with its retries) is cut `DEADLINE_MARGIN_MS` before it and then
+   * fails with OfficialDeadlineError (the unit is released, not failed).
+   */
+  deadline?: number;
+  now?: () => number;
   userAgent?: string;
   /** Called after every successful fetch with its provenance (for run logs). */
   onFetch?: (p: FetchProvenance & { url: string; bytes: number }) => void;
+}
+
+/** Requests stop this long before the run deadline (time to record the outcome). */
+export const DEADLINE_MARGIN_MS = 5_000;
+
+/** A request could not finish before the run's deadline (not a publisher failure: the unit is released and resumes). */
+export class OfficialDeadlineError extends Error {
+  readonly code = "official_deadline";
+  constructor(message = "the run's deadline was reached before the request finished") {
+    super(message);
+    this.name = "OfficialDeadlineError";
+  }
+}
+
+export function isDeadlineError(e: unknown): boolean {
+  return e instanceof OfficialDeadlineError || (e instanceof Error && e.name === "OfficialDeadlineError");
 }
 
 export interface OfficialHttp {
@@ -91,8 +113,11 @@ export interface OfficialHttp {
   postForm: AdapterContext["postForm"];
   /** Fetch a page through Firecrawl only (location IN). Null when Firecrawl is not configured. */
   firecrawlPage(url: string): Promise<FetchedPage | null>;
-  /** Parse a PDF (or any URL) through Firecrawl (location IN): markdown + provenance. Null when Firecrawl is off. */
-  firecrawlDocument(url: string, opts?: { maxPages?: number; timeoutMs?: number }): Promise<{ markdown: string; numPages: number | null; provenance: FetchProvenance } | null>;
+  /**
+   * Parse a PDF (or any URL) through Firecrawl (location IN): markdown + provenance (+ the content type Firecrawl
+   * reports, when it does). Null when Firecrawl is off.
+   */
+  firecrawlDocument(url: string, opts?: { maxPages?: number; timeoutMs?: number }): Promise<{ markdown: string; numPages: number | null; provenance: FetchProvenance; contentType?: string | null } | null>;
   firecrawlAllowed: boolean;
 }
 
@@ -203,29 +228,66 @@ export function createOfficialHttp(def: SourceDef, opts: OfficialHttpOptions = {
     return c;
   }
 
+  /**
+   * The signal for one request: the caller's (the run's) signal, cut DEADLINE_MARGIN_MS before the run's deadline.
+   * `cut()` tells whether the deadline (not the caller) ended it.
+   */
+  function bounded(): { signal: AbortSignal | undefined; cut: () => boolean; timeoutMs: number | null } {
+    if (opts.deadline == null) return { signal: opts.signal, cut: () => false, timeoutMs: null };
+    const left = opts.deadline - (opts.now ?? Date.now)() - DEADLINE_MARGIN_MS;
+    if (left <= 0) throw new OfficialDeadlineError();
+    const timer = AbortSignal.timeout(left);
+    return { signal: opts.signal ? AbortSignal.any([opts.signal, timer]) : timer, cut: () => timer.aborted && !opts.signal?.aborted, timeoutMs: left };
+  }
+
   /** Direct request with the legacy-TLS retry for government hosts. */
   async function direct(url: string, req: { method?: "GET" | "POST"; headers?: Record<string, string>; body?: string; maxBytes: number }): Promise<SourceResponse> {
     validateEgressUrl(url, egress); // fail fast (and without a token) on hosts outside the source's allowlist
     const host = hostOf(url);
     const useLegacy = !opts.fetchImpl && legacyHosts.has(host) && legacyTlsAllowed(url);
+    const b = bounded();
     try {
-      return await client(url, useLegacy).request(url, { method: req.method ?? "GET", headers: req.headers, body: req.body, maxBytes: req.maxBytes, signal: opts.signal });
+      return await client(url, useLegacy).request(url, { method: req.method ?? "GET", headers: req.headers, body: req.body, maxBytes: req.maxBytes, signal: b.signal });
     } catch (e) {
+      if (b.cut()) throw new OfficialDeadlineError();
       if (!useLegacy && !opts.fetchImpl && isLegacyTlsError(e) && legacyTlsAllowed(url)) {
         legacyHosts.add(host);
-        return client(url, true).request(url, { method: req.method ?? "GET", headers: req.headers, body: req.body, maxBytes: req.maxBytes, signal: opts.signal });
+        try {
+          return await client(url, true).request(url, { method: req.method ?? "GET", headers: req.headers, body: req.body, maxBytes: req.maxBytes, signal: b.signal });
+        } catch (e2) {
+          if (b.cut()) throw new OfficialDeadlineError();
+          throw e2;
+        }
       }
       throw e;
     }
   }
 
+  /**
+   * The URL Firecrawl reports having served must be on the source's hosts (a publisher redirect to another site is
+   * not the official copy). FirecrawlRichPage.url is metadata.sourceURL today; a `finalUrl` field is used when the
+   * provider exposes one (metadata.url).
+   */
+  function servedUrl(p: { url?: string; finalUrl?: string }, requested: string): string {
+    const served = (typeof p.finalUrl === "string" && p.finalUrl) || p.url || requested;
+    try {
+      validateEgressUrl(served, egress);
+    } catch {
+      // An egress-policy refusal (code not_configured without an HTTP status): never retried through another route.
+      throw new ProviderError("firecrawl", "not_configured", `firecrawl: the publisher served ${hostOf(served) || "an invalid URL"}, which is not one of the source's hosts`, false, undefined, requested);
+    }
+    return served;
+  }
+
   async function viaFirecrawl(url: string, o: { waitForMs?: number; actions?: Array<Record<string, unknown>> }): Promise<FetchedPage> {
     if (!firecrawl) throw new ProviderError("firecrawl", "not_configured", "firecrawl: FIRECRAWL_API_KEY is not configured", false, undefined, url);
     validateEgressUrl(url, egress);
-    const p = await firecrawl.scrapeRich(url, { markdown: true, links: true, rawHtml: true, onlyMainContent: false, country: "IN", waitFor: o.waitForMs, actions: o.actions, api: "v2", timeoutMs: 60_000, maxBytes: 12 * 1024 * 1024, signal: opts.signal });
+    const b = bounded();
+    const p = await firecrawl.scrapeRich(url, { markdown: true, links: true, rawHtml: true, onlyMainContent: false, country: "IN", waitFor: o.waitForMs, actions: o.actions, api: "v2", timeoutMs: Math.min(60_000, b.timeoutMs ?? 60_000), maxBytes: 12 * 1024 * 1024, signal: b.signal })
+      .catch((e: unknown) => { throw b.cut() ? new OfficialDeadlineError() : e; });
     const status = typeof p.statusCode === "number" ? p.statusCode : 200;
     if (status >= 400) throw new ProviderError("firecrawl", "http", `firecrawl: HTTP ${status} from the publisher${status === 404 ? " (not found)" : ""}`, status >= 500, status, url);
-    const finalUrl = p.url || url;
+    const finalUrl = servedUrl(p, url);
     const provenance: FetchProvenance = { via: "firecrawl", proxy: p.proxyUsed, timezone: p.timezone, status, finalUrl };
     opts.onFetch?.({ ...provenance, url, bytes: (p.rawHtml ?? p.markdown ?? "").length });
     const links = p.links.filter((l) => /^https?:\/\//i.test(l));
@@ -281,12 +343,14 @@ export function createOfficialHttp(def: SourceDef, opts: OfficialHttpOptions = {
     async firecrawlDocument(url, o = {}) {
       if (!firecrawl) return null;
       validateEgressUrl(url, egress);
-      const p = await firecrawl.scrapeRich(url, { markdown: true, onlyMainContent: false, country: "IN", pdf: { maxPages: o.maxPages, pageMarkers: true }, timeoutMs: o.timeoutMs ?? 90_000, maxBytes: 16 * 1024 * 1024, signal: opts.signal });
+      const b = bounded();
+      const p = await firecrawl.scrapeRich(url, { markdown: true, onlyMainContent: false, country: "IN", pdf: { maxPages: o.maxPages, pageMarkers: true }, timeoutMs: Math.min(o.timeoutMs ?? 90_000, b.timeoutMs ?? 90_000), maxBytes: 16 * 1024 * 1024, signal: b.signal })
+        .catch((e: unknown) => { throw b.cut() ? new OfficialDeadlineError() : e; });
       const status = typeof p.statusCode === "number" ? p.statusCode : 200;
       if (status >= 400) throw new ProviderError("firecrawl", "http", `firecrawl: HTTP ${status} from the publisher${status === 404 ? " (not found)" : ""}`, status >= 500, status, url);
-      const provenance: FetchProvenance = { via: "firecrawl", proxy: p.proxyUsed, timezone: p.timezone, status, finalUrl: p.url || url };
+      const provenance: FetchProvenance = { via: "firecrawl", proxy: p.proxyUsed, timezone: p.timezone, status, finalUrl: servedUrl(p, url) };
       opts.onFetch?.({ ...provenance, url, bytes: p.markdown.length });
-      return { markdown: p.markdown, numPages: p.numPages, provenance };
+      return { markdown: p.markdown, numPages: p.numPages, provenance, contentType: p.contentType ?? null };
     },
   };
   return http;

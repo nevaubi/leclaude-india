@@ -4,12 +4,14 @@ import { sourceDef } from "./registry";
 import { boundedQuery, SEARCH_TIMEOUT_MS } from "./search";
 import type { OfficialReadResult } from "./service";
 import { parseSourceRef, type DocumentStatus, type ExtractionMethod, type SourceChunk, type SourceDocument, type SourceId, type SourceKind } from "./types";
-import { officialStore } from "./units";
+import { officialStore, pgTimestampToIso } from "./units";
 
 /**
  * Reading official documents: a bounded run of chunks from a chunk index or from the chunk that contains a page.
  * A page with no chunk (blank, or beyond the document) returns no text — never the nearest page — with `nextChunk`
- * pointing at what follows so the caller can choose to continue explicitly.
+ * pointing at what follows so the caller can choose to continue explicitly. Only the current text version of an
+ * indexed document is served (chunks whose text_sha256 is the document's); a document that is not indexed (failed,
+ * awaiting OCR, being replaced) returns its record with no text.
  */
 
 export const DEFAULT_READ_CHARS = 20_000;
@@ -34,11 +36,7 @@ function parseObject(v: string | null | undefined): Record<string, unknown> {
   try { const o = JSON.parse(v) as unknown; return o && typeof o === "object" && !Array.isArray(o) ? (o as Record<string, unknown>) : {}; } catch { return {}; }
 }
 
-const iso = (v: string | null | undefined): string | null => {
-  if (!v) return null;
-  const t = Date.parse(v.includes("T") ? v : v.replace(" ", "T"));
-  return Number.isFinite(t) ? new Date(t).toISOString() : v;
-};
+const iso = pgTimestampToIso;
 
 export function toSourceDocument(r: Row): SourceDocument {
   const status = STATUSES.includes(r.status as DocumentStatus) ? (r.status as DocumentStatus) : "discovered";
@@ -101,8 +99,15 @@ export function resolveDocumentRef(idOrRef: string): { id: string; page: number 
 }
 
 export async function getOfficialDocument(id: string, store: RemoteStore): Promise<SourceDocument | null> {
+  return (await loadDocument(id, store))?.doc ?? null;
+}
+
+/** The document and the text version its served chunks must carry (null when it has no current text). */
+async function loadDocument(id: string, store: RemoteStore): Promise<{ doc: SourceDocument; textSha: string | null } | null> {
   const rows = await store.query({ query: `SELECT ${DOC_COLS} FROM official_documents WHERE id = $1`, params: [id] });
-  return rows[0] ? toSourceDocument(rows[0]) : null;
+  if (!rows[0]) return null;
+  const doc = toSourceDocument(rows[0]);
+  return { doc, textSha: doc.status === "indexed" && rows[0].text_sha256 ? String(rows[0].text_sha256) : null };
 }
 
 /** Read a document's chunks (see module notes). Null when the document does not exist. */
@@ -110,22 +115,24 @@ export async function readOfficialDocument(idOrRef: string, opts: { fromChunk?: 
   const ref = resolveDocumentRef(idOrRef);
   if (!ref) return null;
   const store = await officialStore(storeArg);
-  const doc = await getOfficialDocument(ref.id, store);
-  if (!doc) return null;
+  const loaded = await loadDocument(ref.id, store);
+  if (!loaded) return null;
+  const { doc, textSha } = loaded;
   const maxChars = Math.max(1_000, Math.min(Math.floor(Number(opts.maxChars) || DEFAULT_READ_CHARS), MAX_READ_CHARS));
   const attribution = attributionFor(doc);
+  if (!textSha) return { document: doc, chunks: [], hasMore: false, nextChunk: null, attribution };
   const page = opts.page ?? ref.page ?? null;
   let start: number | null = opts.fromChunk != null ? Math.max(0, Math.floor(opts.fromChunk)) : ref.chunk;
   if (start == null && page != null) {
-    const at = await store.query({ query: `SELECT idx FROM official_chunks WHERE document_id = $1 AND page_start <= $2 AND coalesce(page_end, page_start) >= $2 ORDER BY idx LIMIT 1`, params: [doc.id, page] });
+    const at = await store.query({ query: `SELECT idx FROM official_chunks WHERE document_id = $1 AND page_start <= $2 AND coalesce(page_end, page_start) >= $2 AND text_sha256 = $3 ORDER BY idx LIMIT 1`, params: [doc.id, page, textSha] });
     if (!at.length) {
-      const after = await store.query({ query: `SELECT idx FROM official_chunks WHERE document_id = $1 AND page_start > $2 ORDER BY idx LIMIT 1`, params: [doc.id, page] });
+      const after = await store.query({ query: `SELECT idx FROM official_chunks WHERE document_id = $1 AND page_start > $2 AND text_sha256 = $3 ORDER BY idx LIMIT 1`, params: [doc.id, page, textSha] });
       return { document: doc, chunks: [], hasMore: after.length > 0, nextChunk: after[0] ? Number(after[0].idx) : null, attribution };
     }
     start = Number(at[0].idx);
   }
   const from = start ?? 0;
-  const rows = await boundedQuery(store, `SELECT document_id, idx, page_start, page_end, heading, text FROM official_chunks WHERE document_id = $1 AND idx >= $2 ORDER BY idx LIMIT 200`, [doc.id, from], SEARCH_TIMEOUT_MS);
+  const rows = await boundedQuery(store, `SELECT document_id, idx, page_start, page_end, heading, text FROM official_chunks WHERE document_id = $1 AND idx >= $2 AND text_sha256 = $3 ORDER BY idx LIMIT 200`, [doc.id, from, textSha], SEARCH_TIMEOUT_MS);
   const chunks: SourceChunk[] = [];
   let used = 0;
   let i = 0;

@@ -7,6 +7,7 @@ import { runDue } from "@/modules/intel/jobs";
 import { backfillEnabled, runBackfill } from "@/modules/india/corpus/backfill";
 import { ensureIntelSeeded } from "@/modules/intel/seed";
 import { withAuth } from "@/lib/auth/route";
+import { currentPrincipal } from "@/lib/auth/context";
 import { refs } from "@/lib/auth/resources";
 import { refreshLegalNews } from "@/modules/news/service";
 import { runNewsImageJobs } from "@/modules/news/image-jobs";
@@ -55,9 +56,14 @@ async function tick(req: NextRequest) {
     const left = 270_000 - (Date.now() - started);
     if (left > 30_000) corpus = await runBackfill({ deadlineMs: left });
   }
-  // Official-sources corpus (durable queue in Postgres, OFFICIAL_INGEST=1): continues with whatever time is left.
+  // Official-sources corpus (durable queue in Postgres, OFFICIAL_INGEST=1): continues with whatever time is left — only
+  // for the scheduled service principal (CRON_SECRET bearer). Anyone else starts ingest runs through
+  // /api/official/run (operator token, or the throttled cron kick), never through this tick.
   let official: Record<string, unknown> = { stop: "skipped" };
-  if (url.searchParams.get("official") !== "0" && officialIngestEnabled()) {
+  const p = currentPrincipal();
+  const service = Boolean(p && p.source === "service" && p.roles.includes("service"));
+  if (url.searchParams.get("official") !== "0" && officialIngestEnabled() && !service) official = { stop: "skipped", reason: "official ingest runs from this tick only for the scheduled service principal" };
+  else if (url.searchParams.get("official") !== "0" && officialIngestEnabled()) {
     const left = 270_000 - (Date.now() - started);
     if (left > 45_000) {
       const workers = Number(process.env.OFFICIAL_CONCURRENCY);

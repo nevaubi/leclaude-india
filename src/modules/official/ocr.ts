@@ -16,7 +16,13 @@ import { splitPageMarkdown, type PageText } from "./extract";
  *   retried one page per request.
  * - Bounded concurrency (OFFICIAL_OCR_CONCURRENCY, default 4) and a per-document page cap (OFFICIAL_OCR_MAX_PAGES,
  *   default 80): a document needing more pages is not OCR'd at all here (`capped`), never silently truncated.
- * - Stops scheduling new requests at the deadline and returns what is done (`complete: false`) so the unit can resume.
+ * - A transcription the model did not finish (stop reason other than a normal end, e.g. the output-token limit) is never
+ *   accepted: a range is retried one page per request (with a larger budget); a single page still cut off is failed
+ *   ("transcription cut off"), never indexed as if complete.
+ * - The source PDF is parsed once per call; every range is copied out of it.
+ * - Stops starting new requests `OCR_STOP_BEFORE_DEADLINE_MS` before the deadline; in-flight requests end with the abort
+ *   signal. Progress is reported after every range (`onProgress`) so a killed or aborted run loses at most the ranges
+ *   in flight; the unit resumes from the pages already done (`complete: false`).
  * OCR text is model output: callers label it (`extraction: ocr_model`, `ocr_pages`) and quotes must be checked against
  * the PDF before filing.
  */
@@ -24,6 +30,11 @@ import { splitPageMarkdown, type PageText } from "./extract";
 export const OCR_RANGE_PAGES = 6;
 export const DEFAULT_OCR_CONCURRENCY = 4;
 export const DEFAULT_OCR_MAX_PAGES = 80;
+/** No OCR request starts with less than this before the deadline (a 6-page range can take a minute or more). */
+export const OCR_STOP_BEFORE_DEADLINE_MS = 90_000;
+/** Output budget per page in a range, and for a page retried on its own. */
+export const OCR_TOKENS_PER_PAGE = 4_000;
+export const OCR_TOKENS_SINGLE_PAGE = 8_000;
 
 export function ocrConcurrency(env: Readonly<Record<string, string | undefined>> = process.env): number {
   const n = Number(env.OFFICIAL_OCR_CONCURRENCY);
@@ -55,10 +66,27 @@ export interface OcrRequest {
   signal?: AbortSignal;
 }
 
+/** A transcription and why the model stopped ("end" = finished; "max_tokens" = cut off at the output limit). */
+export interface OcrTranscription {
+  text: string;
+  /** Provider-neutral stop reason; absent when the model does not report one (treated as finished). */
+  stopReason?: string | null;
+}
+
 export interface OcrModel {
   /** Model id recorded as ocr_model. */
   id: string;
-  transcribe(req: OcrRequest): Promise<string>;
+  /** A plain string is a finished transcription (models that do not report a stop reason). */
+  transcribe(req: OcrRequest): Promise<string | OcrTranscription>;
+}
+
+const FINISHED = new Set(["end", "stop", "end_turn", "stop_sequence"]);
+
+/** Normalise a model answer; `complete` is false when the model reported any stop other than a normal end. */
+export function transcriptionOf(r: string | OcrTranscription): { text: string; complete: boolean; stopReason: string | null } {
+  if (typeof r === "string") return { text: r, complete: true, stopReason: null };
+  const stop = r.stopReason ?? null;
+  return { text: String(r.text ?? ""), complete: stop == null || FINISHED.has(stop), stopReason: stop };
 }
 
 /** The runtime's fast vision-capable model (or OFFICIAL_OCR_MODEL). Throws AIConfigError when no model is configured. */
@@ -77,7 +105,7 @@ export function defaultOcrModel(env: Readonly<Record<string, string | undefined>
         taskType: "vision",
         privacy: "internal",
         reasoningEffort: "low",
-        maxOutputTokens: 4_000 * req.pages.length,
+        maxOutputTokens: req.pages.length === 1 ? OCR_TOKENS_SINGLE_PAGE : OCR_TOKENS_PER_PAGE * req.pages.length,
         signal: req.signal,
         metadata: { purpose: "official_ocr" },
         input: [{
@@ -88,7 +116,7 @@ export function defaultOcrModel(env: Readonly<Record<string, string | undefined>
           ],
         }],
       });
-      return r.text;
+      return { text: r.text, stopReason: r.stopReason ?? null };
     },
   };
 }
@@ -108,7 +136,14 @@ export function groupPages(pages: number[], size = OCR_RANGE_PAGES): number[][] 
 
 /** A PDF containing only the given (1-based) pages of `bytes`, in order. */
 export async function slicePdf(bytes: Uint8Array, pages: number[]): Promise<Uint8Array> {
-  const src = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  return sliceLoaded(await loadPdf(bytes), pages);
+}
+
+function loadPdf(bytes: Uint8Array): Promise<PDFDocument> {
+  return PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+}
+
+async function sliceLoaded(src: PDFDocument, pages: number[]): Promise<Uint8Array> {
   const out = await PDFDocument.create();
   const copied = await out.copyPages(src, pages.map((p) => p - 1));
   for (const p of copied) out.addPage(p);
@@ -161,13 +196,17 @@ export interface OcrOptions {
   model?: OcrModel;
   concurrency?: number;
   maxPages?: number;
-  /** Epoch ms; no request starts after `deadline - 30s`. */
+  /** Epoch ms; no request starts after `deadline - OCR_STOP_BEFORE_DEADLINE_MS`. */
   deadline?: number;
   now?: () => number;
   signal?: AbortSignal;
   /** Pages already transcribed (resume): not sent again. */
   done?: Record<string, string>;
+  /** Called after each request with the pages it transcribed (callers persist progress). */
+  onProgress?: (pages: PageText[]) => void | Promise<void>;
 }
+
+const CUT_OFF = "transcription cut off (output token limit reached)";
 
 /** OCR the given pages of a PDF (see module notes). */
 export async function ocrDocument(bytes: Uint8Array, pages: number[], opts: OcrOptions = {}): Promise<OcrDocumentResult> {
@@ -180,36 +219,52 @@ export async function ocrDocument(bytes: Uint8Array, pages: number[], opts: OcrO
   const got = new Map<number, string>();
   for (const [k, v] of Object.entries(opts.done ?? {})) if (wanted.includes(Number(k))) got.set(Number(k), v);
   const todo = groupPages(wanted.filter((p) => !got.has(p)));
-  const late = () => opts.deadline != null && now() > opts.deadline - 30_000;
+  const late = () => (opts.deadline != null && now() > opts.deadline - OCR_STOP_BEFORE_DEADLINE_MS) || opts.signal?.aborted === true;
+  let src: PDFDocument | null = null;
+  const source = async () => (src ??= await loadPdf(bytes));
 
-  const request = async (range: number[]): Promise<Map<number, string> | null> => {
-    const pdf = await slicePdf(bytes, range);
+  /** Pages of a finished transcription; null when markers do not match; "cut" when the model did not finish. */
+  const request = async (range: number[]): Promise<Map<number, string> | null | "cut"> => {
+    const pdf = await sliceLoaded(await source(), range);
     result.requests++;
-    const text = await model.transcribe({ pdfBase64: Buffer.from(pdf).toString("base64"), pages: range, signal: opts.signal });
-    return parseOcrResponse(text, range);
+    const t = transcriptionOf(await model.transcribe({ pdfBase64: Buffer.from(pdf).toString("base64"), pages: range, signal: opts.signal }));
+    if (!t.complete) return "cut";
+    return parseOcrResponse(t.text, range);
+  };
+  const progress = async (map: Map<number, string>) => {
+    for (const [p, t] of map) got.set(p, t);
+    if (opts.onProgress) await opts.onProgress([...map.entries()].map(([page, text]) => ({ page, text })));
   };
 
   await mapPool(todo, Math.max(1, Math.min(opts.concurrency ?? ocrConcurrency(), 16)), async (range) => {
     if (late()) { result.complete = false; return; }
     try {
       const parsed = await request(range);
-      if (parsed) { for (const [p, t] of parsed) got.set(p, t); return; }
-      if (range.length === 1) { result.failed.push({ page: range[0], error: "transcription had no usable page marker" }); return; }
-      // Markers did not match the requested pages: one page per request (never split a response by guesswork).
+      if (parsed && parsed !== "cut") { await progress(parsed); return; }
+      if (range.length === 1) { result.failed.push({ page: range[0], error: parsed === "cut" ? CUT_OFF : "transcription had no usable page marker" }); return; }
+      // Markers did not match the requested pages, or the answer was cut off: one page per request (never split a
+      // response by guesswork, never keep a page from an unfinished answer).
       for (const p of range) {
         if (late()) { result.complete = false; return; }
         try {
           const one = await request([p]);
-          if (one?.has(p)) got.set(p, one.get(p)!);
+          if (one === "cut") result.failed.push({ page: p, error: CUT_OFF });
+          else if (one?.has(p)) await progress(new Map([[p, one.get(p)!]]));
           else result.failed.push({ page: p, error: "transcription had no usable page marker" });
         } catch (e) {
+          if (opts.signal?.aborted) { result.complete = false; return; }
           result.failed.push({ page: p, error: (e as Error).message.slice(0, 300) });
         }
       }
     } catch (e) {
+      // An aborted run (deadline) is not a page failure: the pages are simply not done yet.
+      if (opts.signal?.aborted) { result.complete = false; return; }
       for (const p of range) result.failed.push({ page: p, error: (e as Error).message.slice(0, 300) });
     }
-  }, opts.signal);
+  }).catch((e: unknown) => {
+    if (!opts.signal?.aborted) throw e;
+    result.complete = false;
+  });
 
   result.pages = [...got.entries()].sort((a, b) => a[0] - b[0]).map(([page, text]) => ({ page, text }));
   result.failed.sort((a, b) => a.page - b.page);

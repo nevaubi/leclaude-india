@@ -17,7 +17,7 @@ import type { RemoteStore, SqlQuery } from "@/lib/db/remote";
  * Owner of later changes: the official-core stream (bump OFFICIAL_SCHEMA_VERSION; additive only).
  */
 
-export const OFFICIAL_SCHEMA_VERSION = 2;
+export const OFFICIAL_SCHEMA_VERSION = 3;
 
 export const OFFICIAL_SCHEMA: SqlQuery[] = [
   {
@@ -175,7 +175,17 @@ export const OFFICIAL_SCHEMA: SqlQuery[] = [
   { query: `ALTER TABLE official_documents ADD COLUMN IF NOT EXISTS extractor_version int` },
   { query: `CREATE INDEX IF NOT EXISTS official_documents_list ON official_documents (doc_date DESC NULLS LAST, id DESC)` },
   { query: `CREATE INDEX IF NOT EXISTS official_chunks_pages ON official_chunks (document_id, page_start)` },
+  // ---- v3 (additive; a nullable column without a default is a catalog-only change, no table rewrite) ----
+  /** [[offset, page], …] where each page's text starts inside the chunk (pin-cites for excerpts of multi-page chunks). */
+  { query: `ALTER TABLE official_chunks ADD COLUMN IF NOT EXISTS page_marks jsonb` },
 ];
+
+/**
+ * ALTER TABLE takes a brief ACCESS EXCLUSIVE lock; on the live table it must not queue behind a long search and stall
+ * every reader behind it, so it gives up after a few seconds (the next run retries: the version is recorded only after
+ * every statement succeeded).
+ */
+const LOCK_TIMEOUT_MS = 5_000;
 
 const ready = new WeakSet<RemoteStore>();
 
@@ -186,7 +196,10 @@ export async function ensureOfficialSchema(store: RemoteStore): Promise<void> {
   const current = Number(rows[0]?.value ?? 0);
   if (!(current >= OFFICIAL_SCHEMA_VERSION)) {
     await store.query({ query: `CREATE TABLE IF NOT EXISTS corpus_state (key text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())` });
-    for (const q of OFFICIAL_SCHEMA) await store.query(q);
+    for (const q of OFFICIAL_SCHEMA) {
+      if (/^ALTER TABLE/.test(q.query)) await store.transaction([{ query: `SELECT set_config('lock_timeout', $1, true) AS t`, params: [String(LOCK_TIMEOUT_MS)] }, q]);
+      else await store.query(q);
+    }
     await store.query({
       query: `INSERT INTO corpus_state (key, value, updated_at) VALUES ('official_schema_version', $1::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
       params: [JSON.stringify(OFFICIAL_SCHEMA_VERSION)],

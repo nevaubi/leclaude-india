@@ -38,7 +38,9 @@ describe("official_units queue SQL", () => {
     expect(sql).toContain("ON CONFLICT (id) DO NOTHING");
     expect(JSON.parse(String(store.calls[0].params![0]))).toHaveLength(2);
     await enqueueUnits(store, [{ id: "fetch:od_1", source: "nclt", stage: "fetch", key: "u1" }], { requeue: true });
-    expect(store.calls[1].query.replace(/\s+/g, " ")).toContain("WHERE official_units.status IN ('done', 'failed', 'skipped')");
+    // Finished units are re-queued; a pending one takes the new payload (keeping its attempts and backoff); running ones are untouched.
+    expect(store.calls[1].query.replace(/\s+/g, " ")).toContain("WHERE (official_units.status IN ('done', 'failed', 'skipped')) OR official_units.status = 'pending'");
+    expect(store.calls[1].query.replace(/\s+/g, " ")).toContain("attempts = CASE WHEN official_units.status = 'pending' THEN official_units.attempts ELSE 0 END");
     expect(await enqueueUnits(store, [])).toBe(0);
   });
 

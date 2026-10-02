@@ -1,5 +1,6 @@
 import "server-only";
 import type { Database } from "@/lib/db";
+import type { Workflow } from "@/lib/types/domain";
 import { seedCore } from "./core";
 import { seedHome } from "@/modules/home/seed";
 import { seedEdiscovery } from "@/modules/ediscovery/seed";
@@ -22,7 +23,7 @@ import { buildSystemTemplates } from "@/modules/workflows/templates-system";
  * - "demo": the full sample dataset (matters, documents, depositions, people, runs, intel
  *   corpus). Used by the test suite and for demonstrations; never enabled implicitly.
  */
-export const SEED_VERSION = 1;
+export const SEED_VERSION = 2;
 
 export type SeedMode = "reference" | "demo";
 
@@ -32,11 +33,34 @@ export function seedMode(): SeedMode {
 
 export type Seeder = (db: Database) => void | Promise<void>;
 
+/** The parts of a built-in template that its build defines (compared to decide whether a stored copy is current). */
+function templateContent(w: Workflow): string {
+  return JSON.stringify([w.name, w.description ?? null, w.category, w.nodes, w.edges, w.inputs ?? null, w.frontend ?? null, w.system ?? false, w.tags ?? null]);
+}
+
+/**
+ * Built-in templates to write: missing ones, and stored ones that were never edited (updatedAt still equals the build's
+ * createdAt; an edit through the API moves updatedAt) whose content differs from the current build. An edited template
+ * is never overwritten, and workflows copied from a template (sourceTemplateId) are the user's and are not touched.
+ */
+export function referenceTemplateWrites(stored: Workflow[], built: Workflow[]): Workflow[] {
+  const byId = new Map(stored.map((w) => [w.id, w]));
+  const out: Workflow[] = [];
+  for (const b of built) {
+    const cur = byId.get(b.id);
+    if (!cur) { out.push(b); continue; }
+    if (!cur.isTemplate && !cur.system) continue;
+    if (cur.updatedAt !== cur.createdAt) continue;
+    if (templateContent(cur) === templateContent(b)) continue;
+    out.push({ ...b, ...(cur.runsCount != null ? { runsCount: cur.runsCount } : {}), ...(cur.lastRunAt ? { lastRunAt: cur.lastRunAt } : {}), ...(cur.status !== b.status ? { status: cur.status } : {}) });
+  }
+  return out;
+}
+
 /** Reference data only: the template gallery and the system workflows (idempotent, stable ids). */
 function seedReference(db: Database) {
-  const existing = new Set(db.workflows.all().map((w) => w.id));
-  const fresh = [...buildTemplates(), ...buildSystemTemplates()].filter((w) => !existing.has(w.id));
-  if (fresh.length) db.workflows.putMany(fresh);
+  const writes = referenceTemplateWrites(db.workflows.all(), [...buildTemplates(), ...buildSystemTemplates()]);
+  if (writes.length) db.workflows.putMany(writes);
 }
 
 const REFERENCE_SEEDERS: { name: string; run: Seeder }[] = [{ name: "reference", run: seedReference }];

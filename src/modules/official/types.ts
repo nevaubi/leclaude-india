@@ -35,12 +35,14 @@ export type SourceId =
   | "gst-council" // GST Council meeting agenda and minutes
   | "cbdt" // Income-tax circulars and notifications (Income-tax Act 1961 and 2025)
   | "mca-master" // MCA company / LLP master data (data.gov.in, GODL-India)
-  | "sansad"; // Parliament: Lok Sabha / Rajya Sabha questions, debates, committee reports (sansad.in, elibrary.sansad.in)
+  | "sansad" // Parliament: Lok Sabha / Rajya Sabha questions, debates, committee reports (sansad.in, elibrary.sansad.in)
+  | "lawcommission"; // Law Commission of India reports (reference material; registered disabled pending reproduction permission)
 
 /** Every registered source id, in display order. */
 export const SOURCE_IDS: readonly SourceId[] = [
   "sci-causelist", "sci-orders", "sci-calendar", "hc-calendars", "dhc-causelist", "nclt", "nclat", "ibbi", "sebi-orders",
   "sat-orders", "cci-orders", "ngt-orders", "egazette", "cbic", "gst-council", "cbdt", "mca-master", "sansad",
+  "lawcommission",
 ];
 
 export function isSourceId(v: unknown): v is SourceId {
@@ -62,7 +64,8 @@ export type SourceKind =
   | "parliament_debate"
   | "committee_report"
   | "company_record"
-  | "dataset";
+  | "dataset"
+  | "reference_report"; // Law Commission reports and similar reference material (context, not law)
 
 /** How the bytes are fetched. Indian government sites often answer only requests from India: `firecrawl_in`. */
 export type FetchMethod = "direct" | "firecrawl_in" | "dataset_push";

@@ -131,7 +131,7 @@ export function sectionCorrespondence(i: Pick<LawInstrument, "title" | "year" | 
     subject: r.subject ?? null,
     confidence: r.confidence ?? null,
     notes: r.notes,
-    source: r.source || CORRESPONDENCE_SOURCE,
+    source: CORRESPONDENCE_SOURCE,
     headline,
   };
 }

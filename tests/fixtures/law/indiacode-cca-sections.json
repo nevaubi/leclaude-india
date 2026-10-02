@@ -1,0 +1,1303 @@
+{
+ "_comment": "Trimmed from a live India Code DSpace API response (GET https://indiacode.gov.in/server/api/discover/search/objects?query=%22AC_CEN_3_46_00008_201604_1517807328347%22&f.identifier_collection=SECTION,equals&size=40), Commercial Courts Act, 2015, fetched 2026-10-02 via Firecrawl (location IN). Five of 26 sections kept; fields unedited.",
+ "_embedded": {
+  "searchResult": {
+   "_embedded": {
+    "objects": [
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_embedded": {
+       "indexableObject": {
+        "id": "9183a7a2-8c3e-4d46-a98e-cb4b1506aa24",
+        "uuid": "9183a7a2-8c3e-4d46-a98e-cb4b1506aa24",
+        "name": "Short title, extent and commencement.",
+        "handle": "123456789/547146",
+        "metadata": {
+         "dc.date.accessioned": [
+          {
+           "value": "2026-07-10T23:21:58Z",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.act_year": [
+          {
+           "value": "2016",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_id": [
+          {
+           "value": "AC_CEN_3_46_00008_201604_1517807328347",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_name": [
+          {
+           "value": "The Commercial Courts Act, 2015",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_number": [
+          {
+           "value": "4",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.collection": [
+          {
+           "value": "SECTION",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_id": [
+          {
+           "value": "46",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_name": [
+          {
+           "value": "Department of Legal Affairs",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.id": [
+          {
+           "value": "9670",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_id": [
+          {
+           "value": "3",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_name": [
+          {
+           "value": "Ministry of Law and Justice",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.next_section": [
+          {
+           "value": "2.Definitions.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.order_number": [
+          {
+           "value": "1",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_from": [
+          {
+           "value": "0",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_number": [
+          {
+           "value": "3",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_to": [
+          {
+           "value": "0",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_footnote": [
+          {
+           "value": "<sup>1</sup>. Subs. by Act 28 of 2018, s. 3 for sub-section <i>(1)</i> (w.e.f. 3-5-2018).<br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/> <sup>2</sup>. The words &quot;except the State of Jammu and Kashmir&quot; omitted by Act 34 of 2019, s. 95 and the fifth Schedule (w.e.f. 31- 10-2019).<br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_id": [
+          {
+           "value": "9670",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_number": [
+          {
+           "value": "1",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_page_note": [
+          {
+           "value": "<span style=\"margin-left: 15px;\"></span><sup>1</sup>[(1) This Act may be called the Commercial Courts Act, 2015.]<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> (2) It extends to the whole of India <sup>2</sup>***.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> (3) It shall be deemed to have come into force on the 23rd day of October, 2015. <br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_id": [
+          {
+           "value": "1",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_name": [
+          {
+           "value": "CENTRAL",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "http://test1.indiacode.nic.in/handle/123456789/547146",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "Short title, extent and commencement.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-07-10T23:21:58.719546Z",
+        "entityType": null,
+        "type": "item"
+       }
+      }
+     },
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_embedded": {
+       "indexableObject": {
+        "id": "cdff9b56-04c0-4a39-bc0e-01d09449c73a",
+        "uuid": "cdff9b56-04c0-4a39-bc0e-01d09449c73a",
+        "name": "Appeals from decrees of Commercial Courts and Commercial Divisions.",
+        "handle": "123456789/547159",
+        "metadata": {
+         "dc.date.accessioned": [
+          {
+           "value": "2026-07-10T23:21:59Z",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.act_year": [
+          {
+           "value": "2016",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_id": [
+          {
+           "value": "AC_CEN_3_46_00008_201604_1517807328347",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_name": [
+          {
+           "value": "The Commercial Courts Act, 2015",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_number": [
+          {
+           "value": "4",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.collection": [
+          {
+           "value": "SECTION",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_id": [
+          {
+           "value": "46",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_name": [
+          {
+           "value": "Department of Legal Affairs",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.id": [
+          {
+           "value": "9682",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_id": [
+          {
+           "value": "3",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_name": [
+          {
+           "value": "Ministry of Law and Justice",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.next_section": [
+          {
+           "value": "14.Expeditious disposal of appeals.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.order_number": [
+          {
+           "value": "15",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_from": [
+          {
+           "value": "0",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_number": [
+          {
+           "value": "8",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_to": [
+          {
+           "value": "0",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_footnote": [
+          {
+           "value": "<sup>1</sup>. Subs. by Act 28 of 2018, s. 12, for sub-section (1) (w.e.f. 3-5-2018). <br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/> <br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_id": [
+          {
+           "value": "9682",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_number": [
+          {
+           "value": "13",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_page_note": [
+          {
+           "value": "<span style=\"margin-left: 15px;\"></span>(1) <sup>1</sup>[Any person aggrieved by the judgment or order of a Commercial Court below the level of a District Judge may appeal to the Commercial Appellate Court within a period of sixty days from the date of judgment or order.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> <i>(1A)</i> Any person aggrieved by the judgment or order of a Commercial Court at the level of District Judge exercising original civil jurisdiction or, as the case may be, Commercial Division of a High Court may appeal to the Commercial Appellate Division of that High Court within a period of sixty days from the date of the judgment or order:<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> Provided that an appeal shall lie from such orders passed by a Commercial Division or a Commercial Court that are specifically enumerated under Order XLIII of the Code of Civil Procedure, 1908 (5 of 1908) as amended by this Act and section 37 of the Arbitration and Conciliation Act, 1996 (26 of 1996).]<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> (2) Notwithstanding anything contained in any other law for the time being in force or Letters Patent of a High Court, no appeal shall lie from any order or decree of a Commercial Division or Commercial Court otherwise than in accordance with the provisions of this Act.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_id": [
+          {
+           "value": "1",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_name": [
+          {
+           "value": "CENTRAL",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "http://test1.indiacode.nic.in/handle/123456789/547159",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "Appeals from decrees of Commercial Courts and Commercial Divisions.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-07-10T23:21:59.561616Z",
+        "entityType": null,
+        "type": "item"
+       }
+      }
+     },
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_embedded": {
+       "indexableObject": {
+        "id": "00a9f090-f328-4135-900f-976f732c9792",
+        "uuid": "00a9f090-f328-4135-900f-976f732c9792",
+        "name": "Transfer of pending cases.",
+        "handle": "123456789/547161",
+        "metadata": {
+         "dc.date.accessioned": [
+          {
+           "value": "2026-07-10T23:21:59Z",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.act_year": [
+          {
+           "value": "2016",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_id": [
+          {
+           "value": "AC_CEN_3_46_00008_201604_1517807328347",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_name": [
+          {
+           "value": "The Commercial Courts Act, 2015",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_number": [
+          {
+           "value": "4",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.collection": [
+          {
+           "value": "SECTION",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_id": [
+          {
+           "value": "46",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_name": [
+          {
+           "value": "Department of Legal Affairs",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.id": [
+          {
+           "value": "9684",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_id": [
+          {
+           "value": "3",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_name": [
+          {
+           "value": "Ministry of Law and Justice",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.next_section": [
+          {
+           "value": "16.Amendments to the Code of Civil Procedure, 1908 in its application to commercial disputes.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.order_number": [
+          {
+           "value": "17",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_from": [
+          {
+           "value": "0",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_number": [
+          {
+           "value": "8",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_to": [
+          {
+           "value": "0",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_footnote": [
+          {
+           "value": "<sup>1</sup>. Subs. by Act 28 of 2018, s. 14, for &quot;with Order XIV-A&quot; (w.e.f. 3-5-2018).<hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/><br/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_id": [
+          {
+           "value": "9684",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_number": [
+          {
+           "value": "15",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_page_note": [
+          {
+           "value": "<span style=\"margin-left: 15px;\"></span>(1) All suits and applications, including applications under the Arbitration and Conciliation Act, 1996 (26 of 1996), relating to a commercial dispute of a Specified Value pending in a High Court where a Commercial Division has been constituted, shall be transferred to the Commercial Division.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> (2) All suits and applications, including applications under the Arbitration and Conciliation Act, 1996 (26 of 1996), relating to a commercial dispute of a Specified Value pending in any civil court in any district or area in respect of which a Commercial Court has been constituted, shall be transferred to such Commercial Court:<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> Provided that no suit or application where the final judgment has been reserved by the Court prior to the constitution of the Commercial Division or the Commercial Court shall be transferred either under sub-section <i>(1)</i> or sub-section <i>(2)</i>.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> (3) Where any suit or application, including an application under the Arbitration and Conciliation Act, 1996 (26 of 1996), relating to a commercial dispute of Specified Value shall stand transferred to the Commercial Division or Commercial Court under sub-section <i>(1)</i> or sub-section <i>(2)</i>, the provisions of this Act shall apply to those procedures that were not complete at the time of transfer.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> (4) The Commercial Division or Commercial Court, as the case may be, may hold case management hearings in respect of such transferred suit or application in order to prescribe new timelines or issue such further directions as may be necessary for a speedy and efficacious disposal of such suit or application in accordance <sup>1</sup>[with Order XV-A] of the Code of Civil Procedure, 1908 (5 of 1908):<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> Provided that the proviso to sub-rule <i>(1)</i> of Rule 1 of Order V of the Code of Civil Procedure, 1908 (5 of 1908) shall not apply to such transferred suit or application and the court may, in its discretion, prescribe a new time period within which the written statement shall be filed.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> (5) In the event that such suit or application is not transferred in the manner specified in sub-section <i>(1)</i>, sub-section <i>(2)</i> or sub-section <i>(3)</i>, the Commercial Appellate Division of the High Court may, on the application of any of the parties to the suit, withdraw such suit or application from the court before which it is pending and transfer the same for trial or disposal to the Commercial Division or Commercial Court, as the case may be, having territorial jurisdiction over such suit, and such order of transfer shall be final and binding. <br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_id": [
+          {
+           "value": "1",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_name": [
+          {
+           "value": "CENTRAL",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "http://test1.indiacode.nic.in/handle/123456789/547161",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "Transfer of pending cases.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-07-10T23:21:59.749528Z",
+        "entityType": null,
+        "type": "item"
+       }
+      }
+     },
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_embedded": {
+       "indexableObject": {
+        "id": "5fcccc06-03fe-479b-8f60-074b0edc1393",
+        "uuid": "5fcccc06-03fe-479b-8f60-074b0edc1393",
+        "name": "Constitution of Commercial Courts.",
+        "handle": "123456789/547148",
+        "metadata": {
+         "dc.date.accessioned": [
+          {
+           "value": "2026-07-10T23:21:58Z",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.act_year": [
+          {
+           "value": "2016",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_id": [
+          {
+           "value": "AC_CEN_3_46_00008_201604_1517807328347",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_name": [
+          {
+           "value": "The Commercial Courts Act, 2015",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_number": [
+          {
+           "value": "4",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.collection": [
+          {
+           "value": "SECTION",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_id": [
+          {
+           "value": "46",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_name": [
+          {
+           "value": "Department of Legal Affairs",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.id": [
+          {
+           "value": "9672",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.linked_id": [
+          {
+           "value": "NO_MH_166_855_00003_1652074370900",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          },
+          {
+           "value": "NO_MH_166_855_00002_1652074276583",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 1
+          }
+         ],
+         "dc.identifier.ministry_id": [
+          {
+           "value": "3",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_name": [
+          {
+           "value": "Ministry of Law and Justice",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.next_section": [
+          {
+           "value": "4.Constitution of Commercial Division of High Court.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.order_number": [
+          {
+           "value": "3",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_from": [
+          {
+           "value": "0",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_number": [
+          {
+           "value": "5",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_to": [
+          {
+           "value": "0",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_footnote": [
+          {
+           "value": "<sup>1</sup>. Subs. by Act 28 of 2018, s. 5, for &quot;CONSTITUTION OF COMMERCIAL COURTS, COMMERCIAL DIVISIONS AND COMMERCIAL APPELLATE DIVISIONS&quot; (w.e.f. 3-5-2018).<br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/> <sup>2</sup>. Subs. by s. 6, <i>ibid</i>., for the proviso (w.e.f. 3-5-2018).<br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/> <sup>3</sup>. Ins. by s. 6, <i>ibid</i>., (w.e.f. 3-5-2018).<br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/> <sup>4</sup>. Subs. by s. 6, <i>ibid</i>., for &quot;State Government shall&quot; (w.e.f. 3-5-2018).<br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/> <sup>5</sup>. Subs. by s. 6, <i>ibid</i>., for &quot;Commercial Court, from amongst the cadre of Higher Judicial Service in the State&quot; (w.e.f. 3-5-2018). <br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_id": [
+          {
+           "value": "9672",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_number": [
+          {
+           "value": "3",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_page_note": [
+          {
+           "value": "<center style=\"font-size: 17px;\">CHAPTER II</center><br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <center style=\"font-size: 16px;\"><sup>1</sup>[COMMERCIAL COURTS, COMMERCIAL APPELLATE COURTS, COMMERCIAL DIVISIONS AND COMMERCIAL APPELLATE DIVISIONS].</center><br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><b> Constitution of Commercial Courts.</b>--- (1) The State Government, may after consultation with the concerned High Court, by notification, constitute such number of Commercial Courts at District level, as it may deem necessary for the purpose of exercising the jurisdiction and powers conferred on those Courts under this Act:<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> <sup>2</sup>[Provided that with respect to the High Courts having ordinary original civil jurisdiction, the State Government may, after consultation with the concerned High Court, by notification, constitute Commercial Courts at the District Judge level:<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> Provided further that with respect to a territory over which the High Courts have ordinary original civil jurisdiction, the State Government may, by notification, specify such pecuniary value which shall not be less than three lakh rupees and not more than the pecuniary jurisdiction exercisable by the District Courts, as it may consider necessary.]<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> <sup>3</sup>[(1A) Notwithstanding anything contained in this Act, the State Government may, after consultation with the concerned High Court, by notification, specify such pecuniary value which shall not be less than three lakh rupees or such higher value, for whole or part of the State, as it may consider necessary.]<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> (2) The State Government shall, after consultation with the concerned High Court specify, by notification, the local limits of the area to which the jurisdiction of a Commercial Court shall extend and may, from time to time, increase, reduce or alter such limits.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> (3) The <sup>4</sup>[State Government may], with the concurrence of the Chief Justice of the High Court appoint one or more persons having experience in dealing with commercial disputes to be the Judge or Judges, of a <sup>5</sup>[Commercial Court either at the level of District Judge or a court below the level of a District Judge].<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_id": [
+          {
+           "value": "1",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_name": [
+          {
+           "value": "CENTRAL",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "http://test1.indiacode.nic.in/handle/123456789/547148",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "Constitution of Commercial Courts.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-07-10T23:21:58.834484Z",
+        "entityType": null,
+        "type": "item"
+       }
+      }
+     },
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_embedded": {
+       "indexableObject": {
+        "id": "854c5bf9-7d52-4351-92ab-07843d2a0fc4",
+        "uuid": "854c5bf9-7d52-4351-92ab-07843d2a0fc4",
+        "name": "Definitions.",
+        "handle": "123456789/547147",
+        "metadata": {
+         "dc.date.accessioned": [
+          {
+           "value": "2026-07-10T23:21:58Z",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.act_year": [
+          {
+           "value": "2016",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_id": [
+          {
+           "value": "AC_CEN_3_46_00008_201604_1517807328347",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_name": [
+          {
+           "value": "The Commercial Courts Act, 2015",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_number": [
+          {
+           "value": "4",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.act_repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.collection": [
+          {
+           "value": "SECTION",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_id": [
+          {
+           "value": "46",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.department_name": [
+          {
+           "value": "Department of Legal Affairs",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.id": [
+          {
+           "value": "9671",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_id": [
+          {
+           "value": "3",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.ministry_name": [
+          {
+           "value": "Ministry of Law and Justice",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.next_section": [
+          {
+           "value": "3.Constitution of Commercial Courts.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.order_number": [
+          {
+           "value": "2",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_from": [
+          {
+           "value": "0",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_number": [
+          {
+           "value": "3",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.page_to": [
+          {
+           "value": "0",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.repealed": [
+          {
+           "value": "false",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_footnote": [
+          {
+           "value": "<sup>1</sup>. Ins. by Act 28 of 2018, s. 4, (w.e.f. 3-5-2018).<br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/> <sup>2</sup>. Clause <i>(a)</i> renumbered as clause <i>(aa)</i> by s. 4, <i>ibid</i>., (w.e.f. 3-5-2018). <br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/> <sup>3</sup>. Subs. by s. 4, <i>ibid</i>., for &quot;which shall not be less than one crore rupees&quot; (w.e.f. 3-5-2018). <br/><hr style=\"border: none; margin-bottom: 3px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_id": [
+          {
+           "value": "9671",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_number": [
+          {
+           "value": "2",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.section_page_note": [
+          {
+           "value": "<span style=\"margin-left: 15px;\"></span>(1) In this Act, unless the context otherwise requires,---<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> <sup>1</sup>[(a) &quot;Commercial Appellate Courts&quot; means the Commercial Appellate Courts designated under section 3A;] <br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> <sup>2</sup>[(aa)] &quot;Commercial Appellate Division&quot; means the Commercial Appellate Division in a High Court constituted under sub-section <i>(1)</i> of section 5;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (b) &quot;Commercial Court&quot; means the Commercial Court constituted under sub-section <i>(1)</i> of section 3; <br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (c) &quot;commercial dispute&quot; means a dispute arising out of---<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (i) ordinary transactions of merchants, bankers, financiers and traders such as those relating to mercantile documents, including enforcement and interpretation of such documents;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (ii) export or import of merchandise or services;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (iii) issues relating to admiralty and maritime law;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (iv) transactions relating to aircraft, aircraft engines, aircraft equipment and helicopters, including sales, leasing and financing of the same;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (v) carriage of goods;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (vi) construction and infrastructure contracts, including tenders;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (vii) agreements relating to immovable property used exclusively in trade or commerce;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (viii) franchising agreements;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (ix) distribution and licensing agreements;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (x) management and consultancy agreements;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xi) joint venture agreements;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xii) shareholders agreements;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xiii) subscription and investment agreements pertaining to the services industry including outsourcing services and financial services;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xiv) mercantile agency and mercantile usage;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xv) partnership agreements;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xvi) technology development agreements;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xvii) intellectual property rights relating to registered and unregistered trademarks, copyright, patent, design, domain names, geographical indications and semiconductor integrated circuits;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xviii) agreements for sale of goods or provision of services;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xix) exploitation of oil and gas reserves or other natural resources including electromagnetic spectrum;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xx) insurance and re-insurance;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xxi) contracts of agency relating to any of the above; and<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (xxii) such other commercial disputes as may be notified by the Central Government.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <i>Explanation</i>.--- A commercial dispute shall not cease to be a commercial dispute merely because---<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (a) it also involves action for recovery of immovable property or for realisation of monies out of immovable property given as security or involves any other relief pertaining to immovable property;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (b) one of the contracting parties is the State or any of its agencies or instrumentalities, or a private body carrying out public functions;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (d) &quot;Commercial Division&quot; means the Commercial Division in a High Court constituted under sub-section <i>(1)</i> of section 4;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (e) &quot;District Judge&quot; shall have the same meaning as assigned to it in clause <i>(a)</i> of article 236 of the Constitution of India;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (f) &quot;document&quot; means any matter expressed or described upon any substance by means of letters, figures or marks, or electronic means, or by more than one of those means, intended to be used, or which may be used, for the purpose of recording that matter;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (g) &quot;notification&quot; means a notification published in the Official Gazette and the expression &quot;notify&quot; with its cognate meanings and grammatical variations shall be construed accordingly;<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (h) &quot;Schedule&quot; means the Schedule appended to the Act; and<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span><span style=\"margin-left: 15px;\"></span> (i) &quot;Specified Value&quot;, in relation to a commercial dispute, shall mean the value of the subject-matter in respect of a suit as determined in accordance with section 12 <sup>3</sup>[which shall not be less than three lakh rupees] or such higher value, as may be notified by the Central Government. <br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/> <span style=\"margin-left: 15px;\"></span> (2) The words and expressions used and not defined in this Act but defined in the Code of Civil Procedure, 1908 (5 of 1908) and the Indian Evidence Act, 1872 (1 of 1872), shall have the same meanings respectively assigned to them in that Code and the Act.<br/><hr style=\"border: none; margin-bottom: 8px; margin-top: 0;\"/>",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_id": [
+          {
+           "value": "1",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.state_name": [
+          {
+           "value": "CENTRAL",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "http://test1.indiacode.nic.in/handle/123456789/547147",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "Definitions.",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-07-10T23:21:58.773561Z",
+        "entityType": null,
+        "type": "item"
+       }
+      }
+     }
+    ]
+   },
+   "page": {
+    "number": 0,
+    "size": 40,
+    "totalPages": 1,
+    "totalElements": 26
+   }
+  }
+ }
+}

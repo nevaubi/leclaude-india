@@ -59,6 +59,7 @@ const OFFICIAL_LABEL: Record<SourceId, string> = {
   "dhc-causelist": "Delhi HC cause lists", nclt: "NCLT", nclat: "NCLAT", ibbi: "IBBI (incl. mirrored NCLT/NCLAT/SC IBC orders)",
   "sebi-orders": "SEBI orders (incl. SAT orders)", "sat-orders": "SAT", "cci-orders": "CCI orders", "ngt-orders": "NGT orders", egazette: "e-Gazette",
   cbic: "CBIC notifications and circulars", "gst-council": "GST Council", cbdt: "CBDT circulars and notifications", "mca-master": "MCA company records", sansad: "Parliament papers",
+  lawcommission: "Law Commission reports",
 };
 
 let cache: { at: number; value: CorpusCoverage } | null = null;

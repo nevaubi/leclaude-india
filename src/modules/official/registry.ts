@@ -36,6 +36,7 @@ export const ALLOW_HOSTS: Record<SourceId, string[]> = {
   cbdt: ["incometaxindia.gov.in", "incometax.gov.in"],
   "mca-master": ["data.gov.in", "mca.gov.in"],
   sansad: ["sansad.in", "rsdoc.nic.in", "loksabhadocs.nic.in", "eparlib.nic.in"],
+  lawcommission: ["lawcommissionofindia.nic.in", "cdnbbsr.s3waas.gov.in"],
 };
 
 /** Placeholder definitions for sources without a registered adapter (disabled; shown as "not available"). */
@@ -58,6 +59,7 @@ const PLACEHOLDER: Record<SourceId, { name: string; publisher: string; kinds: So
   cbdt: { name: "Income-tax circulars and notifications", publisher: "Central Board of Direct Taxes", kinds: ["circular", "notification"], forum: "cbdt", homepage: "https://incometaxindia.gov.in/", cadenceMinutes: 1440 },
   "mca-master": { name: "MCA company master data", publisher: "Ministry of Corporate Affairs", kinds: ["company_record", "dataset"], forum: "mca", homepage: "https://data.gov.in/", cadenceMinutes: 1440 * 7 },
   sansad: { name: "Parliament questions, debates and committee reports", publisher: "Parliament of India", kinds: ["parliament_question", "parliament_debate", "committee_report"], forum: "parliament", homepage: "https://sansad.in/", cadenceMinutes: 1440 },
+  lawcommission: { name: "Law Commission of India reports", publisher: "Law Commission of India", kinds: ["reference_report"], forum: "lawcommission", homepage: "https://lawcommissionofindia.nic.in/law-commission-reports/", cadenceMinutes: 1440 * 7 },
 };
 
 function placeholderDef(id: SourceId): SourceDef {

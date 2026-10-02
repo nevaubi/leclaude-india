@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Hash, Info, ListTree, Search, SearchX, TextSearch, X,
+  ArrowLeft, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Hash, Info, ListTree, Search, SearchX, TextSearch, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,9 @@ import {
 import { asLawApiError, fetchLawJson, type LawApiError } from "./fetch";
 import { isUnavailable, LawErrorState, LawUnavailable } from "./law-states";
 import { CodeCorrespondence, InstrumentStatus, LegacyLinkNote, SectionStatusChip } from "./section-insights";
+import { CodeCompare } from "./code-compare";
+import { SectionAmendments, SectionJudgments } from "./section-links";
+import { criminalCodeOf } from "../code-correspondence";
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 const unitOf = (i: Pick<LawInstrument, "kind" | "title">) => provisionUnit(i).toLowerCase();
@@ -414,6 +417,11 @@ function Overview({ i, toc, onOpenToc }: { i: LawInstrument; toc: LawInstrumentR
 
 function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrument: LawInstrument; toc: LawTocEntry[]; section: string; variant: number; onOpenToc: () => void }) {
   const router = useRouter();
+  const sp = useSearchParams();
+  // ?cmp=1: the old | new code side-by-side view (IPC/BNS, CrPC/BNSS, Evidence Act/BSA only). In the URL so back/forward keep it.
+  const canCompare = section !== NO_SECTION && criminalCodeOf(instrument) != null;
+  const compare = canCompare && sp.get("cmp") === "1";
+  const setCompare = React.useCallback((on: boolean) => router.push(`${lawHref(instrument.id, section, variant)}${on ? "&cmp=1" : ""}`, { scroll: false }), [instrument.id, router, section, variant]);
   const [data, setData] = React.useState<LawSectionResponse | null>(null);
   const [error, setError] = React.useState<LawApiError | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -477,6 +485,7 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
           <Button size="icon-xs" variant="ghost" aria-label="Next section" disabled={!data?.next} onClick={() => go(data?.next)}><ChevronRight className="size-4" /></Button>
         </Tip>
         <span aria-hidden className="mx-1 h-4 w-px bg-border" />
+        {canCompare ? <Button size="xs" variant={compare ? "secondary" : "ghost"} aria-pressed={compare} onClick={() => setCompare(!compare)} aria-label="Compare with the other code side by side"><ArrowRightLeft className="size-3.5" /><span className="hidden sm:inline">Compare</span></Button> : null}
         <Button size="xs" variant="ghost" disabled={!data} onClick={() => data && copy(cite, "Citation")} aria-label="Copy citation">{done === "Citation" ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}<span className="hidden sm:inline">Cite</span></Button>
         <Button size="xs" variant="ghost" onClick={() => copy(sectionUrl(), "Link")} aria-label="Copy link to this section">{done === "Link" ? <Check className="size-3.5" /> : <Hash className="size-3.5" />}<span className="hidden sm:inline">Link</span></Button>
         <Button asChild size="xs" variant="ghost"><Link href={`/search?q=${encodeURIComponent(data?.citation ?? cite)}`} aria-label="Research this section"><Search className="size-3.5" /><span className="hidden lg:inline">Research this section</span></Link></Button>
@@ -485,7 +494,9 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
   );
 
   let body: React.ReactNode;
-  if (loading && !data) {
+  if (compare) {
+    body = <CodeCompare instrument={instrument} section={data?.section.section ?? section} onClose={() => setCompare(false)} />;
+  } else if (loading && !data) {
     body = <div className="mx-auto w-full max-w-[76ch] space-y-3 px-5 py-7 sm:px-8" aria-busy><Skeleton className="h-3 w-48" /><Skeleton className="h-6 w-1/2" />{Array.from({ length: 8 }, (_, k) => <Skeleton key={k} className="h-3.5" style={{ width: `${78 + ((k * 9) % 22)}%` }} />)}</div>;
   } else if (error) {
     body = error.notFound || error.status === 400
@@ -514,7 +525,7 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
           <OfficialLink i={instrument} url={s.source_url ?? instrument.source_url} variant="ghost" label="Official text" />
         </div>
         <LegacyLinkNote url={safeHttpUrl(s.source_url ?? instrument.source_url)} className="mt-1" />
-        <CodeCorrespondence instrument={instrument} section={s.section} />
+        <CodeCorrespondence instrument={instrument} section={s.section} onCompare={() => setCompare(true)} />
         {data.variants.length ? (
           <p className="mt-3 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-[12px] text-foreground/85">This {unitOf(instrument)} number appears more than once in this instrument. Also see the{" "}
             {data.variants.map((v, k) => <React.Fragment key={v}>{k ? ", " : ""}<Link className="text-primary underline-offset-2 hover:underline" href={lawHref(instrument.id, section, v)} scroll={false}>{repeatedProvisionLabel(instrument, section, v)}</Link></React.Fragment>)}. Check the official text.
@@ -524,6 +535,8 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
           {blocks.length ? <StatuteText blocks={blocks} flash={flash} onAnchor={copyAnchor} /> : <p className="text-[13px] text-muted-foreground">No text is available for this provision. Read it in the official text.</p>}
         </div>
         {s.truncated ? <p className="mt-4 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-[12px] text-foreground/85">Shown in part: the section has {fmt(s.chars)} characters. Read the rest in the official text.</p> : null}
+        <SectionAmendments instrument={instrument} section={s.section} />
+        <SectionJudgments instrument={instrument} section={s.section} />
         {s.defined_terms.length || s.acts_referenced.length ? (
           <dl className="mt-6 grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t pt-3 text-[12px]">
             {s.defined_terms.length ? <><dt className="text-muted-foreground">Defines</dt><dd className="flex flex-wrap gap-1">{s.defined_terms.map((t) => <Chip key={t} tone="muted">{t}</Chip>)}</dd></> : null}

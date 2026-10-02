@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, Loader2, PanelLeftOpen, PanelRightOpen, Scale, Search as SearchIcon, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { TopbarSlot } from "@/components/shell/app-shell";
+import { useInTabbedSection } from "@/components/shell/section-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
@@ -52,6 +53,7 @@ const SEARCH_SHORTCUTS: ShortcutGroup[] = [
 ];
 
 export function ResearchPage(props: ResearchPageProps) {
+  const tabbed = useInTabbedSection();
   const router = useRouter();
   const t = useT();
   const params = useSearchParams();
@@ -255,12 +257,13 @@ export function ResearchPage(props: ResearchPageProps) {
 
   const topbar = (
     <TopbarSlot>
-      <SearchIcon className="size-4 text-muted-foreground" />
-      <button onClick={newThread} className="shrink-0 text-[13px] font-semibold hover:text-primary cursor-pointer">{t("research.title")}</button>
+      {/* In the Research section the tab names the page; the title (which also starts a new thread) is shown elsewhere only. */}
+      {!tabbed && <SearchIcon className="size-4 text-muted-foreground" />}
+      {!tabbed && <button onClick={newThread} className="shrink-0 text-[13px] font-semibold hover:text-primary cursor-pointer">{t("research.title")}</button>}
       {tool === "citecheck" ? (
-        <><ChevronRight className="size-3.5 text-muted-foreground rtl:rotate-180" /><span className="text-[12.5px] text-muted-foreground">{t("research.citationChecker")}</span></>
+        <>{!tabbed && <ChevronRight className="size-3.5 text-muted-foreground rtl:rotate-180" />}<span className="text-[12.5px] text-muted-foreground">{t("research.citationChecker")}</span></>
       ) : state.threadTitle ? (
-        <><ChevronRight className="size-3.5 text-muted-foreground rtl:rotate-180" /><span className="max-w-[28vw] truncate text-[12.5px] text-muted-foreground" title={state.threadTitle}>{state.threadTitle}</span>{streaming && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}</>
+        <>{!tabbed && <ChevronRight className="size-3.5 text-muted-foreground rtl:rotate-180" />}<span className="max-w-[28vw] truncate text-[12.5px] text-muted-foreground" title={state.threadTitle}>{state.threadTitle}</span>{streaming && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}</>
       ) : null}
       <SegmentedControl size="xs" className="ms-2 hidden md:inline-flex" ariaLabel={t("research.toolAria")} value={tool} onChange={(v) => switchTool(v)} options={[{ value: "research", label: t("research.title"), icon: Scale }, { value: "citecheck", label: t("research.citationChecker"), icon: ShieldCheck }]} />
       <div className="flex-1" />

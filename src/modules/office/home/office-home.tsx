@@ -5,6 +5,7 @@ import { ArrowUpDown, ChevronRight, FileText, Import, Loader2, Search, Upload, X
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { TopbarSlot } from "@/components/shell/app-shell";
+import { useInTabbedSection } from "@/components/shell/section-tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -33,6 +34,7 @@ export function OfficeHome({ initial, kind: initialKind }: { initial: OfficeHome
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
+  const tabbed = useInTabbedSection();
   const kindParam = sp.get("kind");
   const kind: OfficeKind | null = kindParam && (OFFICE_KINDS as string[]).includes(kindParam) ? (kindParam as OfficeKind) : initialKind;
   const [data, setData] = React.useState<OfficeHomeData>(initial);
@@ -125,8 +127,9 @@ export function OfficeHome({ initial, kind: initialKind }: { initial: OfficeHome
       onDrop={(e) => { if (isFileDrag(e)) { e.preventDefault(); setFileOver(false); if (e.dataTransfer.files.length) void uploads.upload(e.dataTransfer.files, { matterId: matterId || null }); } }}
     >
       <TopbarSlot>
-        <button onClick={() => setKind(null)} className="shrink-0 text-[13px] font-semibold hover:text-primary cursor-pointer">Office</button>
-        {kind && (<><ChevronRight className="size-3.5 text-muted-foreground" /><span className="text-[13px] text-muted-foreground">{KIND_META[kind].plural}</span></>)}
+        {/* In the Drafting section the tab names the page; only a kind filter needs saying. */}
+        {!tabbed && <button onClick={() => setKind(null)} className="shrink-0 text-[13px] font-semibold hover:text-primary cursor-pointer">Office</button>}
+        {kind && (<>{!tabbed && <ChevronRight className="size-3.5 text-muted-foreground rtl:rotate-180" />}<span className="text-[13px] text-muted-foreground">{KIND_META[kind].plural}</span></>)}
         {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
       </TopbarSlot>
 

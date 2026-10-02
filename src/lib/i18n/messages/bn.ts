@@ -2,7 +2,7 @@ import type { Messages } from "./en";
 
 /** বাংলা — Calcutta High Court usage (আদালত, আবেদন, রায়, আইনজীবী, মক্কেল, শুনানি). */
 export const bn: Messages = {
-  "brand.name": "LeClaude India",
+  "brand.name": "Pramana",
   "brand.tagline": "ভারতীয় আদালতের জন্য মামলা-বিশ্লেষণ",
   "brand.homeAria": "{app} মূল পাতা",
 
@@ -689,12 +689,12 @@ export const bn: Messages = {
   "diary.listed": "তালিকাভুক্ত",
   "diary.particulars": "মামলার বিবরণ থেকে",
   "diary.advocates": "আইনজীবী-ভিত্তিক তালিকা",
-  "diary.advocatesHint": "LeClaude যে মামলার তালিকা পড়ে, তাতে পরের 7 দিনের জন্য নামের হুবহু মিল।",
+  "diary.advocatesHint": "Pramana যে মামলার তালিকা পড়ে, তাতে পরের 7 দিনের জন্য নামের হুবহু মিল।",
   "diary.advocateAdd": "আইনজীবীর নাম যোগ করুন",
   "diary.advocateNone": "কোনো নাম সংরক্ষিত নেই।",
   "diary.advocateNoMatches": "কোনো তালিকাভুক্তি পাওয়া যায়নি।",
   "diary.courtPages": "হাইকোর্টের আইনজীবী-ভিত্তিক তালিকা",
-  "diary.courtPagesHint": "আদালতের নিজস্ব ওয়েবসাইটে খুঁজুন। এই পৃষ্ঠাগুলি শুধু লিঙ্ক করা; LeClaude সেগুলি পড়ে না।",
+  "diary.courtPagesHint": "আদালতের নিজস্ব ওয়েবসাইটে খুঁজুন। এই পৃষ্ঠাগুলি শুধু লিঙ্ক করা; Pramana সেগুলি পড়ে না।",
   "diary.linksChecked": "লিঙ্কগুলি {date} তারিখে যাচাই করা হয়েছে",
   "diary.toast.namesSaved": "নাম সংরক্ষিত হয়েছে",
   "home.listed.title": "আজ ও আগামীকাল তালিকাভুক্ত",

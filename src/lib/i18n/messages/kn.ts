@@ -2,7 +2,7 @@ import type { Messages } from "./en";
 
 /** ಕನ್ನಡ — Karnataka court usage (ನ್ಯಾಯಾಲಯ, ಅರ್ಜಿ, ತೀರ್ಪು, ವಕೀಲರು, ಕಕ್ಷಿದಾರ, ಪ್ರಕರಣ ಪಟ್ಟಿ). */
 export const kn: Messages = {
-  "brand.name": "LeClaude India",
+  "brand.name": "Pramana",
   "brand.tagline": "ಭಾರತೀಯ ನ್ಯಾಯಾಲಯಗಳಿಗಾಗಿ ವ್ಯಾಜ್ಯ ಒಳನೋಟ",
   "brand.homeAria": "{app} ಮುಖಪುಟ",
 
@@ -689,12 +689,12 @@ export const kn: Messages = {
   "diary.listed": "ಪಟ್ಟಿಯಲ್ಲಿದೆ",
   "diary.particulars": "ಪ್ರಕರಣದ ವಿವರಗಳಿಂದ",
   "diary.advocates": "ವಕೀಲವಾರು ಪಟ್ಟಿಗಳು",
-  "diary.advocatesHint": "LeClaude ಓದುವ ಪ್ರಕರಣ ಪಟ್ಟಿಗಳಲ್ಲಿ ಮುಂದಿನ 7 ದಿನಗಳಿಗೆ ಹೆಸರಿನ ನಿಖರ ಹೊಂದಿಕೆ.",
+  "diary.advocatesHint": "Pramana ಓದುವ ಪ್ರಕರಣ ಪಟ್ಟಿಗಳಲ್ಲಿ ಮುಂದಿನ 7 ದಿನಗಳಿಗೆ ಹೆಸರಿನ ನಿಖರ ಹೊಂದಿಕೆ.",
   "diary.advocateAdd": "ವಕೀಲರ ಹೆಸರು ಸೇರಿಸಿ",
   "diary.advocateNone": "ಯಾವುದೇ ಹೆಸರು ಉಳಿಸಿಲ್ಲ.",
   "diary.advocateNoMatches": "ಯಾವುದೇ ಪಟ್ಟಿ ನಮೂದು ಸಿಗಲಿಲ್ಲ.",
   "diary.courtPages": "ಹೈಕೋರ್ಟ್‌ಗಳ ವಕೀಲವಾರು ಪಟ್ಟಿಗಳು",
-  "diary.courtPagesHint": "ನ್ಯಾಯಾಲಯದ ಸ್ವಂತ ಜಾಲತಾಣದಲ್ಲಿ ಹುಡುಕಿ. ಈ ಪುಟಗಳಿಗೆ ಕೇವಲ ಕೊಂಡಿ ನೀಡಲಾಗಿದೆ; LeClaude ಅವನ್ನು ಓದುವುದಿಲ್ಲ.",
+  "diary.courtPagesHint": "ನ್ಯಾಯಾಲಯದ ಸ್ವಂತ ಜಾಲತಾಣದಲ್ಲಿ ಹುಡುಕಿ. ಈ ಪುಟಗಳಿಗೆ ಕೇವಲ ಕೊಂಡಿ ನೀಡಲಾಗಿದೆ; Pramana ಅವನ್ನು ಓದುವುದಿಲ್ಲ.",
   "diary.linksChecked": "ಕೊಂಡಿಗಳನ್ನು {date} ರಂದು ಪರಿಶೀಲಿಸಲಾಗಿದೆ",
   "diary.toast.namesSaved": "ಹೆಸರುಗಳನ್ನು ಉಳಿಸಲಾಗಿದೆ",
   "home.listed.title": "ಇಂದು ಮತ್ತು ನಾಳೆ ಪಟ್ಟಿಯಲ್ಲಿ",

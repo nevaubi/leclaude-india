@@ -2,7 +2,7 @@ import type { Messages } from "./en";
 
 /** தமிழ் — Madras High Court usage (நீதிமன்றம், மனு, தீர்ப்பு, வழக்கறிஞர், கட்சிக்காரர், வழக்குப் பட்டியல்). */
 export const ta: Messages = {
-  "brand.name": "LeClaude India",
+  "brand.name": "Pramana",
   "brand.tagline": "இந்திய நீதிமன்றங்களுக்கான வழக்கு நுண்ணறிவு",
   "brand.homeAria": "{app} முகப்பு",
 
@@ -689,12 +689,12 @@ export const ta: Messages = {
   "diary.listed": "பட்டியலில் உள்ளது",
   "diary.particulars": "வழக்கு விவரங்களிலிருந்து",
   "diary.advocates": "வழக்கறிஞர் வாரியான பட்டியல்கள்",
-  "diary.advocatesHint": "LeClaude படிக்கும் வழக்குப் பட்டியல்களில் அடுத்த 7 நாட்களுக்குப் பெயர் துல்லியமாகப் பொருந்தியவை.",
+  "diary.advocatesHint": "Pramana படிக்கும் வழக்குப் பட்டியல்களில் அடுத்த 7 நாட்களுக்குப் பெயர் துல்லியமாகப் பொருந்தியவை.",
   "diary.advocateAdd": "வழக்கறிஞர் பெயரைச் சேர்",
   "diary.advocateNone": "பெயர்கள் எதுவும் சேமிக்கப்படவில்லை.",
   "diary.advocateNoMatches": "பட்டியல் பதிவுகள் எதுவும் கிடைக்கவில்லை.",
   "diary.courtPages": "உயர் நீதிமன்றங்களின் வழக்கறிஞர் வாரியான பட்டியல்கள்",
-  "diary.courtPagesHint": "நீதிமன்றத்தின் சொந்த இணையதளத்தில் தேடவும். இப்பக்கங்களுக்கு இணைப்பு மட்டுமே; LeClaude அவற்றைப் படிப்பதில்லை.",
+  "diary.courtPagesHint": "நீதிமன்றத்தின் சொந்த இணையதளத்தில் தேடவும். இப்பக்கங்களுக்கு இணைப்பு மட்டுமே; Pramana அவற்றைப் படிப்பதில்லை.",
   "diary.linksChecked": "இணைப்புகள் {date} அன்று சரிபார்க்கப்பட்டன",
   "diary.toast.namesSaved": "பெயர்கள் சேமிக்கப்பட்டன",
   "home.listed.title": "இன்றும் நாளையும் பட்டியலில்",

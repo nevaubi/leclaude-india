@@ -8,6 +8,7 @@ import { formatBates, parseBates } from "./query";
 import { applyTextRedactions, pageRects } from "./redaction-pure";
 import { redactionsForMatter, productions } from "./review-store";
 import { matterDocs } from "./service";
+import { BRAND } from "@/lib/brand";
 
 const PAGE_W = 612, PAGE_H = 792, MARGIN = 54, FONT_SIZE = 9.5, LEADING = 12.5;
 
@@ -66,7 +67,7 @@ export async function renderProductionPdfWithMap(doc: EDocument, bates: { begin:
   const pdf = await PDFDocument.create();
   pdf.setTitle(bates.begin);
   pdf.setSubject(doc.subject);
-  pdf.setProducer("LeClaude e-discovery production");
+  pdf.setProducer(`${BRAND.name} e-discovery production`);
   const mono = await pdf.embedFont(StandardFonts.Courier);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const { text } = applyTextRedactions(doc.text, redactions);

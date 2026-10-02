@@ -7,6 +7,7 @@
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb, type PDFForm } from "pdf-lib";
 import { formatBates, type BatesConfig } from "./model";
 import { drawAnchoredText, sanitizeWinAnsi, setOutline, type OutlineSpec } from "./pdf-lib-utils";
+import { BRAND } from "@/lib/brand";
 
 export interface CaptionSpec {
   /** Court name lines (centered, bold). */
@@ -376,8 +377,8 @@ class Typesetter {
     if (s.author) this.doc.setAuthor(s.author);
     if (s.subject) this.doc.setSubject(s.subject);
     if (s.keywords) this.doc.setKeywords(s.keywords);
-    this.doc.setCreator("LeClaude PDF");
-    this.doc.setProducer("LeClaude PDF (pdf-lib)");
+    this.doc.setCreator(`${BRAND.name} PDF`);
+    this.doc.setProducer(`${BRAND.name} PDF (pdf-lib)`);
     this.doc.setCreationDate(new Date());
     this.doc.setModificationDate(new Date());
   }

@@ -171,11 +171,11 @@ describe("filing check: resolution, citator and quotes (fake dependencies)", () 
 });
 
 describe("custom document properties", () => {
-  it("writes typed properties and replaces only LeClaude-owned ones on merge", () => {
-    const first = customPropsXml([{ name: "Client.Ref", value: "AB&C <1>" }, { name: "LeClaude.Old", value: "stale" }, { name: "LeClaude.Count", value: 3 }]);
-    expect(readCustomProps(first)).toEqual({ "Client.Ref": "AB&C <1>", "LeClaude.Old": "stale", "LeClaude.Count": "3" });
-    const merged = customPropsXml([{ name: "LeClaude.Count", value: 7 }, { name: "LeClaude.Flag", value: true }, { name: "LeClaude.At", value: new Date("2026-10-01T00:00:00Z") }], first);
-    expect(readCustomProps(merged)).toEqual({ "Client.Ref": "AB&C <1>", "LeClaude.Count": "7", "LeClaude.Flag": "true", "LeClaude.At": "2026-10-01T00:00:00Z" });
+  it("writes typed properties and replaces only app-owned ones on merge", () => {
+    const first = customPropsXml([{ name: "Client.Ref", value: "AB&C <1>" }, { name: "Pramana.Old", value: "stale" }, { name: "Pramana.Count", value: 3 }]);
+    expect(readCustomProps(first)).toEqual({ "Client.Ref": "AB&C <1>", "Pramana.Old": "stale", "Pramana.Count": "3" });
+    const merged = customPropsXml([{ name: "Pramana.Count", value: 7 }, { name: "Pramana.Flag", value: true }, { name: "Pramana.At", value: new Date("2026-10-01T00:00:00Z") }], first);
+    expect(readCustomProps(merged)).toEqual({ "Client.Ref": "AB&C <1>", "Pramana.Count": "7", "Pramana.Flag": "true", "Pramana.At": "2026-10-01T00:00:00Z" });
     const pids = [...merged.matchAll(/pid="(\d+)"/g)].map((m) => Number(m[1]));
     expect(new Set(pids).size).toBe(pids.length);
     expect(Math.min(...pids)).toBe(2);
@@ -183,23 +183,30 @@ describe("custom document properties", () => {
     expect(merged).toContain("<vt:bool>true</vt:bool>");
   });
 
+  it("treats the pre-rename LeClaude.* properties as app-owned: a re-export replaces them, foreign ones are kept", () => {
+    const old = customPropsXml([{ name: "Client.Ref", value: "M-7" }, { name: "LeClaude.Export.Tool", value: "LeClaude Word" }, { name: "LeClaude.AI.Assisted", value: true }]);
+    const merged = customPropsXml([{ name: "Pramana.Export.Tool", value: "Pramana Word" }], old);
+    expect(readCustomProps(merged)).toEqual({ "Client.Ref": "M-7", "Pramana.Export.Tool": "Pramana Word" });
+    expect(readCustomProps(old, { ownOnly: true })).toEqual({ "LeClaude.Export.Tool": "LeClaude Word", "LeClaude.AI.Assisted": "true" });
+  });
+
   it("adds docProps/custom.xml to fresh exports and merges it in package-preserving exports", async () => {
     const d = docOf(para("Body text."));
-    const fresh = await exportDocx(d, { title: "T", customProps: [{ name: "Client.Ref", value: "M-1" }, { name: "LeClaude.Export.Tool", value: "old" }] });
+    const fresh = await exportDocx(d, { title: "T", customProps: [{ name: "Client.Ref", value: "M-1" }, { name: "Pramana.Export.Tool", value: "old" }] });
     const z1 = await JSZip.loadAsync(fresh);
     expect(await z1.file("_rels/.rels")!.async("string")).toContain("custom-properties");
     expect(await z1.file("[Content_Types].xml")!.async("string")).toContain('PartName="/docProps/custom.xml"');
-    expect(readCustomProps(await z1.file("docProps/custom.xml")!.async("string"))).toEqual({ "Client.Ref": "M-1", "LeClaude.Export.Tool": "old" });
+    expect(readCustomProps(await z1.file("docProps/custom.xml")!.async("string"))).toEqual({ "Client.Ref": "M-1", "Pramana.Export.Tool": "old" });
     const plain = await JSZip.loadAsync(await exportDocx(d, { title: "T" }));
     expect(plain.file("docProps/custom.xml")).toBeNull();
 
     const base = new Uint8Array(fresh);
     const read = await readDocx(base);
     let mode = "";
-    const again = await exportDocx(read.doc, { title: "T", basePackage: base, customProps: [{ name: "LeClaude.Export.Tool", value: "LeClaude Word" }], onReport: (r) => { mode = r.mode; } });
+    const again = await exportDocx(read.doc, { title: "T", basePackage: base, customProps: [{ name: "Pramana.Export.Tool", value: "Pramana Word" }], onReport: (r) => { mode = r.mode; } });
     expect(mode).toBe("preserve");
     const z2 = await JSZip.loadAsync(again);
-    expect(readCustomProps(await z2.file("docProps/custom.xml")!.async("string"))).toEqual({ "Client.Ref": "M-1", "LeClaude.Export.Tool": "LeClaude Word" });
+    expect(readCustomProps(await z2.file("docProps/custom.xml")!.async("string"))).toEqual({ "Client.Ref": "M-1", "Pramana.Export.Tool": "Pramana Word" });
     expect((await z2.file("_rels/.rels")!.async("string")).match(/custom-properties/g)).toHaveLength(1);
   });
 });
@@ -218,7 +225,7 @@ describe("provenance blocks and properties", () => {
     expect(checkLine({ state: "stale", checkedAt: "2026-10-01T10:00:00Z", counts, summary: "" })).toContain("changed after that check");
     const blocks = declarationBlocks("  ", { state: "not_run", reason: "x" });
     expect(blocks[1].content?.[0].text).toBe(DECLARATION_HEADING);
-    expect(blocks[2].content?.[0].text).toMatch(/^AI tools \(LeClaude\) were used/);
+    expect(blocks[2].content?.[0].text).toMatch(/^AI tools \(Pramana\) were used/);
   });
 
   it("lists consulted sources without claiming support, and records properties per state", () => {
@@ -228,16 +235,16 @@ describe("provenance blocks and properties", () => {
     expect(JSON.stringify(a)).toContain("does not show that any particular statement was checked");
     expect(JSON.stringify(appendixBlocks([], 0))).toContain("No drafting-assistant activity is recorded");
     const props = Object.fromEntries(exportCustomProps({ exportedAt: "2026-10-01T10:00:00Z", docHash: "abc", check: { state: "not_run", reason: "timeout" }, acknowledgement: null, assistantTurns: 0, providerRole: "not configured", models: [], declaration: false, appendix: { included: false, sources: 0 } }).map((p) => [p.name, p.value]));
-    expect(props["LeClaude.CitationCheck.State"]).toBe("not_run");
-    expect(props["LeClaude.CitationCheck.Resolved"]).toBeUndefined();
-    // Nothing recorded: "unknown", never false (AI use outside LeClaude cannot be known).
-    expect(props["LeClaude.AI.Assisted"]).toBe("unknown");
-    expect(props["LeClaude.FilingCheck.Acknowledged"]).toBe(false);
-    expect(props["LeClaude.Document.Hash"]).toBe("sha256:abc");
+    expect(props["Pramana.CitationCheck.State"]).toBe("not_run");
+    expect(props["Pramana.CitationCheck.Resolved"]).toBeUndefined();
+    // Nothing recorded: "unknown", never false (AI use outside the app cannot be known).
+    expect(props["Pramana.AI.Assisted"]).toBe("unknown");
+    expect(props["Pramana.FilingCheck.Acknowledged"]).toBe(false);
+    expect(props["Pramana.Document.Hash"]).toBe("sha256:abc");
     const ai = Object.fromEntries(exportCustomProps({ exportedAt: "2026-10-01T10:00:00Z", docHash: "abc", check: { state: "checked", checkedAt: "2026-10-01T10:00:00Z", counts, summary: "s" }, gate: "editor", openIssues: 3, acknowledgement: null, assistantTurns: 0, aiSurfaces: aiSurfacesFromMeta({ source: "documents.parawise" }), providerRole: "x", models: [], declaration: false, appendix: { included: false, sources: 0 } }).map((p) => [p.name, p.value]));
-    expect(ai["LeClaude.AI.Assisted"]).toBe(true);
-    expect(ai["LeClaude.AI.Basis"]).toMatch(/^documents\.parawise: para-wise reply with AI-proposed responses/);
-    expect(ai).toMatchObject({ "LeClaude.FilingCheck.Gate": "editor", "LeClaude.FilingCheck.OpenIssues": 3, "LeClaude.FilingCheck.Acknowledged": false, "LeClaude.CitationCheck.CitationsFound": 4, "LeClaude.CitationCheck.CitationsChecked": 4, "LeClaude.CitationCheck.CitatorChecked": 1, "LeClaude.CitationCheck.CitatorUnchecked": 1 });
+    expect(ai["Pramana.AI.Assisted"]).toBe(true);
+    expect(ai["Pramana.AI.Basis"]).toMatch(/^documents\.parawise: para-wise reply with AI-proposed responses/);
+    expect(ai).toMatchObject({ "Pramana.FilingCheck.Gate": "editor", "Pramana.FilingCheck.OpenIssues": 3, "Pramana.FilingCheck.Acknowledged": false, "Pramana.CitationCheck.CitationsFound": 4, "Pramana.CitationCheck.CitationsChecked": 4, "Pramana.CitationCheck.CitatorChecked": 1, "Pramana.CitationCheck.CitatorUnchecked": 1 });
     expect(aiSurfacesFromMeta({ source: "documents.dates", ai: { assisted: false, detail: "typed by hand" } })).toEqual([]);
     expect(aiSurfacesFromMeta({ source: "matters.brief" })).toEqual([]);
   });
@@ -254,8 +261,8 @@ describe("provenance blocks and properties", () => {
     const declText = JSON.stringify(declarationBlocks("AI tools were used.", none.state));
     expect(declText).toContain("No automated citation check ran for this version of the document");
     const p1 = Object.fromEntries(exportCustomProps({ exportedAt: "2026-10-01T10:00:00Z", docHash: "h", check: none.state, acknowledgement: null, assistantTurns: 0, providerRole: "x", models: [], declaration: true, appendix: { included: false, sources: 0 } }).map((p) => [p.name, p.value]));
-    expect(p1["LeClaude.CitationCheck.State"]).toBe("not_run");
-    expect(p1["LeClaude.CitationCheck.Reason"]).toContain("resolver offline");
+    expect(p1["Pramana.CitationCheck.State"]).toBe("not_run");
+    expect(p1["Pramana.CitationCheck.Reason"]).toContain("resolver offline");
 
     const read = fakeCitecheck({ "(2017) 10 SCC 1": { state: "resolved" }, "2024 INSC 735": { state: "resolved" } });
     const partial = await exportCheckState(d, { deps: { citecheck: async (t) => ({ ...(await read(t)), checks: [], providerError: "judgment store offline" }), corpusJudgment: async () => "unavailable" } });
@@ -265,8 +272,8 @@ describe("provenance blocks and properties", () => {
     expect(line).toMatch(/ran only in part/);
     expect(line).toContain("It found 2 case citations and checked 0.");
     const p2 = Object.fromEntries(exportCustomProps({ exportedAt: "2026-10-01T10:00:00Z", docHash: "h", check: st, acknowledgement: null, assistantTurns: 0, providerRole: "x", models: [], declaration: true, appendix: { included: false, sources: 0 } }).map((p) => [p.name, p.value]));
-    expect(p2).toMatchObject({ "LeClaude.CitationCheck.State": "partial", "LeClaude.CitationCheck.CitationsFound": 2, "LeClaude.CitationCheck.CitationsChecked": 0, "LeClaude.CitationCheck.Unchecked": 2, "LeClaude.CitationCheck.Resolved": 0 });
-    expect(String(p2["LeClaude.CitationCheck.Unavailable"])).toContain("judgment store offline");
+    expect(p2).toMatchObject({ "Pramana.CitationCheck.State": "partial", "Pramana.CitationCheck.CitationsFound": 2, "Pramana.CitationCheck.CitationsChecked": 0, "Pramana.CitationCheck.Unchecked": 2, "Pramana.CitationCheck.Resolved": 0 });
+    expect(String(p2["Pramana.CitationCheck.Unavailable"])).toContain("judgment store offline");
   });
 });
 
@@ -336,7 +343,7 @@ describe("routes: filing check and export provenance", () => {
     expect(ev?.meta).toMatchObject({ format: "pdf", acknowledgedItems: 1, ackMatchesDocument: true });
   });
 
-  it("exports a .docx with the declaration, the check line and LeClaude custom properties", async () => {
+  it("exports a .docx with the declaration, the check line and Pramana custom properties", async () => {
     const hash = docBodyHash(content);
     const res = await exportRoute.POST(post("/api/office/word/export", { content, title: "Draft", format: "docx", provenance: { declaration: { text: "AI tools were used in drafting." }, appendix: true, acknowledgement: { acknowledged: true, docHash: hash, items: 1 } } }) as never);
     expect(res.status).toBe(200);
@@ -347,7 +354,7 @@ describe("routes: filing check and export provenance", () => {
     expect(xml).toContain("1 not resolved");
     expect(xml).toContain("Provenance appendix");
     const props = readCustomProps(await zip.file("docProps/custom.xml")!.async("string"));
-    expect(props).toMatchObject({ "LeClaude.CitationCheck.State": "checked", "LeClaude.CitationCheck.Unresolved": "1", "LeClaude.FilingCheck.Acknowledged": "true", "LeClaude.FilingCheck.AckMatchesExport": "true", "LeClaude.Document.Hash": `sha256:${hash}`, "LeClaude.Declaration.Included": "true" });
+    expect(props).toMatchObject({ "Pramana.CitationCheck.State": "checked", "Pramana.CitationCheck.Unresolved": "1", "Pramana.FilingCheck.Acknowledged": "true", "Pramana.FilingCheck.AckMatchesExport": "true", "Pramana.Document.Hash": `sha256:${hash}`, "Pramana.Declaration.Included": "true" });
   });
 
   it("marks a .docx exported without the gate (document list, library, API) as check not_run, gate none, not acknowledged", async () => {
@@ -356,9 +363,9 @@ describe("routes: filing check and export provenance", () => {
     const zip = await JSZip.loadAsync(new Uint8Array(await res.arrayBuffer()));
     expect(await zip.file("word/document.xml")!.async("string")).not.toContain(DECLARATION_HEADING); // nothing appended to the body
     const props = readCustomProps(await zip.file("docProps/custom.xml")!.async("string"));
-    expect(props).toMatchObject({ "LeClaude.CitationCheck.State": "not_run", "LeClaude.FilingCheck.Gate": "none", "LeClaude.FilingCheck.Acknowledged": "false", "LeClaude.AI.Assisted": "unknown" });
-    expect(props["LeClaude.CitationCheck.Reason"]).toMatch(/without the Word editor's filing check/);
-    expect(props["LeClaude.CitationCheck.Resolved"]).toBeUndefined();
+    expect(props).toMatchObject({ "Pramana.CitationCheck.State": "not_run", "Pramana.FilingCheck.Gate": "none", "Pramana.FilingCheck.Acknowledged": "false", "Pramana.AI.Assisted": "unknown" });
+    expect(props["Pramana.CitationCheck.Reason"]).toMatch(/without the Word editor's filing check/);
+    expect(props["Pramana.CitationCheck.Resolved"]).toBeUndefined();
     const ev = listAudit({ limit: 5 }).find((e) => e.action === "export" && (e.meta as Record<string, unknown>)?.gate === "none");
     expect(ev?.meta).toMatchObject({ format: "docx", citationCheck: { state: "not_run" } });
   });
@@ -368,8 +375,8 @@ describe("routes: filing check and export provenance", () => {
     const res = await exportRoute.POST(post("/api/office/word/export", { docId: doc.id, format: "docx" }) as never);
     expect(res.status).toBe(200);
     const props = readCustomProps(await (await JSZip.loadAsync(new Uint8Array(await res.arrayBuffer()))).file("docProps/custom.xml")!.async("string"));
-    expect(props["LeClaude.AI.Assisted"]).toBe("true");
-    expect(props["LeClaude.AI.Basis"]).toBe("documents.parawise: Responses to 3 of 3 paragraphs proposed by AI.");
+    expect(props["Pramana.AI.Assisted"]).toBe("true");
+    expect(props["Pramana.AI.Basis"]).toBe("documents.parawise: Responses to 3 of 3 paragraphs proposed by AI.");
   });
 });
 

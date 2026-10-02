@@ -7,6 +7,7 @@
  * Pure over an env-like object (unit-testable) and client-safe: it never imports a provider SDK. Secrets are
  * returned only to server-side callers (the registry); `describeModels()` and `providerStatuses()` carry none.
  */
+import { appDisplayName } from "@/lib/brand";
 import { CAPABILITIES } from "../capabilities";
 import { isReasoningModel } from "./openai-models";
 import { claudeFamily } from "./claude-models";
@@ -128,7 +129,7 @@ export function readRuntimeEnv(env: Env = process.env as Env): RuntimeEnv {
       routerModel: trim(env.OPENROUTER_ROUTER_MODEL),
       baseURL: (trim(env.OPENROUTER_BASE_URL) ?? "https://openrouter.ai/api/v1").replace(/\/+$/, ""),
       referer: trim(env.OPENROUTER_HTTP_REFERER) ?? trim(env.NEXT_PUBLIC_APP_URL),
-      title: trim(env.NEXT_PUBLIC_APP_NAME) ?? "LeClaude",
+      title: appDisplayName(env.NEXT_PUBLIC_APP_NAME),
     },
   };
 }

@@ -1,10 +1,12 @@
 /**
  * docProps/custom.xml (OPC custom file properties): machine-readable provenance written into exported .docx files.
  *
- * LeClaude owns the "LeClaude." name prefix. On export every existing property with that prefix is replaced by the
- * current values (stale provenance never survives a re-export); properties written by Word or other tools are kept
- * byte-for-byte apart from their `pid`, which is renumbered so ids stay unique.
+ * The app owns the "<brand>." name prefix (src/lib/brand.ts) and the pre-rename "LeClaude." prefix. On export every
+ * existing property with either prefix is replaced by the current values (stale provenance never survives a
+ * re-export); properties written by Word or other tools are kept byte-for-byte apart from their `pid`, which is
+ * renumbered so ids stay unique.
  */
+import { BRAND } from "@/lib/brand";
 import { escAttr, XML_DECL } from "./xml";
 
 export const CUSTOM_PROPS_PATH = "docProps/custom.xml";
@@ -12,7 +14,10 @@ export const REL_CUSTOM_PROPS = "http://schemas.openxmlformats.org/officeDocumen
 export const CT_CUSTOM_PROPS = "application/vnd.openxmlformats-officedocument.custom-properties+xml";
 /** FMTID_UserDefinedProperties: the format id Word uses for user-defined properties. */
 export const CUSTOM_PROPS_FMTID = "{D5CDD505-2E9C-101B-9397-08002B2CF9AE}";
-export const OWN_PREFIX = "LeClaude.";
+export const OWN_PREFIX = `${BRAND.name}.`;
+/** Prefixes written by earlier releases; still owned, so a re-export replaces them instead of keeping stale values. */
+export const LEGACY_OWN_PREFIXES: readonly string[] = ["LeClaude."];
+const isOwn = (name: string) => name.startsWith(OWN_PREFIX) || LEGACY_OWN_PREFIXES.some((x) => name.startsWith(x));
 
 export type CustomPropValue = string | number | boolean | Date;
 export interface CustomProp { name: string; value: CustomPropValue }
@@ -56,23 +61,23 @@ function existingProperties(xml: string): { raw: string; name: string }[] {
 
 /**
  * The custom.xml part with `props` set. With `existing`, foreign properties are kept (pid renumbered) and every
- * LeClaude-owned property (and any foreign one with the same name as a new one) is replaced.
+ * app-owned property (and any foreign one with the same name as a new one) is replaced.
  */
 export function customPropsXml(props: CustomProp[], existing?: string | null): string {
   const next = normalize(props);
   const names = new Set(next.map((p) => p.name.toLowerCase()));
-  const kept = existing ? existingProperties(existing).filter((p) => !p.name.startsWith(OWN_PREFIX) && !names.has(p.name.toLowerCase())) : [];
+  const kept = existing ? existingProperties(existing).filter((p) => !isOwn(p.name) && !names.has(p.name.toLowerCase())) : [];
   let pid = 2; // pid 0 and 1 are reserved
   const keptXml = kept.map((p) => (/\bpid="\d+"/.test(p.raw) ? p.raw.replace(/\bpid="\d+"/, `pid="${pid++}"`) : p.raw.replace(/<((?:\w+:)?property)\b/, `<$1 pid="${pid++}"`))).join("");
   const ownXml = next.map((p) => `<property fmtid="${CUSTOM_PROPS_FMTID}" pid="${pid++}" name="${escAttr(p.name)}">${valueXml(p.value)}</property>`).join("");
   return `${XML_DECL}<Properties ${NS}>${keptXml}${ownXml}</Properties>`;
 }
 
-/** Read the LeClaude-owned (or all) properties back as name → text value (tests, diagnostics). */
+/** Read the app-owned (or all) properties back as name → text value (tests, diagnostics). */
 export function readCustomProps(xml: string, opts: { ownOnly?: boolean } = {}): Record<string, string> {
   const out: Record<string, string> = {};
   for (const p of existingProperties(xml)) {
-    if (opts.ownOnly && !p.name.startsWith(OWN_PREFIX)) continue;
+    if (opts.ownOnly && !isOwn(p.name)) continue;
     const v = /<vt:\w+>([\s\S]*?)<\/vt:\w+>/.exec(p.raw)?.[1] ?? "";
     out[p.name] = v.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
   }

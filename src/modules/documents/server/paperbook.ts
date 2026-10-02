@@ -8,6 +8,7 @@ import { authorizeSetExport, DocsError, loadSet } from "./access";
 import { pagesFromChunks } from "./extract";
 import { recordAudit } from "./sets";
 import { docStore } from "./store";
+import { BRAND } from "@/lib/brand";
 
 /**
  * Paperbook builder: the chosen files in order, an index page, continuous page numbers stamped on every page, an
@@ -434,8 +435,8 @@ export async function buildPaperbook(principal: Principal, setId: string, rawSpe
   }
   if (outline.length) setOutline(out, outline);
   out.setTitle(spec.title);
-  out.setProducer("LeClaude paperbook");
-  out.setCreator("LeClaude");
+  out.setProducer(`${BRAND.name} paperbook`);
+  out.setCreator(`${BRAND.name}`);
   out.setCreationDate(new Date());
   const pdf = await out.save();
   if (pdf.byteLength > PAPERBOOK_LIMITS.maxOutputBytes) throw new DocsError(`The paperbook came to ${Math.ceil(pdf.byteLength / 1024 / 1024)} MB; the limit is ${PAPERBOOK_LIMITS.maxOutputBytes / 1024 / 1024} MB. Split it into volumes.`, 413, "too_large");

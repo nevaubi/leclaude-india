@@ -20,6 +20,7 @@ import { activePages, formatBates, hexToRgb, type BatesConfig, type BatesFont, t
 import { appendOutline, pruneOutlineDests, readOutlineTree, remapOutline } from "./outline";
 import { addLinkAnnotation, addTextAnnotation, clearAnnotations, colorOf, drawAnchoredText, drawWatermark, finalRotation, sanitizeWinAnsi, setOutline, wrapLine, type OutlineSpec, type TextAnchor } from "./pdf-lib-utils";
 import { redactDocument, redactionRegions, removeFieldsUnder, scrubDocument, scrubText, type RedactionRegion, type RedactionReport } from "./redaction";
+import { BRAND } from "@/lib/brand";
 
 /** Server-side page rasterizer for redaction fallback: renders the source page (display orientation) with the boxes painted. */
 export type PageRasterizer = (req: { sourcePage: number; boxes: { rect: PdfRect; color: string }[]; rotation: number }) => Promise<Uint8Array>;
@@ -245,7 +246,7 @@ export async function applyModelWithReport(source: Uint8Array, model: PdfModel, 
   if (md?.subject !== undefined) doc.setSubject(md.subject);
   if (md?.keywords !== undefined) doc.setKeywords(md.keywords.split(/[,;]\s*/).filter(Boolean));
   if (report.redaction && strings.length) scrubDocument(doc, strings); // edits above must not reintroduce redacted text
-  doc.setProducer("LeClaude PDF (pdf-lib)");
+  doc.setProducer(`${BRAND.name} PDF (pdf-lib)`);
   doc.setModificationDate(new Date());
 
   await doc.flush();
@@ -473,14 +474,14 @@ export async function extractPages(source: Uint8Array, sourcePageNumbers: number
   if (subject) out.setSubject(subject);
   if (keywords) out.setKeywords([keywords]);
   if (title) out.setTitle(title);
-  out.setProducer("LeClaude PDF (pdf-lib)");
+  out.setProducer(`${BRAND.name} PDF (pdf-lib)`);
   return out.save({ useObjectStreams: true });
 }
 
 /** Re-save with object streams, dropping unreachable objects; the outline, forms, labels and metadata are kept. */
 export async function compressPdf(source: Uint8Array): Promise<Uint8Array> {
   const doc = await PDFDocument.load(source, { ignoreEncryption: true, updateMetadata: false });
-  doc.setProducer("LeClaude PDF (pdf-lib, compressed)");
+  doc.setProducer(`${BRAND.name} PDF (pdf-lib, compressed)`);
   await doc.flush();
   pruneUnreachable(doc);
   return doc.save({ useObjectStreams: true, addDefaultPage: false });

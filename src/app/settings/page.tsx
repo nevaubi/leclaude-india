@@ -21,6 +21,7 @@ import { providersPayload } from "@/modules/settings/providers";
 import { DemoDataSection } from "@/modules/settings/demo-data";
 import { demoStatus } from "@/modules/demo";
 import { getI18n } from "@/lib/i18n/server";
+import { appDisplayName } from "@/lib/brand";
 import { effectiveLanguagePreferences } from "@/lib/i18n/preferences";
 import { pagePrincipal, signInEnforced } from "@/lib/auth/page";
 import { LanguageSettings } from "@/modules/settings/language-settings";
@@ -111,7 +112,7 @@ export default async function SettingsPage() {
 
             <SettingsSection id="about" title={t("settings.group.about")}>
               <KeyValueList dense columns={2} labelWidth={120} items={[
-                { label: t("settings.about.application"), value: process.env.NEXT_PUBLIC_APP_NAME ?? t("brand.name") },
+                { label: t("settings.about.application"), value: appDisplayName() },
                 { label: t("settings.about.firm"), value: workspace.configured ? workspace.firmName : t("common.notSetUp"), muted: !workspace.configured },
                 { label: t("settings.about.signedInAs"), value: signedIn },
                 { label: t("settings.about.region"), value: t("settings.lang.timeZoneValue") },

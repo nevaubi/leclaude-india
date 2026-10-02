@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { remoteUrl } from "./remote";
+import { BRAND } from "@/lib/brand";
 
 /**
  * SQLite via Node's built-in `node:sqlite` (Node ≥ 22.13). Loaded through
@@ -11,7 +12,7 @@ import { remoteUrl } from "./remote";
  */
 function loadDatabaseSync(): typeof DatabaseSync {
   const mod = (process as unknown as { getBuiltinModule: (n: string) => unknown }).getBuiltinModule("node:sqlite") as typeof import("node:sqlite");
-  if (!mod?.DatabaseSync) throw new Error("node:sqlite is unavailable. LeClaude requires Node.js 22.13 or newer.");
+  if (!mod?.DatabaseSync) throw new Error(`node:sqlite is unavailable. ${BRAND.name} requires Node.js 22.13 or newer.`);
   return mod.DatabaseSync;
 }
 

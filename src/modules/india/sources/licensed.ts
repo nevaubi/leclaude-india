@@ -9,6 +9,7 @@ import { SourceHttp } from "./http";
 import { clean, htmlParagraphs, isoDate, normalizeNeutral, splitParties } from "./parse-util";
 import type { JudgmentDraft } from "./sci";
 import type { IndiaConnectorStatus } from "./types";
+import { BRAND } from "@/lib/brand";
 
 /**
  * Licensed connectors: SCC Online and Manupatra.
@@ -62,7 +63,7 @@ export function licensedStatus(provider: LicensedProvider, cfg: LicensedConfig, 
   let url: URL;
   try { url = new URL(cfg.apiEndpoint); } catch { return { source: provider, state: "not_configured", reason: "The API endpoint is not a valid URL.", envVar: tokenEnv }; }
   if (url.protocol !== "https:") return { source: provider, state: "not_configured", reason: "The API endpoint must use HTTPS.", envVar: tokenEnv };
-  if (VENDOR_WEB_HOSTS.includes(url.hostname.toLowerCase())) return { source: provider, state: "not_configured", reason: `${url.hostname} is the vendor's website, not an API; LeClaude does not scrape subscription services.`, envVar: tokenEnv };
+  if (VENDOR_WEB_HOSTS.includes(url.hostname.toLowerCase())) return { source: provider, state: "not_configured", reason: `${url.hostname} is the vendor's website, not an API; ${BRAND.name} does not scrape subscription services.`, envVar: tokenEnv };
   if (!env[tokenEnv]?.trim()) return { source: provider, state: "not_configured", reason: `Set ${tokenEnv} to the firm's API credential.`, envVar: tokenEnv };
   return { source: provider, state: "ready", envVar: tokenEnv };
 }

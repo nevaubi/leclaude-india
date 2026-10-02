@@ -19,6 +19,39 @@ import { collectImageSrcs, type ExportImageData } from "./ooxml/writer";
 
 export type ExportImage = ExportImageData;
 
+/**
+ * Images fetched for one export: at most `maxImages`, `concurrency` at a time, `maxTotalBytes` in all (each image is
+ * also capped by the fetcher). Images past a limit are left out of the file and named in the export report.
+ */
+export const EXPORT_IMAGE_LIMITS = { maxImages: 200, concurrency: 4, maxTotalBytes: 64 * 1024 * 1024 } as const;
+
+/** Load the document's images within EXPORT_IMAGE_LIMITS; returns them by src plus warnings for what was left out. */
+export async function loadExportImages(srcs: string[], fetchImage: ExportOptions["fetchImage"]): Promise<{ images: Map<string, ExportImage | null>; warnings: string[] }> {
+  const images = new Map<string, ExportImage | null>();
+  const warnings: string[] = [];
+  const wanted = srcs.slice(0, EXPORT_IMAGE_LIMITS.maxImages);
+  for (const src of srcs.slice(EXPORT_IMAGE_LIMITS.maxImages)) images.set(src, null);
+  if (srcs.length > wanted.length) warnings.push(`${srcs.length - wanted.length} image${srcs.length - wanted.length === 1 ? "" : "s"} beyond the first ${EXPORT_IMAGE_LIMITS.maxImages} left out.`);
+  if (!fetchImage) { for (const src of wanted) images.set(src, null); return { images, warnings }; }
+  let total = 0;
+  let overBudget = 0;
+  let next = 0;
+  const worker = async () => {
+    while (next < wanted.length) {
+      const src = wanted[next++];
+      if (total >= EXPORT_IMAGE_LIMITS.maxTotalBytes) { images.set(src, null); overBudget++; continue; }
+      let img: ExportImage | null = null;
+      try { img = await fetchImage(src); } catch { img = null; }
+      if (img && total + img.bytes.byteLength > EXPORT_IMAGE_LIMITS.maxTotalBytes) { images.set(src, null); overBudget++; continue; }
+      if (img) total += img.bytes.byteLength;
+      images.set(src, img);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(EXPORT_IMAGE_LIMITS.concurrency, wanted.length) }, worker));
+  if (overBudget) warnings.push(`${overBudget} image${overBudget === 1 ? "" : "s"} left out: images are limited to ${EXPORT_IMAGE_LIMITS.maxTotalBytes / 1024 / 1024} MB per export.`);
+  return { images, warnings };
+}
+
 export interface ExportOptions {
   title: string;
   settings?: Partial<DocSettings>;
@@ -47,23 +80,22 @@ function commentInputs(opts: ExportOptions): CommentInput[] {
 /** Build a .docx buffer from a document. */
 export async function exportDocx(doc: PMNode, opts: ExportOptions): Promise<Buffer> {
   const settings: DocSettings = { ...DEFAULT_SETTINGS, ...(opts.settings ?? {}) };
-  const images = new Map<string, ExportImage | null>();
-  await Promise.all(collectImageSrcs(doc).map(async (src) => { try { images.set(src, opts.fetchImage ? await opts.fetchImage(src) : null); } catch { images.set(src, null); } }));
+  const { images, warnings: imageWarnings } = await loadExportImages(collectImageSrcs(doc), opts.fetchImage);
   const author = opts.author ?? "Author";
   const changes = opts.changes ?? "revisions";
   const comments = commentInputs(opts);
   if (opts.basePackage?.byteLength) {
     try {
       const r = await exportPreserving(doc, opts.basePackage, { settings, author, changes, comments, images, imageSrc: (_b, _m, _n, sha) => docxImageSrc(sha), customProps: opts.customProps });
-      opts.onReport?.({ mode: "preserve", changedParts: r.changedParts, preservedBlocks: r.preservedBlocks, regeneratedBlocks: r.regeneratedBlocks, warnings: r.warnings });
+      opts.onReport?.({ mode: "preserve", changedParts: r.changedParts, preservedBlocks: r.preservedBlocks, regeneratedBlocks: r.regeneratedBlocks, warnings: [...imageWarnings, ...r.warnings] });
       return r.bytes;
     } catch (e) {
       // A package the reader cannot re-open (corrupt, encrypted) falls back to a fresh package: content is kept, original parts are not.
-      opts.onReport?.({ mode: "fresh", warnings: [`Package-preserving export failed (${(e as Error).message}); wrote a fresh package.`] });
+      imageWarnings.push(`Package-preserving export failed (${(e as Error).message}); wrote a fresh package.`);
     }
   }
   const buf = await exportFresh(doc, { title: opts.title, settings, author, changes, comments, images, customProps: opts.customProps });
-  opts.onReport?.({ mode: "fresh", warnings: [] });
+  opts.onReport?.({ mode: "fresh", warnings: imageWarnings });
   return buf;
 }
 

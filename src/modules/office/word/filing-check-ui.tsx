@@ -49,6 +49,7 @@ const STATE_META: Record<FilingCitation["state"], { label: string; icon: typeof 
   resolved: { label: "Resolved", icon: CheckCircle2, cls: "text-muted-foreground" },
   ambiguous: { label: "Ambiguous", icon: HelpCircle, cls: "text-warning-foreground dark:text-warning" },
   unresolved: { label: "Unresolved", icon: XCircle, cls: "text-destructive" },
+  unchecked: { label: "Not checked", icon: CircleDashed, cls: "text-warning-foreground dark:text-warning" },
 };
 
 function CitationRow({ c, onLocate }: { c: FilingCitation; onLocate?: (blockId: string) => void }) {
@@ -65,7 +66,7 @@ function CitationRow({ c, onLocate }: { c: FilingCitation; onLocate?: (blockId: 
             {c.state === "resolved" && c.title ? <> · {c.title}</> : null}
             {c.state === "resolved" && c.resolvedBy === "official_corpus" ? <> · exact match in the official corpus</> : null}
             {c.state === "ambiguous" && c.candidates.length ? <> · could be {c.candidates.join("; ")} (none chosen)</> : null}
-            {c.state === "unresolved" && c.reason ? <> · {c.reason}</> : null}
+            {(c.state === "unresolved" || c.state === "unchecked") && c.reason ? <> · {c.reason}</> : null}
             {c.occurrences > 1 ? <> · cited {c.occurrences}×</> : null}
           </div>
           {c.negative.length > 0 && (
@@ -73,7 +74,10 @@ function CitationRow({ c, onLocate }: { c: FilingCitation; onLocate?: (blockId: 
               Negative text cue{c.negative.length === 1 ? "" : "s"}: {c.negative.slice(0, 3).map((n) => `${n.title}${n.cue ? ` (“${n.cue}”)` : ""}`).join("; ")}. A text cue, not a verified treatment.
             </div>
           )}
-          {c.state === "resolved" && c.citator === "not_built" && <div className="text-[11px] text-muted-foreground">Citator not built for this judgment yet; no negative-signal check.</div>}
+          {c.state === "resolved" && c.citator === "not_built" && <div className="text-[11px] text-muted-foreground">Citator not built for this judgment yet; later negative treatment not checked.</div>}
+          {c.state === "resolved" && c.citator === "not_checked" && <div className="text-[11px] text-muted-foreground">Citator not consulted (no official-corpus record for this citation); later negative treatment not checked.</div>}
+          {c.state === "resolved" && c.citator === "unavailable" && <div className="text-[11px] text-warning-foreground dark:text-warning">Citator unreachable; later negative treatment not checked.</div>}
+          {c.state === "resolved" && c.citator === "no_negative_signal_found" && <div className="text-[11px] text-muted-foreground">Citator consulted: no negative text cue found.</div>}
           {c.quotes.map((q, i) => (
             <div key={i} className="mt-1 text-[11.5px] leading-snug">
               <span className={cn("me-1 font-medium", q.state === "found" ? "text-muted-foreground" : q.state === "not_found" ? "text-destructive" : "text-warning-foreground dark:text-warning")}>
@@ -91,16 +95,21 @@ function CitationRow({ c, onLocate }: { c: FilingCitation; onLocate?: (blockId: 
 export function ReportSummary({ report }: { report: FilingCheckReport }) {
   const c = report.counts;
   return (
-    <div className="grid grid-cols-3 gap-1 text-center text-[11px] text-muted-foreground">
-      <div className="rounded-sm bg-surface-quiet py-1"><div className="text-[13px] font-medium tabular text-foreground">{c.resolved}</div>resolved</div>
-      <div className="rounded-sm bg-surface-quiet py-1"><div className={cn("text-[13px] font-medium tabular", c.ambiguous ? "text-warning-foreground dark:text-warning" : "text-foreground")}>{c.ambiguous}</div>ambiguous</div>
-      <div className="rounded-sm bg-surface-quiet py-1"><div className={cn("text-[13px] font-medium tabular", c.unresolved ? "text-destructive" : "text-foreground")}>{c.unresolved}</div>unresolved</div>
+    <div className="space-y-1">
+      <div className="grid grid-cols-3 gap-1 text-center text-[11px] text-muted-foreground">
+        <div className="rounded-sm bg-surface-quiet py-1"><div className="text-[13px] font-medium tabular text-foreground">{c.resolved}</div>resolved</div>
+        <div className="rounded-sm bg-surface-quiet py-1"><div className={cn("text-[13px] font-medium tabular", c.ambiguous ? "text-warning-foreground dark:text-warning" : "text-foreground")}>{c.ambiguous}</div>ambiguous</div>
+        <div className="rounded-sm bg-surface-quiet py-1"><div className={cn("text-[13px] font-medium tabular", c.unresolved ? "text-destructive" : "text-foreground")}>{c.unresolved}</div>unresolved</div>
+      </div>
+      <p className={cn("px-1 text-[11px] tabular", report.coverage === "complete" ? "text-muted-foreground" : "text-warning-foreground dark:text-warning")}>
+        {report.coverage === "not_run" ? "The check did not run: no citation was read." : `${c.found} citation${c.found === 1 ? "" : "s"} found · ${c.checked} checked${c.unchecked ? ` · ${c.unchecked} not checked` : ""}${report.coverage === "partial" ? " (partial check)" : ""} · citator consulted for ${c.citatorChecked} of ${c.resolved} resolved`}
+      </p>
     </div>
   );
 }
 
 export function ReportBody({ report, onLocate }: { report: FilingCheckReport; onLocate?: (blockId: string) => void }) {
-  const order = { unresolved: 0, ambiguous: 1, resolved: 2 } as const;
+  const order = { unchecked: 0, unresolved: 1, ambiguous: 2, resolved: 3 } as const;
   const list = [...report.citations].sort((a, b) => order[a.state] - order[b.state] || Number(b.negative.length > 0) - Number(a.negative.length > 0));
   return (
     <div className="space-y-2">
@@ -198,7 +207,7 @@ export interface GateResult {
 
 type GateState = { status: "loading" } | { status: "ready"; report: FilingCheckReport } | { status: "error"; message: string };
 
-const ISSUE_ICON: Record<FilingIssue["kind"], typeof XCircle> = { unresolved: XCircle, ambiguous: HelpCircle, negative: AlertTriangle, quote_not_found: XCircle, quote_unchecked: CircleDashed, check_unavailable: CircleDashed };
+const ISSUE_ICON: Record<FilingIssue["kind"], typeof XCircle> = { unresolved: XCircle, ambiguous: HelpCircle, negative: AlertTriangle, quote_not_found: XCircle, quote_unchecked: CircleDashed, citator_unchecked: CircleDashed, check_unavailable: CircleDashed };
 
 /**
  * Pre-export dialog: runs the filing check, lists every unresolved / ambiguous / negative / unchecked item, and offers
@@ -252,7 +261,7 @@ export function ExportGateDialog({ kind, docId, getContent, onCancel, onConfirm 
               <>
                 <ReportSummary report={report} />
                 {issues.length === 0 ? (
-                  <div className="flex items-center gap-2 rounded-md bg-surface-quiet px-3 py-2 text-[12.5px] text-muted-foreground"><CheckCircle2 className="size-3.5" /> {report.counts.citations ? "Every case citation resolved; no negative signals or quotation problems were found." : "No case citations were found."}</div>
+                  <div className="flex items-center gap-2 rounded-md bg-surface-quiet px-3 py-2 text-[12.5px] text-muted-foreground"><CheckCircle2 className="size-3.5" /> {report.counts.citations ? `All ${report.counts.found} case citation${report.counts.found === 1 ? "" : "s"} resolved; the citator was consulted for each and found no negative text cue; no quotation problem was found.` : "No case citations were found."}</div>
                 ) : (
                   <div>
                     <div className="mb-1 text-[12px] font-medium">{issues.length} item{issues.length === 1 ? "" : "s"} to review</div>

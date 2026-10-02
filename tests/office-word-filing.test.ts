@@ -14,11 +14,12 @@ import { db, resetSqlite, blobs } from "@/lib/db";
 import type { PMNode } from "@/modules/office/word/doc-model";
 import { attributeQuotes, citationKey, filingSummary, quoteInText, quotedPassages, runFilingCheck, textBlocks, type CiteCheckLike, type FilingCheckDeps } from "@/modules/office/word/filing-check";
 import { customPropsXml, readCustomProps } from "@/modules/office/word/ooxml/custom-props";
-import { exportDocx } from "@/modules/office/word/export";
+import { EXPORT_IMAGE_LIMITS, exportDocx, loadExportImages } from "@/modules/office/word/export";
 import { readDocx } from "@/modules/office/word/ooxml/reader";
-import { appendixBlocks, checkLine, declarationBlocks, exportCustomProps, DECLARATION_HEADING } from "@/modules/office/word/provenance";
+import { aiSurfacesFromMeta, appendixBlocks, checkLine, checkStateOf, declarationBlocks, exportCustomProps, DECLARATION_HEADING, type CheckState } from "@/modules/office/word/provenance";
 import { loadExportImage } from "@/modules/office/word/export-images";
-import { docBodyHash, filingCheckFor, resetFilingCacheForTests } from "@/modules/office/word/filing-check-server";
+import { docBodyHash, exportCheckState, filingCheckFor, resetFilingCacheForTests } from "@/modules/office/word/filing-check-server";
+import { createOfficeDoc } from "@/modules/office/shared/docs-service";
 import { settingsForTemplate } from "@/modules/office/word/constants";
 import { listAudit } from "@/lib/integrity/audit";
 import * as exportRoute from "@/app/api/office/word/export/route";
@@ -105,7 +106,8 @@ describe("filing check: resolution, citator and quotes (fake dependencies)", () 
   it("keeps resolved / ambiguous / unresolved apart, never substitutes, and resolves an SC neutral citation only by exact corpus match", async () => {
     const r = await runFilingCheck(doc, "h1", deps());
     const by = Object.fromEntries(r.citations.map((c) => [c.citation, c]));
-    expect(by["(2017) 10 SCC 1"]).toMatchObject({ state: "resolved", resolvedBy: "judgment_store", title: "K.S. Puttaswamy v. Union of India", corpusId: null, citator: "unavailable" });
+    // Resolved through the judgment store with no official-corpus record: the citator was never consulted, and says so.
+    expect(by["(2017) 10 SCC 1"]).toMatchObject({ state: "resolved", resolvedBy: "judgment_store", title: "K.S. Puttaswamy v. Union of India", corpusId: null, citator: "not_checked" });
     expect(by["AIR 1978 SC 597"]).toMatchObject({ state: "ambiguous", title: null, candidates: ["Maneka Gandhi v. Union of India", "Another v. State"] });
     expect(by["2023 INSC 999"]).toMatchObject({ state: "unresolved", title: null, corpusId: null });
     expect(by["2024 INSC 735"]).toMatchObject({ state: "resolved", resolvedBy: "official_corpus", corpusId: "sc:2024_735", citator: "negative_signal" });
@@ -113,11 +115,14 @@ describe("filing check: resolution, citator and quotes (fake dependencies)", () 
     // Quote attributed to a store-resolved judgment without corpus text: not checked (never "found").
     expect(by["(2017) 10 SCC 1"].quotes).toEqual([expect.objectContaining({ state: "text_unavailable" })]);
     expect(by["2024 INSC 735"].quotes).toEqual([expect.objectContaining({ state: "not_found" })]);
-    expect(r.counts).toMatchObject({ citations: 5, resolved: 3, ambiguous: 1, unresolved: 1, negative: 1, quotesNotFound: 1, quotesUnchecked: 1, statutes: 1 });
-    expect(r.issues.map((i) => i.kind).sort()).toEqual(["ambiguous", "negative", "quote_not_found", "quote_unchecked", "unresolved"]);
+    expect(r.counts).toMatchObject({ citations: 5, found: 5, checked: 5, unchecked: 0, resolved: 3, ambiguous: 1, unresolved: 1, negative: 1, citatorChecked: 1, citatorUnchecked: 2, quotesNotFound: 1, quotesUnchecked: 1, statutes: 1 });
+    expect(r.coverage).toBe("complete");
+    expect(r.issues.map((i) => i.kind).sort()).toEqual(["ambiguous", "citator_unchecked", "negative", "quote_not_found", "quote_unchecked", "unresolved"]);
+    const citatorIssue = r.issues.find((i) => i.kind === "citator_unchecked")!;
+    expect(citatorIssue.message).toMatch(/^Citator not consulted for 2 of 3 resolved citations \(\(2017\) 10 SCC 1; \(2010\) 5 SCC 1\)/);
     expect(r.docHash).toBe("h1");
     expect(r.checkedAt).toBe("2026-10-01T10:00:00.000Z");
-    expect(filingSummary(r.counts)).toContain("5 citations: 3 resolved, 1 ambiguous, 1 unresolved");
+    expect(filingSummary(r.counts)).toContain("5 citations found, 5 checked: 3 resolved, 1 ambiguous, 1 unresolved; citator consulted for 1 of 3 resolved");
   });
 
   it("finds a quote in the judgment text, and says 'text incomplete' rather than 'not found' when only part was read", async () => {
@@ -129,11 +134,31 @@ describe("filing check: resolution, citator and quotes (fake dependencies)", () 
     expect(partial.issues.some((i) => i.kind === "quote_not_found")).toBe(false);
   });
 
-  it("reports an unavailable resolver as such (nothing silently passes)", async () => {
+  it("reports an unavailable resolver as such (nothing silently passes): not_run when nothing was read, partial when found but not checked", async () => {
     const r = await runFilingCheck(doc, "h", deps({ citecheck: async () => { throw new Error("store offline"); }, corpusJudgment: async () => "unavailable" }));
     expect(r.citations).toEqual([]);
+    expect(r.coverage).toBe("not_run");
     expect(r.unavailable[0]).toContain("store offline");
     expect(r.issues.some((i) => i.kind === "check_unavailable")).toBe(true);
+    // The citations were read but the resolver failed: each is "unchecked" (never "unresolved"), except an SC neutral
+    // citation found by exact match in the official corpus.
+    const read = fakeCitecheck({ "(2017) 10 SCC 1": { state: "resolved" }, "2024 INSC 735": { state: "unresolved" } });
+    const p = await runFilingCheck(doc, "h", deps({ citecheck: async (t) => ({ ...(await read(t)), checks: [], providerError: "judgment store offline" }) }));
+    expect(p.coverage).toBe("partial");
+    expect(Object.fromEntries(p.citations.map((c) => [c.citation, c.state]))).toEqual({ "(2017) 10 SCC 1": "unchecked", "2024 INSC 735": "resolved" });
+    expect(p.counts).toMatchObject({ found: 2, checked: 1, unchecked: 1, unresolved: 0, resolved: 1 });
+    expect(p.issues.some((i) => i.kind === "unresolved")).toBe(false);
+    expect(p.unavailable[0]).toMatch(/judgment store offline\. Citations found were not checked/);
+  });
+
+  it("says how many citations were found when more than the limit were (partial, found vs checked)", async () => {
+    const map = Object.fromEntries(Array.from({ length: 61 }, (_, i) => [`(2001) ${i + 1} SCC 1`, { state: "resolved" as const, title: `Case ${i + 1}` }]));
+    const many = docOf(...Object.keys(map).map((c) => para(`See ${c} for this.`)));
+    const r = await runFilingCheck(many, "h", deps({ citecheck: fakeCitecheck(map) }));
+    expect(r.coverage).toBe("partial");
+    expect(r.counts).toMatchObject({ found: 61, citations: 60, checked: 60 });
+    expect(r.unavailable).toContain("61 distinct citations were found; only the first 60 were checked.");
+    expect(checkLine(checkStateOf(r))).toMatch(/ran only in part \(61 distinct citations were found; only the first 60 were checked\)\. It found 61 case citations and checked 60: 60 resolved/);
   });
 
   it("never consults the corpus for an ambiguous citation", async () => {
@@ -178,12 +203,16 @@ describe("custom document properties", () => {
 });
 
 describe("provenance blocks and properties", () => {
-  const counts = { citations: 4, resolved: 2, ambiguous: 1, unresolved: 1, negative: 0, quotesChecked: 1, quotesFound: 1, quotesNotFound: 0, quotesUnchecked: 1, statutes: 0 };
+  const counts = { citations: 4, found: 4, checked: 4, unchecked: 0, resolved: 2, ambiguous: 1, unresolved: 1, negative: 0, citatorChecked: 1, citatorUnchecked: 1, quotesChecked: 1, quotesFound: 1, quotesNotFound: 0, quotesUnchecked: 1, statutes: 0 };
   it("states what the check found, or that no check ran — never more", () => {
-    expect(checkLine({ state: "not_run", reason: "the check could not complete" })).toMatch(/^No automated citation check was recorded/);
+    expect(checkLine({ state: "not_run", reason: "the check could not complete" })).toMatch(/^No automated citation check ran for this version/);
     const line = checkLine({ state: "checked", checkedAt: "2026-10-01T10:00:00Z", counts, summary: "" });
-    expect(line).toContain("4 case citations: 2 resolved, 1 ambiguous and 1 not resolved");
+    expect(line).toContain("found 4 case citations and checked all of them: 2 resolved, 1 ambiguous and 1 not resolved.");
+    expect(line).toContain("The citator was consulted for 1 of the 2 resolved citations.");
     expect(line).not.toMatch(/verified/i);
+    const partial = checkLine({ state: "partial", checkedAt: "2026-10-01T10:00:00Z", counts: { ...counts, checked: 0, unchecked: 4, resolved: 0, ambiguous: 0, unresolved: 0, citatorChecked: 0, citatorUnchecked: 0 }, summary: "", reasons: ["Citation resolver: down. Citations found were not checked against the judgment store."] });
+    expect(partial).toMatch(/ran only in part \(Citation resolver: down\. Citations found were not checked against the judgment store\)\. It found 4 case citations and checked 0\./);
+    expect(partial).not.toMatch(/resolved/);
     expect(checkLine({ state: "stale", checkedAt: "2026-10-01T10:00:00Z", counts, summary: "" })).toContain("changed after that check");
     const blocks = declarationBlocks("  ", { state: "not_run", reason: "x" });
     expect(blocks[1].content?.[0].text).toBe(DECLARATION_HEADING);
@@ -199,8 +228,43 @@ describe("provenance blocks and properties", () => {
     const props = Object.fromEntries(exportCustomProps({ exportedAt: "2026-10-01T10:00:00Z", docHash: "abc", check: { state: "not_run", reason: "timeout" }, acknowledgement: null, assistantTurns: 0, providerRole: "not configured", models: [], declaration: false, appendix: { included: false, sources: 0 } }).map((p) => [p.name, p.value]));
     expect(props["LeClaude.CitationCheck.State"]).toBe("not_run");
     expect(props["LeClaude.CitationCheck.Resolved"]).toBeUndefined();
-    expect(props["LeClaude.AI.Assisted"]).toBe(false);
+    // Nothing recorded: "unknown", never false (AI use outside LeClaude cannot be known).
+    expect(props["LeClaude.AI.Assisted"]).toBe("unknown");
+    expect(props["LeClaude.FilingCheck.Acknowledged"]).toBe(false);
     expect(props["LeClaude.Document.Hash"]).toBe("sha256:abc");
+    const ai = Object.fromEntries(exportCustomProps({ exportedAt: "2026-10-01T10:00:00Z", docHash: "abc", check: { state: "checked", checkedAt: "2026-10-01T10:00:00Z", counts, summary: "s" }, gate: "editor", openIssues: 3, acknowledgement: null, assistantTurns: 0, aiSurfaces: aiSurfacesFromMeta({ source: "documents.parawise" }), providerRole: "x", models: [], declaration: false, appendix: { included: false, sources: 0 } }).map((p) => [p.name, p.value]));
+    expect(ai["LeClaude.AI.Assisted"]).toBe(true);
+    expect(ai["LeClaude.AI.Basis"]).toMatch(/^documents\.parawise: para-wise reply with AI-proposed responses/);
+    expect(ai).toMatchObject({ "LeClaude.FilingCheck.Gate": "editor", "LeClaude.FilingCheck.OpenIssues": 3, "LeClaude.FilingCheck.Acknowledged": false, "LeClaude.CitationCheck.CitationsFound": 4, "LeClaude.CitationCheck.CitationsChecked": 4, "LeClaude.CitationCheck.CitatorChecked": 1, "LeClaude.CitationCheck.CitatorUnchecked": 1 });
+    expect(aiSurfacesFromMeta({ source: "documents.dates", ai: { assisted: false, detail: "typed by hand" } })).toEqual([]);
+    expect(aiSurfacesFromMeta({ source: "matters.brief" })).toEqual([]);
+  });
+
+  it("records a resolver failure as not_run or partial in the declaration and the properties (never 'checked'), and does not cache it", async () => {
+    resetFilingCacheForTests();
+    const d = docOf(para("The Court in (2017) 10 SCC 1 held so, and 2024 INSC 735 followed it."));
+    let calls = 0;
+    const down: FilingCheckDeps = { citecheck: async () => { calls++; throw new Error("resolver offline"); } };
+    const none = await exportCheckState(d, { deps: down });
+    expect(none.state).toMatchObject({ state: "not_run", reason: expect.stringContaining("resolver offline") });
+    await exportCheckState(d, { deps: down });
+    expect(calls).toBe(2); // a failed check is not served from the cache
+    const declText = JSON.stringify(declarationBlocks("AI tools were used.", none.state));
+    expect(declText).toContain("No automated citation check ran for this version of the document");
+    const p1 = Object.fromEntries(exportCustomProps({ exportedAt: "2026-10-01T10:00:00Z", docHash: "h", check: none.state, acknowledgement: null, assistantTurns: 0, providerRole: "x", models: [], declaration: true, appendix: { included: false, sources: 0 } }).map((p) => [p.name, p.value]));
+    expect(p1["LeClaude.CitationCheck.State"]).toBe("not_run");
+    expect(p1["LeClaude.CitationCheck.Reason"]).toContain("resolver offline");
+
+    const read = fakeCitecheck({ "(2017) 10 SCC 1": { state: "resolved" }, "2024 INSC 735": { state: "resolved" } });
+    const partial = await exportCheckState(d, { deps: { citecheck: async (t) => ({ ...(await read(t)), checks: [], providerError: "judgment store offline" }), corpusJudgment: async () => "unavailable" } });
+    const st = partial.state as Extract<CheckState, { state: "partial" }>;
+    expect(st.state).toBe("partial");
+    const line = checkLine(st);
+    expect(line).toMatch(/ran only in part/);
+    expect(line).toContain("It found 2 case citations and checked 0.");
+    const p2 = Object.fromEntries(exportCustomProps({ exportedAt: "2026-10-01T10:00:00Z", docHash: "h", check: st, acknowledgement: null, assistantTurns: 0, providerRole: "x", models: [], declaration: true, appendix: { included: false, sources: 0 } }).map((p) => [p.name, p.value]));
+    expect(p2).toMatchObject({ "LeClaude.CitationCheck.State": "partial", "LeClaude.CitationCheck.CitationsFound": 2, "LeClaude.CitationCheck.CitationsChecked": 0, "LeClaude.CitationCheck.Unchecked": 2, "LeClaude.CitationCheck.Resolved": 0 });
+    expect(String(p2["LeClaude.CitationCheck.Unavailable"])).toContain("judgment store offline");
   });
 });
 
@@ -284,11 +348,46 @@ describe("routes: filing check and export provenance", () => {
     expect(props).toMatchObject({ "LeClaude.CitationCheck.State": "checked", "LeClaude.CitationCheck.Unresolved": "1", "LeClaude.FilingCheck.Acknowledged": "true", "LeClaude.FilingCheck.AckMatchesExport": "true", "LeClaude.Document.Hash": `sha256:${hash}`, "LeClaude.Declaration.Included": "true" });
   });
 
-  it("leaves exports without provenance options unchanged (no custom part)", async () => {
+  it("marks a .docx exported without the gate (document list, library, API) as check not_run, gate none, not acknowledged", async () => {
     const res = await exportRoute.POST(post("/api/office/word/export", { content, title: "Plain", format: "docx" }) as never);
+    expect(res.status).toBe(200);
     const zip = await JSZip.loadAsync(new Uint8Array(await res.arrayBuffer()));
-    expect(zip.file("docProps/custom.xml")).toBeNull();
-    expect(await zip.file("word/document.xml")!.async("string")).not.toContain(DECLARATION_HEADING);
+    expect(await zip.file("word/document.xml")!.async("string")).not.toContain(DECLARATION_HEADING); // nothing appended to the body
+    const props = readCustomProps(await zip.file("docProps/custom.xml")!.async("string"));
+    expect(props).toMatchObject({ "LeClaude.CitationCheck.State": "not_run", "LeClaude.FilingCheck.Gate": "none", "LeClaude.FilingCheck.Acknowledged": "false", "LeClaude.AI.Assisted": "unknown" });
+    expect(props["LeClaude.CitationCheck.Reason"]).toMatch(/without the Word editor's filing check/);
+    expect(props["LeClaude.CitationCheck.Resolved"]).toBeUndefined();
+    const ev = listAudit({ limit: 5 }).find((e) => e.action === "export" && (e.meta as Record<string, unknown>)?.gate === "none");
+    expect(ev?.meta).toMatchObject({ format: "docx", citationCheck: { state: "not_run" } });
+  });
+
+  it("records AI use from the document's own record (a drafting feature that created it), not only assistant turns", async () => {
+    const doc = createOfficeDoc({ kind: "word", title: "Written statement", content: content, meta: { source: "documents.parawise", ai: { assisted: true, surface: "documents.parawise", detail: "Responses to 3 of 3 paragraphs proposed by AI." } } });
+    const res = await exportRoute.POST(post("/api/office/word/export", { docId: doc.id, format: "docx" }) as never);
+    expect(res.status).toBe(200);
+    const props = readCustomProps(await (await JSZip.loadAsync(new Uint8Array(await res.arrayBuffer()))).file("docProps/custom.xml")!.async("string"));
+    expect(props["LeClaude.AI.Assisted"]).toBe("true");
+    expect(props["LeClaude.AI.Basis"]).toBe("documents.parawise: Responses to 3 of 3 paragraphs proposed by AI.");
+  });
+});
+
+describe("export image limits", () => {
+  it("caps the number of images, their total bytes and the fetches in flight", async () => {
+    const big = { bytes: new Uint8Array(25 * 1024 * 1024), type: "png" as const };
+    let inFlight = 0;
+    let peak = 0;
+    const fetchImage = async () => { inFlight++; peak = Math.max(peak, inFlight); await new Promise((r) => setTimeout(r, 2)); inFlight--; return big; };
+    const three = await loadExportImages(["a", "b", "c"], fetchImage);
+    expect([...three.images.values()].filter(Boolean)).toHaveLength(2); // 2 × 25 MB fit in 64 MB; the third does not
+    expect(three.warnings.join(" ")).toMatch(/1 image left out: images are limited to 64 MB per export/);
+    const small = { bytes: new Uint8Array(10), type: "png" as const };
+    const srcs = Array.from({ length: EXPORT_IMAGE_LIMITS.maxImages + 5 }, (_, i) => `s${i}`);
+    peak = 0;
+    const many = await loadExportImages(srcs, async () => { inFlight++; peak = Math.max(peak, inFlight); await new Promise((r) => setTimeout(r, 1)); inFlight--; return small; });
+    expect(many.images.size).toBe(srcs.length);
+    expect([...many.images.values()].filter(Boolean)).toHaveLength(EXPORT_IMAGE_LIMITS.maxImages);
+    expect(many.warnings[0]).toMatch(/5 images beyond the first 200 left out/);
+    expect(peak).toBeLessThanOrEqual(EXPORT_IMAGE_LIMITS.concurrency);
   });
 });
 

@@ -33,8 +33,7 @@ import { isDocxMeta, type DocxImportedComment, type DocxMeta } from "./ooxml/typ
 import { buildTemplateSection, tableOfContents, type TemplateSectionId } from "./sections";
 import { computeOutline, WordSidebar, type OutlineItem, type SidebarTab } from "./sidebar";
 import { bodyHash, ExportGateDialog, recordAcknowledgement, type GateKind, type GateResult } from "./filing-check-ui";
-import { declarationHtml, type CheckState } from "./provenance";
-import { filingSummary } from "./filing-check";
+import { checkStateOf, declarationHtml } from "./provenance";
 import { buildSnapshot } from "./snapshot";
 import { StatusBar } from "./status-bar";
 import { applyParagraphStyle, WordToolbar, type InsertAction } from "./toolbar";
@@ -222,6 +221,19 @@ export function WordEditorPage({ id, templateId, matterId, matters, initialMode 
   const docTitle = doc?.title;
   React.useEffect(() => { if (docTitle && document.activeElement?.getAttribute("data-title-input") !== "1") setTitle(docTitle); }, [docTitle]);
   React.useEffect(() => { if (ready) editor?.setEditable(view === "edit", false); }, [view, editor, ready]);
+  // "Download .docx" from the document list or the library opens the document with ?export=docx: the export then goes
+  // through the same filing-check gate as the editor's own Download menu (print / PDF needs a click, so not here).
+  const exportRequested = React.useRef(false);
+  React.useEffect(() => {
+    if (!ready || exportRequested.current || typeof window === "undefined") return;
+    exportRequested.current = true;
+    const url = new URL(window.location.href);
+    const want = url.searchParams.get("export");
+    if (want !== "docx" && want !== "docx-clean") return;
+    url.searchParams.delete("export");
+    window.history.replaceState(window.history.state, "", url.toString());
+    setGate(want);
+  }, [ready]);
   // Version count for the assistant header ("Versions (n)"); refreshed after each save.
   const contentVersion = doc?.contentVersion;
   React.useEffect(() => {
@@ -374,9 +386,8 @@ export function WordEditorPage({ id, templateId, matterId, matters, initialMode 
     try {
       if (kind === "pdf") {
         // The gate is modal: the content printed is the content it checked. Print first (the pop-up needs the click's user activation).
-        const check: CheckState = r.report
-          ? { state: "checked", checkedAt: r.report.checkedAt, counts: r.report.counts, summary: filingSummary(r.report.counts) }
-          : { state: "not_run", reason: "the check could not run" };
+        // Same state the server records for .docx: checked / partial / not_run (never "checked" for a check that did not run).
+        const check = checkStateOf(r.report, "the check could not run");
         printDocument(editor.getHTML() + (r.declaration != null ? declarationHtml(r.declaration, check) : ""), json, doc.title, settings);
         void bodyHash(json).then((hash) => recordAcknowledgement(doc.id, json, { format: "pdf", docHash: hash, items: needsAck && r.acknowledged ? r.issues.length : 0, issueKeys: needsAck && r.acknowledged ? r.issues.map((i) => i.key) : [], declaration: r.declaration != null }));
       } else {

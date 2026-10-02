@@ -23,6 +23,8 @@ export interface WorkItem<T = unknown> {
   textHash: string | null;
   createdBy: string;
   updatedAt: string;
+  /** Stored compare-and-set version (mirrors `data.version` when the item has one, else 0). */
+  version?: number;
 }
 
 export interface WorkStore {
@@ -30,6 +32,11 @@ export interface WorkStore {
   /** Items of one kind, newest first; `prefix` narrows by key prefix. Bounded by `limit` (default 500). */
   list<T>(setId: string, kind: WorkKind, opts?: { prefix?: string; limit?: number }): Promise<WorkItem<T>[]>;
   put<T>(item: WorkItem<T>): Promise<void>;
+  /**
+   * Atomic compare-and-set: write `item` only when the stored version is `expected` (0: no row yet, or a row at version
+   * 0). The new version is `item.data.version`. Returns false (nothing written) when another writer got there first.
+   */
+  putIfVersion<T>(item: WorkItem<T>, expected: number): Promise<boolean>;
   delete(setId: string, kind: WorkKind, key: string): Promise<void>;
   /** Every item of a set (set deleted). */
   deleteSet(setId: string): Promise<void>;
@@ -49,10 +56,17 @@ function encode<T>(item: WorkItem<T>): string {
   return json;
 }
 
+/** The compare-and-set version an item carries (its data's `version`, else 0). */
+function versionOf(item: WorkItem<unknown>): number {
+  const v = (item.data as { version?: unknown } | null)?.version;
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0;
+}
+
 function decode<T>(r: Record<string, unknown>): WorkItem<T> {
   let data: unknown = null;
   try { data = typeof r.data === "string" ? JSON.parse(r.data) : r.data ?? null; } catch { data = null; }
-  return { setId: String(r.set_id), kind: String(r.kind) as WorkKind, key: String(r.key), data: data as T, textHash: r.text_hash == null ? null : String(r.text_hash), createdBy: String(r.created_by ?? ""), updatedAt: String(r.updated_at) };
+  const version = Number(r.version ?? 0);
+  return { setId: String(r.set_id), kind: String(r.kind) as WorkKind, key: String(r.key), data: data as T, textHash: r.text_hash == null ? null : String(r.text_hash), createdBy: String(r.created_by ?? ""), updatedAt: String(r.updated_at), version: Number.isFinite(version) ? version : 0 };
 }
 
 /** LIKE pattern for a literal prefix (escapes % and _ with backslash). */
@@ -63,16 +77,28 @@ const likePrefix = (p: string) => `${p.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 const SQLITE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS docs_work (
   set_id TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, text_hash TEXT, created_by TEXT NOT NULL,
-  updated_at TEXT NOT NULL, PRIMARY KEY (set_id, kind, key)
+  updated_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (set_id, kind, key)
 );
 CREATE INDEX IF NOT EXISTS docs_work_set ON docs_work(set_id, kind, updated_at DESC);
 `;
 const sqliteReady = new WeakSet<DatabaseSync>();
 
+/** Tables created before the version column: add it and copy each row's JSON version into it (once). */
+function migrateSqlite(db: DatabaseSync) {
+  const cols = db.prepare(`PRAGMA table_info(docs_work)`).all() as { name?: unknown }[];
+  if (cols.some((c) => c.name === "version")) return;
+  db.exec(`ALTER TABLE docs_work ADD COLUMN version INTEGER NOT NULL DEFAULT 0`);
+  try {
+    db.exec(`UPDATE docs_work SET version = COALESCE(CAST(json_extract(data, '$.version') AS INTEGER), 0) WHERE json_valid(data)`);
+  } catch (e) {
+    console.warn("[docs work-store] version backfill failed", (e as Error).message);
+  }
+}
+
 export class SqliteWorkStore implements WorkStore {
   private db(): DatabaseSync {
     const db = getSqlite();
-    if (!sqliteReady.has(db)) { db.exec(SQLITE_SCHEMA); sqliteReady.add(db); }
+    if (!sqliteReady.has(db)) { db.exec(SQLITE_SCHEMA); migrateSqlite(db); sqliteReady.add(db); }
     return db;
   }
   async get<T>(setId: string, kind: WorkKind, key: string) {
@@ -87,9 +113,21 @@ export class SqliteWorkStore implements WorkStore {
     return (rows as Record<string, unknown>[]).map((r) => decode<T>(r));
   }
   async put<T>(item: WorkItem<T>) {
-    this.db().prepare(`INSERT INTO docs_work (set_id, kind, key, data, text_hash, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(set_id, kind, key) DO UPDATE SET data = excluded.data, text_hash = excluded.text_hash, updated_at = excluded.updated_at`)
-      .run(item.setId, item.kind, item.key, encode(item), item.textHash, item.createdBy, item.updatedAt);
+    this.db().prepare(`INSERT INTO docs_work (set_id, kind, key, data, text_hash, created_by, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(set_id, kind, key) DO UPDATE SET data = excluded.data, text_hash = excluded.text_hash, updated_at = excluded.updated_at, version = excluded.version`)
+      .run(item.setId, item.kind, item.key, encode(item), item.textHash, item.createdBy, item.updatedAt, versionOf(item));
+  }
+  async putIfVersion<T>(item: WorkItem<T>, expected: number) {
+    const json = encode(item);
+    const db = this.db();
+    // One statement each: the version test and the write happen atomically in SQLite.
+    const r = expected === 0
+      ? db.prepare(`INSERT INTO docs_work (set_id, kind, key, data, text_hash, created_by, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(set_id, kind, key) DO UPDATE SET data = excluded.data, text_hash = excluded.text_hash, updated_at = excluded.updated_at, version = excluded.version
+          WHERE docs_work.version = 0`).run(item.setId, item.kind, item.key, json, item.textHash, item.createdBy, item.updatedAt, versionOf(item))
+      : db.prepare(`UPDATE docs_work SET data = ?, text_hash = ?, updated_at = ?, version = ? WHERE set_id = ? AND kind = ? AND key = ? AND version = ?`)
+        .run(json, item.textHash, item.updatedAt, versionOf(item), item.setId, item.kind, item.key, expected);
+    return Number(r.changes) === 1;
   }
   async delete(setId: string, kind: WorkKind, key: string) {
     this.db().prepare(`DELETE FROM docs_work WHERE set_id = ? AND kind = ? AND key = ?`).run(setId, kind, key);
@@ -107,16 +145,26 @@ export class SqliteWorkStore implements WorkStore {
 export const DOCS_WORK_PG_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS docs_work (
     set_id text NOT NULL, kind text NOT NULL, key text NOT NULL, data text NOT NULL, text_hash text, created_by text NOT NULL,
-    updated_at text NOT NULL, PRIMARY KEY (set_id, kind, key)
+    updated_at text NOT NULL, version integer, PRIMARY KEY (set_id, kind, key)
   )`,
   `CREATE INDEX IF NOT EXISTS docs_work_set ON docs_work (set_id, kind, updated_at DESC)`,
+  `ALTER TABLE docs_work ADD COLUMN IF NOT EXISTS version integer`,
 ];
+
+/** Rows written before the version column: copy the JSON version into it (NULL rows only; cheap once done). */
+const DOCS_WORK_PG_BACKFILL = `UPDATE docs_work SET version = COALESCE((data::jsonb->>'version')::integer, 0) WHERE version IS NULL`;
 
 export class PgWorkStore implements WorkStore {
   private ready: Promise<void> | null = null;
   constructor(private readonly store: RemoteStore) {}
   private async q(query: string, params: (string | number | null)[] = []) {
-    if (!this.ready) this.ready = (async () => { for (const s of DOCS_WORK_PG_SCHEMA) await this.store.query({ query: s }); })().catch((e) => { this.ready = null; throw e; });
+    if (!this.ready) {
+      this.ready = (async () => {
+        for (const s of DOCS_WORK_PG_SCHEMA) await this.store.query({ query: s });
+        // A row whose JSON cannot be read keeps a NULL version (treated as 0); a failed backfill only costs conflicts.
+        await this.store.query({ query: DOCS_WORK_PG_BACKFILL }).catch((e) => console.warn("[docs work-store] version backfill failed", (e as Error).message));
+      })().catch((e) => { this.ready = null; throw e; });
+    }
     await this.ready;
     return this.store.query({ query, params });
   }
@@ -132,9 +180,20 @@ export class PgWorkStore implements WorkStore {
     return rows.map((r) => decode<T>(r));
   }
   async put<T>(item: WorkItem<T>) {
-    await this.q(`INSERT INTO docs_work (set_id, kind, key, data, text_hash, created_by, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (set_id, kind, key) DO UPDATE SET data = EXCLUDED.data, text_hash = EXCLUDED.text_hash, updated_at = EXCLUDED.updated_at`,
-    [item.setId, item.kind, item.key, encode(item).replace(/\u0000/g, ""), item.textHash, item.createdBy, item.updatedAt]);
+    await this.q(`INSERT INTO docs_work (set_id, kind, key, data, text_hash, created_by, updated_at, version) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (set_id, kind, key) DO UPDATE SET data = EXCLUDED.data, text_hash = EXCLUDED.text_hash, updated_at = EXCLUDED.updated_at, version = EXCLUDED.version`,
+    [item.setId, item.kind, item.key, encode(item).replace(/\u0000/g, ""), item.textHash, item.createdBy, item.updatedAt, versionOf(item)]);
+  }
+  async putIfVersion<T>(item: WorkItem<T>, expected: number) {
+    const json = encode(item).replace(/\u0000/g, "");
+    // Single statements: Postgres evaluates the version test and the write under the row lock (no read-then-write race).
+    const rows = expected === 0
+      ? await this.q(`INSERT INTO docs_work (set_id, kind, key, data, text_hash, created_by, updated_at, version) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          ON CONFLICT (set_id, kind, key) DO UPDATE SET data = EXCLUDED.data, text_hash = EXCLUDED.text_hash, updated_at = EXCLUDED.updated_at, version = EXCLUDED.version
+          WHERE COALESCE(docs_work.version, 0) = 0 RETURNING key`, [item.setId, item.kind, item.key, json, item.textHash, item.createdBy, item.updatedAt, versionOf(item)])
+      : await this.q(`UPDATE docs_work SET data = $1, text_hash = $2, updated_at = $3, version = $4 WHERE set_id = $5 AND kind = $6 AND key = $7 AND COALESCE(version, 0) = $8 RETURNING key`,
+        [json, item.textHash, item.updatedAt, versionOf(item), item.setId, item.kind, item.key, expected]);
+    return rows.length === 1;
   }
   async delete(setId: string, kind: WorkKind, key: string) {
     await this.q(`DELETE FROM docs_work WHERE set_id = $1 AND kind = $2 AND key = $3`, [setId, kind, key]);

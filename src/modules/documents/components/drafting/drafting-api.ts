@@ -55,11 +55,18 @@ export async function postPaperbook(setId: string, spec: unknown, attachments: {
 /** Indian filings: A4 paper and Indian English in the Word editor. */
 const INDIA_WORD_SETTINGS = { pageSize: "a4", language: "en-IN", margins: "court", lineSpacing: 1.5, font: "serif", fontSize: 12 } as const;
 
+/**
+ * How AI was used for a document handed to Word (stored as meta.ai; the Word export writes it into the AI-use
+ * provenance properties, so a drafted written statement is not exported as "no AI recorded").
+ */
+export interface WordAiUse { assisted: boolean; detail: string }
+
 /** markdown → a new Word document (POST /api/office/docs), with a toast that opens it. */
-export async function saveToWord(opts: { title: string; markdown: string; matterId?: string | null; source: string; tags?: string[] }): Promise<string | null> {
+export async function saveToWord(opts: { title: string; markdown: string; matterId?: string | null; source: string; tags?: string[]; ai?: WordAiUse }): Promise<string | null> {
   try {
     const content = markdownToDoc(opts.markdown);
-    const r = await docsApi<{ doc: { id: string; title: string } }>("/api/office/docs", { json: { kind: "word", title: opts.title, content, matterId: opts.matterId ?? undefined, tags: opts.tags ?? ["drafting"], meta: { source: opts.source, settings: INDIA_WORD_SETTINGS } } });
+    const ai = opts.ai ? { assisted: opts.ai.assisted, surface: opts.source, detail: opts.ai.detail.slice(0, 400), at: new Date().toISOString() } : undefined;
+    const r = await docsApi<{ doc: { id: string; title: string } }>("/api/office/docs", { json: { kind: "word", title: opts.title, content, matterId: opts.matterId ?? undefined, tags: opts.tags ?? ["drafting"], meta: { source: opts.source, settings: INDIA_WORD_SETTINGS, ...(ai ? { ai } : {}) } } });
     toast.success(`${opts.title} saved to Word`, { action: { label: "Open", onClick: () => window.open(`/office/word/${r.doc.id}`, "_blank") } });
     return r.doc.id;
   } catch (e) {

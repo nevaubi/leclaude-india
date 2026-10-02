@@ -5,7 +5,7 @@ import { generateJSON } from "@/lib/ai/agent";
 import type { DocEvent, DocFact, ExtractProgress } from "../types";
 import { loadSet } from "./access";
 import { docStore, EXTRACTOR_VERSION, type ChunkRow, type DocStore, type ExtractionRow, type StoredFile } from "./store";
-import { joinChunks, normalizeDate, normalizeForMatch, quoteFound } from "./text";
+import { joinChunks, normalizeDate, normalizeForMatch, QUOTE_MIN_WORDS, quoteFound } from "./text";
 
 /**
  * Facts and timeline extraction: one pass per file with the fast model over windows of ~14,000 characters carrying
@@ -106,7 +106,7 @@ export const EXTRACT_INSTRUCTIONS = [
   "Page markers such as [Page 12] precede the text of each page; give the page number on which each quote appears (null when the excerpt has no page markers).",
   "facts: the material facts a lawyer would note — parties and their roles, amounts, obligations, admissions, claims, key dates and events. Each statement is one self-contained sentence saying what the document states (not a conclusion or opinion of yours). category is one of party, date, amount, obligation, event, admission, claim, other. date is the date the fact refers to, copied as written, or null.",
   "events: things that happened or are due on a date written in the excerpt. dateText is the date exactly as written (e.g. \"3rd March, 2021\" or \"03.03.2021\"); skip events with no written date.",
-  "quote: words copied verbatim from the excerpt (at most 300 characters) that support the item. Never paraphrase inside quote.",
+  "quote: the sentence or clause copied verbatim from the excerpt (at least six words, at most 300 characters) that supports the item. Never paraphrase inside quote.",
   "parties: the people and organisations the item is about, as named in the excerpt.",
   "At most 25 facts and 25 events per excerpt; prefer the most material. Return empty lists when there is nothing material.",
 ].join("\n");
@@ -122,8 +122,10 @@ const shortHash = (s: string) => createHash("sha256").update(s).digest("hex").sl
 function locate(quote: string, statedPage: unknown, win: Window, pageText: Map<number | null, string>): { page: number | null; found: boolean } {
   const stated = typeof statedPage === "number" && win.pages.includes(statedPage) ? statedPage : null;
   const paged = win.pages.some((p) => p != null);
-  if (stated != null && quoteFound(quote, pageText.get(stated) ?? "")) return { page: stated, found: true };
-  for (const p of win.pages) if (quoteFound(quote, pageText.get(p) ?? "")) return { page: p, found: true };
+  // A quote of fewer than QUOTE_MIN_WORDS words is never "found": it would mark a timeline row as backed by the record.
+  const opts = { minWords: QUOTE_MIN_WORDS };
+  if (stated != null && quoteFound(quote, pageText.get(stated) ?? "", opts)) return { page: stated, found: true };
+  for (const p of win.pages) if (quoteFound(quote, pageText.get(p) ?? "", opts)) return { page: p, found: true };
   // Not found verbatim: keep the model's page only when it is a page of this window; never guess another one.
   return { page: paged ? stated : null, found: false };
 }

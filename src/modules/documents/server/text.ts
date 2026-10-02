@@ -96,13 +96,18 @@ export function normalizeForMatch(s: string): string {
     .toLowerCase();
 }
 
+/** Fewest words a quote needs before it can count as found where it backs a drafting statement (as the filing check). */
+export const QUOTE_MIN_WORDS = 6;
+
 /**
  * True when `quote` occurs in `text` (whitespace, quote style and case insensitive). A quote with an ellipsis is
- * checked part by part, in order. An empty quote is never "found".
+ * checked part by part, in order. An empty quote is never "found"; with `minWords`, neither is a shorter one
+ * ("the" occurs in almost any page and proves nothing). Tabular review applies its own substantive-quote rule.
  */
-export function quoteFound(quote: string, text: string): boolean {
+export function quoteFound(quote: string, text: string, opts: { minWords?: number } = {}): boolean {
   const q = (quote ?? "").trim().replace(/^["'“‘]+|["'”’]+$/g, "");
   if (!q) return false;
+  if (opts.minWords && q.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length < opts.minWords) return false;
   const hay = normalizeForMatch(text);
   const parts = q.split(/\s*(?:\.{3}|…)\s*/).map(normalizeForMatch).filter(Boolean);
   if (!parts.length) return false;

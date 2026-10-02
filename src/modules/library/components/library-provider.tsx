@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import type { LibraryItemView, LibraryFilters, LibraryListResponse, LibrarySearchResponse, LibraryTreeResponse, LibraryView, CreateItemInput, UpdateItemInput } from "../types";
 import { filtersToParams, parseFilters } from "../filters";
 import { matterFolderId, matterIdFromFolderId } from "../ids";
-import { api, downloadFromResponse, downloadText } from "./api";
+import { api, downloadText } from "./api";
 import { useLibraryUI } from "./store";
 import { useUploads, type UploadResult } from "./use-uploads";
 
@@ -315,9 +315,8 @@ export function LibraryProvider({ initial, children }: { initial: LibraryInitial
       try {
         if (item.content) { downloadText(`${safeName(item.name)}.md`, item.content); return; }
         if (item.officeDocId && item.officeKind === "word") {
-          const res = await fetch("/api/office/word/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ docId: item.officeDocId, format: "docx" }) });
-          if (!res.ok) throw new Error((await res.json().catch(() => ({ error: res.statusText }))).error);
-          await downloadFromResponse(res, `${safeName(item.name)}.docx`);
+          // Word exports go through the editor's filing-check gate (citations, citator, quotations, AI-use declaration).
+          window.location.assign(`/office/word/${encodeURIComponent(item.officeDocId)}?export=docx`);
           return;
         }
         if (item.officeDocId) {

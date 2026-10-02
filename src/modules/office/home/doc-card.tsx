@@ -32,10 +32,13 @@ export async function duplicateOfficeDoc(doc: OfficeDocSummary): Promise<OfficeD
   return ((await res.json()) as { doc: OfficeDocument }).doc;
 }
 
-/** Download the native file for a document through its export route (.docx / .xlsx / .pptx / .pdf). */
+/**
+ * Download the native file for a document through its export route (.xlsx / .pptx / .pdf). A Word document opens in the
+ * editor with its filing-check gate (citations, citator, quotations; AI-use declaration) before the .docx is written.
+ */
 export async function downloadOfficeDoc(doc: OfficeDocSummary) {
-  const routes: Record<OfficeDocSummary["kind"], { url: string; body: Record<string, unknown> }> = {
-    word: { url: "/api/office/word/export", body: { docId: doc.id, format: "docx" } },
+  if (doc.kind === "word") { window.location.assign(`${docHref(doc)}?export=docx`); return; }
+  const routes: Record<Exclude<OfficeDocSummary["kind"], "word">, { url: string; body: Record<string, unknown> }> = {
     sheet: { url: "/api/office/sheet/export", body: { docId: doc.id, format: "xlsx" } },
     slides: { url: "/api/office/slides/export", body: { docId: doc.id, format: "pptx" } },
     pdf: { url: "/api/office/pdf/export", body: { docId: doc.id, options: { flattenAnnotations: true, applyRedactions: true, bates: true, bookmarks: true } } },
@@ -78,7 +81,7 @@ function MenuItems({ doc, actions, onRename, Item, Sep }: { doc: OfficeDocSummar
       <Sep />
       <Item onClick={onRename}><Pencil /> Rename <kbd className="ml-auto">F2</kbd></Item>
       <Item onClick={() => void actions.duplicate(doc)}><Copy /> Duplicate</Item>
-      <Item onClick={() => downloadOfficeDoc(doc).catch((e: Error) => toast.error("Download failed", { description: e.message }))}><Download /> Download .{KIND_META[doc.kind].ext}</Item>
+      <Item onClick={() => downloadOfficeDoc(doc).catch((e: Error) => toast.error("Download failed", { description: e.message }))}><Download /> {doc.kind === "word" ? "Export .docx (filing check)…" : `Download .${KIND_META[doc.kind].ext}`}</Item>
       {doc.libraryItemId && <Item onClick={() => router.push(`/library?item=${doc.libraryItemId}`)}><Library /> Show in Library</Item>}
       <Sep />
       <Item destructive onClick={() => void actions.remove(doc)}><Trash2 /> Delete</Item>

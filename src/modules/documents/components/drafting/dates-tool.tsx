@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SegmentedControl } from "@/components/ui/form";
-import { courtDate, datesMarkdown, rowsHash, rowVerification, synopsisForExport, type DateRow, type DatesFormat } from "../../drafting";
+import { checkSynopsis, courtDate, datesMarkdown, rowsHash, rowVerification, synopsisCheckSummary, synopsisForExport, type DateRow, type DatesFormat } from "../../drafting";
 import { downloadText, errorKind, errorMessage, isAbort, UNCONFIGURED_MESSAGE, type ApiErrorKind } from "../api";
 import { safeFileName } from "../format";
 import { Notice, SurfaceState } from "../notice";
@@ -104,12 +104,27 @@ export function DatesTool({ setId, setName, matterId, aiReady, onView, onOpenTab
   };
 
   const exportRows = selected;
+  // The rows the synopsis cites, in [Rn] order (null where a row has since been removed).
+  const synRows = React.useMemo(() => {
+    if (!synopsis) return [];
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    return synopsis.rowIds.map((id) => byId.get(id) ?? null);
+  }, [synopsis, rows]);
+  // Checks run on the text as it is now in the editor (not only on the drafted text), so hand edits are checked too.
+  const liveChecks = React.useMemo(() => (synopsis && synText.trim() ? checkSynopsis(synText, synRows) : null), [synopsis, synText, synRows]);
+  const editedNow = !!synopsis && (synopsis.edited || synText !== synopsis.text);
   const synopsisExport = () => {
     if (!synopsis || !synText.trim()) return null;
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    return synopsisForExport(synText, synopsis.rowIds.map((id) => byId.get(id)) as DateRow[]);
+    return synopsisForExport(synText, synRows as DateRow[]);
   };
-  const markdown = () => datesMarkdown(exportRows, { format: view?.state.format ?? "sc", title: setName, synopsis: synopsisExport(), synopsisNote: synopsis ? (synopsis.edited ? "Synopsis drafted with AI from the listed rows and edited by hand." : "Synopsis drafted with AI from the listed rows only; review before filing.") : null });
+  const synopsisNote = () => {
+    if (!synopsis || !synText.trim()) return null;
+    const origin = editedNow ? "Synopsis drafted with AI from the listed rows and edited by hand." : "Synopsis drafted with AI from the listed rows only.";
+    const found = liveChecks ? synopsisCheckSummary(liveChecks) : "";
+    return `${origin} ${found ? `Automated checks on this text found ${found}.` : "Automated checks found no unlisted dates or amounts, and every sentence cites a row."} Review before filing.`;
+  };
+  const markdown = () => datesMarkdown(exportRows, { format: view?.state.format ?? "sc", title: setName, synopsis: synopsisExport(), synopsisNote: synopsisNote() });
+  const aiUse = () => ({ assisted: true, detail: `List of dates built from AI-extracted timeline events (${exportRows.length} rows, ${exportRows.filter((r) => rowVerification(r) !== "quote found").length} not backed by a found quote)${synopsis && synText.trim() ? `; synopsis drafted by AI${editedNow ? " and edited by hand" : ""}` : ""}.` });
 
   if (load.status === "loading") return <div className="space-y-2 p-3" aria-busy="true"><div className="h-8 w-64 animate-pulse rounded bg-muted" /><div className="h-48 animate-pulse rounded-md bg-muted/60" /></div>;
   if (load.status === "error") {
@@ -130,7 +145,7 @@ export function DatesTool({ setId, setName, matterId, aiReady, onView, onOpenTab
           {busy && busy !== "synopsis" && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Saving" />}
           <div className="ms-auto flex items-center gap-1">
             <Button size="xs" variant="outline" disabled={!exportRows.length} onClick={() => downloadText(`${safeFileName(setName)} - list of dates.md`, markdown(), "text/markdown;charset=utf-8")}><FileDown className="size-3.5" /> Markdown</Button>
-            <Button size="xs" variant="outline" disabled={!exportRows.length || busy === "word"} onClick={async () => { setBusy("word"); await saveToWord({ title: `${v.state.format === "sc" ? "Synopsis and list of dates" : "List of dates and synopsis"} — ${setName}`, markdown: markdown(), matterId, source: "documents.dates", tags: ["list of dates", "synopsis"] }); setBusy(null); }}><FileText className="size-3.5" /> Word</Button>
+            <Button size="xs" variant="outline" disabled={!exportRows.length || busy === "word"} onClick={async () => { setBusy("word"); await saveToWord({ title: `${v.state.format === "sc" ? "Synopsis and list of dates" : "List of dates and synopsis"} — ${setName}`, markdown: markdown(), matterId, source: "documents.dates", tags: ["list of dates", "synopsis"], ai: aiUse() }); setBusy(null); }}><FileText className="size-3.5" /> Word</Button>
           </div>
         </div>
         {partial && <Notice action={<Button size="xs" variant="ghost" onClick={() => onOpenTab("timeline")}>Open Timeline</Button>}>Built from the timeline of {v.extracted.toLocaleString("en-IN")} of {v.total.toLocaleString("en-IN")} files. Extract the rest in the Timeline tab to include their dates.</Notice>}
@@ -227,16 +242,17 @@ export function DatesTool({ setId, setName, matterId, aiReady, onView, onOpenTab
           {aiReady === false && <Notice tone="warning">{UNCONFIGURED_MESSAGE}</Notice>}
           {synopsis ? (
             <>
-              {(synopsis.unresolved.length > 0 || synopsis.unknownDates.length > 0 || synopsis.uncited > 0) && !synopsis.edited && (
+              {liveChecks && (liveChecks.unresolved.length > 0 || liveChecks.unknownDates.length > 0 || liveChecks.unknownAmounts.length > 0 || liveChecks.uncited > 0) && (
                 <Notice tone="warning">
-                  {synopsis.unresolved.length > 0 && <div>Cites rows that were not supplied: {synopsis.unresolved.map((n) => `R${n}`).join(", ")} (kept visible as unresolved in the export).</div>}
-                  {synopsis.unknownDates.length > 0 && <div>Mentions dates not in the selected rows: {synopsis.unknownDates.join(", ")}. Remove or verify them.</div>}
-                  {synopsis.uncited > 0 && <div>{synopsis.uncited} sentence{synopsis.uncited === 1 ? " has" : "s have"} no row citation.</div>}
+                  {liveChecks.unresolved.length > 0 && <div>Cites rows that are not in the list it was drafted from: {liveChecks.unresolved.map((n) => `R${n}`).join(", ")} (kept visible as unresolved in the export).</div>}
+                  {liveChecks.unknownDates.length > 0 && <div>Mentions dates not in those rows: {liveChecks.unknownDates.join(", ")}. Remove or verify them.</div>}
+                  {liveChecks.unknownAmounts.length > 0 && <div>Mentions amounts not in those rows: {liveChecks.unknownAmounts.join(", ")}. Remove or verify them.</div>}
+                  {liveChecks.uncited > 0 && <div>{liveChecks.uncited} sentence{liveChecks.uncited === 1 ? " has" : "s have"} no row citation.</div>}
                 </Notice>
               )}
               {synopsisStale && <Notice tone="warning">The selected rows changed after this synopsis was drafted. Its row numbers refer to the rows at drafting time; re-draft to match the current list.</Notice>}
               <Textarea rows={7} value={synText} onChange={(e) => setSynText(e.target.value)} onBlur={() => { if (synText !== synopsis.text) void save({ synopsisText: synText }); }} className="font-serif text-[13px] leading-relaxed" aria-label="Synopsis text" />
-              <p className="text-[11px] text-muted-foreground">{synopsis.edited ? "Edited by hand. The checks above describe the drafted text only." : `Drafted ${new Date(synopsis.generatedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })} from ${synopsis.rowIds.length} rows.`} In the export, [Rn] is replaced by the row’s date.</p>
+              <p className="text-[11px] text-muted-foreground">{editedNow ? "Edited by hand; the checks above run on the current text." : `Drafted ${new Date(synopsis.generatedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })} from ${synopsis.rowIds.length} rows.`} In the export, [Rn] is replaced by the row’s date, and the note under the synopsis states what the checks found.</p>
             </>
           ) : (
             <p className="text-[12px] text-muted-foreground">No synopsis yet. Select the rows that tell the story and draft one; nothing outside those rows is used.</p>

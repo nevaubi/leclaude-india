@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/form";
-import { annexureLabels, pageRangeLabel, PAPERBOOK_LIMITS, type AnnexurePrefix, type PaperbookIndexRow } from "../../drafting";
+import { annexureLabels, pageRangeLabel, PAPERBOOK_LIMITS, paperbookSourceLabel, type AnnexurePrefix, type PaperbookIndexRow } from "../../drafting";
 import { errorKind, errorMessage } from "../api";
 import { FilePicker } from "../file-picker";
 import { formatBytes, safeFileName } from "../format";
@@ -110,7 +110,7 @@ export function PaperbookTool({ setId, setName, fileCount }: DraftingProps) {
         </div>
 
         {entries.length === 0 ? (
-          <SurfaceState icon={Plus} title="Nothing in the paperbook yet">Add files from this set. A set file is typed from its stored text unless you attach its original PDF (used only if its SHA-256 matches the uploaded file).</SurfaceState>
+          <SurfaceState icon={Plus} title="Nothing in the paperbook yet">Add files from this set. A set file is typed from its stored text unless you attach its original PDF (used only if its SHA-256 matches the hash recorded for the set file; the index preview says whether that hash was computed on the server or declared by the browser at upload).</SurfaceState>
         ) : (
           <ol className="divide-y rounded-md border">
             {entries.map((e, i) => (
@@ -119,9 +119,10 @@ export function PaperbookTool({ setId, setName, fileCount }: DraftingProps) {
                 <Input size="xs" className="min-w-[200px] flex-1" value={e.title} onChange={(ev) => patch(e.key, { title: ev.target.value })} aria-label={`Title of entry ${i + 1}`} />
                 <label className="flex items-center gap-1.5 text-[12px]"><Checkbox size="sm" checked={e.annexure} onCheckedChange={(v) => patch(e.key, { annexure: v === true })} /> Annexure</label>
                 <span className="w-[104px] text-[11.5px] font-medium tabular">{labels[i] ?? <span className="text-muted-foreground">—</span>}</span>
-                <span className="w-full min-w-0 text-[11.5px] text-muted-foreground sm:order-none sm:w-auto sm:max-w-[260px] sm:truncate">
-                  {e.fileId ? (e.attachment ? `Original attached: ${e.attachment.name} (${formatBytes(e.attachment.size)}), checked against the set's hash` : `${e.fileName ?? "Set file"} · typed from stored text`) : `Attachment: ${e.attachment?.name} (${formatBytes(e.attachment?.size ?? 0)})`}
-                </span>
+                {(() => {
+                  const what = e.fileId ? (e.attachment ? `Original attached: ${e.attachment.name} (${formatBytes(e.attachment.size)}) · hash checked on preview / build` : `${e.fileName ?? "Set file"} · typed from stored text`) : `Attachment: ${e.attachment?.name} (${formatBytes(e.attachment?.size ?? 0)})`;
+                  return <span className="w-full min-w-0 text-[11.5px] text-muted-foreground sm:order-none sm:w-auto sm:max-w-[260px] sm:truncate" title={e.fileId && e.attachment ? `${what}: its SHA-256 is compared with the hash recorded for the set file; the index preview says whether that hash was computed on the server or declared by the browser at upload.` : what}>{what}</span>;
+                })()}
                 <div className="ms-auto flex items-center gap-0.5">
                   {e.fileId && !e.attachment && <Button size="xs" variant="ghost" onClick={() => { originalFor.current = e.key; attachRef.current?.click(); }} title="Attach the original PDF of this file">Attach original</Button>}
                   {e.fileId && e.attachment && <Button size="icon-xs" variant="ghost" aria-label="Remove attached original" onClick={() => patch(e.key, { attachment: undefined })}><X className="size-3.5" /></Button>}
@@ -149,7 +150,17 @@ export function PaperbookTool({ setId, setName, fileCount }: DraftingProps) {
             <div className="flex items-center gap-2 border-b px-3 py-1.5 text-[12px]"><span className="font-medium">Index</span><span className="ms-auto tabular text-muted-foreground">{preview.totalPages} pages</span></div>
             <table className="w-full text-[12.5px]">
               <thead className="text-left text-[11.5px] text-muted-foreground"><tr><th className="w-10 px-3 py-1 font-medium">Sl.</th><th className="px-2 py-1 font-medium">Particulars</th><th className="w-[120px] px-2 py-1 font-medium">Annexure</th><th className="w-[90px] px-3 py-1 text-right font-medium">Pages</th></tr></thead>
-              <tbody className="divide-y">{preview.index.map((r) => <tr key={r.sl}><td className="px-3 py-1 tabular">{r.sl}</td><td className="px-2 py-1">{r.title}</td><td className="px-2 py-1 tabular">{r.annexure ?? "—"}</td><td className="px-3 py-1 text-right tabular">{pageRangeLabel(r)}</td></tr>)}</tbody>
+              <tbody className="divide-y">{preview.index.map((r) => (
+                <tr key={r.sl} className="align-top">
+                  <td className="px-3 py-1 tabular">{r.sl}</td>
+                  <td className="px-2 py-1">
+                    <div>{r.title}</div>
+                    {r.source && <div className={cn("text-[11px]", r.source.kind === "original" && r.source.hash === "browser_declared" ? "text-warning-foreground dark:text-warning" : "text-muted-foreground")}>{paperbookSourceLabel(r.source)}</div>}
+                  </td>
+                  <td className="px-2 py-1 tabular">{r.annexure ?? "—"}</td>
+                  <td className="px-3 py-1 text-right tabular">{pageRangeLabel(r)}</td>
+                </tr>
+              ))}</tbody>
             </table>
           </div>
         )}

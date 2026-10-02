@@ -42,6 +42,8 @@ export interface OfficialRunOptions {
   forceDiscover?: boolean;
   /** Re-queue failed fetch/ocr/index/parse units of the requested sources (not "not published" 404/410 failures). */
   retryFailed?: boolean;
+  /** Bounded automatic redrive (scheduled runs): failed units older than the cooldown, at most `maxRedrives` times each. */
+  redrive?: RedriveOptions;
   store?: RemoteStore | null;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -153,8 +155,8 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
 
   try {
     await sweepExpiredUnits(store);
-    if (o.retryFailed) {
-      const n = await retryFailedUnits(store, enabled.map((d) => d.id));
+    if (o.retryFailed || o.redrive) {
+      const n = await retryFailedUnits(store, enabled.map((d) => d.id), o.retryFailed ? undefined : o.redrive);
       if (n) result.notes.push(`${n} failed unit(s) re-queued`);
     }
     if (stages.includes("discover")) {
@@ -266,16 +268,31 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
   return finish("done");
 }
 
+export interface RedriveOptions {
+  /** Only units that failed at least this long ago. */
+  cooldownMinutes: number;
+  /** Only units redriven fewer times than this (counted in payload.redrives). */
+  maxRedrives: number;
+}
+
 /**
  * Re-queue failed units (and reset their documents) for a fresh attempt, e.g. after a deployment fixed the cause.
  * Units whose document the publisher answered "not published" (404/410) stay failed: that is a fact, not an error.
+ * Without `redrive` this is the operator's unconditional retry; with it, only failures older than the cooldown and
+ * redriven fewer than `maxRedrives` times are re-queued, and the count is recorded so a persistent failure ends failed.
  */
-export async function retryFailedUnits(store: RemoteStore, sources: string[]): Promise<number> {
+export async function retryFailedUnits(store: RemoteStore, sources: string[], redrive?: RedriveOptions): Promise<number> {
   if (!sources.length) return 0;
+  const cooldown = redrive ? Math.max(1, Math.min(Math.floor(redrive.cooldownMinutes), 10_080)) : 0;
+  const cap = redrive ? Math.max(1, Math.min(Math.floor(redrive.maxRedrives), 20)) : 0;
+  const bounded = redrive
+    ? `AND finished_at < now() - interval '${cooldown} minutes' AND coalesce((payload->>'redrives')::int, 0) < ${cap}`
+    : "";
+  const counter = redrive ? `, payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('redrives', coalesce((payload->>'redrives')::int, 0) + 1)` : "";
   const r = await store.query({
     query: `WITH u AS (
-        UPDATE official_units SET status = 'pending', attempts = 0, error = NULL, run_after = NULL, lease_until = NULL, finished_at = NULL, updated_at = now()
-        WHERE status = 'failed' AND stage IN ('fetch', 'ocr', 'index', 'parse') AND source = ANY($1::text[])
+        UPDATE official_units SET status = 'pending', attempts = 0, error = NULL, run_after = NULL, lease_until = NULL, finished_at = NULL, updated_at = now()${counter}
+        WHERE status = 'failed' AND stage IN ('fetch', 'ocr', 'index', 'parse') AND source = ANY($1::text[]) ${bounded}
           AND NOT EXISTS (SELECT 1 FROM official_documents d WHERE d.id = official_units.document_id AND d.error LIKE 'not published%')
         RETURNING document_id),
       d AS (UPDATE official_documents SET status = 'discovered', error = NULL, updated_at = now()

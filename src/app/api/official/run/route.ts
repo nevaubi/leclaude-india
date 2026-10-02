@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { withAuth } from "@/lib/auth/route";
 import { currentPrincipal } from "@/lib/auth/context";
 import { refs } from "@/lib/auth/resources";
-import { handleRunRequest } from "./handler";
+import { handleCronRun, handleRunRequest } from "./handler";
 
 export const runtime = "nodejs";
 /** A run works until its deadline (default 240s, at most 280s) and returns; call again to continue. */
@@ -18,3 +18,10 @@ async function handlePOST(req: NextRequest) {
 }
 
 export const POST = withAuth(handlePOST, { action: "run", resource: () => refs.intel() });
+
+/** Vercel cron (GET, CRON_SECRET bearer → service principal); runs only when OFFICIAL_INGEST is on. */
+async function handleGET() {
+  return handleCronRun({ principal: currentPrincipal });
+}
+
+export const GET = withAuth(handleGET, { action: "run", resource: () => refs.intel() });

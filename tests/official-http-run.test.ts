@@ -6,7 +6,7 @@ import { createFirecrawl, type FirecrawlRichOptions, type FirecrawlRichPage } fr
 import { createOfficialHttp, extractLinks, fallbackWorthy, indiaToday, isNotPublished, isTooLarge, makeAdapterContext, type FirecrawlLike } from "@/modules/official/http";
 import { allowHostsFor, registerAllowHosts } from "@/modules/official/registry";
 import type { SourceDef } from "@/modules/official/types";
-import { handleRunRequest, ingestGate, parseRunBody } from "@/app/api/official/run/handler";
+import { CRON_DEADLINE_MS, CRON_REDRIVE, handleCronRun, handleRunRequest, ingestGate, parseRunBody } from "@/app/api/official/run/handler";
 import type { OfficialRunOptions, OfficialRunResult } from "@/modules/official/run";
 import { runCitatorBuild } from "@/modules/india/citator/build";
 import { resetCitatorSchemaCacheForTests } from "@/modules/india/citator/schema";
@@ -192,6 +192,23 @@ describe("official run route gate", () => {
     expect(parseRunBody({}).deadlineMs).toBe(240_000);
     expect(parseRunBody(null)).toEqual({ deadlineMs: 240_000 });
     expect(parseRunBody({ retryFailed: true })).toEqual({ deadlineMs: 240_000, retryFailed: true });
+  });
+
+  it("cron GET: service principal only, does nothing (no database) while OFFICIAL_INGEST is off, then runs with a bounded redrive", async () => {
+    let ran: OfficialRunOptions | null = null;
+    const run = async (o: OfficialRunOptions) => { ran = o; return fakeResult; };
+    const denied = await handleCronRun({ principal: () => person, run, env: { OFFICIAL_INGEST: "1", OFFICIAL_INGEST_TOKEN: "t" } });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ code: "service_only" });
+    expect((await handleCronRun({ principal: () => null, run, env: { OFFICIAL_INGEST: "1" } })).status).toBe(403);
+    const off = await handleCronRun({ principal: () => cron, run, env: {} });
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ stop: "disabled" });
+    expect(ran).toBeNull();
+    const on = await handleCronRun({ principal: () => cron, run, env: { OFFICIAL_INGEST: "true", OFFICIAL_CONCURRENCY: "40" } });
+    expect(on.status).toBe(200);
+    expect(ran).toEqual({ deadlineMs: CRON_DEADLINE_MS, concurrency: 16, redrive: { ...CRON_REDRIVE } });
+    expect(CRON_DEADLINE_MS).toBeLessThanOrEqual(280_000);
   });
 
   it("maps a missing database to 503 and runner bugs to 502", async () => {

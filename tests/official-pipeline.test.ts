@@ -181,6 +181,28 @@ describe("runOfficialIngest end to end (fake adapter, fake fetch, fake store)", 
     expect(store.units.get(`fetch:${missing.id}`)).toMatchObject({ status: "failed" });
   });
 
+  it("bounded redrive: only failures older than the cooldown, at most maxRedrives times; 404s never", async () => {
+    const store = new OfficialFakeStore();
+    const t0 = store.clock;
+    const mk = (id: string, finishedAgoMin: number, redrives: number, docError: string | null) => {
+      store.docs.set(`d_${id}`, { id: `d_${id}`, source: "sci-orders", kind: "order", url: `https://www.sci.gov.in/${id}.pdf`, file_url: null, title: id, doc_date: null, forum: "sci", status: "failed", mime: null, sha256: null, bytes: null, pages: null, extraction: null, ocr_pages: [], ocr_model: null, language: null, meta: {}, version: 1, history: [], fetch_provenance: null, text_sha256: null, text_chars: null, chunks: 0, embedded: 0, error: docError, attempts: 1, fetched_at: null, indexed_at: null, extractor_version: null, parse_result: null });
+      store.units.set(`fetch:d_${id}`, { id: `fetch:d_${id}`, source: "sci-orders", stage: "fetch", key: id, document_id: `d_${id}`, payload: redrives ? { redrives } : null, priority: 5, status: "failed", attempts: 3, error: "Could not read PDF", note: null, run_after: null, lease_until: null, finished_at: t0 - finishedAgoMin * 60_000 });
+    };
+    mk("old", 120, 0, "Could not read PDF");
+    mk("recent", 10, 0, "Could not read PDF");
+    mk("exhausted", 600, 3, "Could not read PDF");
+    mk("gone", 600, 0, "not published at this URL (HTTP 404)");
+    const { retryFailedUnits } = await import("@/modules/official/run");
+    const n = await retryFailedUnits(store, ["sci-orders"], { cooldownMinutes: 60, maxRedrives: 3 });
+    expect(n).toBe(1);
+    expect(store.units.get("fetch:d_old")).toMatchObject({ status: "pending", attempts: 0, payload: { redrives: 1 } });
+    expect(store.docs.get("d_old")).toMatchObject({ status: "discovered", error: null });
+    for (const id of ["recent", "exhausted", "gone"]) expect(store.units.get(`fetch:d_${id}`)?.status).toBe("failed");
+    const sql = store.calls.at(-1)!.query;
+    expect(sql).toContain("interval '60 minutes'");
+    expect(sql).toContain("< 3");
+  });
+
   it("changed bytes at the same URL become version 2 with the previous hash in history", async () => {
     const url = "https://www.sci.gov.in/sci-get-pdf/?diary_no=2";
     const files = { [url]: { bytes: await makePdf([ORDER_P1]), mime: "application/pdf" } };

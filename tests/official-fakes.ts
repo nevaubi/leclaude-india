@@ -74,7 +74,7 @@ export class OfficialFakeStore implements RemoteStore {
       }
       return [];
     }
-    if (sql.startsWith("WITH u AS ( UPDATE official_units SET status = 'pending', attempts = 0")) return this.retryFailed(arr(p[0]));
+    if (sql.startsWith("WITH u AS ( UPDATE official_units SET status = 'pending', attempts = 0")) return this.retryFailed(arr(p[0]), sql);
     if (sql.startsWith("UPDATE official_units SET payload = $2::jsonb")) { const u = this.units.get(String(p[0])); if (u) u.payload = JSON.parse(String(p[1])); return []; }
     if (sql.startsWith("UPDATE official_units SET lease_until")) return [];
     if (sql.startsWith("SELECT status, count(*)::int AS n FROM official_units")) {
@@ -211,13 +211,20 @@ export class OfficialFakeStore implements RemoteStore {
     return [{ id: u.id, source: u.source, stage: u.stage, key: u.key, document_id: u.document_id, payload: u.payload ? JSON.stringify(u.payload) : null, priority: String(u.priority), status: u.status, attempts: String(u.attempts), error: u.error }];
   }
 
-  private retryFailed(sources: string[]): Row[] {
+  private retryFailed(sources: string[], sql: string): Row[] {
+    const cooldown = /interval '(\d+) minutes' AND coalesce\(\(payload->>'redrives'\)::int, 0\) < (\d+)/.exec(sql);
     let n = 0;
     let docs = 0;
     for (const u of this.units.values()) {
       if (u.status !== "failed" || !["fetch", "ocr", "index", "parse"].includes(u.stage) || !sources.includes(u.source)) continue;
       const d = u.document_id ? this.docs.get(u.document_id) : undefined;
       if (d?.error?.startsWith("not published")) continue;
+      const redrives = Number(u.payload?.redrives ?? 0);
+      if (cooldown) {
+        if (u.finished_at == null || u.finished_at >= this.now() - Number(cooldown[1]) * 60_000) continue;
+        if (redrives >= Number(cooldown[2])) continue;
+        u.payload = { ...(u.payload ?? {}), redrives: redrives + 1 };
+      }
       Object.assign(u, { status: "pending", attempts: 0, error: null, run_after: null, lease_until: null, finished_at: null });
       n++;
       if (d && d.status === "failed") { d.status = "discovered"; d.error = null; docs++; }

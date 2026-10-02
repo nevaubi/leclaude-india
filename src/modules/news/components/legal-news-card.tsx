@@ -11,7 +11,6 @@ import type { NewsListResponse } from "../types";
 import { StoryRow } from "./news-cards";
 import { NewsApiError, TimeAgo, newsApi, newsQueryString, requestRefresh, useNow } from "./news-ui";
 
-const AUTO_REFRESH_AFTER_MS = 15 * 60_000;
 
 type State =
   | { kind: "loading" }
@@ -27,7 +26,6 @@ export function LegalNewsCard({ expanded, onExpand }: { expanded?: boolean; onEx
   const [state, setState] = React.useState<State>({ kind: "loading" });
   const [refreshing, setRefreshing] = React.useState(false);
   const now = useNow();
-  const autoTried = React.useRef(false);
 
   const load = React.useCallback(async () => {
     try {
@@ -48,15 +46,8 @@ export function LegalNewsCard({ expanded, onExpand }: { expanded?: boolean; onEx
     } finally { setRefreshing(false); }
   }, [load]);
 
-  React.useEffect(() => {
-    void (async () => {
-      const data = await load();
-      if (!data || autoTried.current) return;
-      autoTried.current = true;
-      const last = data.lastRun ? Date.parse(data.lastRun.startedAt) : NaN;
-      if (!Number.isFinite(last) || Date.now() - last > AUTO_REFRESH_AFTER_MS) void refresh(false);
-    })();
-  }, [load, refresh]);
+  // Headlines are fetched by the server every 30 minutes (cron /api/news/run); opening a page only reads them.
+  React.useEffect(() => { void load(); }, [load]);
 
   const data = state.kind === "ready" ? state.data : null;
   const items = data?.items ?? [];

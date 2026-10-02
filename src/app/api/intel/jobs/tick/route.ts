@@ -44,13 +44,14 @@ async function tick(req: NextRequest) {
   const started = Date.now();
   // Indian legal news feeds (throttled to one run per 15 minutes, 20 s budget) run alongside the intel jobs; a
   // failure is reported in the response and never fails the tick.
-  const news = url.searchParams.get("news") === "0"
+  // Legal news has its own 30-minute cron (/api/news/run); the tick fetches it only when asked (?news=1).
+  const news = url.searchParams.get("news") !== "1"
     ? Promise.resolve({ status: "skipped" as const, reason: "disabled" })
     : refreshLegalNews({ deadlineMs: 20_000 })
       .then((r) => ({ status: r.status, reason: r.reason, added: r.run?.added ?? 0, failed: r.run?.feeds.filter((f) => !f.ok).map((f) => f.sourceId) ?? [] }))
       .catch((e: unknown) => ({ status: "failed" as const, error: e instanceof Error ? e.message : String(e) }));
   // News images (og:image lookups, then capped vision review) after the refresh, on their own 25 s budget.
-  const newsImages = url.searchParams.get("news") === "0" ? Promise.resolve(null) : news.then(() => runNewsImageJobs({ deadlineMs: 25_000, maxReviews: 8 }));
+  const newsImages = url.searchParams.get("news") !== "1" ? Promise.resolve(null) : news.then(() => runNewsImageJobs({ deadlineMs: 25_000, maxReviews: 8 }));
   const result = await runDue({ limit, deadlineMs, housekeeping });
   const legalNews = { ...(await news), images: await newsImages };
   // Judgment corpus backfill (durable queue in Postgres): uses the rest of the invocation when enabled.

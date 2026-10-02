@@ -85,19 +85,6 @@ export function NewsBrowser({ initial, initialSources, initialFilters }: { initi
     void load(filters);
   }, [filters, load, pathname, router]);
 
-  // First visit after a quiet period: ask the server for fresh headlines (it throttles to one run per 15 min).
-  React.useEffect(() => {
-    const last = initial.lastRun ? Date.parse(initial.lastRun.startedAt) : NaN;
-    if (Number.isFinite(last) && Date.now() - last < 15 * 60_000) return;
-    void (async () => {
-      setRefreshing(true);
-      const r = await requestRefresh({ notify: false });
-      setRefreshing(false);
-      if (r?.status === "ran") { void loadSources(); void load(filters); }
-    })();
-    // Run once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const refresh = async () => {
     setRefreshing(true);

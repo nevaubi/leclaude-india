@@ -75,7 +75,7 @@ describe("API route audit", () => {
   });
 
   it("matches the middleware's public API list (cron routes are public there but wrapped here)", () => {
-    const cron = ["/api/official/run", "/api/intel/jobs/tick", "/api/india/hc-text/run"];
+    const cron = ["/api/official/run", "/api/intel/jobs/tick", "/api/india/hc-text/run", "/api/news/run"];
     expect([...PUBLIC_API].sort()).toEqual([...Object.keys(UNWRAPPED_ALLOWED).map((r) => `/api/${r}`), ...cron].sort());
     for (const c of cron) expect(rows.filter((r) => `/api/${r.route}` === c).every((r) => r.wrapped), c).toBe(true);
   });

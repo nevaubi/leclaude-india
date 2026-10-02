@@ -162,6 +162,9 @@ describe("OCR orchestration", () => {
     expect(parseOcrResponse("```markdown\n<!-- page 4 -->\nA\n```", [4])).toEqual(new Map([[4, "A"]]));
     expect(parseOcrResponse("Just text", [7])).toEqual(new Map([[7, "Just text"]]));
     expect(parseOcrResponse("<!-- page 1 -->\nA\n<!-- page 2 -->\nB", [4, 5])).toBeNull(); // positions, not original numbers
+    expect(parseOcrResponse("<!-- page 1 -->\nOnly page", [2])).toEqual(new Map([[2, "Only page"]])); // one page sent: its position label is unambiguous
+    expect(parseOcrResponse("<!-- page 1 -->\nA\n<!-- page 2 -->\nB", [2])).toBeNull(); // two pages back for one sent
+    expect(parseOcrResponse("", [2])).toBeNull(); // an empty answer is never a blank page
     expect(parseOcrResponse("<!-- page 4 -->\nA", [4, 5])).toBeNull(); // a page missing
     expect(parseOcrResponse("No markers at all", [4, 5])).toBeNull();
     expect(ocrPrompt([4, 5])).toMatch(/VERBATIM[\s\S]*Do not translate[\s\S]*pages 4, 5[\s\S]*<!-- page N -->/);

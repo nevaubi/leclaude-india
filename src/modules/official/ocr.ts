@@ -170,6 +170,9 @@ export function parseOcrResponse(text: string, pages: number[]): Map<number, str
   }
   const lead = segs.find((s) => s.page == null);
   if (lead && lead.text.trim().length > 40) return null; // substantial text outside any page marker
+  // One page sent, one page transcribed: its marker may carry the attachment position (1) instead of the original
+  // number; the page is unambiguous. Never applied to several pages (positions would be guesswork).
+  if (pages.length === 1 && marked.length === 1) return new Map([[pages[0], marked[0].text.trim()]]);
   const want = new Set(pages);
   const out = new Map<number, string>();
   for (const s of marked) {

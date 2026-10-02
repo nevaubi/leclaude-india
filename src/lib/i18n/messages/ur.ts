@@ -96,6 +96,8 @@ export const ur: Messages = {
   "nav.ediscovery": "ای-ڈسکوری",
   "nav.workflows": "ورک فلوز",
   "nav.office": "آفس",
+  "nav.law": "قانون",
+  "nav.drafting": "مسودہ نویسی",
   "nav.library": "کتب خانہ",
   "nav.settings": "ترتیبات",
   "nav.office.documents": "دستاویزات",
@@ -116,6 +118,8 @@ export const ur: Messages = {
   "nav.desc.ediscovery": "دستاویزات کا جائزہ، شہادت، واقعات کی ترتیب اور استحقاق",
   "nav.desc.workflows": "خودکار عمل اور کثیر مرحلہ ایجنٹ پلے بکس",
   "nav.desc.office": "مسودہ نویس ایجنٹوں کے ساتھ Word، Excel، PowerPoint اور PDF ایڈیٹر",
+  "nav.desc.law": "بھارتی قانون: فیصلے، قوانین، عدالتیں اور جج صاحبان",
+  "nav.desc.drafting": "مسودہ نویس ایجنٹ کے ساتھ Word دستاویزات",
   "nav.desc.library": "مشترکہ فولڈر، نظائر، شقوں کا ذخیرہ اور معلومات",
   "nav.desc.settings": "زبان، AI، تحقیقی فراہم کنندگان، ڈیٹا اور خودکاری، دیانت اور جائزے کی قطار",
 

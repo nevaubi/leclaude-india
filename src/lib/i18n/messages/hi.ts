@@ -96,6 +96,8 @@ export const hi: Messages = {
   "nav.ediscovery": "ई-डिस्कवरी",
   "nav.workflows": "वर्कफ़्लो",
   "nav.office": "ऑफ़िस",
+  "nav.law": "विधि",
+  "nav.drafting": "प्रारूपण",
   "nav.library": "पुस्तकालय",
   "nav.settings": "सेटिंग्स",
   "nav.office.documents": "दस्तावेज़",
@@ -116,6 +118,8 @@ export const hi: Messages = {
   "nav.desc.ediscovery": "दस्तावेज़ समीक्षा, साक्ष्य, घटनाक्रम और विशेषाधिकार",
   "nav.desc.workflows": "स्वचालन और बहु-चरणीय एजेंट प्लेबुक",
   "nav.desc.office": "प्रारूपण एजेंटों के साथ Word, Excel, PowerPoint और PDF संपादक",
+  "nav.desc.law": "भारतीय विधि: निर्णय, अधिनियम, न्यायालय और न्यायाधीश",
+  "nav.desc.drafting": "प्रारूपण एजेंट के साथ Word दस्तावेज़",
   "nav.desc.library": "साझा फ़ोल्डर, नज़ीरें, क्लॉज़ बैंक और ज्ञान",
   "nav.desc.settings": "भाषा, AI, शोध प्रदाता, डेटा और स्वचालन, सत्यनिष्ठा और समीक्षा कतार",
 

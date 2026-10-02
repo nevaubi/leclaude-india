@@ -22,6 +22,7 @@ import { useHomeUI } from "../store";
 import { taskFormFor, type TaskForm } from "../forms";
 import { useHome } from "./home-provider";
 import { CountdownChip, DateInput, EmptyRow, FieldLabel, MatterBadge, NONE, PRIORITY_STYLE, PriorityBadge, Section, SourceIcon } from "./shared";
+import { isHiddenHref } from "@/lib/features";
 
 // ---------------------------------------------------------------------------
 // Data
@@ -215,7 +216,7 @@ export function TaskRow({ task: t, dense }: { task: Task; dense?: boolean }) {
           <>
             <span className={cn("truncate text-[12.5px] leading-snug", done && "text-muted-foreground line-through")}>{t.title}</span>
             <SourceIcon source={t.source} />
-            {t.links?.[0] && <Tip label={t.links[0].label}><Link href={t.links[0].href} className="text-muted-foreground hover:text-primary" onClick={(e) => e.stopPropagation()}><Link2 className="size-3" /></Link></Tip>}
+            {(() => { const l = t.links?.find((x) => !isHiddenHref(x.href)); return l ? <Tip label={l.label}><Link href={l.href} className="text-muted-foreground hover:text-primary" onClick={(e) => e.stopPropagation()}><Link2 className="size-3" /></Link></Tip> : null; })()}
           </>
         )}
       </div>
@@ -460,7 +461,7 @@ function TaskDialogForm({ existing, initial, onClose: close }: { existing: Task 
           <div className="sm:col-span-6"><FieldLabel>Tags</FieldLabel><Input value={form.tags} onChange={(e) => set("tags", e.target.value)} placeholder="review, privilege, msj" /></div>
           {form.links.length > 0 && (
             <div className="sm:col-span-6"><FieldLabel>Links</FieldLabel>
-              <div className="flex flex-wrap gap-1.5">{form.links.map((l, i) => <Link key={i} href={l.href} className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] hover:bg-accent"><ExternalLink className="size-3" />{l.label}</Link>)}</div>
+              <div className="flex flex-wrap gap-1.5">{form.links.map((l, i) => isHiddenHref(l.href) ? <span key={i} className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] text-muted-foreground">{l.label}</span> : <Link key={i} href={l.href} className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] hover:bg-accent"><ExternalLink className="size-3" />{l.label}</Link>)}</div>
             </div>
           )}
         </div>

@@ -2,7 +2,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from "@/components/ui/command";
-import { NAV, SECONDARY_NAV } from "./nav";
+import { NAV, SECONDARY_NAV, navDestinations } from "./nav";
 import { useShellStore } from "./shell-store";
 import { useTheme } from "./theme-provider";
 import { useShortcutHelp } from "@/components/ui/shortcut-help";
@@ -56,7 +56,8 @@ export function CommandPalette() {
     }
   };
   const groups = groupHits(hits);
-  const nav = [...NAV, ...SECONDARY_NAV];
+  // Groups (Law) are listed by their pages, so "Statutes" or "Judges" is one keystroke away.
+  const nav = navDestinations([...NAV, ...SECONDARY_NAV]);
   const sections = paletteSections({ query, nav });
   const navIcon = (href: string) => nav.find((n) => n.href === href)?.icon;
 

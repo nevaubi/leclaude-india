@@ -96,6 +96,8 @@ export const kn: Messages = {
   "nav.ediscovery": "ಇ-ಡಿಸ್ಕವರಿ",
   "nav.workflows": "ವರ್ಕ್‌ಫ್ಲೋಗಳು",
   "nav.office": "ಆಫೀಸ್",
+  "nav.law": "ಕಾನೂನು",
+  "nav.drafting": "ಕರಡು ರಚನೆ",
   "nav.library": "ಗ್ರಂಥಾಲಯ",
   "nav.settings": "ಸೆಟ್ಟಿಂಗ್‌ಗಳು",
   "nav.office.documents": "ದಾಖಲೆಗಳು",
@@ -116,6 +118,8 @@ export const kn: Messages = {
   "nav.desc.ediscovery": "ದಾಖಲೆ ಪರಿಶೀಲನೆ, ಸಾಕ್ಷ್ಯ, ಘಟನಾವಳಿ ಮತ್ತು ವಿಶೇಷಾಧಿಕಾರ",
   "nav.desc.workflows": "ಸ್ವಯಂಚಾಲನೆ ಮತ್ತು ಬಹು-ಹಂತದ ಏಜೆಂಟ್ ಪ್ಲೇಬುಕ್‌ಗಳು",
   "nav.desc.office": "ಕರಡು ಏಜೆಂಟ್‌ಗಳೊಂದಿಗೆ Word, Excel, PowerPoint ಮತ್ತು PDF ಸಂಪಾದಕಗಳು",
+  "nav.desc.law": "ಭಾರತೀಯ ಕಾನೂನು: ತೀರ್ಪುಗಳು, ಕಾಯ್ದೆಗಳು, ನ್ಯಾಯಾಲಯಗಳು ಮತ್ತು ನ್ಯಾಯಾಧೀಶರು",
+  "nav.desc.drafting": "ಕರಡು ಏಜೆಂಟ್‌ನೊಂದಿಗೆ Word ದಾಖಲೆಗಳು",
   "nav.desc.library": "ಹಂಚಿದ ಫೋಲ್ಡರ್‌ಗಳು, ಪೂರ್ವನಿದರ್ಶನಗಳು, ಷರತ್ತು ಸಂಗ್ರಹ ಮತ್ತು ಜ್ಞಾನ",
   "nav.desc.settings": "ಭಾಷೆ, AI, ಸಂಶೋಧನಾ ಪೂರೈಕೆದಾರರು, ಡೇಟಾ ಮತ್ತು ಸ್ವಯಂಚಾಲನೆ, ಸಮಗ್ರತೆ ಮತ್ತು ಪರಿಶೀಲನಾ ಸರದಿ",
 

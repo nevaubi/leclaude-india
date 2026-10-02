@@ -1,5 +1,7 @@
 import { pageDb } from "@/lib/db/request";
 import * as React from "react";
+import { redirect } from "next/navigation";
+import { hiddenSurfaceRedirect } from "@/lib/features";
 import { Radar } from "lucide-react";
 import { PageTopbar } from "@/components/shell/page-topbar";
 import { IntelNav } from "@/modules/intel/components/intel-nav";
@@ -16,6 +18,10 @@ export const dynamic = "force-dynamic";
  * section would be empty, so the shell shows how to connect a source instead.
  */
 export default async function IntelLayout({ children }: { children: React.ReactNode }) {
+  // Hidden in the India product (its sources are US dockets and the Federal Register): every /intel page lands on
+  // Home. Settings → Data & automation (sources, jobs, health) stays reachable; NEXT_PUBLIC_ENABLE_INTEL=1 restores it.
+  const to = hiddenSurfaceRedirect("intel");
+  if (to) redirect(to);
   await pageDb();
   intelAnalysisBootstrap();
   if (intelDocuments().count() === 0) {

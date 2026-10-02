@@ -102,6 +102,8 @@ export const en = {
   "nav.ediscovery": "E-Discovery",
   "nav.workflows": "Workflows",
   "nav.office": "Office",
+  "nav.law": "Law",
+  "nav.drafting": "Drafting",
   "nav.library": "Library",
   "nav.settings": "Settings",
   "nav.office.documents": "Documents",
@@ -122,6 +124,8 @@ export const en = {
   "nav.desc.ediscovery": "Document review, witness evidence, chronologies and privilege",
   "nav.desc.workflows": "Automations and multi-step agent playbooks",
   "nav.desc.office": "Word, Excel, PowerPoint and PDF editors with drafting agents",
+  "nav.desc.law": "Indian law: judgments, statutes, courts and judges",
+  "nav.desc.drafting": "Word documents with a drafting agent",
   "nav.desc.library": "Shared folders, precedents, clause bank and knowledge",
   "nav.desc.settings": "Language, AI, research providers, data and automation, integrity and the review queue",
 

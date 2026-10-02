@@ -99,12 +99,16 @@ describe("Today spine model", () => {
 });
 
 describe("shell navigation", () => {
-  it("keeps the G chord in sync with the nav shortcuts", () => {
-    for (const item of [...NAV, ...SECONDARY_NAV]) {
+  it("keeps the G chord in sync with the nav shortcuts, group children included", () => {
+    const entries = [...NAV, ...SECONDARY_NAV].flatMap((item) => [item, ...(item.children ?? [])]);
+    let checked = 0;
+    for (const item of entries) {
       if (!item.shortcut) continue;
       const key = item.shortcut.split(" ")[1].toLowerCase();
       expect(GO_CHORD[key]).toBe(item.href);
+      checked++;
     }
+    expect(Object.keys(GO_CHORD)).toHaveLength(checked);
     expect(GO_CHORD[","]).toBe("/settings");
   });
   it("groups palette hits by kind, matters first, with pluralised headings", () => {

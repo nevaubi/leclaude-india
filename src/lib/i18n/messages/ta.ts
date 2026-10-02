@@ -96,6 +96,8 @@ export const ta: Messages = {
   "nav.ediscovery": "மின்-கண்டறிதல்",
   "nav.workflows": "பணிப்பாய்வுகள்",
   "nav.office": "அலுவலகம்",
+  "nav.law": "சட்டம்",
+  "nav.drafting": "வரைவு",
   "nav.library": "நூலகம்",
   "nav.settings": "அமைப்புகள்",
   "nav.office.documents": "ஆவணங்கள்",
@@ -116,6 +118,8 @@ export const ta: Messages = {
   "nav.desc.ediscovery": "ஆவண மறுஆய்வு, சான்றுகள், நிகழ்வு வரிசை மற்றும் சிறப்புரிமை",
   "nav.desc.workflows": "தானியக்கங்களும் பல-படி முகவர் செயல்முறைகளும்",
   "nav.desc.office": "வரைவு முகவர்களுடன் Word, Excel, PowerPoint மற்றும் PDF திருத்திகள்",
+  "nav.desc.law": "இந்தியச் சட்டம்: தீர்ப்புகள், சட்டங்கள், நீதிமன்றங்கள் மற்றும் நீதிபதிகள்",
+  "nav.desc.drafting": "வரைவு முகவருடன் Word ஆவணங்கள்",
   "nav.desc.library": "பகிர்ந்த கோப்புறைகள், முன்மாதிரிகள், உட்பிரிவு வங்கி மற்றும் அறிவு",
   "nav.desc.settings": "மொழி, AI, ஆய்வு வழங்குநர்கள், தரவு மற்றும் தானியக்கம், நேர்மை மற்றும் மறுஆய்வு வரிசை",
 

@@ -1,7 +1,7 @@
 /** Pure grouping for the command palette (unit-tested; no React). English labels are the source strings; the
  * component renders `labelKey`/`headingKey` through the i18n catalogue. */
 import type { MessageKey } from "@/lib/i18n/catalog";
-import { FEATURES } from "@/lib/features";
+import { FEATURES, type FeatureFlags } from "@/lib/features";
 
 export interface QuickSearchHit {
   id: string;
@@ -33,30 +33,32 @@ export type PaletteIcon = "doc" | "sheet" | "deck" | "pdf" | "search" | "radar" 
 export interface PaletteCommand { id: string; label: string; labelKey?: MessageKey; labelVars?: Record<string, string>; href?: string; action?: PaletteAction; shortcut?: string; icon: PaletteIcon; keywords?: string }
 export interface PaletteSection { id: "create" | "go" | "actions" | "integrity" | "preferences"; heading: string; headingKey: MessageKey; commands: PaletteCommand[] }
 
-export interface NavLike { label: string; labelKey?: MessageKey; href: string; shortcut?: string }
+export interface NavLike { label: string; labelKey?: MessageKey; href: string; shortcut?: string; keywords?: string }
 
 /**
  * Command sections in reading order: Create, Go to (from the nav), Actions
- * (research the typed text, open intelligence), Integrity, Preferences. The
+ * (research the typed text, open intelligence when enabled), Integrity, Preferences. The
  * research command carries the query so it reads "Research: <text>".
  */
-export function paletteSections(opts: { query: string; nav: NavLike[] }): PaletteSection[] {
+export function paletteSections(opts: { query: string; nav: NavLike[]; features?: FeatureFlags }): PaletteSection[] {
   const q = opts.query.trim();
+  const f = opts.features ?? FEATURES;
   return [
     {
       id: "create", heading: "Create", headingKey: "palette.section.create", commands: [
         { id: "new-doc", label: "New document", labelKey: "palette.newDoc", href: "/office/word/new", shortcut: "Word", icon: "doc", keywords: "word docx draft" },
-        ...(FEATURES.officeAll ? [
+        ...(f.officeAll ? [
           { id: "new-sheet", label: "New workbook", labelKey: "palette.newSheet" as const, href: "/office/sheet/new", shortcut: "Excel", icon: "sheet" as PaletteIcon, keywords: "excel xlsx" },
           { id: "new-deck", label: "New deck", labelKey: "palette.newDeck" as const, href: "/office/slides/new", shortcut: "PowerPoint", icon: "deck" as PaletteIcon, keywords: "slides pptx" },
         ] : []),
       ],
     },
-    { id: "go", heading: "Go to", headingKey: "palette.section.go", commands: opts.nav.map((n) => ({ id: `go:${n.href}`, label: n.label, labelKey: n.labelKey, href: n.href, shortcut: n.shortcut, icon: "search" as PaletteIcon })) },
+    { id: "go", heading: "Go to", headingKey: "palette.section.go", commands: opts.nav.map((n) => ({ id: `go:${n.href}`, label: n.label, labelKey: n.labelKey, href: n.href, shortcut: n.shortcut, icon: "search" as PaletteIcon, keywords: n.keywords })) },
     {
       id: "actions", heading: "Actions", headingKey: "palette.section.actions", commands: [
         { id: "research", label: q ? `Research: “${q}”` : "Start research", labelKey: q ? "palette.research" : "palette.startResearch", labelVars: q ? { q } : undefined, href: `/search?q=${encodeURIComponent(q)}`, icon: "search", keywords: "ask question case law authority" },
-        { id: "intel-search", label: q ? `Find in Intelligence: “${q}”` : "Browse Intelligence", labelKey: q ? "palette.findIntel" : "palette.browseIntel", labelVars: q ? { q } : undefined, href: q ? `/intel?q=${encodeURIComponent(q)}` : "/intel", icon: "radar", keywords: "judge docket regulation recall trend" },
+        // Intelligence is hidden in the India product (its sources are US dockets); the command returns with the switch.
+        ...(f.intel ? [{ id: "intel-search", label: q ? `Find in Intelligence: “${q}”` : "Browse Intelligence", labelKey: (q ? "palette.findIntel" : "palette.browseIntel") as MessageKey, labelVars: q ? { q } : undefined, href: q ? `/intel?q=${encodeURIComponent(q)}` : "/intel", icon: "radar" as PaletteIcon, keywords: "judge docket regulation recall trend" }] : []),
         { id: "data-automation", label: "Data & automation", labelKey: "palette.dataAutomation", href: "/settings#data", icon: "database", keywords: "sources jobs schedule ingest" },
       ],
     },

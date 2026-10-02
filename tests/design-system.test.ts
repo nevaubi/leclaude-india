@@ -12,6 +12,7 @@ import { corpusDirs, providerStatuses, providersPayload } from "@/modules/settin
 import { SETTINGS_GROUPS, sectionForHash } from "@/modules/settings/settings-groups";
 import { GO_CHORD, NAV } from "@/components/shell/nav";
 import { paletteSections } from "@/components/shell/palette-groups";
+import { FEATURES } from "@/lib/features";
 
 // ---------------------------------------------------------------------------
 // DataTable helpers
@@ -252,7 +253,12 @@ describe("Shortcut help", () => {
     const merged = mergeShortcutGroups(GLOBAL_SHORTCUTS, [{ id: "grid", title: "Grid", items: [{ keys: ["x"], label: "Next uncoded" }] }, { id: "page", title: "Page", items: [{ keys: ["a"], label: "Assistant" }] }, { id: "empty", title: "Empty", items: [] }]);
     expect(merged.find((g) => g.id === "grid")?.items).toEqual([{ keys: ["x"], label: "Next uncoded" }]);
     expect(merged.map((g) => g.id)).toEqual(["global", "go", "grid", "page"]);
-    expect(GLOBAL_SHORTCUTS.flatMap((g) => g.items).some((i) => i.keys.join(" ") === "g i")).toBe(true);
+    // The help dialog's "Go to" chords come from the nav: hidden surfaces (G I, G W, G E) are not advertised.
+    const chords = GLOBAL_SHORTCUTS.flatMap((g) => g.items).map((i) => i.keys.join(" "));
+    expect(chords).toEqual(expect.arrayContaining(["g h", "g s", "g j", "g a", "g k", "g u", "g o", "g ,"]));
+    expect(chords.includes("g i")).toBe(FEATURES.intel);
+    expect(chords.includes("g w")).toBe(FEATURES.workflows);
+    expect(chords.includes("g e")).toBe(FEATURES.ediscovery);
     expect(formatKeys(["mod+k"], "mac")).toEqual(["⌘K"]);
     expect(formatKeys(["mod+k"], "other")).toEqual(["Ctrl K"]);
     expect(formatKeys(["g", "h"])).toEqual(["G", "H"]);
@@ -325,11 +331,12 @@ describe("providers route logic", () => {
 });
 
 describe("shell", () => {
-  it("adds Intelligence after Search with a G I chord", () => {
+  it("hides Intelligence (and its G I chord) unless the switch is on; Research keeps G S", () => {
     const labels = NAV.map((n) => n.label);
-    expect(labels.indexOf("Intelligence")).toBe(labels.indexOf("Search") + 1);
-    expect(NAV.find((n) => n.label === "Intelligence")?.href).toBe("/intel");
-    expect(GO_CHORD.i).toBe("/intel");
+    expect(labels.includes("Intelligence")).toBe(FEATURES.intel);
+    expect(GO_CHORD.i).toBe(FEATURES.intel ? "/intel" : undefined);
+    expect(NAV.find((n) => n.label === "Research")?.href).toBe("/search");
+    expect(GO_CHORD.s).toBe("/search");
   });
   it("groups palette commands and carries the query into the research command", () => {
     const sections = paletteSections({ query: "  Boyle defense ", nav: [{ label: "Home", href: "/", shortcut: "G H" }] });

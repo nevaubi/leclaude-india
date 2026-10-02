@@ -96,6 +96,8 @@ export const mr: Messages = {
   "nav.ediscovery": "ई-डिस्कव्हरी",
   "nav.workflows": "वर्कफ्लो",
   "nav.office": "ऑफिस",
+  "nav.law": "कायदा",
+  "nav.drafting": "मसुदा लेखन",
   "nav.library": "ग्रंथालय",
   "nav.settings": "सेटिंग्ज",
   "nav.office.documents": "दस्तऐवज",
@@ -116,6 +118,8 @@ export const mr: Messages = {
   "nav.desc.ediscovery": "दस्तऐवज पुनरावलोकन, पुरावा, घटनाक्रम आणि विशेषाधिकार",
   "nav.desc.workflows": "स्वयंचलन आणि बहु-टप्पी एजंट प्लेबुक",
   "nav.desc.office": "मसुदा एजंटसह Word, Excel, PowerPoint आणि PDF संपादक",
+  "nav.desc.law": "भारतीय कायदा: निकाल, अधिनियम, न्यायालये आणि न्यायाधीश",
+  "nav.desc.drafting": "मसुदा एजंटसह Word दस्तऐवज",
   "nav.desc.library": "सामायिक फोल्डर, पूर्वनिर्णय, कलम संग्रह आणि ज्ञान",
   "nav.desc.settings": "भाषा, AI, संशोधन प्रदाते, डेटा व स्वयंचलन, सचोटी आणि पुनरावलोकन रांग",
 

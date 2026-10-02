@@ -14,6 +14,7 @@ import { relativeLabel } from "../time";
 import { useHome } from "./home-provider";
 import { useHomeUI, type HomeSection } from "../store";
 import { MatterBadge } from "./shared";
+import { isHiddenHref } from "@/lib/features";
 
 const KIND_ICON: Record<BriefItem["kind"], LucideIcon> = { deadline: CalendarClock, hearing: Gavel, task: CheckSquare, news: Newspaper, update: Users, matter: Scale, note: StickyNote };
 const KIND_TONE: Record<BriefItem["kind"], string> = { deadline: "text-muted-foreground", hearing: "text-muted-foreground", task: "text-muted-foreground", news: "text-muted-foreground", update: "text-muted-foreground", matter: "text-muted-foreground", note: "text-muted-foreground" };
@@ -115,7 +116,7 @@ export function DailyBriefCard({ className }: { className?: string }) {
                     </span>
                   </li>
                 );
-                if (!it.href) return body;
+                if (!it.href || isHiddenHref(it.href)) return body;
                 return external ? (
                   <a key={i} href={it.href} target="_blank" rel="noreferrer" className="block">{body}</a>
                 ) : (

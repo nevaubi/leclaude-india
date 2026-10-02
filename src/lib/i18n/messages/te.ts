@@ -96,6 +96,8 @@ export const te: Messages = {
   "nav.ediscovery": "ఇ-డిస్కవరీ",
   "nav.workflows": "వర్క్‌ఫ్లోలు",
   "nav.office": "ఆఫీస్",
+  "nav.law": "చట్టం",
+  "nav.drafting": "ముసాయిదా",
   "nav.library": "గ్రంథాలయం",
   "nav.settings": "సెట్టింగ్‌లు",
   "nav.office.documents": "పత్రాలు",
@@ -116,6 +118,8 @@ export const te: Messages = {
   "nav.desc.ediscovery": "పత్రాల సమీక్ష, సాక్ష్యం, ఘటనాక్రమం మరియు ప్రత్యేకాధికారం",
   "nav.desc.workflows": "ఆటోమేషన్లు మరియు బహుళ-దశల ఏజెంట్ ప్లేబుక్‌లు",
   "nav.desc.office": "ముసాయిదా ఏజెంట్లతో Word, Excel, PowerPoint మరియు PDF ఎడిటర్లు",
+  "nav.desc.law": "భారతీయ చట్టం: తీర్పులు, చట్టాలు, న్యాయస్థానాలు మరియు న్యాయమూర్తులు",
+  "nav.desc.drafting": "ముసాయిదా ఏజెంట్‌తో Word పత్రాలు",
   "nav.desc.library": "పంచుకున్న ఫోల్డర్లు, పూర్వ నిర్ణయాలు, క్లాజ్ బ్యాంక్ మరియు జ్ఞానం",
   "nav.desc.settings": "భాష, AI, పరిశోధన ప్రదాతలు, డేటా మరియు ఆటోమేషన్, సమగ్రత మరియు సమీక్ష వరుస",
 

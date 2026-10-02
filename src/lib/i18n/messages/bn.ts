@@ -96,6 +96,8 @@ export const bn: Messages = {
   "nav.ediscovery": "ই-ডিসকভারি",
   "nav.workflows": "ওয়ার্কফ্লো",
   "nav.office": "অফিস",
+  "nav.law": "আইনশাস্ত্র",
+  "nav.drafting": "খসড়া",
   "nav.library": "গ্রন্থাগার",
   "nav.settings": "সেটিংস",
   "nav.office.documents": "নথি",
@@ -116,6 +118,8 @@ export const bn: Messages = {
   "nav.desc.ediscovery": "নথি পর্যালোচনা, সাক্ষ্যপ্রমাণ, ঘটনাক্রম ও বিশেষাধিকার",
   "nav.desc.workflows": "স্বয়ংক্রিয়করণ ও বহু-ধাপের এজেন্ট প্লেবুক",
   "nav.desc.office": "খসড়া এজেন্টসহ Word, Excel, PowerPoint ও PDF সম্পাদক",
+  "nav.desc.law": "ভারতীয় আইনশাস্ত্র: রায়, আইন, আদালত ও বিচারপতি",
+  "nav.desc.drafting": "খসড়া এজেন্টসহ Word নথি",
   "nav.desc.library": "ভাগ করা ফোল্ডার, নজির, ধারা সংগ্রহ ও জ্ঞান",
   "nav.desc.settings": "ভাষা, AI, গবেষণা প্রদানকারী, ডেটা ও স্বয়ংক্রিয়করণ, সততা ও পর্যালোচনা সারি",
 

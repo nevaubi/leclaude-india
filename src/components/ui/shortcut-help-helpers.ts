@@ -1,5 +1,6 @@
 /** Shortcut registry model for the `?` help dialog. Pure; unit-tested. */
 import type { MessageKey } from "@/lib/i18n/catalog";
+import { NAV, SECONDARY_NAV, goShortcuts } from "@/components/shell/nav";
 
 /** `label`/`title` are the English source text; the dialog renders `labelKey`/`titleKey` when present. */
 export interface ShortcutItem { keys: string[]; label: string; labelKey?: MessageKey }
@@ -24,17 +25,8 @@ export const GLOBAL_SHORTCUTS: ShortcutGroup[] = [
     id: "go",
     title: "Go to",
     titleKey: "shortcuts.group.go",
-    items: [
-      { keys: ["g", "h"], label: "Home", labelKey: "nav.home" },
-      { keys: ["g", "m"], label: "Matters", labelKey: "nav.matters" },
-      { keys: ["g", "s"], label: "Search", labelKey: "nav.search" },
-      { keys: ["g", "i"], label: "Intelligence", labelKey: "nav.intel" },
-      { keys: ["g", "e"], label: "E-Discovery", labelKey: "nav.ediscovery" },
-      { keys: ["g", "w"], label: "Workflows", labelKey: "nav.workflows" },
-      { keys: ["g", "o"], label: "Office", labelKey: "nav.office" },
-      { keys: ["g", "l"], label: "Library", labelKey: "nav.library" },
-      { keys: ["g", ","], label: "Settings", labelKey: "nav.settings" },
-    ],
+    // Derived from the navigation so hidden surfaces (Workflows, Intelligence, E-Discovery) never advertise a chord.
+    items: goShortcuts([...NAV, ...SECONDARY_NAV]),
   },
   {
     id: "grid",

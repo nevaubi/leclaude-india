@@ -17,6 +17,7 @@ import { relativeLabel } from "../time";
 import { useHomeUI } from "../store";
 import { useHome } from "./home-provider";
 import { EmptyRow, MatterBadge, NONE, Section } from "./shared";
+import { isHiddenHref } from "@/lib/features";
 
 const KIND: Record<TeamUpdate["kind"], { label: string; icon: LucideIcon; className: string }> = {
   update: { label: "Update", icon: MessageSquare, className: "text-muted-foreground" },
@@ -150,7 +151,7 @@ function UpdateCard({ update: u, index, full }: { update: TeamUpdateView; index:
           </div>
           <p className={cn("mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90", !full && "line-clamp-4")}>{u.body}</p>
           {u.attachments?.length ? (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">{u.attachments.map((a, i) => <Link key={i} href={a.href} className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"><Paperclip className="size-3" />{a.label}</Link>)}</div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">{u.attachments.map((a, i) => isHiddenHref(a.href) ? <span key={i} className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-0.5 text-[11px] text-muted-foreground"><Paperclip className="size-3" />{a.label}</span> : <Link key={i} href={a.href} className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"><Paperclip className="size-3" />{a.label}</Link>)}</div>
           ) : null}
           <div className="mt-1.5 flex items-center gap-1">
             {REACTIONS.map((emoji) => {

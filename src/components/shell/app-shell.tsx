@@ -3,9 +3,9 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, Moon, Search, Sun, Monitor, Menu, X, LogOut, Keyboard } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Moon, Search, Sun, Monitor, Menu, X, LogOut, Keyboard } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { GO_CHORD, NAV, SECONDARY_NAV } from "./nav";
+import { GO_CHORD, NAV, SECONDARY_NAV, isHrefActive, isNavItemActive, navGroupChildren, type NavChild, type NavItem } from "./nav";
 import { useShellStore } from "./shell-store";
 import { useTheme } from "./theme-provider";
 import { Button } from "@/components/ui/button";
@@ -79,31 +79,16 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
     return () => window.removeEventListener("keydown", onKey);
   }, [router, setPaletteOpen, toggleSidebar]);
 
-  // Icon rail is the default; labels expand on demand ("[" or the chevron).
+  // Icon rail is the default; labels expand on demand ("[" or the chevron). The mobile drawer always shows labels.
   const expanded = hydrated && !sidebarCollapsed;
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const labels = expanded || mobileOpen;
 
-  const railItem = (item: (typeof NAV)[number]) => {
-    const active = isActive(item.href);
-    const label = item.labelKey ? t(item.labelKey) : item.label;
-    const link = (
-      <Link
-        href={item.href}
-        aria-label={label}
-        aria-current={active ? "page" : undefined}
-        className={cn(
-          "group relative flex items-center rounded-md text-[12.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          expanded ? "gap-2.5 px-2.5 py-1.5" : "size-9 justify-center",
-          active ? "bg-primary/8 text-primary dark:bg-primary/12" : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-        )}
-      >
-        <item.icon className={cn("size-[17px] shrink-0", active ? "text-primary" : "")} strokeWidth={active ? 2 : 1.75} />
-        {expanded && <span className="flex-1 truncate">{label}</span>}
-        {expanded && item.shortcut && <span className="text-[10px] tabular text-muted-foreground/70 opacity-0 transition-opacity group-hover:opacity-100">{item.shortcut}</span>}
-      </Link>
+  const railItem = (item: NavItem) =>
+    navGroupChildren(item).length ? (
+      <RailGroup key={item.labelKey ?? item.label} item={item} pathname={pathname} labels={labels} />
+    ) : (
+      <RailLink key={item.href} item={item} active={isNavItemActive(item, pathname)} labels={labels} />
     );
-    return expanded ? <div key={item.href}>{link}</div> : <Tip key={item.href} label={label} side="right" shortcut={item.shortcut}>{link}</Tip>;
-  };
 
   return (
     <div className="flex h-full w-full overflow-hidden">
@@ -122,35 +107,35 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
           </Link>
         </div>
 
-        <div className={cn("pt-2", expanded ? "px-3" : "px-0 flex justify-center")}>
+        <div className={cn("pt-2", labels ? "px-3" : "px-0 flex justify-center")}>
           <Tip label={t("shell.searchOrJump")} side="right" shortcut="⌘K">
             <button
               onClick={() => setPaletteOpen(true)}
               aria-label={t("shell.searchOrJump")}
               className={cn(
                 "flex items-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                expanded && "border",
-                expanded ? "h-8 w-full gap-2 px-2.5 text-[12px]" : "size-9 justify-center",
+                labels && "border",
+                labels ? "h-8 w-full gap-2 px-2.5 text-[12px]" : "size-9 justify-center",
               )}
             >
               <Search className="size-4 shrink-0" strokeWidth={1.75} />
-              {expanded && (<><span className="flex-1 truncate text-start">{t("shell.searchOrJumpShort")}</span><kbd className="hidden sm:inline">⌘K</kbd></>)}
+              {labels && (<><span className="flex-1 truncate text-start">{t("shell.searchOrJumpShort")}</span><kbd className="hidden sm:inline">⌘K</kbd></>)}
             </button>
           </Tip>
         </div>
 
-        <nav className={cn("mt-2 flex flex-1 flex-col gap-0.5 overflow-y-auto no-scrollbar", expanded ? "px-3" : "items-center px-0")} aria-label={t("shell.primaryNav")}>
+        <nav className={cn("mt-2 flex flex-1 flex-col gap-0.5 overflow-y-auto no-scrollbar", labels ? "px-3" : "items-center px-0")} aria-label={t("shell.primaryNav")}>
           {NAV.map(railItem)}
         </nav>
 
-        <div className={cn("flex flex-col gap-0.5 border-t border-sidebar-border py-2", expanded ? "px-3" : "items-center px-0")}>
+        <div className={cn("flex flex-col gap-0.5 border-t border-sidebar-border py-2", labels ? "px-3" : "items-center px-0")}>
           {SECONDARY_NAV.map(railItem)}
           <Tip label={expanded ? t("common.collapse") : t("common.expand")} side="right" shortcut="[">
             <button onClick={toggleSidebar} aria-label={expanded ? t("shell.collapseNav") : t("shell.expandNav")} className={cn("flex items-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50", expanded ? "gap-2.5 px-2.5 py-1.5 text-[12.5px]" : "size-9 justify-center")}>
               {expanded ? <><ChevronLeft className="size-[17px] rtl:rotate-180" /> {t("common.collapse")}</> : <ChevronRight className="size-[17px] rtl:rotate-180" />}
             </button>
           </Tip>
-          {expanded && (
+          {labels && (
             <button aria-label={t("shell.signOut")} className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] text-muted-foreground/70 hover:bg-sidebar-accent hover:text-foreground" disabled>
               <LogOut className="size-[17px] rtl:-scale-x-100" /> {t("shell.signOut")}
             </button>
@@ -196,6 +181,136 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
       </div>
       <CommandPalette />
     </div>
+  );
+}
+
+const railRowClass = (labels: boolean, active: boolean) =>
+  cn(
+    "group relative flex items-center rounded-md text-[12.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+    labels ? "w-full gap-2.5 px-2.5 py-1.5" : "size-9 justify-center",
+    active ? "bg-primary/8 text-primary dark:bg-primary/12" : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+  );
+
+/** A leaf entry: a labelled row in the sidebar, an icon with a tooltip on the rail. */
+function RailLink({ item, active, labels }: { item: NavItem; active: boolean; labels: boolean }) {
+  const t = useT();
+  const label = item.labelKey ? t(item.labelKey) : item.label;
+  const link = (
+    <Link href={item.href} aria-label={label} aria-current={active ? "page" : undefined} className={railRowClass(labels, active)}>
+      <item.icon className={cn("size-[17px] shrink-0", active ? "text-primary" : "")} strokeWidth={active ? 2 : 1.75} />
+      {labels && <span className="flex-1 truncate">{label}</span>}
+      {labels && item.shortcut && <span className="text-[10px] tabular text-muted-foreground/70 opacity-0 transition-opacity group-hover:opacity-100">{item.shortcut}</span>}
+    </Link>
+  );
+  return labels ? <div>{link}</div> : <Tip label={label} side="right" shortcut={item.shortcut}>{link}</Tip>;
+}
+
+/**
+ * A group (Law: Case law, Statutes, Courts, Judges). In the labelled sidebar it is a disclosure that opens on its
+ * own routes; on the icon rail it is a menu button whose flyout opens on hover, click or Enter/Space/ArrowRight,
+ * with arrow-key navigation, Escape to close and focus returned to the icon.
+ */
+function RailGroup({ item, pathname, labels }: { item: NavItem; pathname: string; labels: boolean }) {
+  const t = useT();
+  const kids = navGroupChildren(item);
+  const active = isNavItemActive(item, pathname);
+  const label = item.labelKey ? t(item.labelKey) : item.label;
+  const childLabel = (c: NavChild) => (c.labelKey ? t(c.labelKey) : c.label);
+  const childActive = (c: NavChild) => !c.href.includes("?") && isHrefActive(c.href, pathname);
+  const listId = React.useId();
+
+  // Sidebar disclosure: open while on one of the group's pages; the user can still fold it.
+  const [disclosed, setDisclosed] = React.useState(active);
+  React.useEffect(() => { if (active) setDisclosed(true); }, [active]);
+
+  // Rail flyout: hover opens it (closing after a short grace period so the pointer can cross the gap); a click
+  // or the keyboard pins it open until it is dismissed.
+  const [open, setOpen] = React.useState(false);
+  // How the flyout was opened: "hover" ones never move focus and close when the pointer leaves; "pin" ones behave as a menu.
+  const via = React.useRef<"hover" | "pin">("pin");
+  const closeTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const cancelClose = () => clearTimeout(closeTimer.current);
+  const hoverOpen = () => { cancelClose(); if (!open) { via.current = "hover"; setOpen(true); } };
+  const hoverClose = () => { cancelClose(); if (via.current === "hover") closeTimer.current = setTimeout(() => setOpen(false), 160); };
+  React.useEffect(() => () => clearTimeout(closeTimer.current), []);
+  React.useEffect(() => { setOpen(false); }, [pathname]);
+
+  const icon = <item.icon className={cn("size-[17px] shrink-0", active ? "text-primary" : "")} strokeWidth={active ? 2 : 1.75} />;
+
+  if (labels) {
+    return (
+      <div>
+        <button type="button" aria-expanded={disclosed} aria-controls={listId} onClick={() => setDisclosed((o) => !o)} className={cn(railRowClass(true, active && !disclosed), "cursor-pointer text-start", active && disclosed && "text-foreground")}>
+          {icon}
+          <span className="flex-1 truncate">{label}</span>
+          <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground/70 transition-transform", !disclosed && "-rotate-90 rtl:rotate-90")} aria-hidden />
+        </button>
+        {disclosed && (
+          <ul id={listId} aria-label={label} className="ms-[17px] mt-0.5 flex flex-col gap-0.5 border-s border-sidebar-border ps-2">
+            {kids.map((c) => {
+              const on = childActive(c);
+              const Icon = c.icon ?? item.icon;
+              return (
+                <li key={c.href}>
+                  <Link href={c.href} aria-current={on ? "page" : undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50", on ? "bg-primary/8 font-medium text-primary dark:bg-primary/12" : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground")}>
+                    <Icon className={cn("size-[15px] shrink-0", on ? "text-primary" : "")} strokeWidth={on ? 2 : 1.75} />
+                    <span className="flex-1 truncate">{childLabel(c)}</span>
+                    {c.shortcut && <span className="text-[10px] tabular text-muted-foreground/70 opacity-0 transition-opacity group-hover:opacity-100">{c.shortcut}</span>}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <DropdownMenu modal={false} open={open} onOpenChange={(o) => { cancelClose(); if (o) via.current = "pin"; setOpen(o); }}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          data-active={active || undefined}
+          className={cn(railRowClass(false, active), "cursor-pointer data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground")}
+          onPointerEnter={(e) => { if (e.pointerType === "mouse") hoverOpen(); }}
+          onPointerLeave={(e) => { if (e.pointerType === "mouse") hoverClose(); }}
+          onPointerDown={(e) => {
+            // A click on a flyout that hover already opened pins it instead of toggling it shut.
+            if (open && via.current === "hover") { e.preventDefault(); via.current = "pin"; cancelClose(); }
+          }}
+          onKeyDown={(e) => { if (e.key === (document.dir === "rtl" ? "ArrowLeft" : "ArrowRight")) { e.preventDefault(); cancelClose(); via.current = "pin"; setOpen(true); } }}
+        >
+          {icon}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="right"
+        align="start"
+        sideOffset={8}
+        className="w-56"
+        onPointerEnter={cancelClose}
+        onPointerLeave={hoverClose}
+        // Hover must not steal focus from the page; keyboard and click opens focus the first entry as usual.
+        onCloseAutoFocus={(e) => { if (via.current === "hover") e.preventDefault(); }}
+      >
+        <DropdownMenuLabel className="py-1 text-[11px] font-medium text-muted-foreground">{label}</DropdownMenuLabel>
+        {kids.map((c) => {
+          const on = childActive(c);
+          const Icon = c.icon ?? item.icon;
+          return (
+            <DropdownMenuItem key={c.href} asChild className={cn("text-[12.5px]", on && "font-medium text-primary")}>
+              <Link href={c.href} aria-current={on ? "page" : undefined}>
+                <Icon className={cn(on ? "text-primary" : "text-muted-foreground")} />
+                <span className="flex-1 truncate">{childLabel(c)}</span>
+                {c.shortcut && <DropdownMenuShortcut className="text-[10px] tracking-normal tabular">{c.shortcut}</DropdownMenuShortcut>}
+              </Link>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

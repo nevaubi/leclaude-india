@@ -10,6 +10,7 @@ import { currentUser, DEFAULT_USER } from "@/lib/current-user";
 import { type CalendarEntry, type DailyBrief, type EventInput, type EventPatch, type HomeInitialData, type MatterLite, type MatterOverview, type PersonLite, type TaskInput, type TaskPatch, type TeamUpdateView, type UpdateReply } from "./types";
 import { addDays, dateKey, daysBetween, toDate } from "./time";
 import { computeFallbackBrief, type BriefContext } from "./brief-fallback";
+import { FEATURES } from "@/lib/features";
 
 const nowIso = () => new Date().toISOString();
 
@@ -439,7 +440,8 @@ export function loadHomeInitialData(opts: { now?: Date; userId?: string; aiConfi
   return {
     now: now.toISOString(),
     aiConfigured: opts.aiConfigured,
-    intelInsights: hasPublishedInsights(d),
+    // Intelligence is hidden in the India product: no insight sections (and no links into /intel) on Home.
+    intelInsights: FEATURES.intel && hasPublishedInsights(d),
     setup: { matters: d.matters.count(), documents: d.edocs.count(), people: d.people.count() },
     userId,
     userName: displayUserName(userId),

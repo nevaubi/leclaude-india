@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { AuditEvent, ScanFinding, ScanReport, ScanSeverity } from "@/lib/integrity/types";
 import { SettingsBlock } from "./settings-section";
+import { isHiddenHref } from "@/lib/features";
 
 const TONE: Record<ScanSeverity, "muted" | "info" | "warning" | "destructive"> = { info: "muted", low: "info", medium: "warning", high: "destructive" };
 
@@ -57,7 +58,7 @@ export function IntegrityPanel() {
                   <div className="truncate font-medium">{f.title}{f.fixed && <span className="ml-2 text-[10.5px] text-success">fixed</span>}</div>
                   <div className="truncate text-[11px] text-muted-foreground">{f.scanName} · {f.detail}</div>
                 </div>
-                {f.target?.href && <Button asChild variant="ghost" size="xs"><Link href={f.target.href}><ExternalLink className="size-3" /> Open</Link></Button>}
+                {f.target?.href && !isHiddenHref(f.target.href) && <Button asChild variant="ghost" size="xs"><Link href={f.target.href}><ExternalLink className="size-3" /> Open</Link></Button>}
                 {f.fixable && !f.fixed && <Button variant="outline" size="xs" onClick={() => fix(f)}><Wrench className="size-3" /> Fix</Button>}
               </li>
             ))}

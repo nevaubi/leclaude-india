@@ -3,12 +3,15 @@
  * orders → action items (with verbatim quotes checked in code), hearing briefs and the diary.
  *
  * Invariants
- * - Listings and orders are matched to a matter only by exact identifiers (normalized case number, diary number, CNR);
- *   nothing is matched by party name or by similarity. Unparsed cause-list entries never reach a matter.
+ * - Listings and orders are matched to a matter only by exact identifiers (normalized case number, diary number; NCLT
+ *   numbers bench-qualified); nothing is matched by party name or by similarity. CNRs are kept for reference only:
+ *   cause lists and order metadata do not carry them, so they are reported as not checkable, never as "not listed".
+ *   Unparsed cause-list entries never reach a matter.
  * - Cause lists are published by the courts and are not authoritative online: every listing carries when it was
  *   published / fetched and the source document it was read from.
- * - Action items extracted from an order are bound to the order's SHA-256 and version; a deadline is computed only
- *   when the order states a period or a date, and nothing becomes a task until a reviewer confirms it.
+ * - Action items extracted from an order are bound to the order's SHA-256, version and the hash of the text read; a
+ *   deadline is computed only when the item's own verified quote states the period or the date, and nothing becomes a
+ *   task until a reviewer confirms it.
  */
 import type { CauseListEntry, MatterCaseIdentifier, SourceDocument } from "@/modules/official/types";
 
@@ -21,13 +24,14 @@ export interface TrackedIdentifier extends MatterCaseIdentifier {
   printed: string;
 }
 
-/** Stored per matter in the `matter_tracking` collection (id = matterId). Never inside `matter.india`. */
+/**
+ * Stored per matter in the `matter_tracking` collection (id = matterId). Never inside `matter.india`. Advocate names
+ * are watched per user in the Diary, not per matter. `updatedAt` is the version a PUT must name (expectedUpdatedAt).
+ */
 export interface MatterTracking {
   id: string;
   matterId: string;
   identifiers: TrackedIdentifier[];
-  /** Advocate names to watch in parsed lists (exact token match, never fuzzy). */
-  advocateNames?: string[];
   updatedAt: string;
   updatedBy: string;
 }
@@ -85,8 +89,10 @@ export interface ListingsResponse {
   to: string;
   state: OfficialState;
   message?: string;
-  /** No identifiers are tracked for the matter, so nothing can be matched. */
+  /** No identifier the official sources can match is tracked, so nothing was looked up. */
   untracked?: boolean;
+  /** Tracked identifiers kept for reference but never looked up (CNRs; NCLT numbers without a bench code). */
+  unmatchable: TrackedIdentifier[];
   listings: MatterListing[];
   /** Tracked forums whose cause lists are not parsed (manual hearings apply there). */
   uncoveredForums: string[];
@@ -101,7 +107,10 @@ export interface MatterOrder {
 export interface OrdersResponse {
   state: OfficialState;
   message?: string;
+  /** No identifier the official sources can match is tracked, so nothing was looked up. */
   untracked?: boolean;
+  /** Tracked identifiers kept for reference but never looked up (see ListingsResponse). */
+  unmatchable: TrackedIdentifier[];
   orders: MatterOrder[];
 }
 
@@ -134,7 +143,7 @@ export interface ComputedDeadline {
 /** Why no deadline was computed (shown, never hidden). */
 export type DeadlineGap =
   | "no_period" // the order states no period or date for this task
-  | "period_not_in_text" // the period the model gave is not in the order text
+  | "period_not_in_text" // the period or date the model gave is not in the item's own quote
   | "runs_from_event" // the period runs from receipt / service / another event whose date is unknown
   | "unparsed_period" // a period is stated but could not be parsed deterministically
   | "no_order_date" // the publisher did not print the order date
@@ -173,9 +182,11 @@ export interface OrderActionSet {
   id: string;
   matterId: string;
   documentId: string;
-  /** Hash and version of the order text the items were read from. */
+  /** Hash and version of the order file, and SHA-256 of the extracted text the items were read from. */
   documentSha256: string | null;
   documentVersion: number;
+  /** Absent on sets extracted before text binding: those must be extracted again before review. */
+  textSha256?: string;
   documentTitle: string;
   documentUrl: string;
   orderDate: string | null;
@@ -196,7 +207,7 @@ export interface OrderActionSetSummary {
   createdAt: string;
   items: number;
   flagged: number;
-  /** The order changed after extraction (hash differs): the items must be re-extracted before review. */
+  /** The order changed after extraction (file hash or version differs; the text hash is re-checked at review). */
   stale: boolean;
 }
 
@@ -213,7 +224,7 @@ export interface BriefSource {
 }
 
 export interface BriefClaim {
-  section: "points" | "authorities" | "questions";
+  section: "summary" | "points" | "authorities" | "questions";
   text: string;
   /** Refs the claim relies on (all in `sources` when resolved). */
   sources: string[];
@@ -232,7 +243,10 @@ export interface HearingBrief {
   markdown: string;
   claims: BriefClaim[];
   sources: BriefSource[];
-  /** succeeded: all sections produced; partial: research step failed or hit its budget (deterministic parts kept). */
+  /**
+   * succeeded: every section produced from fully checked inputs; partial: the research step failed or hit its time
+   * budget, or cause lists / orders could not be checked or an order's text could not be read (the notes say which).
+   */
   status: "succeeded" | "partial";
   notes: string[];
   createdAt: string;

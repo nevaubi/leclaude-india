@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 import { jsonError } from "@/lib/ai/sse";
 import { AIConfigError, aiConfig } from "@/lib/ai/config";
-import { extractOrderActions, listActionSets, requireMatter } from "@/modules/matters/desk/server";
+import { DeskUnavailableError, extractOrderActions, listActionSets, requireMatter } from "@/modules/matters/desk/server";
 import { readJsonObject, serviceErrorResponse } from "@/modules/workspace/errors";
 
 export const runtime = "nodejs";
@@ -27,6 +27,7 @@ async function handleGET(req: NextRequest, { params }: Params) {
 /**
  * POST { documentId } — read the order (bounded) and extract directions, the next date and compliance tasks with
  * verbatim quotes checked in code. Nothing becomes a task here: the set waits for a reviewer (…/actions/[setId]/review).
+ * The extraction runs within ORDER_EXTRACT_BUDGET_MS (below maxDuration): 504 when it runs out, nothing saved.
  */
 async function handlePOST(req: NextRequest, { params }: Params) {
   const { id } = await params;
@@ -38,6 +39,7 @@ async function handlePOST(req: NextRequest, { params }: Params) {
     return Response.json({ set: await extractOrderActions(id, documentId, { signal: req.signal }) }, { status: 201 });
   } catch (e) {
     if (e instanceof AIConfigError) return jsonError(e.message, 503, { code: "no_api_key" });
+    if (e instanceof DeskUnavailableError) return jsonError(e.message, e.status, { code: e.code });
     return serviceErrorResponse(e);
   }
 }

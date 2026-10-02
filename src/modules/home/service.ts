@@ -1,5 +1,7 @@
 import "server-only";
 import type { Principal } from "@/lib/auth/types";
+import { currentPrincipal } from "@/lib/auth/context";
+import { hasMatterAccess } from "@/lib/auth/policy";
 import { listDocSets } from "@/modules/documents/server";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
@@ -31,8 +33,13 @@ export function nextHearingOf(india: IndianCaseInfo | undefined): MatterLite["ne
   return { date, ...(india?.hearingPurpose ? { purpose: india.hearingPurpose } : {}), ...(india?.courtHall ? { courtHall: india.courtHall } : {}), ...(item ? { item } : {}) };
 }
 
-export function listMattersLite(): MatterLite[] {
-  return db().matters.list({ where: (m) => m.status !== "closed", sortBy: "shortName" }).map((m) => {
+/**
+ * Open matters the principal may read (with their recorded next hearing). No principal → no matters: the list is
+ * never widened to every matter for want of a principal.
+ */
+export function listMattersLite(principal: Principal | null = currentPrincipal()): MatterLite[] {
+  if (!principal) return [];
+  return db().matters.list({ where: (m) => m.status !== "closed" && hasMatterAccess(principal, m.id), sortBy: "shortName" }).map((m) => {
     const nextHearing = nextHearingOf((m as typeof m & { india?: IndianCaseInfo }).india);
     return { id: m.id, shortName: m.shortName, name: m.name, caption: m.caption, client: m.client, practiceArea: m.practiceArea, status: m.status, stage: m.stage, teamIds: m.teamIds, leadAttorneyId: m.leadAttorneyId, keyDates: m.keyDates ?? [], ...(nextHearing ? { nextHearing } : {}) };
   });
@@ -70,10 +77,11 @@ export function getTask(id: string): Task | null {
   return db().tasks.get(id);
 }
 
-export function createTask(input: TaskInput, userId = currentUser().id): Task {
+/** `opts.id` gives a deterministic id to a caller that must stay idempotent (it checks for the id first). */
+export function createTask(input: TaskInput, userId = currentUser().id, opts: { id?: string } = {}): Task {
   const ts = nowIso();
   const task: Task = {
-    id: `t_${nanoid(10)}`,
+    id: opts.id ?? `t_${nanoid(10)}`,
     title: input.title.trim(),
     description: input.description ?? undefined,
     matterId: input.matterId ?? undefined,
@@ -397,7 +405,7 @@ export function displayUserName(userId = currentUser().id): string {
   return cur.id === userId ? cur.name : "";
 }
 
-export function buildBriefContext(now = new Date(), userId = currentUser().id): BriefContext {
+export function buildBriefContext(now = new Date(), userId = currentUser().id, principal: Principal | null = currentPrincipal()): BriefContext {
   const d = db();
   return {
     now,
@@ -407,7 +415,7 @@ export function buildBriefContext(now = new Date(), userId = currentUser().id): 
     tasks: d.tasks.all(),
     news: d.news.all(),
     updates: d.updates.all(),
-    matters: listMattersLite(),
+    matters: listMattersLite(principal),
     people: listPeopleLite(),
   };
 }
@@ -434,19 +442,25 @@ export function getOrComputeBrief(now = new Date(), userId = currentUser().id): 
 // Initial page payload
 // ---------------------------------------------------------------------------
 
-/** First-run "Upload documents" counts files in the document sets the principal can see (documents live outside the mirror). */
+/**
+ * Bind the page payload to the principal resolved for the request: the matter list is re-scoped to that principal
+ * (pages have no request context, so loadHomeInitialData may not have had one), and first-run "Upload documents"
+ * counts files in the document sets the principal can see (documents live outside the mirror).
+ */
 export async function withDocumentSetFiles(data: HomeInitialData, principal: Principal | null): Promise<HomeInitialData> {
-  if (!principal) return data;
+  const scoped = { ...data, matters: listMattersLite(principal) };
+  if (!principal) return scoped;
   try {
     const files = (await listDocSets(principal)).reduce((n, s) => n + s.fileCount, 0);
-    return files && data.setup ? { ...data, setup: { ...data.setup, documents: data.setup.documents + files } } : data;
+    return files && scoped.setup ? { ...scoped, setup: { ...scoped.setup, documents: scoped.setup.documents + files } } : scoped;
   } catch {
-    return data;
+    return scoped;
   }
 }
 
-export function loadHomeInitialData(opts: { now?: Date; userId?: string; aiConfigured: boolean }): HomeInitialData {
+export function loadHomeInitialData(opts: { now?: Date; userId?: string; aiConfigured: boolean; principal?: Principal | null }): HomeInitialData {
   const now = opts.now ?? new Date();
+  const principal = opts.principal !== undefined ? opts.principal : currentPrincipal();
   const userId = opts.userId ?? currentUser().id;
   const d = db();
   return {
@@ -458,7 +472,7 @@ export function loadHomeInitialData(opts: { now?: Date; userId?: string; aiConfi
     userId,
     userName: displayUserName(userId),
     people: listPeopleLite(),
-    matters: listMattersLite(),
+    matters: listMattersLite(principal),
     tasks: listTasks({ now }),
     events: listEvents({ from: dateKey(addDays(now, -120)), to: dateKey(addDays(now, 240)) }),
     news: listNews({ sort: "relevance" }),

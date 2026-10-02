@@ -16,18 +16,27 @@ export interface DeskFetch<T> {
   setData: React.Dispatch<React.SetStateAction<T | null>>;
 }
 
-/** Fetch JSON with abort + reload; errors keep their HTTP status so the panel can show denied vs failed. */
+/**
+ * Fetch JSON with abort + reload; errors keep their HTTP status so the panel can show denied vs failed. A reload of
+ * the same URL keeps the data on screen; a new URL (another date range) clears it, so stale rows never show as current.
+ */
 export function useDeskFetch<T>(url: string | null): DeskFetch<T> {
   const [nonce, setNonce] = React.useState(0);
   const [data, setData] = React.useState<T | null>(null);
   const [error, setError] = React.useState<ApiError | null>(null);
   const [state, setState] = React.useState<"loading" | "ready" | "error">("loading");
+  const loaded = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (!url) return;
     const ac = new AbortController();
-    setState((s) => (s === "ready" ? s : "loading"));
+    if (loaded.current !== url) {
+      loaded.current = url;
+      setData(null);
+      setError(null);
+      setState("loading");
+    } else setState((s) => (s === "ready" ? s : "loading"));
     apiJSON<T>(url, { signal: ac.signal })
-      .then((r) => { setData(r); setError(null); setState("ready"); })
+      .then((r) => { if (ac.signal.aborted) return; setData(r); setError(null); setState("ready"); })
       .catch((e) => {
         if ((e as Error).name === "AbortError") return;
         setError(e instanceof ApiError ? e : new ApiError((e as Error).message, 0));
@@ -62,14 +71,14 @@ export function PanelError({ error, onRetry, className }: { error: ApiError | nu
 }
 
 /** The official corpus is not usable here: not configured, not wired yet, or failing. Quiet, never alarming. */
-export function OfficialNotice({ state, message, onRetry, compact }: { state: OfficialState; message?: string; onRetry?: () => void; compact?: boolean }) {
+export function OfficialNotice({ state, message, onRetry, compact, className }: { state: OfficialState; message?: string; onRetry?: () => void; compact?: boolean; className?: string }) {
   const { t } = useI18n();
   if (state === "ok") return null;
   const Icon = state === "not_configured" ? Database : state === "not_available" ? CalendarOff : AlertTriangle;
   const title = state === "not_configured" ? t("desk.state.notConfigured") : state === "not_available" ? t("desk.state.notAvailable") : t("desk.state.error");
   const hint = state === "not_configured" ? t("desk.state.notConfiguredHint") : state === "not_available" ? t("desk.state.notAvailableHint") : message;
   return (
-    <div className={cn("flex items-start gap-2 rounded-md border border-dashed px-2.5 py-2", compact ? "text-[11.5px]" : "text-[12px]")} role="status">
+    <div className={cn("flex items-start gap-2 rounded-md border border-dashed px-2.5 py-2", compact ? "text-[11.5px]" : "text-[12px]", className)} role="status">
       <Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       <div className="min-w-0 flex-1">
         <div className="font-medium text-foreground">{title}</div>

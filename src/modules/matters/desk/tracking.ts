@@ -4,9 +4,10 @@
  * the reason; nothing is guessed (no inferred type, number or year, no "closest" forum).
  */
 import { COURTS } from "@/lib/india/courts";
-import { normalizeCaseNumber, normalizeDiaryNo } from "@/modules/official/case-numbers";
+import { caseNumberKeys, isCaseKey, isDiaryKey, normalizeCaseNumber, normalizeDiaryNo, qualifiedCaseKey } from "@/modules/official/case-numbers";
+import { caseKeyBindable, expandForum, forumFamily, forumMatches } from "@/modules/official/causelist/forums";
 import { formatCaseNumber, validateCnr, type IndianCaseInfo } from "../india";
-import type { TrackedIdentifier, TrackedIdentifierKind } from "./types";
+import type { CauseListEntry, MatterCaseIdentifier, TrackedIdentifier, TrackedIdentifierKind } from "./types";
 
 export const MAX_IDENTIFIERS = 12;
 export const MAX_ADVOCATE_NAMES = 8;
@@ -26,7 +27,8 @@ export function forumHasParsedLists(forum: string): boolean {
 export interface ForumOption { id: string; label: string; parsed: boolean }
 
 const TRIBUNALS: { id: string; label: string }[] = [
-  { id: "nclt", label: "National Company Law Tribunal (all benches)" },
+  // NCLT numbers repeat at every bench: the bench code printed in the number ("(MB)") is part of the tracked key.
+  { id: "nclt", label: "National Company Law Tribunal (bench from the case number)" },
   { id: "nclat", label: "National Company Law Appellate Tribunal" },
 ];
 
@@ -64,6 +66,12 @@ export function normalizeIdentifier(raw: { forum?: unknown; kind?: unknown; valu
   if (kind === "case_number") {
     const n = normalizeCaseNumber(printed);
     if (!n) return { ok: false, error: `"${printed}" is not a single recognisable case number. Enter it as printed, e.g. "SLP(C) No. 1234/2026" or "W.P.(C)-5812/2016".` };
+    if (forumFamily(forum) === "nclt") {
+      // The same NCLT number exists at every bench: only the bench-qualified key ("CPIB/29/2022@MB") identifies one case.
+      const q = qualifiedCaseKey(n);
+      if (!q) return { ok: false, error: `"${printed}" has no bench code. NCLT numbers repeat at every bench: enter the number with the bench code as printed, e.g. "CP(IB)/29(MB)2022".` };
+      return { ok: true, identifier: { forum, kind, value: q, printed } };
+    }
     return { ok: true, identifier: { forum, kind, value: n.key, printed } };
   }
   if (kind === "diary_no") {
@@ -78,7 +86,7 @@ export function normalizeIdentifier(raw: { forum?: unknown; kind?: unknown; valu
 }
 
 export type TrackingInputResult =
-  | { ok: true; identifiers: TrackedIdentifier[]; advocateNames: string[] }
+  | { ok: true; identifiers: TrackedIdentifier[] }
   | { ok: false; error: string; field: string };
 
 /** Validate a whole PUT body. Duplicates (same forum, kind and value) collapse to one. */
@@ -98,11 +106,31 @@ export function validateTrackingInput(body: Record<string, unknown>): TrackingIn
     seen.add(key);
     out.push(res.identifier);
   }
-  const names = body.advocateNames === undefined || body.advocateNames === null ? [] : body.advocateNames;
-  if (!Array.isArray(names)) return { ok: false, error: "advocateNames must be a list of names.", field: "advocateNames" };
-  const adv = normalizeAdvocateNames(names);
-  if (!adv.ok) return { ok: false, error: adv.error, field: "advocateNames" };
-  return { ok: true, identifiers: out, advocateNames: adv.names };
+  return { ok: true, identifiers: out };
+}
+
+/**
+ * Whether the official sources can match an identifier at all (mirrors the facade's own rules): a case number or a
+ * diary number with a known forum. CNRs are not printed in cause lists or in order metadata, and an NCLT number without
+ * its bench code never binds, so neither is looked up; both are reported as not checkable.
+ */
+export function identifierCheckable(i: MatterCaseIdentifier): boolean {
+  const forums = expandForum(i.forum);
+  if (!forums.length) return false;
+  if (i.kind === "case_number") return isCaseKey(i.value) && !(forums.includes("nclt") && !i.value.includes("@"));
+  if (i.kind === "diary_no") return isDiaryKey(i.value);
+  return false;
+}
+
+/**
+ * Defence in depth on a facade match: it names one of the matter's own identifiers, the forums are compatible, and the
+ * entry's own printed numbers (or diary number) carry that exact key. Anything else is dropped, never shown.
+ */
+export function listingMatchHolds(match: { entry: CauseListEntry; matchedOn: MatterCaseIdentifier }, own: MatterCaseIdentifier[]): boolean {
+  const on = match.matchedOn;
+  if (!own.some((i) => i.forum === on.forum && i.kind === on.kind && i.value === on.value) || !identifierCheckable(on)) return false;
+  if (on.kind === "case_number") return caseKeyBindable(on.forum, on.value, match.entry.forum) && match.entry.caseNumbers.some((c) => caseNumberKeys(c.printed).includes(on.value));
+  return on.kind === "diary_no" && match.entry.diaryNo === on.value && forumMatches(on.forum, match.entry.forum);
 }
 
 /** Advocate names for exact list matching: 2–80 characters with at least two letters; case-insensitive duplicates collapse. */
@@ -132,18 +160,26 @@ function advocateKey(name: string): string {
   return advocateTokens(name).join(" ");
 }
 
+/** Courtesy titles printed before a name ("MR.", "SMT.") and annotations after it ("(AOR 1234)", "[R-1]"). */
+const TITLE_TOKENS = new Set(["MR", "MS", "MRS", "DR", "SH", "SHRI", "SMT", "KUM", "KUMARI"]);
+
+function nameTokens(name: string): string[] {
+  let s = name.trim();
+  for (let prev = ""; prev !== s;) { prev = s; s = s.replace(/\s*[([][^()[\]]*[)\]]\s*$/u, "").trim(); }
+  const t = advocateTokens(s);
+  while (t.length > 1 && TITLE_TOKENS.has(t[0])) t.shift();
+  return t;
+}
+
 /**
- * Exact token match of a saved name against a printed advocate entry: every token of the name appears, in order and
- * contiguously, in the entry's tokens ("PANDA" matches "SIDDHARTH PANDA"; "PAND" matches nothing). Never fuzzy.
+ * Whole-name match of a saved name against a printed advocate entry: the same tokens in the same order, after dropping
+ * courtesy titles and trailing bracketed annotations ("Siddharth Panda" matches "MR. SIDDHARTH PANDA (AOR 1234)").
+ * A part of a name never matches ("Kumar" does not match "RAJESH KUMAR"). Never fuzzy.
  */
 export function advocateMatches(name: string, printed: string): boolean {
-  const want = advocateTokens(name);
-  const have = advocateTokens(printed);
-  if (!want.length || want.length > have.length) return false;
-  for (let i = 0; i + want.length <= have.length; i++) {
-    if (want.every((t, j) => have[i + j] === t)) return true;
-  }
-  return false;
+  const want = nameTokens(name);
+  const have = nameTokens(printed);
+  return want.length > 0 && want.length === have.length && want.every((t, i) => have[i] === t);
 }
 
 /**

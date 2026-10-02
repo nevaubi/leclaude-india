@@ -22,11 +22,11 @@ import { setupWorkspace } from "@/modules/workspace/service";
 import { createMatter } from "@/modules/matters/service";
 import { registerOfficialImpl, OfficialNotConfiguredError, OfficialNotImplementedError } from "@/modules/official/service";
 import type { CauseListEntry, ListingMatch, MatterCaseIdentifier, SourceDocument } from "@/modules/official/types";
-import { advocateMatches, normalizeIdentifier, suggestIdentifiers, validateTrackingInput, forumHasParsedLists } from "@/modules/matters/desk/tracking";
-import { buildActionItems, checkQuote, computeDeadline, parsePeriod, parseStatedDate, type OrderTextChunk } from "@/modules/matters/desk/order-actions";
+import { advocateMatches, identifierCheckable, listingMatchHolds, normalizeIdentifier, suggestIdentifiers, validateTrackingInput, forumHasParsedLists } from "@/modules/matters/desk/tracking";
+import { buildActionItems, checkQuote, computeDeadline, nextDateFromQuote, parsePeriod, parseStatedDate, type OrderTextChunk } from "@/modules/matters/desk/order-actions";
 import { resolveRange } from "@/modules/matters/desk/dates";
 import { collectToolSources, expandNumberedRefs, resolveClaims } from "@/modules/matters/desk/brief-format";
-import { extractOrderActions, getTracking, listActionSets, matterListings, putTracking, reviewActionSet } from "@/modules/matters/desk/server";
+import { DeskUnavailableError, extractOrderActions, getTracking, listActionSets, matterListings, matterOrders, orderActionTaskId, putTracking, reviewActionSet } from "@/modules/matters/desk/server";
 import { generateHearingBrief, listBriefs } from "@/modules/matters/desk/brief";
 import type { BriefStreamEvent } from "@/modules/matters/desk/types";
 import * as trackingRoute from "@/app/api/matters/[id]/tracking/route";
@@ -93,18 +93,43 @@ describe("tracked identifiers (pure)", () => {
     expect(normalizeIdentifier({ forum: "sci", kind: "party", printed: "x" }).ok).toBe(false);
   });
 
-  it("validates a whole set: duplicates collapse, limits hold, advocate names are checked", () => {
-    const v = validateTrackingInput({ identifiers: [{ forum: "sci", kind: "case_number", printed: "SLP(C) No. 1234/2026" }, { forum: "sci", kind: "case_number", printed: "SLP (C) No.1234 of 2026" }], advocateNames: ["Siddharth Panda", "siddharth  panda", " "] });
-    expect(v).toMatchObject({ ok: true, identifiers: [{ value: "SLPC/1234/2026" }], advocateNames: ["Siddharth Panda"] });
+  it("validates a whole set: duplicates collapse, limits hold (advocate names are per user, not per matter)", () => {
+    const v = validateTrackingInput({ identifiers: [{ forum: "sci", kind: "case_number", printed: "SLP(C) No. 1234/2026" }, { forum: "sci", kind: "case_number", printed: "SLP (C) No.1234 of 2026" }], advocateNames: ["Siddharth Panda"] });
+    expect(v).toEqual({ ok: true, identifiers: [{ forum: "sci", kind: "case_number", value: "SLPC/1234/2026", printed: "SLP(C) No. 1234/2026" }] });
     expect(validateTrackingInput({ identifiers: Array.from({ length: 13 }, (_, i) => ({ forum: "sci", kind: "case_number", printed: `SLP(C) No. ${i + 1}/2026` })) })).toMatchObject({ ok: false, field: "identifiers" });
     expect(validateTrackingInput({ identifiers: [{ forum: "sci", kind: "case_number", printed: "nonsense" }] })).toMatchObject({ ok: false, field: "identifiers.0" });
-    expect(validateTrackingInput({ identifiers: [], advocateNames: ["X"] })).toMatchObject({ ok: false, field: "advocateNames" });
     expect(validateTrackingInput({ identifiers: "SLP" })).toMatchObject({ ok: false, field: "identifiers" });
   });
 
-  it("matches advocate names by exact contiguous tokens only", () => {
-    expect(advocateMatches("Panda", "SIDDHARTH PANDA")).toBe(true);
+  it("keeps two NCLT benches apart and rejects an NCLT number without its bench code, with the reason", () => {
+    const indore = normalizeIdentifier({ forum: "nclt", kind: "case_number", printed: "CP(IB)/29(MP)2022" });
+    const mumbai = normalizeIdentifier({ forum: "nclt", kind: "case_number", printed: "CP(IB)/29(MB)2022" });
+    expect(indore).toMatchObject({ ok: true, identifier: { forum: "nclt", value: "CPIB/29/2022@MP" } });
+    expect(mumbai).toMatchObject({ ok: true, identifier: { forum: "nclt", value: "CPIB/29/2022@MB" } });
+    expect(validateTrackingInput({ identifiers: [{ forum: "nclt", kind: "case_number", printed: "CP(IB)/29(MP)2022" }, { forum: "nclt", kind: "case_number", printed: "CP(IB)/29(MB)2022" }] })).toMatchObject({ ok: true, identifiers: [{ value: "CPIB/29/2022@MP" }, { value: "CPIB/29/2022@MB" }] });
+    const bare = normalizeIdentifier({ forum: "nclt", kind: "case_number", printed: "CP(IB) No. 29/2022" });
+    expect(bare.ok).toBe(false);
+    expect(!bare.ok && bare.error).toMatch(/no bench code.*repeat at every bench/);
+    expect(normalizeIdentifier({ forum: "nclt-mumbai", kind: "case_number", printed: "CP(IB) No. 29/2022" }).ok).toBe(false);
+    // A stored unqualified NCLT key (from before bench codes were required) is never looked up.
+    expect(identifierCheckable({ forum: "nclt", kind: "case_number", value: "CPIB/29/2022" })).toBe(false);
+    expect(identifierCheckable({ forum: "nclt", kind: "case_number", value: "CPIB/29/2022@MP" })).toBe(true);
+    expect(identifierCheckable({ forum: "hc-karnataka", kind: "cnr", value: "KAHC010123452024" })).toBe(false);
+    // A facade match binds only the bench it names, on an entry that prints that exact number.
+    const own = [{ forum: "nclt", kind: "case_number" as const, value: "CPIB/29/2022@MP" }];
+    const e = entry({ forum: "nclt-indore", caseNumbers: [{ printed: "CP(IB)/29(MP)2022", normalized: "CPIB/29/2022" }] });
+    expect(listingMatchHolds({ entry: e, matchedOn: own[0] }, own)).toBe(true);
+    expect(listingMatchHolds({ entry: entry({ forum: "nclt-mumbai", caseNumbers: [{ printed: "CP(IB)/29(MB)2022", normalized: "CPIB/29/2022" }] }), matchedOn: own[0] }, own)).toBe(false);
+    expect(listingMatchHolds({ entry: e, matchedOn: { ...own[0], value: "CPIB/29/2022@MB" } }, own)).toBe(false); // not one of the matter's own identifiers
+    expect(listingMatchHolds({ entry: { ...e, forum: "sci" }, matchedOn: own[0] }, own)).toBe(false); // forum mismatch
+  });
+
+  it("matches advocate names as whole names only (titles and bracketed notes aside)", () => {
+    expect(advocateMatches("Siddharth Panda", "SIDDHARTH PANDA")).toBe(true);
     expect(advocateMatches("Siddharth Panda", "Siddharth Panda(RESPONDENT)")).toBe(true);
+    expect(advocateMatches("Siddharth Panda", "MR. SIDDHARTH PANDA (AOR 1234)")).toBe(true);
+    expect(advocateMatches("Panda", "SIDDHARTH PANDA")).toBe(false);
+    expect(advocateMatches("Kumar", "RAJESH KUMAR")).toBe(false);
     expect(advocateMatches("Pand", "SIDDHARTH PANDA")).toBe(false);
     expect(advocateMatches("Rohit BS", "ROHIT B.S")).toBe(false);
     expect(advocateMatches("Panda Siddharth", "SIDDHARTH PANDA")).toBe(false);
@@ -145,24 +170,73 @@ describe("order action items (pure)", () => {
   it("parses a stated period only when it runs from the order", () => {
     expect(parsePeriod("within four weeks from today")).toEqual({ ok: true, n: 4, unit: "weeks", anchor: "order" });
     expect(parsePeriod("within four (4) weeks")).toMatchObject({ ok: true, n: 4, unit: "weeks" });
+    expect(parsePeriod("within a period of thirty (30) days from the date of this order")).toMatchObject({ ok: true, n: 30, unit: "days" });
     expect(parsePeriod("within 30 days from the date of this order")).toMatchObject({ ok: true, n: 30, unit: "days" });
+    expect(parsePeriod("two weeks' time")).toMatchObject({ ok: true, n: 2, unit: "weeks" });
     expect(parsePeriod("within 30 days from the date of receipt of a copy of this order")).toEqual({ ok: false, reason: "runs_from_event" });
     expect(parsePeriod("within two weeks from the next date of hearing")).toEqual({ ok: false, reason: "unparsed_period" });
     expect(parsePeriod("2 to 4 weeks")).toEqual({ ok: false, reason: "unparsed_period" });
+    expect(parsePeriod("within four (5) weeks")).toEqual({ ok: false, reason: "unparsed_period" });
     expect(parsePeriod("forthwith")).toEqual({ ok: false, reason: "unparsed_period" });
   });
 
-  it("computes deadlines deterministically from the order date, or explains why not", () => {
-    expect(computeDeadline({ period: "within four weeks from today", statedDate: null, orderDate: "2026-10-01", chunks }).deadline).toMatchObject({ date: "2026-10-29", basis: "period", from: "2026-10-01" });
-    expect(computeDeadline({ period: "within 30 days from the date of receipt of a copy of this order", statedDate: null, orderDate: "2026-10-01", chunks })).toEqual({ deadline: null, gap: "runs_from_event" });
-    expect(computeDeadline({ period: "within six weeks", statedDate: null, orderDate: "2026-10-01", chunks })).toEqual({ deadline: null, gap: "period_not_in_text" });
-    expect(computeDeadline({ period: "within four weeks from today", statedDate: null, orderDate: null, chunks })).toEqual({ deadline: null, gap: "no_order_date" });
-    expect(computeDeadline({ period: null, statedDate: "15.10.2026", orderDate: "2026-10-01", chunks }).deadline).toMatchObject({ date: "2026-10-15", basis: "stated_date" });
-    expect(computeDeadline({ period: null, statedDate: null, orderDate: "2026-10-01", chunks })).toEqual({ deadline: null, gap: "no_period" });
+  it("never counts a period that runs from something other than the order date (thereafter / before / after an event)", () => {
+    expect(parsePeriod("within two weeks thereafter")).toEqual({ ok: false, reason: "runs_from_event" });
+    expect(parsePeriod("within 2 weeks after the reply is filed")).toEqual({ ok: false, reason: "runs_from_event" });
+    expect(parsePeriod("at least one week before the next date of hearing")).toEqual({ ok: false, reason: "unparsed_period" });
+    expect(parsePeriod("two weeks in advance")).toEqual({ ok: false, reason: "unparsed_period" });
+    expect(parsePeriod("within 2 weeks after the date of this order")).toMatchObject({ ok: true, n: 2, unit: "weeks" });
+    const text: OrderTextChunk[] = [{ pageStart: 1, pageEnd: 1, text: "Counter affidavit be filed within four weeks from today. Rejoinder, if any, be filed within two weeks thereafter. Written submissions shall be filed at least one week before the next date of hearing. The appellant shall file a reply within 2 weeks after the reply is filed." }];
+    for (const [quote, period] of [
+      ["Rejoinder, if any, be filed within two weeks thereafter.", "within two weeks thereafter"],
+      ["Written submissions shall be filed at least one week before the next date of hearing.", "at least one week before the next date of hearing"],
+      ["The appellant shall file a reply within 2 weeks after the reply is filed.", "within 2 weeks after the reply is filed"],
+    ]) {
+      const r = computeDeadline({ quote, period, statedDate: null, orderDate: "2026-10-01", chunks: text });
+      expect(r.deadline, period).toBeNull();
+      expect(["runs_from_event", "unparsed_period"]).toContain(r.gap);
+    }
+  });
+
+  it("computes deadlines only from the item's own verified quote, or explains why not", () => {
+    const affidavit = "The respondent-State shall file its counter affidavit within four weeks from today.";
+    const deposit = "The petitioner shall deposit Rs. 50,000 within 30 days from the date of receipt of a copy of this order.";
+    expect(computeDeadline({ quote: affidavit, period: "within four weeks from today", statedDate: null, orderDate: "2026-10-01", chunks }).deadline).toMatchObject({ date: "2026-10-29", basis: "period", from: "2026-10-01" });
+    expect(computeDeadline({ quote: deposit, period: "within 30 days from the date of receipt of a copy of this order", statedDate: null, orderDate: "2026-10-01", chunks })).toEqual({ deadline: null, gap: "runs_from_event" });
+    expect(computeDeadline({ quote: affidavit, period: "within six weeks", statedDate: null, orderDate: "2026-10-01", chunks })).toEqual({ deadline: null, gap: "period_not_in_text" });
+    expect(computeDeadline({ quote: affidavit, period: "within four weeks from today", statedDate: null, orderDate: null, chunks })).toEqual({ deadline: null, gap: "no_order_date" });
+    expect(computeDeadline({ quote: affidavit, period: null, statedDate: null, orderDate: "2026-10-01", chunks })).toEqual({ deadline: null, gap: "no_period" });
+    expect(computeDeadline({ quote: "not in this order at all", period: "within four weeks from today", statedDate: null, orderDate: "2026-10-01", chunks })).toEqual({ deadline: null, gap: "quote_not_found" });
     const monthly: OrderTextChunk[] = [{ pageStart: 1, pageEnd: 1, text: "Reply within one month." }];
-    expect(computeDeadline({ period: "within one month", statedDate: null, orderDate: "2026-01-31", chunks: monthly }).deadline?.date).toBe("2026-02-28");
+    expect(computeDeadline({ quote: "Reply within one month.", period: "within one month", statedDate: null, orderDate: "2026-01-31", chunks: monthly }).deadline?.date).toBe("2026-02-28");
+    // A quote stating two periods cannot say which one the task runs on.
+    const two: OrderTextChunk[] = [{ pageStart: 1, pageEnd: 1, text: "Reply within four weeks; rejoinder within two weeks from today." }];
+    expect(computeDeadline({ quote: "Reply within four weeks; rejoinder within two weeks from today.", period: "within two weeks from today", statedDate: null, orderDate: "2026-10-01", chunks: two })).toEqual({ deadline: null, gap: "unparsed_period" });
     expect(parseStatedDate("on or before 5th November, 2026")).toBe("2026-11-05");
     expect(parseStatedDate("31.02.2026")).toBeNull();
+  });
+
+  it("never borrows a period or date printed in another sentence of the order", () => {
+    // "15.10.2026" is the listing date on page 2 and "within four weeks from today" belongs to the counter affidavit:
+    // neither is in the deposit direction's quote, so no deadline is computed for it.
+    const deposit = "The petitioner shall deposit Rs. 50,000 within 30 days from the date of receipt of a copy of this order.";
+    expect(computeDeadline({ quote: deposit, period: null, statedDate: "15.10.2026", orderDate: "2026-10-01", chunks })).toEqual({ deadline: null, gap: "period_not_in_text" });
+    expect(computeDeadline({ quote: deposit, period: "within four weeks from today", statedDate: null, orderDate: "2026-10-01", chunks })).toEqual({ deadline: null, gap: "period_not_in_text" });
+    const [item] = buildActionItems({ directions: [], nextDate: null, complianceTasks: [{ task: "Deposit Rs. 50,000", party: "Petitioner", quote: deposit, page: 2, period: null, statedDate: "15.10.2026" }] }, chunks, "2026-10-01");
+    expect(item).toMatchObject({ deadline: null, deadlineGap: "period_not_in_text", flagged: true, check: { quoteFound: true, pageVerified: true } });
+    // The same date inside the item's own quote is taken as stated.
+    const own: OrderTextChunk[] = [{ pageStart: 1, pageEnd: 1, text: "The petitioner shall deposit Rs. 50,000 on or before 15.10.2026." }];
+    expect(computeDeadline({ quote: "The petitioner shall deposit Rs. 50,000 on or before 15.10.2026.", period: null, statedDate: "15.10.2026", orderDate: "2026-10-01", chunks: own }).deadline).toMatchObject({ date: "2026-10-15", basis: "stated_date" });
+  });
+
+  it("reads the next date only after a listing verb, and a listing period as a period", () => {
+    expect(nextDateFromQuote("List on 15.10.2026.")).toMatchObject({ date: "2026-10-15" });
+    expect(nextDateFromQuote("In continuation of the order dated 01.09.2026, list on 15.10.2026.")).toMatchObject({ date: "2026-10-15" });
+    expect(nextDateFromQuote("As per the cause list of 01.10.2026 the matter was not reached. List on 15.10.2026.")).toMatchObject({ date: "2026-10-15" });
+    expect(nextDateFromQuote("Put up for hearing on 5th November, 2026.")).toMatchObject({ date: "2026-11-05" });
+    expect(nextDateFromQuote("List after four weeks.")).toEqual({ gap: "unparsed_period" });
+    expect(nextDateFromQuote("List after four weeks. The petitioner shall deposit by 15.10.2026.")).toEqual({ gap: "unparsed_period" });
+    expect(nextDateFromQuote("The order dated 01.09.2026 is recalled.")).toEqual({ gap: "no_period" });
   });
 
   it("builds checked items: flags unverifiable quotes and never computes from them", () => {
@@ -186,6 +260,25 @@ describe("order action items (pure)", () => {
 });
 
 describe("brief references (pure)", () => {
+  it("marks only what a read tool read as read: nested citing references are found, not read", () => {
+    const reg = collectToolSources([
+      { name: "read_judgment", result: { source: "judgment://sci/ijdg_1", id: "ijdg_1", paragraphs: [{ n: 3, source: "judgment://sci/ijdg_1/para/3" }], cites: [{ source: "judgment://sci/ijdg_9", title: "Cited in passing" }] } },
+      { name: "citing_references", result: { id: "ijdg_1", source: "judgment://sci/ijdg_1x", citing: [{ type: "search_result", source: "judgment://hc-delhi/ijdg_5", title: "Later HC judgment", content: ["… relied on …"] }] } },
+      { name: "citator_check", result: { citing: [{ source: "corpus://judgment/sc:2025-10#p4", title: "Mention" }] } },
+      { name: "read_official_document", result: { source: "src://doc_order_7", chunks: [{ source: "src://doc_order_7#p2" }, { source: "src://doc_other#p1" }] } },
+    ]);
+    expect(reg.get("judgment://sci/ijdg_1")?.state).toBe("read");
+    expect(reg.get("judgment://sci/ijdg_1/para/3")?.state).toBe("read"); // a location inside the source read
+    expect(reg.get("judgment://sci/ijdg_9")?.state).toBe("found"); // nested in a read result, never read
+    expect(reg.get("judgment://sci/ijdg_1x")?.state).toBe("found"); // citing_references does not read its target
+    expect(reg.get("judgment://hc-delhi/ijdg_5")?.state).toBe("found");
+    expect(reg.get("corpus://judgment/sc:2025-10#p4")?.state).toBe("found");
+    expect(reg.get("src://doc_order_7#p2")?.state).toBe("read");
+    expect(reg.get("src://doc_other#p1")?.state).toBe("found");
+    const { claims } = resolveClaims([{ section: "authorities", claims: [{ text: "Followed by the High Court", sources: ["judgment://hc-delhi/ijdg_5"] }] }], reg);
+    expect(claims[0].status).toBe("partial");
+  });
+
   it("registers tool refs as read or found and resolves claims without substituting", () => {
     const reg = collectToolSources([
       { name: "search_judgments", result: { results: [{ source: "judgment://sci/2024-1", title: "A v. B", url: "https://example.org/a" }, { source: "judgment://sci/2023-9", title: "C v. D" }] } },
@@ -239,7 +332,7 @@ describe("tracking API", () => {
   });
 
   it("stores normalized identifiers in matter_tracking (not inside matter.india) and returns them", async () => {
-    const r = await json(await call(trackingRoute.PUT, send(`/api/matters/${matterA}/tracking`, { identifiers: [{ forum: "sci", kind: "case_number", printed: "SLP(Crl) No. 13176/2026" }, { forum: "sci", kind: "diary_no", printed: "Diary No. 54583-2026" }], advocateNames: ["Ajay Marwah"] }, "PUT"), p({ id: matterA })));
+    const r = await json(await call(trackingRoute.PUT, send(`/api/matters/${matterA}/tracking`, { identifiers: [{ forum: "sci", kind: "case_number", printed: "SLP(Crl) No. 13176/2026" }, { forum: "sci", kind: "diary_no", printed: "Diary No. 54583-2026" }], expectedUpdatedAt: null }, "PUT"), p({ id: matterA })));
     expect(r.status).toBe(200);
     expect(r.body.tracking.identifiers).toEqual([
       { forum: "sci", kind: "case_number", value: "SLPCRL/13176/2026", printed: "SLP(Crl) No. 13176/2026" },
@@ -248,8 +341,21 @@ describe("tracking API", () => {
     expect(db().collection("matter_tracking").get(matterA)).toBeTruthy();
     expect((db().matters.get(matterA) as Body).india).toEqual({ courtId: "sci" });
     const g = await json(await call(trackingRoute.GET, nreq(`/api/matters/${matterA}/tracking`), p({ id: matterA })));
-    expect(g.body.tracking.advocateNames).toEqual(["Ajay Marwah"]);
+    expect(g.body.tracking).not.toHaveProperty("advocateNames");
     expect(g.body.forums.some((f: Body) => f.id === "sci" && f.parsed)).toBe(true);
+  });
+
+  it("refuses a PUT made against a version someone else has since changed (409, nothing overwritten)", async () => {
+    const before = getTracking(matterA)!;
+    const ids = before.identifiers.map(({ forum, kind, printed }) => ({ forum, kind, printed }));
+    const stale = await json(await call(trackingRoute.PUT, send(`/api/matters/${matterA}/tracking`, { identifiers: [], expectedUpdatedAt: "2020-01-01T00:00:00.000Z" }, "PUT"), p({ id: matterA })));
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe("conflict");
+    expect((await json(await call(trackingRoute.PUT, send(`/api/matters/${matterA}/tracking`, { identifiers: [], expectedUpdatedAt: null }, "PUT"), p({ id: matterA })))).status).toBe(409);
+    expect(getTracking(matterA)!.identifiers).toEqual(before.identifiers);
+    const ok = await json(await call(trackingRoute.PUT, send(`/api/matters/${matterA}/tracking`, { identifiers: ids, expectedUpdatedAt: before.updatedAt }, "PUT"), p({ id: matterA })));
+    expect(ok.status).toBe(200);
+    expect(ok.body.tracking.updatedAt > before.updatedAt).toBe(true);
   });
 
   it("denies a guest and a member scoped to another matter", async () => {
@@ -321,6 +427,33 @@ describe("listings", () => {
     putTracking(matterB, { identifiers: [{ forum: "hc-karnataka", kind: "case_number", printed: "W.P. No. 1234/2026" }] });
     const r = await matterListings(matterB, "2026-10-01", "2026-10-14", { listings: async () => [] });
     expect(r.uncoveredForums).toEqual(["hc-karnataka"]);
+    putTracking(matterB, { identifiers: [] });
+  });
+
+  it("never looks up a CNR: a CNR-only matter is reported as not checked, not as not listed", async () => {
+    putTracking(matterB, { identifiers: [{ forum: "hc-karnataka", kind: "cnr", printed: "KAHC010123452024" }] });
+    let called = 0;
+    const r = await matterListings(matterB, "2026-10-01", "2026-10-14", { listings: async () => { called++; return []; } });
+    expect(called).toBe(0);
+    expect(r).toMatchObject({ state: "ok", untracked: true, listings: [], unmatchable: [{ kind: "cnr", value: "KAHC010123452024" }] });
+    const o = await matterOrders(matterB, { orders: async () => { called++; return []; } });
+    expect(called).toBe(0);
+    expect(o).toMatchObject({ state: "ok", untracked: true, orders: [], unmatchable: [{ kind: "cnr" }] });
+    putTracking(matterB, { identifiers: [] });
+  });
+
+  it("keeps two NCLT benches' listings apart end to end", async () => {
+    putTracking(matterB, { identifiers: [{ forum: "nclt", kind: "case_number", printed: "CP(IB)/29(MP)2022" }] });
+    const seen: MatterCaseIdentifier[][] = [];
+    const indore = entry({ id: "cle_mp", forum: "nclt-indore", caseNumbers: [{ printed: "CP(IB)/29(MP)2022", normalized: "CPIB/29/2022" }] });
+    const mumbai = entry({ id: "cle_mb", forum: "nclt-mumbai", caseNumbers: [{ printed: "CP(IB)/29(MB)2022", normalized: "CPIB/29/2022" }] });
+    const r = await matterListings(matterB, "2026-10-01", "2026-10-14", {
+      // A facade that (wrongly) reports both benches: the Mumbai entry does not carry the Indore key and is dropped.
+      listings: async (ms) => { seen.push(ms[0].identifiers); return [indore, mumbai].map((e) => ({ matterId: matterB, entry: e, matchedOn: ms[0].identifiers[0] })); },
+      read: async () => null,
+    });
+    expect(seen[0]).toEqual([{ forum: "nclt", kind: "case_number", value: "CPIB/29/2022@MP" }]);
+    expect(r.listings.map((l) => l.id)).toEqual(["cle_mp"]);
     putTracking(matterB, { identifiers: [] });
   });
 });
@@ -419,6 +552,64 @@ describe("orders and action items", () => {
     const r = await json(await call(ordersRoute.GET, nreq(`/api/matters/${matterA}/orders`), p({ id: matterA })));
     expect(r.body.orders[0].actions).toMatchObject({ stale: true, status: "reviewed" });
   });
+
+  const affidavitOnly = async () => ({ directions: [], nextDate: null, complianceTasks: [{ task: "File counter affidavit", party: "Respondent-State", quote: "The respondent-State shall file its counter affidavit within four weeks from today.", page: 1, period: "within four weeks from today", statedDate: null }] });
+  const orderTasks = () => db().tasks.find((t) => t.matterId === matterA && (t.tags ?? []).includes("order-action")).length;
+
+  it("fails closed when the order cannot be re-checked: no task is created (503 read failure, 409 gone)", async () => {
+    const set = await extractOrderActions(matterA, "doc_order_1", { orders, read: read(), extract: affidavitOnly });
+    expect(set.textSha256).toMatch(/^[0-9a-f]{64}$/);
+    const decisions = { decisions: [{ itemId: set.items[0].id, create: true, dueAt: "2026-10-28" }] };
+    const before = orderTasks();
+    await expect(reviewActionSet(matterA, set.id, decisions, { read: async () => { throw new Error("connection reset"); } })).rejects.toMatchObject({ status: 503, code: "order_recheck_failed" });
+    await expect(reviewActionSet(matterA, set.id, decisions, { read: async () => null })).rejects.toMatchObject({ status: 409, code: "order_unverified" });
+    await expect(reviewActionSet(matterA, set.id, decisions, { read: read() }).then(() => "ok")).resolves.toBe("ok"); // the unchanged order re-checks fine
+    expect(orderTasks()).toBe(before + 1);
+    // Through the route: the read failure is a 503 with its code, and nothing is created.
+    const again = await extractOrderActions(matterA, "doc_order_1", { orders, read: read(), extract: affidavitOnly });
+    registerOfficialImpl({ readOfficialDocument: async () => { throw new Error("connection reset"); } });
+    const r = await json(await call(reviewRoute.POST, send(`/api/matters/${matterA}/orders/actions/${again.id}/review`, { decisions: [{ itemId: again.items[0].id, create: true, dueAt: "2026-10-28" }] }), p({ id: matterA, setId: again.id })));
+    expect(r.status).toBe(503);
+    expect(r.body.code).toBe("order_recheck_failed");
+    expect(orderTasks()).toBe(before + 1);
+    expect(listActionSets(matterA).find((x) => x.id === again.id)?.status).toBe("pending_review");
+  });
+
+  it("treats a change of the extracted text as stale even when the file hash is the same", async () => {
+    const set = await extractOrderActions(matterA, "doc_order_1", { orders, read: read(), extract: affidavitOnly });
+    const reocr = async (id: string, opts?: { fromChunk?: number }) => {
+      const r = await read()(id, opts);
+      return r && { ...r, chunks: r.chunks.map((c) => ({ ...c, text: c.text.replace("four weeks", "six weeks") })) };
+    };
+    await expect(reviewActionSet(matterA, set.id, { decisions: [{ itemId: set.items[0].id, create: true, dueAt: null }] }, { read: reocr })).rejects.toMatchObject({ status: 409, code: "stale" });
+    // A set stored before text binding cannot be reviewed; it must be extracted again.
+    const legacy = { ...set, id: "oa_legacy" };
+    delete legacy.textSha256;
+    db().collection<typeof set>("matter_order_actions").put(legacy);
+    await expect(reviewActionSet(matterA, "oa_legacy", { decisions: [{ itemId: set.items[0].id, create: true, dueAt: null }] }, { read: read() })).rejects.toMatchObject({ status: 409, code: "stale" });
+  });
+
+  it("refuses duplicate decisions and a concurrent second submission; a task is created once", async () => {
+    const set = await extractOrderActions(matterA, "doc_order_1", { orders, read: read(), extract: affidavitOnly });
+    const d = { itemId: set.items[0].id, create: true, dueAt: "2026-10-28" };
+    await expect(reviewActionSet(matterA, set.id, { decisions: [d, { ...d, dueAt: "2026-10-30" }] }, { read: read() })).rejects.toMatchObject({ status: 400, code: "duplicate_item" });
+    const before = orderTasks();
+    const results = await Promise.allSettled([reviewActionSet(matterA, set.id, { decisions: [d] }, { read: read() }), reviewActionSet(matterA, set.id, { decisions: [d] }, { read: read() })]);
+    expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect((results.find((r) => r.status === "rejected") as PromiseRejectedResult).reason).toMatchObject({ status: 409, code: "review_in_progress" });
+    expect(orderTasks()).toBe(before + 1);
+    expect(db().tasks.get(orderActionTaskId(set.id, d.itemId))).toMatchObject({ dueAt: "2026-10-28" });
+  });
+
+  it("refuses an order whose text is not indexed, and gives up within its time budget without saving", async () => {
+    const sets = listActionSets(matterA).length;
+    await expect(extractOrderActions(matterA, "doc_order_1", { orders: async () => [doc({ status: "extracted" })], read: read(), extract: affidavitOnly })).rejects.toMatchObject({ status: 409, code: "order_not_indexed" });
+    const slow = ({ signal }: { signal?: AbortSignal }) => new Promise<never>((_, reject) => signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }))));
+    const err = await extractOrderActions(matterA, "doc_order_1", { orders, read: read(), extract: slow, budgetMs: 30 }).catch((e) => e);
+    expect(err).toBeInstanceOf(DeskUnavailableError);
+    expect(err).toMatchObject({ status: 504, code: "timeout" });
+    expect(listActionSets(matterA)).toHaveLength(sets);
+  });
 });
 
 describe("hearing brief", () => {
@@ -447,7 +638,7 @@ describe("hearing brief", () => {
           text: "",
           toolCalls: [{ name: "read_judgment", args: {}, result: { source: "judgment://sci/2024-1", title: "Satender Kumar Antil v. CBI", url: "https://example.org/antil" } }],
           json: {
-            summary: "Notice was issued on 1 October 2026; the State's counter is due.",
+            summary: { text: "Notice was issued on 1 October 2026; the State's counter is due.", sources: ["src://doc_order_1#p1"] },
             points: [{ text: "The State's counter affidavit is due within four weeks of 1 October 2026.", sources: ["src://doc_order_1#p1"] }, { text: "Bail is the rule.", sources: ["judgment://sci/2099-1"] }],
             authorities: [{ text: "Satender Kumar Antil v. CBI: guidelines on bail.", sources: ["judgment://sci/2024-1"] }],
             questions: [{ text: "Has the deposit been made?", sources: [] }],
@@ -460,7 +651,8 @@ describe("hearing brief", () => {
     expect(events.some((e) => e.type === "tool")).toBe(true);
     expect(brief).toMatchObject({ matterId: matterA, version: 1, listingId: "cle_1", listingDate: "2026-10-05", status: "succeeded" });
     expect(brief.hash).toBe(createHash("sha256").update(brief.markdown).digest("hex"));
-    expect(brief.claims.map((c) => [c.section, c.status])).toEqual([["points", "source_linked"], ["points", "unsupported"], ["authorities", "source_linked"], ["questions", "unsupported"]]);
+    expect(brief.claims.map((c) => [c.section, c.status])).toEqual([["summary", "source_linked"], ["points", "source_linked"], ["points", "unsupported"], ["authorities", "source_linked"], ["questions", "unsupported"]]);
+    expect(brief.markdown).toMatch(/## Summary\nNotice was issued on 1 October 2026; the State's counter is due\. \[\d\]\n/);
     expect(brief.sources.find((s) => s.ref === "judgment://sci/2099-1")?.state).toBe("unresolved");
     expect(brief.markdown).toContain("Cause lists are published by the courts");
     expect(brief.markdown).toContain("Court 5 · Item 54");
@@ -476,5 +668,27 @@ describe("hearing brief", () => {
     const r = await json(await call(briefRoute.GET, nreq(`/api/matters/${matterA}/brief`), p({ id: matterA })));
     expect(r.body.briefs.map((b: Body) => b.version)).toEqual([2, 1]);
     expect((await call(briefRoute.POST, send(`/api/matters/${matterA}/brief`, { listingId: 5 }), p({ id: matterA }))).status).toBe(400);
+  });
+
+  it("marks an unsourced summary, and is partial when listings or orders could not be checked or research ran out of time", async () => {
+    const answer = { text: "", toolCalls: [], json: { summary: "The matter is at the notice stage.", points: [], authorities: [], questions: [] } };
+    const noLists = await generateHearingBrief(matterA, {}, () => {}, undefined, { listings: async () => { throw new OfficialNotConfiguredError(); }, orders, read, now: new Date("2026-10-02T06:00:00Z"), agent: async () => answer });
+    expect(noLists.status).toBe("partial");
+    expect(noLists.notes.join(" ")).toMatch(/Cause lists could not be checked/);
+    expect(noLists.claims).toEqual([{ section: "summary", text: "The matter is at the notice stage.", sources: [], status: "unsupported" }]);
+    expect(noLists.markdown).toContain("The matter is at the notice stage. _(not source-linked: verify before use)_");
+    const slow = await generateHearingBrief(matterA, {}, () => {}, undefined, {
+      listings, orders, read, now: new Date("2026-10-02T06:00:00Z"), researchBudgetMs: 30,
+      agent: (o) => new Promise((_, reject) => o.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })))),
+    });
+    expect(slow.status).toBe("partial");
+    expect(slow.notes.join(" ")).toMatch(/ran out of its \d+ s budget/);
+    expect(slow.markdown).toContain("## Listing");
+    // A stop by the user still saves nothing.
+    const versions = listBriefs(matterA).length;
+    const ac = new AbortController();
+    const stop = (o: { signal?: AbortSignal }) => new Promise<never>((_, reject) => { o.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }))); ac.abort(); });
+    await expect(generateHearingBrief(matterA, {}, () => {}, ac.signal, { listings, orders, read, now: new Date("2026-10-02T06:00:00Z"), agent: stop })).rejects.toMatchObject({ name: "AbortError" });
+    expect(listBriefs(matterA)).toHaveLength(versions);
   });
 });

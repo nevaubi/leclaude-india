@@ -25,7 +25,7 @@ describe("India navigation structure", () => {
     expect(SECONDARY_NAV.map((n) => n.label)).toEqual(["Settings"]);
   });
 
-  it("groups the law corpus under Law with the four pages keeping their own chords and Law having none", () => {
+  it("groups the law corpus and practice tools under Law with each page keeping its own chord and Law having none", () => {
     const law = buildNav(OFF).find((n) => n.label === "Law")!;
     expect(law.shortcut).toBeUndefined();
     expect(law.labelKey).toBe("nav.law");
@@ -34,15 +34,25 @@ describe("India navigation structure", () => {
       ["Statutes", "/law", "G A"],
       ["Courts", "/courts", "G K"],
       ["Judges", "/judges", "G U"],
+      ["Tools", "/tools", "G T"],
     ]);
+    expect(navGroupChildren(law).find((c) => c.href === "/tools")).toMatchObject({ labelKey: "nav.tools", descriptionKey: "nav.desc.tools" });
     const chord = buildGoChord([...buildNav(OFF), ...SECONDARY_NAV]);
-    expect(chord).toMatchObject({ j: "/cases", a: "/law", k: "/courts", u: "/judges", s: "/search", o: "/office", ",": "/settings" });
+    expect(chord).toMatchObject({ j: "/cases", a: "/law", k: "/courts", u: "/judges", t: "/tools", s: "/search", o: "/office", ",": "/settings" });
+  });
+
+  it("gives every G chord exactly one destination, with the switches on or off", () => {
+    for (const f of [OFF, ON]) {
+      const keys = goShortcuts([...buildNav(f), ...SECONDARY_NAV]).map((s) => s.keys.join(" "));
+      expect(new Set(keys).size, keys.join(", ")).toBe(keys.length);
+      expect(keys.filter((k) => k === "g t")).toHaveLength(1);
+    }
   });
 
   it("marks Law active on its four routes (segment-aware) and nowhere else", () => {
     const law = buildNav(OFF).find((n) => n.label === "Law")!;
-    for (const p of ["/cases", "/cases/abc", "/law", "/law/ipc-1860/s-302", "/courts", "/courts/delhi", "/judges", "/judges/j_1"]) expect(isNavItemActive(law, p)).toBe(true);
-    for (const p of ["/", "/lawyers", "/search", "/news", "/casesx", "/documents"]) expect(isNavItemActive(law, p)).toBe(false);
+    for (const p of ["/cases", "/cases/abc", "/law", "/law/ipc-1860/s-302", "/courts", "/courts/delhi", "/judges", "/judges/j_1", "/tools"]) expect(isNavItemActive(law, p)).toBe(true);
+    for (const p of ["/", "/lawyers", "/search", "/news", "/casesx", "/documents", "/toolsx"]) expect(isNavItemActive(law, p)).toBe(false);
     expect(isHrefActive("/", "/cases")).toBe(false);
     expect(isHrefActive("/", "/")).toBe(true);
     expect(isHrefActive("/office?kind=word", "/office")).toBe(true);
@@ -58,7 +68,7 @@ describe("India navigation structure", () => {
     for (const k of ["w", "i", "e"]) expect(chord[k]).toBeUndefined();
     const help = goShortcuts([...nav, ...SECONDARY_NAV]).map((s) => s.keys.join(" "));
     for (const k of ["g w", "g i", "g e"]) expect(help).not.toContain(k);
-    expect(help).toEqual(expect.arrayContaining(["g j", "g a", "g k", "g u"]));
+    expect(help).toEqual(expect.arrayContaining(["g j", "g a", "g k", "g u", "g t"]));
   });
 
   it("brings them back, and names Office as Office, when the switches are on", () => {
@@ -81,7 +91,8 @@ describe("command palette with hidden surfaces", () => {
   it("lists the Law pages (findable by 'Law') and no hidden destinations or Intelligence command", () => {
     const sections = paletteSections({ query: "", nav: navDestinations([...buildNav(OFF), ...SECONDARY_NAV]), features: OFF });
     const go = sections.find((s) => s.id === "go")!.commands;
-    expect(go.map((c) => c.label)).toEqual(["Home", "Chat", "Matters", "Research", "Case law", "Statutes", "Courts", "Judges", "News", "Documents", "Drafting", "Library", "Settings"]);
+    expect(go.map((c) => c.label)).toEqual(["Home", "Chat", "Matters", "Research", "Case law", "Statutes", "Courts", "Judges", "Tools", "News", "Documents", "Drafting", "Library", "Settings"]);
+    expect(go.find((c) => c.label === "Tools")).toMatchObject({ href: "/tools", shortcut: "G T", keywords: "Law" });
     expect(go.find((c) => c.label === "Judges")).toMatchObject({ href: "/judges", shortcut: "G U", keywords: "Law" });
     const all = sections.flatMap((s) => s.commands);
     expect(all.some((c) => c.href?.startsWith("/workflows") || c.href?.startsWith("/intel"))).toBe(false);
@@ -143,8 +154,8 @@ describe("hidden routes redirect home", () => {
 });
 
 describe("navigation translations", () => {
-  it("translates Law, Research and Drafting (and their descriptions) in every catalogue", () => {
-    const keys: MessageKey[] = ["nav.law", "nav.search", "nav.drafting", "nav.desc.law", "nav.desc.drafting"];
+  it("translates Law, Research, Drafting and Tools (and their descriptions) in every catalogue", () => {
+    const keys: MessageKey[] = ["nav.law", "nav.search", "nav.drafting", "nav.tools", "nav.desc.law", "nav.desc.drafting", "nav.desc.tools"];
     expect(englishMessages["nav.law"]).toBe("Law");
     expect(englishMessages["nav.search"]).toBe("Research");
     expect(englishMessages["nav.drafting"]).toBe("Drafting");

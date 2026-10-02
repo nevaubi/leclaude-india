@@ -91,7 +91,7 @@ const DEPO = MATTERS.depo;
 const DSC = "U.S. District Court for the District of South Carolina";
 const FLND = "U.S. District Court for the Northern District of Florida";
 const UNVERIFIED = (note: string): Omit<IntelFlag, "at"> => ({ kind: "unverified", note, by: "seed" });
-const SYNOPSIS = "Synopsis prepared for the LeClaude sample corpus; consult the reported opinion before citing.";
+const SYNOPSIS = "Synopsis prepared for the Pramana sample corpus; consult the reported opinion before citing.";
 
 export const SEED_DOCS: SeedDoc[] = [
 
@@ -334,7 +334,7 @@ Application. The controlling Eleventh Circuit framework for general causation in
     entities: [{ type: "regulation", name: "21 C.F.R. § 314.70", externalId: "ecfr:21 C.F.R. § 314.70" }, { type: "agency", name: "Food and Drug Administration" }],
     meta: { title: 21, part: "314", section: "314.70", textKind: "summary" },
     text: `21 C.F.R. § 314.70 — Supplements and other changes to an approved NDA
-Summary prepared for the LeClaude sample corpus.
+Summary prepared for the Pramana sample corpus.
 
 (a) General. The applicant must notify FDA about each change in each condition established in an approved NDA beyond the variations already provided for, and must assess the effect of the change on the identity, strength, quality, purity and potency of the drug.
 
@@ -353,7 +353,7 @@ Relevance. The CBE provision is the mechanism the Supreme Court relied on in Wye
     entities: [{ type: "regulation", name: "21 C.F.R. § 314.80", externalId: "ecfr:21 C.F.R. § 314.80" }, { type: "agency", name: "Food and Drug Administration" }],
     meta: { title: 21, part: "314", section: "314.80", textKind: "summary" },
     text: `21 C.F.R. § 314.80 — Postmarketing reporting of adverse drug experiences
-Summary prepared for the LeClaude sample corpus.
+Summary prepared for the Pramana sample corpus.
 
 Definitions. An adverse drug experience is any adverse event associated with the use of a drug in humans, whether or not considered drug related, including events occurring in professional practice, from overdose, abuse or withdrawal, and any failure of expected pharmacological action. "Serious" covers death, life-threatening events, hospitalization, persistent or significant disability, congenital anomaly, or events requiring intervention to prevent a permanent impairment. "Unexpected" means not listed in the current labeling, or listed but occurring with greater specificity or severity.
 
@@ -370,7 +370,7 @@ Relevance. Foreign case reports and the published literature on meningioma in De
     entities: [{ type: "regulation", name: "21 C.F.R. § 201.57", externalId: "ecfr:21 C.F.R. § 201.57" }, { type: "agency", name: "Food and Drug Administration" }],
     meta: { title: 21, part: "201", section: "201.57", textKind: "summary" },
     text: `21 C.F.R. § 201.57 — Specific requirements on content and format of labeling
-Summary prepared for the LeClaude sample corpus.
+Summary prepared for the Pramana sample corpus.
 
 Structure. Prescription drug labeling in the physician labeling rule format consists of Highlights, a Table of Contents and Full Prescribing Information, with sections in a fixed order: Boxed Warning, Indications and Usage, Dosage and Administration, Dosage Forms and Strengths, Contraindications, Warnings and Precautions, Adverse Reactions, Drug Interactions, Use in Specific Populations, and others.
 
@@ -412,7 +412,7 @@ Relevance. The physician labeling rule format and the "reasonable evidence of a 
     entities: [{ type: "statute", name: "15 U.S.C. § 2607(e)" }, { type: "agency", name: "Environmental Protection Agency" }],
     meta: { collection: "USCODE", textKind: "summary" },
     text: `15 U.S.C. § 2607 — Reporting and retention of information (Toxic Substances Control Act § 8)
-Summary prepared for the LeClaude sample corpus.
+Summary prepared for the Pramana sample corpus.
 
 Subsection (e) — Notice to Administrator of substantial risks. Any person who manufactures, processes or distributes in commerce a chemical substance or mixture and who obtains information which reasonably supports the conclusion that such substance or mixture presents a substantial risk of injury to health or the environment shall immediately inform the Administrator of such information unless such person has actual knowledge that the Administrator has been adequately informed of such information.
 
@@ -429,7 +429,7 @@ Relevance. Knowledge-timeline discovery in U.S. chemical product cases often tur
     entities: [{ type: "statute", name: "28 U.S.C. § 1407" }, { type: "court", name: "Judicial Panel on Multidistrict Litigation", externalId: "cl:court:jpml" }],
     meta: { collection: "USCODE", textKind: "summary" },
     text: `28 U.S.C. § 1407 — Multidistrict litigation
-Summary prepared for the LeClaude sample corpus.
+Summary prepared for the Pramana sample corpus.
 
 (a) When civil actions involving one or more common questions of fact are pending in different districts, they may be transferred to any district for coordinated or consolidated pretrial proceedings. Transfers are made by the Judicial Panel on Multidistrict Litigation upon its determination that transfer will be for the convenience of parties and witnesses and will promote the just and efficient conduct of the actions. Each action so transferred shall be remanded by the Panel at or before the conclusion of pretrial proceedings to the district from which it was transferred unless it has been previously terminated.
 
@@ -539,7 +539,7 @@ Note. Seeded sample illustrating the recall class that led FDA in April 2020 to 
     entities: [{ type: "court", name: "U.S. District Court for the Northern District of California", externalId: "cl:court:cand" }],
     meta: { textKind: "summary", rules: ["7-1", "7-2", "7-3", "7-4", "7-9", "7-11"] },
     text: `Civil Local Rules of the United States District Court for the Northern District of California — Rule 7 (Motion Practice)
-Summary prepared for the LeClaude sample corpus; confirm against the current rules on the court's website.
+Summary prepared for the Pramana sample corpus; confirm against the current rules on the court's website.
 
 7-1 Motions and other requests. Any written request for a court order must be presented by motion, stipulation with proposed order, or (for administrative matters) an administrative motion under Rule 7-11.
 
@@ -565,7 +565,7 @@ Relevance. Governs motion practice in the Social Media Adolescent Addiction MDL 
     entities: [{ type: "court", name: DSC, externalId: "cl:court:dsc" }],
     meta: { textKind: "summary" },
     text: `Local Civil Rules of the United States District Court for the District of South Carolina — selected rules
-Summary prepared for the LeClaude sample corpus; confirm against the current rules on the court's website.
+Summary prepared for the Pramana sample corpus; confirm against the current rules on the court's website.
 
 Local Civ. Rule 7.04 — Memoranda in support. Motions (other than routine motions) must be accompanied by a supporting memorandum; memoranda are limited in length and must cite the specific record materials relied on.
 
@@ -586,7 +586,7 @@ Local Civ. Rule 30.04 — Conduct during depositions. Objections must be concise
     entities: [],
     meta: { textKind: "summary" },
     text: `Federal Rules of Civil Procedure — Rules 26 and 30 (selected provisions)
-Summary prepared for the LeClaude sample corpus.
+Summary prepared for the Pramana sample corpus.
 
 Rule 26(a)(1) Initial disclosures. Without awaiting a discovery request, each party must disclose the individuals likely to have discoverable information, the documents and ESI it may use to support its claims or defenses, a computation of damages, and applicable insurance agreements, within 14 days after the Rule 26(f) conference unless otherwise stipulated or ordered.
 

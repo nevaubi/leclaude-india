@@ -19,6 +19,11 @@ export interface RosterSource {
   /** Whether the page's own headings say who is the Chief Justice (otherwise designation stays null). */
   designations: boolean;
   note?: string;
+  /**
+   * Other official pages listing the same roster, tried (same parser and evidence rules) when the primary page cannot
+   * be read. The job also retries the pages through a second reader (Tavily extract) before giving up.
+   */
+  fallbackUrls?: string[];
 }
 
 export const ROSTER_SOURCES: RosterSource[] = [
@@ -50,12 +55,14 @@ export const ROSTER_SOURCES: RosterSource[] = [
   {
     courtId: "hc-karnataka", url: "https://judiciary.karnataka.gov.in/submenujprofile.php?nid=1", title: "Hon`ble The Chief Justice and Sitting Judges of High Court of Karnataka", parser: "extract",
     verified: "unreachable", checkedAt: "2026-10-01", designations: false,
-    note: "Page title confirmed in the search index; the page did not load when checked (scrape timed out), so the layout is not known and guarded extraction is used.",
+    note: "Page title confirmed in the search index; the page did not load when checked (scrape timed out, Firecrawl 408 on 2026-10-01 and 2026-10-02), so the layout is not known and guarded extraction is used.",
+    // The High Court's earlier official site, listed in the search index as "Sitting Judges. - Karnataka High Court" (checked 2026-10-02).
+    fallbackUrls: ["http://karnatakajudiciary.kar.nic.in/profiles-sitting-judges.asp"],
   },
   {
     courtId: "hc-madras", url: "https://hcmadras.tn.gov.in/present_judges.php", title: "Profile - Madras High Court", parser: "extract",
     verified: "unreachable", checkedAt: "2026-10-01", designations: false,
-    note: "Listed in the search index as the present judges' profile page; the page could not be fetched when checked (proxy tunnel error), so guarded extraction is used.",
+    note: "Listed in the search index as \"Hon'ble Judges - Madras High Court\" (re-checked 2026-10-02); the page could not be fetched when checked (Firecrawl proxy tunnel error / HTTP 500), so guarded extraction is used and the page is retried through the second reader. No other official roster page exists.",
   },
 ];
 

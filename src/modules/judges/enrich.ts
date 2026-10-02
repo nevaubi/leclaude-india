@@ -4,6 +4,7 @@ import { AIConfigError } from "@/lib/ai/config";
 import { COURTS, courtById } from "@/lib/india/courts";
 import { remoteStore, type RemoteStore } from "@/lib/db/remote";
 import { createFirecrawl } from "@/modules/intel/providers/firecrawl";
+import { createTavily } from "@/modules/intel/providers/tavily";
 import { setMediaVision, storeImageFromUrl, type MediaMeta, type StoredMedia, type VisionVerdict } from "@/modules/media/store";
 import { judgeId } from "./names";
 import { EXTRACT_SCHEMA, guardExtracted, parseRoster, type ExtractedJudge, type RosterEntry, type RosterParseResult } from "./parse";
@@ -41,6 +42,10 @@ export interface EnrichDeps {
   now?: () => Date;
   /** Wall-clock budget for the whole run (ms). */
   deadlineMs?: number;
+  /** Second reader for roster pages the scraper could not load (Tavily extract); returns page text per URL read. */
+  extractText?: (urls: string[]) => Promise<{ url: string; text: string }[]>;
+  /** Structured extraction of judges from page text (model); every result is still guarded against the text. */
+  extractJudges?: (text: string, url: string) => Promise<ExtractedJudge[] | null>;
 }
 
 export interface PhotoStats { stored: number; accepted: number; rejected: number; unchecked: number; failed: number; missing: number; reused: number }
@@ -103,6 +108,31 @@ async function defaultClassify(dataUrl: string, expect: VisionExpect): Promise<{
   }
 }
 
+function defaultExtractText(): NonNullable<EnrichDeps["extractText"]> {
+  const tv = createTavily();
+  return async (urls) => {
+    if (!tv.configured) return [];
+    const r = await tv.extract(urls, { maxChars: 200_000, ttlMs: 0 });
+    return r.results.filter((x) => x.text.trim());
+  };
+}
+
+async function defaultExtractJudges(text: string, url: string): Promise<ExtractedJudge[] | null> {
+  try {
+    const out = await generateJSON<{ judges?: ExtractedJudge[] }>({
+      fast: true,
+      schema: EXTRACT_SCHEMA as unknown as Record<string, unknown>,
+      name: "roster_extract",
+      instructions: "Extract the sitting judges listed on an official court roster page. Copy names, designations, URLs and dates exactly as printed; leave a field empty when the page does not print it. Never add a judge who is not on the page.",
+      input: `Page: ${url}\n\n${text.slice(0, 120_000)}`,
+    });
+    return Array.isArray(out?.judges) ? out.judges : [];
+  } catch (e) {
+    if (e instanceof AIConfigError) return null;
+    throw e;
+  }
+}
+
 async function mediaVision(store: RemoteStore, id: string): Promise<VisionVerdict | null> {
   const r = await store.query({ query: `SELECT vision FROM media_assets WHERE id = $1`, params: [id] });
   try { return r[0]?.vision ? (JSON.parse(r[0].vision) as VisionVerdict) : null; } catch { return null; }
@@ -111,6 +141,8 @@ async function mediaVision(store: RemoteStore, id: string): Promise<VisionVerdic
 interface Ctx {
   store: RemoteStore;
   scrape: NonNullable<EnrichDeps["scrape"]>;
+  extractText?: EnrichDeps["extractText"];
+  extractJudges?: EnrichDeps["extractJudges"];
   storeImage: NonNullable<EnrichDeps["storeImage"]>;
   classify: NonNullable<EnrichDeps["classify"]>;
   now: () => Date;
@@ -153,14 +185,57 @@ async function photoFor(ctx: Ctx, e: RosterEntry, src: RosterSource, stats: Phot
   }
 }
 
-async function readRoster(ctx: Ctx, src: RosterSource): Promise<RosterParseResult> {
+async function readRosterAt(ctx: Ctx, src: RosterSource, url: string): Promise<RosterParseResult> {
   if (src.parser === "extract") {
-    const page = await ctx.scrape(src.url, { links: true, json: { schema: EXTRACT_SCHEMA as unknown as Record<string, unknown>, prompt: "List every sitting judge on this page, with names exactly as printed. Leave a field empty when the page does not print it." } });
+    const page = await ctx.scrape(url, { links: true, json: { schema: EXTRACT_SCHEMA as unknown as Record<string, unknown>, prompt: "List every sitting judge on this page, with names exactly as printed. Leave a field empty when the page does not print it." } });
     const items = (page.json as { judges?: ExtractedJudge[] } | null)?.judges;
-    return guardExtracted(Array.isArray(items) ? items : [], page.markdown, src.url, page.links);
+    return guardExtracted(Array.isArray(items) ? items : [], page.markdown, url, page.links);
   }
-  const page = await ctx.scrape(src.url, { links: false });
-  return parseRoster(src.parser, page.markdown, src.url, { designations: src.designations });
+  const page = await ctx.scrape(url, { links: false });
+  return parseRoster(src.parser, page.markdown, url, { designations: src.designations });
+}
+
+interface RosterRead { parsed: RosterParseResult; url: string; via: "scrape" | "extract_text" }
+
+/**
+ * Read a roster: the registered page, then its official fallback pages, then the same pages through the second reader
+ * (page text; deterministic parser, or guarded extraction where every name must be printed in the text). The first read
+ * that recognises judges wins; a read that recognised none is returned only when nothing better was found.
+ */
+async function readRoster(ctx: Ctx, src: RosterSource): Promise<RosterRead> {
+  const urls = [src.url, ...(src.fallbackUrls ?? [])];
+  const errors: string[] = [];
+  let empty: RosterRead | null = null;
+  for (const url of urls) {
+    try {
+      const parsed = await readRosterAt(ctx, src, url);
+      if (parsed.entries.length) return { parsed, url, via: "scrape" };
+      empty ??= { parsed, url, via: "scrape" };
+    } catch (e) {
+      errors.push(urls.length > 1 ? `${url}: ${(e as Error).message}` : (e as Error).message);
+    }
+  }
+  if (ctx.extractText && Date.now() < ctx.deadline) {
+    try {
+      for (const page of await ctx.extractText(urls)) {
+        if (!urls.includes(page.url)) continue;
+        let parsed: RosterParseResult;
+        if (src.parser === "extract") {
+          const items = ctx.extractJudges ? await ctx.extractJudges(page.text, page.url) : null;
+          if (items === null) { errors.push(`${page.url}: read as text, but no extraction model is configured`); continue; }
+          parsed = guardExtracted(items, page.text, page.url, []);
+        } else {
+          parsed = parseRoster(src.parser, page.text, page.url, { designations: src.designations });
+        }
+        if (parsed.entries.length) return { parsed: { ...parsed, notes: [`Read through the second reader (page text) at ${page.url}; photographs are linked only where the text carries their URLs.`, ...parsed.notes] }, url: page.url, via: "extract_text" };
+        empty ??= { parsed, url: page.url, via: "extract_text" };
+      }
+    } catch (e) {
+      errors.push(`second reader: ${(e as Error).message}`);
+    }
+  }
+  if (empty) return empty;
+  throw new Error(errors.join("; ") || "The roster page could not be read");
 }
 
 async function pool<T>(items: T[], n: number, fn: (t: T) => Promise<void>, deadline: number): Promise<boolean> {
@@ -181,9 +256,12 @@ async function enrichCourtJudges(ctx: Ctx, src: RosterSource): Promise<CourtJudg
   const runAt = ctx.now().toISOString();
   let parsed: RosterParseResult;
   try {
-    parsed = await readRoster(ctx, src);
+    const read = await readRoster(ctx, src);
+    parsed = read.parsed;
+    // Provenance: judges read from a fallback page cite the page actually read.
+    if (read.url !== src.url) { src = { ...src, url: read.url }; report.sourceUrl = read.url; }
   } catch (e) {
-    return { ...report, status: "failed", error: (e as Error).message.slice(0, 300) };
+    return { ...report, status: "failed", error: (e as Error).message.slice(0, 600) };
   }
   report.found = parsed.entries.length;
   report.notes.push(...parsed.notes.slice(0, 20));
@@ -247,8 +325,8 @@ async function enrichCourtAsset(ctx: Ctx, site: { courtId: string; siteUrl: stri
     await ctx.store.transaction([
       { query: `DELETE FROM court_assets WHERE court_id = $1 AND kind IN ('emblem', 'logo') AND kind <> $2`, params: [site.courtId, kind] },
       {
-        query: `INSERT INTO court_assets (court_id, kind, media_id, source_url, page_url, checked_at, vision) VALUES ($1, $2, $3, $4, $5, now(), $6::jsonb)
-                ON CONFLICT (court_id, kind) DO UPDATE SET media_id = EXCLUDED.media_id, source_url = EXCLUDED.source_url, page_url = EXCLUDED.page_url, checked_at = now(), vision = EXCLUDED.vision`,
+        query: `INSERT INTO court_assets (court_id, kind, media_id, source_url, page_url, checked_at, vision, hidden) VALUES ($1, $2, $3, $4, $5, now(), $6::jsonb, false)
+                ON CONFLICT (court_id, kind) DO UPDATE SET media_id = EXCLUDED.media_id, source_url = EXCLUDED.source_url, page_url = EXCLUDED.page_url, checked_at = now(), vision = EXCLUDED.vision, hidden = false`,
         params: [site.courtId, kind, media.id, imageUrl, site.siteUrl, JSON.stringify(vision)],
       },
     ]);
@@ -272,6 +350,8 @@ export async function runEnrichment(input: RunEnrichmentInput, deps: EnrichDeps 
   const ctx: Ctx = {
     store,
     scrape: deps.scrape ?? defaultScrape(),
+    extractText: deps.extractText === undefined ? defaultExtractText() : deps.extractText,
+    extractJudges: deps.extractJudges ?? defaultExtractJudges,
     storeImage: deps.storeImage ?? ((url, meta) => storeImageFromUrl(url, meta, { store })),
     classify: deps.classify ?? defaultClassify,
     now,

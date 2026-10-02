@@ -31,6 +31,11 @@ export const MEDIA_SCHEMA: SqlQuery[] = [
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
   },
+  // Credit and display fields for the visual library (Commons photographs, regulator logos). Additive and idempotent.
+  { query: `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS author text` },
+  { query: `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS license_url text` },
+  { query: `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS alt text` },
+  { query: `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS dominant text` },
 ];
 
 export class MediaNotConfiguredError extends Error {
@@ -69,6 +74,8 @@ export interface VisionVerdict {
   alt: string | null;
   checkedAt?: string;
   model?: string | null;
+  /** Set by checks that look for the State Emblem of India; true means the image is never shown. */
+  containsStateEmblem?: boolean;
 }
 
 export interface StoredMedia {
@@ -145,6 +152,16 @@ export async function storeImageFromUrl(url: string, meta: MediaMeta = {}, deps:
 export async function setMediaVision(id: string, vision: VisionVerdict, deps: { store?: RemoteStore | null } = {}): Promise<void> {
   const store = requireStore(deps.store);
   await store.query({ query: `UPDATE media_assets SET vision = $2::jsonb WHERE id = $1`, params: [id, JSON.stringify(vision)] });
+}
+
+/** Record the credit and display fields of a stored image (visual library). Null leaves a field unchanged. */
+export async function setMediaCredit(id: string, credit: { author?: string | null; licenseUrl?: string | null; alt?: string | null; dominant?: string | null }, deps: { store?: RemoteStore | null } = {}): Promise<void> {
+  const store = requireStore(deps.store);
+  await ensureMediaSchema(store);
+  await store.query({
+    query: `UPDATE media_assets SET author = COALESCE($2, author), license_url = COALESCE($3, license_url), alt = COALESCE($4, alt), dominant = COALESCE($5, dominant) WHERE id = $1`,
+    params: [id, credit.author ?? null, credit.licenseUrl ?? null, credit.alt ?? null, credit.dominant ?? null],
+  });
 }
 
 export interface MediaRecord {

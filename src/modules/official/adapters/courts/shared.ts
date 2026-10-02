@@ -76,6 +76,39 @@ export function addDays(iso: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** True when the ISO date is a Monday. */
+export function isMonday(iso: string): boolean {
+  return new Date(`${iso}T00:00:00Z`).getUTCDay() === 1;
+}
+
+function withMeta(d: DiscoveredDoc, patch: NonNullable<DiscoveredDoc["meta"]>): DiscoveredDoc {
+  return { ...d, meta: { ...(d.meta ?? {}), ...patch } };
+}
+
+/**
+ * Re-read flags (meta.refetch) for documents publishers revise in place: same URL, new content. The pipeline fetches a
+ * discovered item with refetch: true again (an unchanged hash costs one download and is not re-indexed).
+ * - Cause lists whose list date (meta.listDate, else docDate) is today or later in India (`today` is ctx.today, IST):
+ *   revised lists replace the file until the hearing day. Past lists are final.
+ * - Calendars for this year or later: re-read once a week (Mondays, IST) for corrigenda and added holidays.
+ * Other cause lists / calendars get refetch: false explicitly, so the flag merged into the stored metadata stays true
+ * only while it applies. Other kinds are returned unchanged.
+ */
+export function markRefetch(items: DiscoveredDoc[], today: string): DiscoveredDoc[] {
+  const year = Number(today.slice(0, 4));
+  return items.map((d) => {
+    if (d.kind === "cause_list") {
+      const listDate = typeof d.meta?.listDate === "string" ? d.meta.listDate : d.docDate ?? null;
+      return withMeta(d, { refetch: !!listDate && /^\d{4}-\d{2}-\d{2}$/.test(listDate) && listDate >= today });
+    }
+    if (d.kind === "calendar") {
+      const y = typeof d.meta?.year === "number" ? d.meta.year : Number((d.docDate ?? "").slice(0, 4));
+      return withMeta(d, { refetch: Number.isInteger(y) && y >= year && isMonday(today) });
+    }
+    return d;
+  });
+}
+
 /** "2026-10-05" → "10/05/2026" (NCLT's GET filter format). */
 export function mdy(iso: string): string {
   const [y, m, d] = iso.split("-");

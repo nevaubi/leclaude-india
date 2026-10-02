@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AdapterContext, FetchedFile, FetchedPage, ParseInput } from "@/modules/official/adapter";
-import { backfillCursor, parseCursor } from "@/modules/official/adapters/regulators/common";
+import { backfillCursor, isTooLargeError, parseCursor } from "@/modules/official/adapters/regulators/common";
+import { SafeFetchError } from "@/lib/net/safe-fetch";
 import { adapter as ibbi, corporateDebtorFromTitle, ibbiAnnouncementsUrl, ibbiLastPage, ibbiOrdersUrl, parseIbbiAnnouncements, parseIbbiOrders } from "@/modules/official/adapters/regulators/ibbi";
 import {
   SEBI_PAGER_URL, SEBI_RSS_URL, adapter as sebi, parseSebiDetail, parseSebiListing, parseSebiOrderText, parseSebiRss, sebiListingUrl, sebiPagerFields, sebiPagerRange,
@@ -381,6 +382,24 @@ describe("e-Gazette", () => {
     const r = await egazette.discover(ctx);
     expect(r.items.map((d) => d.meta?.gazetteId)).toEqual([276730]);
     expect(r.done).toBe(false);
+  });
+
+  it("a probe the server answers in full (Range ignored, body over the probe limit) means published; error statuses do not", async () => {
+    const tooLarge = [
+      new SafeFetchError("body_too_large", "Response declares 2104768 bytes, above the 65536-byte limit", { url: egazettePdfUrl(2026, 276731) }),
+      new SafeFetchError("body_too_large", "Response is larger than the 65536-byte limit", { url: egazettePdfUrl(2026, 276730) }),
+      Object.assign(new Error("official:egazette: file larger than 65536 bytes"), { status: 200 }),
+    ];
+    for (const err of tooLarge) expect(isTooLargeError(err)).toBe(true);
+    const files = (url: string) => (url.endsWith("/276731.pdf") ? tooLarge[0] : url.endsWith("/276730.pdf") ? tooLarge[1] : url.endsWith("/276729.pdf") ? tooLarge[2] : undefined);
+    const { ctx } = makeCtx({ pages: (u) => (u === "https://egazette.gov.in/" ? home : undefined), files, limit: 3 });
+    const r = await egazette.discover(ctx);
+    expect(r.items.map((d) => d.meta?.gazetteId)).toEqual([276731, 276730, 276729]);
+    // A rate-limit or server error is not "too large": the probe fails instead of inventing a gazette.
+    const limited = Object.assign(new Error("HTTP 429 rate limit exceeded"), { status: 429 });
+    expect(isTooLargeError(limited)).toBe(false);
+    const { ctx: c2 } = makeCtx({ pages: (u) => (u === "https://egazette.gov.in/" ? home : undefined), files: () => limited, limit: 3 });
+    await expect(egazette.discover(c2)).rejects.toThrow(/429/);
   });
 
   it("extracts page-1 metadata from the English half of a gazette (live PDF text)", () => {

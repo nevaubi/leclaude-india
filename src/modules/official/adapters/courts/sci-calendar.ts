@@ -2,7 +2,7 @@ import "server-only";
 import type { AdapterContext, DiscoverResult, ParseInput, SourceAdapter } from "../../adapter";
 import type { DiscoveredDoc, SourceDef } from "../../types";
 import { calendarParse, calendarPersist } from "./common";
-import { GOV_TERMS, anchors, pageOf } from "./shared";
+import { GOV_TERMS, anchors, markRefetch, pageOf } from "./shared";
 
 /**
  * Supreme Court calendar and holidays (https://www.sci.gov.in/calendar/).
@@ -14,6 +14,8 @@ import { GOV_TERMS, anchors, pageOf } from "./shared";
  * - the holiday data the page's own script requests (wp-admin/admin-ajax.php?action=calender_get_holidays_for_this_month,
  *   documented in holiday-calendar.js): typed entries (gazetted, vacations, partial, weekend-working).
  * Parsed rows go to court_holidays (forum "sci"); courtCalendar("sci", years) merges them.
+ * The page and the year's holiday data are amended in place when holidays are added or moved, so both are re-read on
+ * every (daily) pass (`meta.refetch`); the year PDFs weekly.
  */
 
 export const SCI_CALENDAR_PAGE = "https://www.sci.gov.in/calendar/";
@@ -75,7 +77,7 @@ export const adapter: SourceAdapter = {
         title: "Supreme Court of India — Holidays (calendar page)",
         docDate: `${year}-01-01`,
         mime: "text/html",
-        meta: { forum: "sci", docKind: "calendar", format: "html_table" },
+        meta: { forum: "sci", docKind: "calendar", format: "html_table", refetch: true },
       },
       {
         sourceId: "sci-calendar",
@@ -84,12 +86,12 @@ export const adapter: SourceAdapter = {
         title: `Supreme Court of India — Holiday data ${year}`,
         docDate: `${year}-01-01`,
         mime: "application/json",
-        meta: { forum: "sci", docKind: "calendar", format: "json", year, urlFromPattern: true },
+        meta: { forum: "sci", docKind: "calendar", format: "json", year, urlFromPattern: true, refetch: true },
       },
     ];
     try {
       const page = await ctx.fetchPage(SCI_CALENDAR_PAGE);
-      items.push(...sciCalendarPdfs(page.html ?? "", year - 1));
+      items.push(...markRefetch(sciCalendarPdfs(page.html ?? "", year - 1), ctx.today));
     } catch (e) {
       notes.push(`calendar page unavailable: ${(e as Error).message.slice(0, 160)}`);
     }

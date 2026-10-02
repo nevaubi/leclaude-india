@@ -2,7 +2,7 @@ import "server-only";
 import type { AdapterContext, DiscoverResult, ParseInput, SourceAdapter } from "../../adapter";
 import type { DiscoveredDoc, SourceDef } from "../../types";
 import { calendarParse, calendarPersist } from "./common";
-import { GOV_TERMS, anchors, pageOf, tableRows } from "./shared";
+import { GOV_TERMS, anchors, markRefetch, pageOf, tableRows } from "./shared";
 
 /**
  * High Court holiday calendars.
@@ -116,7 +116,8 @@ export const adapter: SourceAdapter = {
       notes.push(`Karnataka calendar page unavailable (${(e as Error).message.slice(0, 120)}); using the documented file name for ${year}`);
       items.push(karnatakaItem(`https://judiciary.karnataka.gov.in/pdfs/Calender-${year}.pdf`, year, true));
     }
-    return pageOf(items, ctx, notes);
+    // Calendar files keep their name when corrected (Karnataka's Calender-YYYY.pdf): re-read weekly (meta.refetch).
+    return pageOf(markRefetch(items, ctx.today), ctx, notes);
   },
   parse: (doc: ParseInput) => calendarParse(doc, { format: "pdf" }),
   persist: calendarPersist,

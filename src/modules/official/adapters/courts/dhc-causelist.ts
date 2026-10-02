@@ -3,7 +3,7 @@ import type { AdapterContext, DiscoverResult, ParseInput, ParseResult, SourceAda
 import type { CauseListType, DiscoveredDoc, SourceDef } from "../../types";
 import { printedDate } from "../../causelist/text";
 import { causeListParse, causeListPersist } from "./common";
-import { GOV_TERMS, addDays, anchors, runQueries, tableRows } from "./shared";
+import { GOV_TERMS, addDays, anchors, markRefetch, runQueries, tableRows } from "./shared";
 
 /**
  * Delhi High Court cause lists (https://delhihighcourt.nic.in/web/cause-lists/cause-list, ?page=N).
@@ -12,7 +12,8 @@ import { GOV_TERMS, addDays, anchors, runQueries, tableRows } from "./shared";
  * folder is the upload month, so a list is classified only by its printed title. A title such as "... cases fixed for
  * Saturday, the 3rd October, 2026 shall be taken up on Monday, the 5th October, 2026" moves the hearing date: entries
  * are dated by the "taken up on" date and the listing date is kept as meta.listedFor. Deletion notes are ingested as
- * text but yield no entries (an item in a deletion note is not a listing).
+ * text but yield no entries (an item in a deletion note is not a listing). Lists dated today or later are re-read on
+ * every pass (`meta.refetch`) so a list revised under the same link is read again.
  */
 
 export const DHC_CAUSELIST_INDEX = "https://delhihighcourt.nic.in/web/cause-lists/cause-list";
@@ -114,7 +115,7 @@ export const adapter: SourceAdapter = {
       }
       const { items, oldest, rows } = dhcListingItems(page.html ?? "", since);
       if (!rows || (oldest && oldest < since)) stop = true;
-      return items;
+      return markRefetch(items, ctx.today);
     });
   },
   parse(doc: ParseInput): ParseResult {

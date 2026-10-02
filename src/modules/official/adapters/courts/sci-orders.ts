@@ -13,7 +13,8 @@ import { GOV_TERMS, addDays, pageOf } from "./shared";
  * (the latest 1,000 orders, about one or two days). Each entry reads
  *   "<PARTIES> - <Case No.> - Diary Number <N> / <YYYY> - <DD-Mon-YYYY> (Uploaded On <DD-MM-YYYY HH:MM:SS>)"
  * and links https://www.sci.gov.in/view-pdf/?diary_no={N}{YYYY}&type={j|o|fo}&order_date={date}&from=latest_judgements_order,
- * an HTML shell whose script loads the PDF from /sci-get-pdf/ with the same parameters (fileUrl, meta.fileUrlFromPattern).
+ * an HTML shell whose script loads the PDF from /sci-get-pdf/ with the same parameters (fileUrl built from that
+ * documented pattern: meta.urlFromPattern, per the adapter contract).
  * The listing's printed diary number and date must agree with the link's parameters, otherwise the entry is skipped.
  * The date / diary / case-number search pages are CAPTCHA-protected and are not used.
  */
@@ -91,7 +92,7 @@ export function sciOrderItems(html: string, listing: "homepage" | "latest-orders
         orderDate,
         uploadedAt: `${e[7]}-${e[6]}-${e[5]}T${e[8]}+05:30`,
         listing,
-        fileUrlFromPattern: true,
+        urlFromPattern: true,
       },
     });
   }

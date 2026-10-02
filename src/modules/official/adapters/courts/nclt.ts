@@ -5,7 +5,7 @@ import type { DiscoveredDoc, SourceDef } from "../../types";
 import { NCLT_BENCHES, type NcltBench } from "../../causelist/forums";
 import { printedDate } from "../../causelist/text";
 import { calendarParse, calendarPersist, causeListParse, causeListPersist } from "./common";
-import { GOV_TERMS, addDays, anchors, drupalCell, mdy, runQueries } from "./shared";
+import { GOV_TERMS, addDays, anchors, drupalCell, markRefetch, mdy, runQueries } from "./shared";
 
 /**
  * National Company Law Tribunal (https://nclt.gov.in).
@@ -15,6 +15,7 @@ import { GOV_TERMS, addDays, anchors, drupalCell, mdy, runQueries } from "./shar
  *   documents are deduplicated by href. "No. of Entries" is kept (meta.entriesCount) to check parsed item counts.
  * - Weekly registry defect lists (/list-of-objection-list): kind defect_list (text only).
  * - Calendar (/nclt-calender): the year PDF, kind calendar (forum "nclt", applies to every bench).
+ * Cause lists dated today or later and this year's calendar are re-read (`meta.refetch`, see shared.markRefetch).
  * The order-date-wise search is CAPTCHA-protected and is not used.
  */
 
@@ -168,14 +169,14 @@ export const adapter: SourceAdapter = {
       if (i < NCLT_BENCHES.length) {
         const bench = NCLT_BENCHES[i];
         const page = await ctx.fetchPage(ncltListUrl(bench.id, from, to));
-        return ncltListingItems(page.html ?? "", bench);
+        return markRefetch(ncltListingItems(page.html ?? "", bench), ctx.today);
       }
       if (i === NCLT_BENCHES.length) {
         const page = await ctx.fetchPage(NCLT_DEFECTS);
         return ncltDefectItems(page.html ?? "", addDays(ctx.today, -14));
       }
       const page = await ctx.fetchPage(NCLT_CALENDAR);
-      return ncltCalendarItems(page.html ?? "", year - 1);
+      return markRefetch(ncltCalendarItems(page.html ?? "", year - 1), ctx.today);
     });
   },
   parse(doc: ParseInput): ParseResult {

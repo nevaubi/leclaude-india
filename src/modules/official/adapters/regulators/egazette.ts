@@ -1,7 +1,7 @@
 import "server-only";
 import type { AdapterContext, DiscoverResult, ParseInput, ParseResult, SourceAdapter } from "../../adapter";
 import type { DiscoveredDoc, SourceDef } from "../../types";
-import { GOV_TERMS, clean, errorStatus, htmlText, isNotFound, nearDeadline, parseCursor, printedDate, serializeCursor, type RegCursor } from "./common";
+import { GOV_TERMS, clean, errorStatus, htmlText, isNotFound, isTooLargeError, nearDeadline, parseCursor, printedDate, serializeCursor, type RegCursor } from "./common";
 
 /**
  * e-Gazette of India (egazette.gov.in). Verified 2026-10-02:
@@ -89,8 +89,10 @@ export async function probePdf(ctx: AdapterContext, url: string): Promise<ProbeR
     return head.startsWith("%PDF-") ? "exists" : "missing";
   } catch (e) {
     if (isNotFound(e)) return "missing";
-    // The server ignored Range and the file is larger than the probe limit: it exists.
-    if (/too large|exceed|max(?:imum)?\s*bytes|size limit/i.test(e instanceof Error ? e.message : String(e)) && errorStatus(e) !== 404) return "exists";
+    // The server ignored Range and the file is larger than the probe limit: it exists. An error status (404, 429, 5xx)
+    // is never read as "too large".
+    const status = errorStatus(e);
+    if (isTooLargeError(e) && (status == null || status < 400)) return "exists";
     throw e;
   }
 }

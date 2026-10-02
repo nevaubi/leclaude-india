@@ -6,7 +6,7 @@ import { createFirecrawl, type FirecrawlRichOptions, type FirecrawlRichPage } fr
 import { createOfficialHttp, extractLinks, fallbackWorthy, indiaToday, isNotPublished, isTooLarge, makeAdapterContext, type FirecrawlLike } from "@/modules/official/http";
 import { allowHostsFor, registerAllowHosts } from "@/modules/official/registry";
 import type { SourceDef } from "@/modules/official/types";
-import { CRON_DEADLINE_MS, CRON_REDRIVE, handleCronRun, handleRunRequest, ingestGate, parseRunBody } from "@/app/api/official/run/handler";
+import { CRON_DEADLINE_MS, CRON_MIN_INTERVAL_S, CRON_REDRIVE, handleCronRun, handleRunRequest, ingestGate, parseRunBody } from "@/app/api/official/run/handler";
 import type { OfficialRunOptions, OfficialRunResult } from "@/modules/official/run";
 import { runCitatorBuild } from "@/modules/india/citator/build";
 import { resetCitatorSchemaCacheForTests } from "@/modules/india/citator/schema";
@@ -194,21 +194,41 @@ describe("official run route gate", () => {
     expect(parseRunBody({ retryFailed: true })).toEqual({ deadlineMs: 240_000, retryFailed: true });
   });
 
-  it("cron GET: service principal only, does nothing (no database) while OFFICIAL_INGEST is off, then runs with a bounded redrive", async () => {
+  it("cron GET with CRON_SECRET: service principal only; nothing runs (no database) while OFFICIAL_INGEST is off", async () => {
     let ran: OfficialRunOptions | null = null;
+    let claims = 0;
     const run = async (o: OfficialRunOptions) => { ran = o; return fakeResult; };
-    const denied = await handleCronRun({ principal: () => person, run, env: { OFFICIAL_INGEST: "1", OFFICIAL_INGEST_TOKEN: "t" } });
+    const claimSlot = async () => { claims++; return true; };
+    const denied = await handleCronRun({ principal: () => person, run, claimSlot, env: { OFFICIAL_INGEST: "1", CRON_SECRET: "s" } });
     expect(denied.status).toBe(403);
     expect(await denied.json()).toMatchObject({ code: "service_only" });
-    expect((await handleCronRun({ principal: () => null, run, env: { OFFICIAL_INGEST: "1" } })).status).toBe(403);
-    const off = await handleCronRun({ principal: () => cron, run, env: {} });
+    expect((await handleCronRun({ principal: () => null, run, claimSlot, env: { OFFICIAL_INGEST: "1", CRON_SECRET: "s" } })).status).toBe(403);
+    const off = await handleCronRun({ principal: () => cron, run, claimSlot, env: { CRON_SECRET: "s" } });
     expect(off.status).toBe(200);
     expect(await off.json()).toMatchObject({ stop: "disabled" });
     expect(ran).toBeNull();
-    const on = await handleCronRun({ principal: () => cron, run, env: { OFFICIAL_INGEST: "true", OFFICIAL_CONCURRENCY: "40" } });
+    const on = await handleCronRun({ principal: () => cron, run, claimSlot, env: { OFFICIAL_INGEST: "true", OFFICIAL_CONCURRENCY: "40", CRON_SECRET: "s" } });
     expect(on.status).toBe(200);
     expect(ran).toEqual({ deadlineMs: CRON_DEADLINE_MS, concurrency: 16, redrive: { ...CRON_REDRIVE } });
+    expect(claims).toBe(0); // the authenticated cron is not throttled
     expect(CRON_DEADLINE_MS).toBeLessThanOrEqual(280_000);
+  });
+
+  it("cron GET without CRON_SECRET: a kick runs only when the global start slot is free (no faster than the schedule)", async () => {
+    let runs = 0;
+    const run = async () => { runs++; return fakeResult; };
+    let free = true;
+    const claimSlot = async () => { const was = free; free = false; return was; };
+    const first = await handleCronRun({ principal: () => person, run, claimSlot, env: { OFFICIAL_INGEST: "1" } });
+    expect(first.status).toBe(200);
+    const second = await handleCronRun({ principal: () => null, run, claimSlot, env: { OFFICIAL_INGEST: "1" } });
+    expect(second.status).toBe(429);
+    expect(await second.json()).toMatchObject({ stop: "throttled" });
+    expect(second.headers.get("retry-after")).toBe(String(CRON_MIN_INTERVAL_S));
+    expect(runs).toBe(1);
+    const off = await handleCronRun({ principal: () => person, run, claimSlot: async () => { throw new Error("must not touch the database"); }, env: {} });
+    expect(await off.json()).toMatchObject({ stop: "disabled" });
+    expect(CRON_MIN_INTERVAL_S).toBeLessThan(120);
   });
 
   it("maps a missing database to 503 and runner bugs to 502", async () => {

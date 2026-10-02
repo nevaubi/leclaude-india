@@ -208,6 +208,22 @@ export async function dbSize(store: RemoteStore): Promise<number> {
   return Number(r[0]?.b ?? 0);
 }
 
+/**
+ * Atomically claim a start slot shared by every instance: true when no start was recorded under `key` within the last
+ * `minIntervalSeconds` (the row's updated_at is the last start). A global throttle, not a lock: overlapping runs are
+ * still safe because units are leased.
+ */
+export async function claimStartSlot(store: RemoteStore, key: string, minIntervalSeconds: number): Promise<boolean> {
+  const seconds = Math.max(1, Math.min(Math.floor(minIntervalSeconds), 86_400));
+  const r = await store.query({
+    query: `INSERT INTO corpus_state (key, value, updated_at) VALUES ($1, '{}'::jsonb, now())
+      ON CONFLICT (key) DO UPDATE SET updated_at = now() WHERE corpus_state.updated_at < now() - interval '${seconds} seconds'
+      RETURNING 1 AS ok`,
+    params: [key],
+  });
+  return r.length > 0;
+}
+
 export async function getOfficialState<T>(store: RemoteStore, key: string): Promise<T | null> {
   const r = await store.query({ query: `SELECT value FROM corpus_state WHERE key = $1`, params: [key] });
   if (!r[0]?.value) return null;

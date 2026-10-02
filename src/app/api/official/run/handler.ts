@@ -4,7 +4,7 @@ import { jsonError } from "@/lib/ai/sse";
 import type { Principal } from "@/lib/auth/types";
 import { officialIngestEnabled, runOfficialIngest, type OfficialRunOptions, type OfficialRunResult } from "@/modules/official/run";
 import { isSourceId, type SourceId } from "@/modules/official/types";
-import { UNIT_STAGES, type UnitStage } from "@/modules/official/units";
+import { claimStartSlot, officialStore, UNIT_STAGES, type UnitStage } from "@/modules/official/units";
 import { officialErrorResponse } from "../errors";
 
 /**
@@ -87,6 +87,8 @@ export interface RunRouteDeps {
   principal: () => Principal | null;
   run?: (o: OfficialRunOptions) => Promise<OfficialRunResult>;
   env?: Readonly<Record<string, string | undefined>>;
+  /** Global start throttle for unauthenticated scheduled kicks (tests inject it). */
+  claimSlot?: () => Promise<boolean>;
 }
 
 export async function handleRunRequest(req: Request, deps: RunRouteDeps): Promise<Response> {
@@ -110,21 +112,39 @@ export async function handleRunRequest(req: Request, deps: RunRouteDeps): Promis
 /** Scheduled runs: work until shortly before the function limit, and redrive old failures a bounded number of times. */
 export const CRON_DEADLINE_MS = 270_000;
 export const CRON_REDRIVE = { cooldownMinutes: 60, maxRedrives: 3 } as const;
+/** Minimum seconds between scheduled starts when the deployment has no CRON_SECRET (just under the 2-minute schedule). */
+export const CRON_MIN_INTERVAL_S = 110;
+const CRON_SLOT_KEY = "official_cron_start";
+
+async function defaultClaimSlot(): Promise<boolean> {
+  return claimStartSlot(await officialStore(), CRON_SLOT_KEY, CRON_MIN_INTERVAL_S);
+}
 
 /**
- * GET /api/official/run — the Vercel cron entry (vercel.json). Only the scheduled service principal (CRON_SECRET bearer)
- * may call it; people use POST with the operator token. Nothing runs, and the database is not touched, unless
- * OFFICIAL_INGEST is on, so the schedule can stay in vercel.json and the flag decides.
+ * GET /api/official/run — the Vercel cron entry (vercel.json). Nothing runs, and the database is not touched, unless
+ * OFFICIAL_INGEST is on.
+ * - With CRON_SECRET configured (Vercel then sends it as a bearer), only the scheduled service principal may start a run.
+ * - Without CRON_SECRET, Vercel cannot authenticate its cron, so a call is a "kick": it starts a run only when no run
+ *   started in the last CRON_MIN_INTERVAL_S seconds (claimed atomically in Postgres). Extra calls are no-ops (429), so
+ *   nobody can make the ingest run more often than the schedule does. The work itself is bounded public-data ingestion.
  */
 export async function handleCronRun(deps: RunRouteDeps): Promise<Response> {
+  const vars = deps.env ?? process.env;
   const p = deps.principal();
-  if (!p || p.source !== "service" || !p.roles.includes("service")) {
+  const service = Boolean(p && p.source === "service" && p.roles.includes("service"));
+  const secretConfigured = Boolean(vars.CRON_SECRET?.trim());
+  if (!service && secretConfigured) {
     return jsonError("Scheduled ingest runs are only started by the cron service principal; use POST with the ingest token.", 403, { code: "service_only" });
   }
-  const vars = deps.env ?? process.env;
   if (!officialIngestEnabled(vars)) return Response.json({ stop: "disabled", notes: ["OFFICIAL_INGEST is off"] });
   const workers = Number(vars.OFFICIAL_CONCURRENCY);
   try {
+    if (!service) {
+      const claimed = await (deps.claimSlot ?? defaultClaimSlot)();
+      if (!claimed) {
+        return Response.json({ stop: "throttled", notes: [`a scheduled run started less than ${CRON_MIN_INTERVAL_S}s ago`] }, { status: 429, headers: { "retry-after": String(CRON_MIN_INTERVAL_S) } });
+      }
+    }
     const r = await (deps.run ?? runOfficialIngest)({
       deadlineMs: CRON_DEADLINE_MS,
       concurrency: Number.isInteger(workers) && workers >= 1 ? Math.min(workers, 16) : 6,

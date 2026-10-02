@@ -1,10 +1,10 @@
 "use client";
-/** Word left sidebar: Outline | Find as two segmented buttons, outline rows with word counts, find & replace. */
+/** Word left sidebar: Outline | Find | Checks as segmented buttons: outline rows with word counts, find & replace, filing check. */
 import * as React from "react";
 import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { CaseSensitive, ChevronDown, ChevronUp, ListTree, Regex, Replace, ReplaceAll, Search, WholeWord, X } from "lucide-react";
+import { CaseSensitive, ChevronDown, ChevronUp, FileCheck2, ListTree, Regex, Replace, ReplaceAll, Search, WholeWord, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { PanelEmpty, SegmentedControl } from "@/modules/office/shared/office-chr
 import { wordCount } from "./doc-model";
 import { findKey, findRanges, type FindQuery } from "./extensions";
 import { buildTrackedInline } from "./tracked-diff";
+import { ChecksPanel } from "./filing-check-ui";
 import type { PMNode } from "./doc-model";
 
 export interface OutlineItem { id: string; level: number; text: string; pos: number; words: number; index: number }
@@ -31,21 +32,22 @@ export function computeOutline(editor: Editor): OutlineItem[] {
   return out;
 }
 
-export type SidebarTab = "outline" | "find";
+export type SidebarTab = "outline" | "find" | "checks";
 
 const TABS: { id: SidebarTab; label: string; icon: typeof ListTree; shortcut?: string }[] = [
   { id: "outline", label: "Outline", icon: ListTree, shortcut: "⌘⇧O" },
   { id: "find", label: "Find", icon: Search, shortcut: "⌘F" },
+  { id: "checks", label: "Checks", icon: FileCheck2 },
 ];
 
-export function WordSidebar({ editor, tab, onTab, outline, currentHeadingId, onClose, findFocusKey }: { editor: Editor; tab: SidebarTab; onTab: (t: SidebarTab) => void; outline: OutlineItem[]; currentHeadingId: string | null; onClose: () => void; findFocusKey: number }) {
+export function WordSidebar({ editor, tab, onTab, outline, currentHeadingId, onClose, findFocusKey, docId, onLocate }: { editor: Editor; tab: SidebarTab; onTab: (t: SidebarTab) => void; outline: OutlineItem[]; currentHeadingId: string | null; onClose: () => void; findFocusKey: number; docId?: string; onLocate?: (blockId: string) => void }) {
   return (
     <aside className="flex h-full w-[248px] shrink-0 flex-col border-r bg-background" aria-label="Document sidebar">
       <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2">
         <SegmentedControl ariaLabel="Sidebar view" grow size="xs" value={tab} onChange={onTab} options={TABS.map((t) => ({ id: t.id, label: t.label, icon: t.icon, shortcut: t.shortcut }))} />
         <Tip label="Hide sidebar" shortcut="⌘⇧O"><Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Hide sidebar"><X className="size-3.5" /></Button></Tip>
       </div>
-      {tab === "outline" ? <OutlinePanel editor={editor} outline={outline} currentHeadingId={currentHeadingId} /> : <FindReplacePanel editor={editor} focusKey={findFocusKey} />}
+      {tab === "outline" ? <OutlinePanel editor={editor} outline={outline} currentHeadingId={currentHeadingId} /> : tab === "find" ? <FindReplacePanel editor={editor} focusKey={findFocusKey} /> : <ChecksPanel editor={editor} docId={docId} onLocate={onLocate ?? (() => undefined)} />}
     </aside>
   );
 }

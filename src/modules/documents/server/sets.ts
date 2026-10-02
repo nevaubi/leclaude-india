@@ -10,6 +10,12 @@ import type { DocFile, DocFileStatus, DocSet } from "../types";
 import { DocsError, loadSet, readableSets } from "./access";
 import { docStore, publicFile } from "./store";
 import { joinChunks } from "./text";
+import { workStore } from "./work-store";
+
+/** Drafting work items go with their set / file; a failure here never blocks the delete itself. */
+async function dropWork(fn: (w: Awaited<ReturnType<typeof workStore>>) => Promise<void>) {
+  try { await fn(await workStore()); } catch (e) { console.warn("[documents] work item cleanup failed", (e as Error).message); }
+}
 
 /** Set and file management (create, rename, delete, list, read pages) plus the storage status. */
 
@@ -75,6 +81,7 @@ export async function updateSet(principal: Principal, setId: string, patch: { na
 export async function deleteSet(principal: Principal, setId: string): Promise<void> {
   const set = await loadSet(principal, setId, "delete");
   await (await docStore()).deleteSet(set.id);
+  await dropWork((w) => w.deleteSet(set.id));
   recordAudit(principal, "delete", { kind: "document_set", id: set.id, label: set.name, matterId: set.matterId ?? undefined }, { files: set.fileCount });
 }
 
@@ -106,6 +113,7 @@ export async function deleteFile(principal: Principal, setId: string, fileId: st
   if (!file) throw new DocsError("File not found", 404, "not_found");
   await store.deleteFile(set.id, file.id);
   await store.refreshSetCounts(set.id);
+  await dropWork((w) => w.deleteFile(set.id, file.id));
   recordAudit(principal, "delete", { kind: "document_file", id: file.id, label: file.name, matterId: set.matterId ?? undefined }, { setId: set.id, sha256: file.sha256 });
 }
 

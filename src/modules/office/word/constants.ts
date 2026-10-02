@@ -69,11 +69,17 @@ export const TEXT_COLORS: { id: string; label: string; css: string }[] = [
   { id: "purple", label: "Purple", css: "#6d28d9" },
 ];
 
-export const LANGUAGES = [{ id: "en-US", label: "English (US)" }, { id: "en-GB", label: "English (UK)" }, { id: "es-US", label: "Spanish (US)" }, { id: "fr-FR", label: "French" }];
+export const LANGUAGES = [{ id: "en-US", label: "English (US)" }, { id: "en-GB", label: "English (UK)" }, { id: "en-IN", label: "English (India)" }, { id: "es-US", label: "Spanish (US)" }, { id: "fr-FR", label: "French" }];
+
+/** Indian court templates (ids "word-in-…"): A4 paper and Indian English, as Indian registries expect. */
+export function isIndiaTemplate(templateId?: string | null): boolean {
+  return typeof templateId === "string" && /^word-in-/.test(templateId);
+}
 
 /** Legal templates use serif; internal memos use sans. */
 export function settingsForTemplate(templateId?: string | null): DocSettings {
   const sans = templateId ? /memo|minutes|letter|update|issues/i.test(templateId) : false;
   const court = templateId ? /motion|brief|notice|interrogator|deposition|order/i.test(templateId) : false;
-  return { ...DEFAULT_SETTINGS, font: sans ? "sans" : "serif", margins: court ? "court" : "normal", lineSpacing: court ? 2 : 1.15, fontSize: sans ? 11 : 12 };
+  const india = isIndiaTemplate(templateId);
+  return { ...DEFAULT_SETTINGS, font: sans ? "sans" : "serif", margins: court ? "court" : "normal", lineSpacing: court ? 2 : 1.15, fontSize: sans ? 11 : 12, ...(india ? { pageSize: "a4" as const, language: "en-IN" } : {}) };
 }

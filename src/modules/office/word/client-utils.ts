@@ -61,7 +61,14 @@ export function safeFilename(title: string) { return (title.replace(/[^\w\- ]+/g
 export function downloadMarkdown(doc: PMNode, title: string) { downloadBlob(new Blob([docToMarkdown(doc, { title })], { type: "text/markdown;charset=utf-8" }), `${safeFilename(title)}.md`); }
 export function downloadText(doc: PMNode, title: string) { downloadBlob(new Blob([docToPlainText(doc)], { type: "text/plain;charset=utf-8" }), `${safeFilename(title)}.txt`); }
 
-export async function downloadDocx(body: { docId?: string; content: PMNode; title: string; settings: DocSettings; changes?: "revisions" | "accepted" }) {
+/** Export provenance options for POST /api/office/word/export (see that route). */
+export interface ExportProvenanceRequest {
+  declaration?: { text: string } | null;
+  appendix?: boolean;
+  acknowledgement?: { acknowledged: boolean; docHash: string; items: number } | null;
+}
+
+export async function downloadDocx(body: { docId?: string; content: PMNode; title: string; settings: DocSettings; changes?: "revisions" | "accepted"; provenance?: ExportProvenanceRequest }) {
   const res = await fetch("/api/office/word/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, format: "docx" }) });
   if (!res.ok) { const j = (await res.json().catch(() => ({ error: res.statusText }))) as { error?: string }; throw new Error(j.error ?? res.statusText); }
   downloadBlob(await res.blob(), `${safeFilename(body.title)}.docx`);

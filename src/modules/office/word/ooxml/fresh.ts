@@ -6,6 +6,7 @@ import JSZip from "jszip";
 import type { PMNode } from "../doc-model";
 import type { DocSettings } from "../constants";
 import { appAbstractNumXml, appFontTableXml, appFooterXml, appPropsXml, appSettingsXml, appStyleDefs, appStylesXml, commentsPartXml, coreXml, initialsOf, listRefFor, mergeSectionSpec, notesPartXml, numXml, sectPrInnerXml, APP_LIST_REFS, type AppListRef, type CommentOut, type SectionSpec } from "./app-parts";
+import { CT_CUSTOM_PROPS, CUSTOM_PROPS_PATH, customPropsXml, REL_CUSTOM_PROPS, type CustomProp } from "./custom-props";
 import { CT, REL, serializeContentTypes, serializeRels, type Rel } from "./package";
 import { commentSpans, writeBlocks, type CommentAllocator, type ExportImageData, type NoteAllocator, type NumAllocator, type RelAllocator, type StyleResolver, type WriterEnv } from "./writer";
 import { WORD_NS_DECLS, XML_DECL } from "./xml";
@@ -31,6 +32,8 @@ export interface WriteOptions {
   changes: "revisions" | "accepted";
   comments: CommentInput[];
   images: Map<string, ExportImageData | null>;
+  /** Custom file properties (docProps/custom.xml), e.g. export provenance. Omitted or empty: no custom part. */
+  customProps?: CustomProp[];
 }
 
 /** Comments whose range mark is not in the document are anchored to their paragraph: wrap its text in a mark. */
@@ -185,12 +188,18 @@ export async function exportFresh(doc: PMNode, o: WriteOptions): Promise<Buffer>
   const abstractXml = APP_LIST_REFS.filter((r) => abstractIds.has(r)).map((r) => appAbstractNumXml(r, abstractIds.get(r)!)).join("");
   // Keep the numbering part valid even with no lists (Word accepts an empty w:numbering).
   const numberingXml = `${XML_DECL}<w:numbering ${WORD_NS_DECLS}>${abstractXml}${nums.map((n) => numXml(n.numId, n.abstractId, n.start)).join("")}</w:numbering>`;
-  zip.file("[Content_Types].xml", serializeContentTypes(ct));
-  zip.file("_rels/.rels", serializeRels([
+  const pkgRels: Rel[] = [
     { id: "rId1", type: REL.officeDocument, target: "word/document.xml", external: false },
     { id: "rId2", type: REL.coreProps, target: "docProps/core.xml", external: false },
     { id: "rId3", type: REL.extendedProps, target: "docProps/app.xml", external: false },
-  ]));
+  ];
+  if (o.customProps?.length) {
+    pkgRels.push({ id: "rId4", type: REL_CUSTOM_PROPS, target: CUSTOM_PROPS_PATH, external: false });
+    ct.overrides[CUSTOM_PROPS_PATH] = CT_CUSTOM_PROPS;
+    zip.file(CUSTOM_PROPS_PATH, customPropsXml(o.customProps));
+  }
+  zip.file("_rels/.rels", serializeRels(pkgRels));
+  zip.file("[Content_Types].xml", serializeContentTypes(ct));
   zip.file("word/document.xml", documentXml);
   zip.file("word/_rels/document.xml.rels", serializeRels(rels));
   zip.file("word/styles.xml", appStylesXml(settings));

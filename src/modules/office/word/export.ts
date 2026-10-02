@@ -10,6 +10,7 @@
 import type { OfficeComment } from "@/lib/types/domain";
 import { DEFAULT_SETTINGS, type DocSettings } from "./constants";
 import { docToMarkdown, docToPlainText, type PMNode } from "./doc-model";
+import type { CustomProp } from "./ooxml/custom-props";
 import { exportFresh, type CommentInput } from "./ooxml/fresh";
 import { docxImageSrc } from "./ooxml/images";
 import { exportPreserving } from "./ooxml/roundtrip";
@@ -30,6 +31,8 @@ export interface ExportOptions {
   basePackage?: Uint8Array | null;
   /** Comments that came with the imported .docx (officeDoc.meta.docx.comments, with their current state). */
   importedComments?: DocxImportedComment[];
+  /** Custom file properties written to docProps/custom.xml (export provenance; LeClaude.* names are replaced). */
+  customProps?: CustomProp[];
   /** Receives export diagnostics (preserved/regenerated block counts, rewritten parts). */
   onReport?: (r: { mode: "fresh" | "preserve"; changedParts?: string[]; preservedBlocks?: number; regeneratedBlocks?: number; warnings: string[] }) => void;
 }
@@ -51,7 +54,7 @@ export async function exportDocx(doc: PMNode, opts: ExportOptions): Promise<Buff
   const comments = commentInputs(opts);
   if (opts.basePackage?.byteLength) {
     try {
-      const r = await exportPreserving(doc, opts.basePackage, { settings, author, changes, comments, images, imageSrc: (_b, _m, _n, sha) => docxImageSrc(sha) });
+      const r = await exportPreserving(doc, opts.basePackage, { settings, author, changes, comments, images, imageSrc: (_b, _m, _n, sha) => docxImageSrc(sha), customProps: opts.customProps });
       opts.onReport?.({ mode: "preserve", changedParts: r.changedParts, preservedBlocks: r.preservedBlocks, regeneratedBlocks: r.regeneratedBlocks, warnings: r.warnings });
       return r.bytes;
     } catch (e) {
@@ -59,7 +62,7 @@ export async function exportDocx(doc: PMNode, opts: ExportOptions): Promise<Buff
       opts.onReport?.({ mode: "fresh", warnings: [`Package-preserving export failed (${(e as Error).message}); wrote a fresh package.`] });
     }
   }
-  const buf = await exportFresh(doc, { title: opts.title, settings, author, changes, comments, images });
+  const buf = await exportFresh(doc, { title: opts.title, settings, author, changes, comments, images, customProps: opts.customProps });
   opts.onReport?.({ mode: "fresh", warnings: [] });
   return buf;
 }

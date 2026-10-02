@@ -1,11 +1,14 @@
 "use client";
 import * as React from "react";
-import { ChevronLeft, ChevronRight, Loader2, ScanLine } from "lucide-react";
+import { ChevronLeft, ChevronRight, Languages, Loader2, ScanLine, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { DocFile } from "../types";
-import { docsApi, errorKind, errorMessage, setUrl } from "./api";
+import { docsApi, errorKind, errorMessage, isAbort, setUrl, UNCONFIGURED_MESSAGE } from "./api";
+import { TRANSLATION_LABEL, TRANSLATION_LANGUAGES, languageLabel, type TranslationRecord } from "../drafting";
+import { translationsApi } from "./drafting/drafting-api";
 import { formatBytes, formatPreciseDate, methodLabel } from "./format";
 import { FileStatus, Notice } from "./notice";
 
@@ -61,10 +64,11 @@ export function TextViewer({ setId, target, onClose }: { setId: string; target: 
   const file = load.status === "ready" ? load.file : null;
   const total = file?.pages ?? 0;
   const ocr = new Set(file?.ocrPages ?? []);
+  const tr = useTranslations(setId, fileId ?? null, page);
 
   return (
     <Sheet open={!!target} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <SheetContent width="sm:max-w-2xl" className="w-full" aria-describedby={undefined}>
+      <SheetContent width={tr.to ? "sm:max-w-5xl" : "sm:max-w-2xl"} className="w-full" aria-describedby={undefined}>
         <SheetHeader className="pe-12">
           <SheetTitle className="truncate text-[14px]" title={file?.name ?? target?.name}>{file?.name ?? target?.name ?? "File"}</SheetTitle>
           <SheetDescription asChild>
@@ -88,6 +92,7 @@ export function TextViewer({ setId, target, onClose }: { setId: string; target: 
               {page && <Button size="xs" variant="ghost" onClick={() => setPage(null)}>All pages</Button>}
             </div>
           )}
+          {file && load.status === "ready" && load.pages.some((p) => p.text) && <TranslateBar tr={tr} page={page} pages={total} />}
         </SheetHeader>
         <SheetBody className="bg-surface-quiet"><div ref={bodyRef}>
           {load.status === "loading" && <div className="flex items-center gap-2 text-[13px] text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading text…</div>}
@@ -106,8 +111,11 @@ export function TextViewer({ setId, target, onClose }: { setId: string; target: 
                       <span className="tabular">{p.page > 0 ? `Page ${p.page}` : "Text"}</span>
                       {ocr.has(p.page) && !p.text && <span className="inline-flex items-center gap-1"><ScanLine className="size-3" /> Scanned, not read yet</span>}
                     </header>
-                    <div className="whitespace-pre-wrap break-words px-3 py-2.5 font-serif text-[13.5px] leading-relaxed text-foreground">
-                      {p.text ? <Highlighted text={p.text} pattern={pattern} /> : <span className="font-sans text-[12px] text-muted-foreground">No text on this page.</span>}
+                    <div className={cn(tr.to && "grid divide-y md:grid-cols-2 md:divide-x md:divide-y-0")}>
+                      <div className="whitespace-pre-wrap break-words px-3 py-2.5 font-serif text-[13.5px] leading-relaxed text-foreground">
+                        {p.text ? <Highlighted text={p.text} pattern={pattern} /> : <span className="font-sans text-[12px] text-muted-foreground">No text on this page.</span>}
+                      </div>
+                      {tr.to && <TranslationCell rec={tr.byPage.get(p.page ?? 0) ?? null} to={tr.to} loading={tr.loading} />}
                     </div>
                   </section>
                 ))}
@@ -117,5 +125,99 @@ export function TextViewer({ setId, target, onClose }: { setId: string; target: 
         </div></SheetBody>
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ---- working translations (side by side) ------------------------------------------------------------------------------
+
+type TranslationRec = TranslationRecord & { stale: boolean };
+
+/** Translations of the open file into one language, and the action that creates them (bounded batches, cancellable). */
+function useTranslations(setId: string, fileId: string | null, page: number | null) {
+  const [to, setTo] = React.useState<string>("");
+  const [from, setFrom] = React.useState<string>("auto");
+  const [byPage, setByPage] = React.useState<Map<number, TranslationRec>>(new Map());
+  const [loading, setLoading] = React.useState(false);
+  const [running, setRunning] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const ctrl = React.useRef<AbortController | null>(null);
+  React.useEffect(() => () => ctrl.current?.abort(), []);
+  React.useEffect(() => { setTo(""); setByPage(new Map()); setError(null); }, [fileId]);
+  React.useEffect(() => {
+    if (!fileId || !to) { setByPage(new Map()); return; }
+    const ac = new AbortController();
+    setLoading(true); setError(null);
+    translationsApi.list(setId, fileId, to, ac.signal)
+      .then((r) => setByPage(new Map(r.records.map((x) => [x.page ?? 0, x]))))
+      .catch((e) => { if (!ac.signal.aborted) setError(errorMessage(e)); })
+      .finally(() => { if (!ac.signal.aborted) setLoading(false); });
+    return () => ac.abort();
+  }, [setId, fileId, to]);
+  const translate = async (force = false) => {
+    if (!fileId || !to) return;
+    ctrl.current?.abort();
+    const ac = new AbortController();
+    ctrl.current = ac;
+    setRunning(true); setError(null);
+    try {
+      for (let i = 0; i < 30; i++) {
+        const r = await translationsApi.translate(setId, { fileId, from, to, ...(page ? { pageFrom: page, pageTo: page } : {}), force }, ac.signal);
+        setByPage(new Map(r.records.map((x) => [x.page ?? 0, x])));
+        if (!r.remaining || !r.translated) break;
+      }
+    } catch (e) {
+      if (!isAbort(e)) setError(errorKind(e) === "unconfigured" ? UNCONFIGURED_MESSAGE : errorMessage(e));
+    } finally { setRunning(false); ctrl.current = null; }
+  };
+  return { to, setTo, from, setFrom, byPage, loading, running, error, translate, cancel: () => ctrl.current?.abort() };
+}
+
+function TranslateBar({ tr, page, pages }: { tr: ReturnType<typeof useTranslations>; page: number | null; pages: number }) {
+  const missing = tr.to && !tr.loading ? (page ? (tr.byPage.has(page) ? 0 : 1) : Math.max(0, (pages || 1) - tr.byPage.size)) : 0;
+  const stale = Array.from(tr.byPage.values()).filter((r) => r.stale).length;
+  return (
+    <div className="mt-1.5 space-y-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Languages className="size-3.5 text-muted-foreground" aria-hidden />
+        <Select value={tr.to || "__none__"} onValueChange={(v) => tr.setTo(v === "__none__" ? "" : v)}>
+          <SelectTrigger size="xs" className="w-[150px]" aria-label="Translate into"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">No translation</SelectItem>
+            {TRANSLATION_LANGUAGES.map((l) => <SelectItem key={l.code} value={l.code}>Into {l.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {tr.to && (
+          <>
+            <Select value={tr.from} onValueChange={tr.setFrom}>
+              <SelectTrigger size="xs" className="w-[140px]" aria-label="Source language"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">From: detect</SelectItem>
+                {TRANSLATION_LANGUAGES.filter((l) => l.code !== tr.to).map((l) => <SelectItem key={l.code} value={l.code}>From {l.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {tr.running
+              ? <Button size="xs" variant="ghost" onClick={tr.cancel}><X className="size-3.5" /> Stop</Button>
+              : <Button size="xs" variant="outline" onClick={() => void tr.translate(false)} disabled={tr.loading}>{missing || stale ? `Translate ${page ? `page ${page}` : `${missing + stale} page${missing + stale === 1 ? "" : "s"}`}` : "Re-check"}</Button>}
+            {tr.running && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Translating" />}
+          </>
+        )}
+      </div>
+      {tr.to && <p className="text-[11px] text-warning-foreground dark:text-warning">{TRANSLATION_LABEL}</p>}
+      {tr.error && <Notice tone="destructive">{tr.error}</Notice>}
+    </div>
+  );
+}
+
+function TranslationCell({ rec, to, loading }: { rec: TranslationRec | null; to: string; loading: boolean }) {
+  if (loading) return <div className="px-3 py-2.5 text-[12px] text-muted-foreground">Loading translation…</div>;
+  if (!rec) return <div className="px-3 py-2.5 text-[12px] text-muted-foreground">Not translated into {languageLabel(to)} yet.</div>;
+  return (
+    <div className="bg-surface-quiet/60 px-3 py-2.5">
+      <div className="mb-1 flex flex-wrap items-center gap-x-2 text-[10.5px] text-muted-foreground">
+        <span>Working translation · {languageLabel(rec.to)}</span>
+        {rec.stale && <span className="font-medium text-warning-foreground dark:text-warning">Original changed since — re-translate</span>}
+      </div>
+      <div lang={rec.to} className="whitespace-pre-wrap break-words font-serif text-[13.5px] leading-relaxed text-foreground">{rec.text}</div>
+    </div>
   );
 }

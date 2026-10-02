@@ -32,6 +32,9 @@ import { wordSchemaExtensions } from "./schema-extensions";
 import { isDocxMeta, type DocxImportedComment, type DocxMeta } from "./ooxml/types";
 import { buildTemplateSection, tableOfContents, type TemplateSectionId } from "./sections";
 import { computeOutline, WordSidebar, type OutlineItem, type SidebarTab } from "./sidebar";
+import { bodyHash, ExportGateDialog, recordAcknowledgement, type GateKind, type GateResult } from "./filing-check-ui";
+import { declarationHtml, type CheckState } from "./provenance";
+import { filingSummary } from "./filing-check";
 import { buildSnapshot } from "./snapshot";
 import { StatusBar } from "./status-bar";
 import { applyParagraphStyle, WordToolbar, type InsertAction } from "./toolbar";
@@ -124,6 +127,8 @@ export function WordEditorPage({ id, templateId, matterId, matters, initialMode 
   const [zoomMode, setZoomMode] = React.useState<"fit" | number>("fit");
   const [canvasWidth, setCanvasWidth] = React.useState(0);
   const [exporting, setExporting] = React.useState<string | null>(null);
+  /** Pre-export filing check gate (docx / PDF). */
+  const [gate, setGate] = React.useState<GateKind | null>(null);
   const [title, setTitle] = React.useState("");
   const canvasRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -349,15 +354,37 @@ export function WordEditorPage({ id, templateId, matterId, matters, initialMode 
   };
 
   // ---- exports ------------------------------------------------------------------
+  // Word and PDF exports pass through the filing check gate first; Markdown / text are working copies and export directly.
   const doExport = async (kind: "docx" | "docx-clean" | "pdf" | "md" | "txt") => {
     if (!editor || !doc) return;
+    if (kind === "docx" || kind === "docx-clean" || kind === "pdf") { setGate(kind); return; }
     const json = editor.getJSON() as PMNode;
     setExporting(kind);
     try {
-      if (kind === "docx" || kind === "docx-clean") await downloadDocx({ docId: doc.id, content: json, title: doc.title, settings, changes: kind === "docx-clean" ? "accepted" : "revisions" });
-      else if (kind === "pdf") printDocument(editor.getHTML(), json, doc.title, settings);
-      else if (kind === "md") downloadMarkdown(json, doc.title);
+      if (kind === "md") downloadMarkdown(json, doc.title);
       else downloadText(json, doc.title);
+    } catch (e) { toast.error(`Export failed: ${(e as Error).message}`); } finally { setExporting(null); }
+  };
+  const exportAfterGate = async (kind: GateKind, r: GateResult) => {
+    setGate(null);
+    if (!editor || !doc) return;
+    const json = editor.getJSON() as PMNode;
+    const needsAck = r.issues.length > 0 || !r.report;
+    setExporting(kind);
+    try {
+      if (kind === "pdf") {
+        // The gate is modal: the content printed is the content it checked. Print first (the pop-up needs the click's user activation).
+        const check: CheckState = r.report
+          ? { state: "checked", checkedAt: r.report.checkedAt, counts: r.report.counts, summary: filingSummary(r.report.counts) }
+          : { state: "not_run", reason: "the check could not run" };
+        printDocument(editor.getHTML() + (r.declaration != null ? declarationHtml(r.declaration, check) : ""), json, doc.title, settings);
+        void bodyHash(json).then((hash) => recordAcknowledgement(doc.id, json, { format: "pdf", docHash: hash, items: needsAck && r.acknowledged ? r.issues.length : 0, issueKeys: needsAck && r.acknowledged ? r.issues.map((i) => i.key) : [], declaration: r.declaration != null }));
+      } else {
+        await downloadDocx({
+          docId: doc.id, content: json, title: doc.title, settings, changes: kind === "docx-clean" ? "accepted" : "revisions",
+          provenance: { declaration: r.declaration != null ? { text: r.declaration } : null, appendix: r.appendix, acknowledgement: needsAck ? { acknowledged: r.acknowledged, docHash: r.report?.docHash ?? "", items: r.issues.length } : null },
+        });
+      }
     } catch (e) { toast.error(`Export failed: ${(e as Error).message}`); } finally { setExporting(null); }
   };
   const downloadItems: DownloadItem[] = [
@@ -510,7 +537,7 @@ export function WordEditorPage({ id, templateId, matterId, matters, initialMode 
       )}
 
       <div className="flex min-h-0 flex-1">
-        {sidebarOpen && editor && ready && <WordSidebar editor={editor} tab={sidebarTab} onTab={setSidebarTab} outline={outline} currentHeadingId={cursor.headingId} onClose={() => setSidebarOpen(false)} findFocusKey={findFocusKey} />}
+        {sidebarOpen && editor && ready && <WordSidebar editor={editor} tab={sidebarTab} onTab={setSidebarTab} outline={outline} currentHeadingId={cursor.headingId} onClose={() => setSidebarOpen(false)} findFocusKey={findFocusKey} docId={doc?.id} onLocate={onLocate} />}
         {!sidebarOpen && (
           <div className="flex w-9 shrink-0 flex-col items-center border-r bg-background pt-2">
             <Tip label="Show outline" shortcut="⌘⇧O" side="right"><Button variant="ghost" size="icon-xs" onClick={() => setSidebarOpen(true)} aria-label="Show sidebar"><PanelLeft className="size-4" /></Button></Tip>
@@ -558,6 +585,7 @@ export function WordEditorPage({ id, templateId, matterId, matters, initialMode 
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImageFile(f); e.target.value = ""; }} />
       <VersionsDialog open={versionsOpen} onOpenChange={setVersionsOpen} list={office.versions.list} get={office.versions.get} checkpoint={async (label) => { await saveNow(); return office.versions.checkpoint(label); }} restore={async (vid) => { const d = await office.versions.restore(vid); if (d && editor) { loadContent(editor, d.content as PMNode); scheduleDerived(editor); scheduleCursor(editor); } return d; }} currentContent={() => (editor?.getJSON() as PMNode) ?? emptyDoc()} />
       <DiagramDialog open={diagramOpen} onOpenChange={(o) => { setDiagramOpen(o); if (!o) setDiagramInitial(null); }} onInsert={insertDiagram} initial={diagramInitial?.source} />
+      <ExportGateDialog kind={gate} docId={doc?.id} getContent={() => (editor?.getJSON() as PMNode) ?? emptyDoc()} onCancel={() => setGate(null)} onConfirm={(r) => { if (gate) void exportAfterGate(gate, r); }} />
       <PromptDialog request={prompt} onSubmit={(v, s) => { setPrompt(null); promptResolver.current?.({ value: v, secondary: s }); promptResolver.current = null; }} onCancel={() => { setPrompt(null); promptResolver.current?.(null); promptResolver.current = null; }} />
     </div>
   );

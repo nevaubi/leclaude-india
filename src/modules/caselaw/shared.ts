@@ -66,6 +66,82 @@ export interface CourtFacet {
   archives: { done: number; total: number } | null;
 }
 
+/**
+ * A court as the filter and the coverage cards offer it. Mapped courts are one facet each; every unmapped court code is
+ * merged into one "Other courts" option (codes are internal and several codes would otherwise look like duplicate
+ * rows). `keys` are the filter values the option selects: all of them together.
+ */
+export interface CourtOption extends CourtFacet {
+  keys: string[];
+}
+
+/** Display name of the merged option for courts the source does not identify. */
+export const OTHER_COURTS_LABEL = "Other courts";
+
+function extreme<T extends number | string>(vals: (T | null)[], which: "min" | "max"): T | null {
+  let out: T | null = null;
+  for (const v of vals) if (v != null && (out == null || (which === "min" ? v < out : v > out))) out = v;
+  return out;
+}
+
+export function courtFacetShortName(c: CourtFacet | undefined): string | null {
+  if (!c) return null;
+  if (c.level === "supreme") return "Supreme Court";
+  if (c.level === "unmapped") return OTHER_COURTS_LABEL;
+  return courtShortName(c.name);
+}
+
+/** "High Court of Karnataka" → "Karnataka HC"; names in another form ("Gauhati High Court") are kept. */
+export function courtShortName(name: string): string {
+  const m = /^High Court (?:of Judicature at|for the State of|of|at) (.+)$/.exec(name);
+  return m ? `${m[1]} HC` : name;
+}
+
+/**
+ * Trigger label: "All courts", one court's short name, or "N courts", counting the merged "Other courts" option once.
+ * A selected value with no matching option (a stale link) counts as one court; an unmapped code is never shown raw.
+ */
+export function filterLabel(options: CourtOption[], value: string[]): string {
+  if (!value.length) return "All courts";
+  const picked = options.filter((o) => o.keys.some((k) => value.includes(k)));
+  const known = new Set(options.flatMap((o) => o.keys));
+  const unknown = value.filter((v) => !known.has(v));
+  const strayOther = unknown.some((v) => v.startsWith("code:")) && !picked.some((o) => o.level === "unmapped");
+  const strayIds = unknown.filter((v) => !v.startsWith("code:"));
+  const n = picked.length + strayIds.length + (strayOther ? 1 : 0);
+  if (n === 1) return picked.length ? courtFacetShortName(picked[0]) ?? picked[0].name : strayOther ? OTHER_COURTS_LABEL : strayIds[0];
+  return `${n} courts`;
+}
+
+/** Facets → options, in facet order, with all unmapped codes merged into one option placed last. Pure. */
+export function courtOptions(courts: CourtFacet[] | null | undefined): CourtOption[] {
+  const list = courts ?? [];
+  const out: CourtOption[] = list.filter((c) => c.level !== "unmapped").map((c) => ({ ...c, keys: [c.key] }));
+  const other = list.filter((c) => c.level === "unmapped");
+  if (!other.length) return out;
+  const years = new Map<number | null, number>();
+  for (const c of other) for (const y of c.years) years.set(y.year, (years.get(y.year) ?? 0) + y.records);
+  const archives = other.some((c) => c.archives)
+    ? other.reduce((a, c) => ({ done: a.done + (c.archives?.done ?? 0), total: a.total + (c.archives?.total ?? 0) }), { done: 0, total: 0 })
+    : null;
+  out.push({
+    key: other.length === 1 ? other[0].key : "other",
+    keys: other.map((c) => c.key),
+    courtId: null,
+    courtCode: null,
+    name: OTHER_COURTS_LABEL,
+    level: "unmapped",
+    records: other.reduce((n, c) => n + c.records, 0),
+    minDate: extreme(other.map((c) => c.minDate), "min"),
+    maxDate: extreme(other.map((c) => c.maxDate), "max"),
+    minYear: extreme(other.map((c) => c.minYear), "min"),
+    maxYear: extreme(other.map((c) => c.maxYear), "max"),
+    years: [...years.entries()].map(([year, records]) => ({ year, records })).sort((a, b) => (b.year ?? -1) - (a.year ?? -1)),
+    archives,
+  });
+  return out;
+}
+
 export interface CaseFacets {
   total: number;
   courts: CourtFacet[];
@@ -172,7 +248,7 @@ const clip = (v: string | null, max: number) => (v ?? "").replace(/[\u0000-\u001
 
 /** Parse and clamp directory filters from a query string (page or API). Unknown values are dropped, never guessed. */
 export function parseCaseFilters(sp: URLSearchParams): CaseFilters {
-  const courts = Array.from(new Set(sp.getAll("court").flatMap((c) => c.split(",")).map((c) => c.trim()).filter((c) => COURT_KEY_RE.test(c)))).slice(0, 30);
+  const courts = Array.from(new Set(sp.getAll("court").flatMap((c) => c.split(",")).map((c) => c.trim()).filter((c) => COURT_KEY_RE.test(c)))).slice(0, 80);
   let yearFrom = intIn(sp.get("from"), MIN_YEAR, MAX_YEAR);
   let yearTo = intIn(sp.get("to"), MIN_YEAR, MAX_YEAR);
   if (yearFrom && yearTo && yearFrom > yearTo) [yearFrom, yearTo] = [yearTo, yearFrom];

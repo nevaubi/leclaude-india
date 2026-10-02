@@ -187,7 +187,7 @@ function SourcePopover({ i }: { i: LawInstrument }) {
           {i.subjects.length ? <><dt className="text-muted-foreground">Subjects</dt><dd className="min-w-0">{i.subjects.join(", ")}</dd></> : null}
         </dl>
         <p className="border-t px-3.5 py-2 text-[11px] leading-snug text-muted-foreground">
-          Text from Open India Law (<a className="hover:text-foreground hover:underline" href={LAW_DATASET.licenceUrl} target="_blank" rel="noopener noreferrer">{LAW_DATASET.publisher}, {LAW_DATASET.licence}</a>). It can lag recent amendments; the publisher&apos;s official text is authoritative.
+          Text from Open India Law by {LAW_DATASET.publisher}, licensed under <a className="hover:text-foreground hover:underline" href={LAW_DATASET.licenceUrl} target="_blank" rel="noopener noreferrer">{LAW_DATASET.licence}</a>. It can lag recent amendments; the official text is authoritative.
         </p>
       </PopoverContent>
     </Popover>
@@ -528,7 +528,7 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
           {data.next ? <AdjacentLink dir="next" href={lawHref(instrument.id, data.next.section, data.next.variant)} label={data.next.section === NO_SECTION ? "Unnumbered text" : `${instrument.kind === "regulation" ? "" : "Section "}${data.next.section}`} heading={headingOf(data.next)} /> : null}
         </nav>
         <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground">
-          {LAW_ATTRIBUTION_LINE} The authoritative version is published by {publisherLabel(instrument)}.
+          Text: {LAW_DATASET.name} ({LAW_DATASET.licence}). The authoritative version is published by {publisherLabel(instrument)}.
         </p>
       </article>
     );

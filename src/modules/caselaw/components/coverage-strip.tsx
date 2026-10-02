@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tip } from "@/components/ui/tooltip";
 import { courtDisplayName } from "./court-filter";
-import { formatCaseDate, formatTimestamp, yearSpan, type CaseFacets, type CourtFacet } from "../shared";
+import { courtOptions, formatCaseDate, formatTimestamp, yearSpan, type CaseFacets, type CourtFacet } from "../shared";
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 const Sep = () => <span aria-hidden className="text-muted-foreground/50">·</span>;
@@ -53,8 +53,8 @@ function YearBars({ years }: { years: CourtFacet["years"] }) {
   );
 }
 
-/** Landing: one card per court with its decisions and years. Clicking filters to it. */
-export function CourtCoverageCards({ facets, loading, error, onRetry, onPick }: { facets: CaseFacets | null; loading: boolean; error: string | null; onRetry: () => void; onPick: (key: string) => void }) {
+/** Landing: one card per court (unidentified courts merged into one "Other courts" card) with its decisions and years. Clicking filters to it. */
+export function CourtCoverageCards({ facets, loading, error, onRetry, onPick }: { facets: CaseFacets | null; loading: boolean; error: string | null; onRetry: () => void; onPick: (keys: string[]) => void }) {
   if (loading && !facets) return <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((k) => <Skeleton key={k} className="h-[132px] rounded-lg" />)}</div>;
   if (!facets) {
     return (
@@ -67,14 +67,14 @@ export function CourtCoverageCards({ facets, loading, error, onRetry, onPick }: 
   if (!facets.courts.length) return <p className="rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">No decisions are available yet.</p>;
   return (
     <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-      {facets.courts.map((c) => {
+      {courtOptions(facets.courts).map((c) => {
         const partial = c.archives && c.archives.done < c.archives.total;
         const span = yearSpan(c.minYear, c.maxYear);
         return (
           <button
             key={c.key}
             type="button"
-            onClick={() => onPick(c.key)}
+            onClick={() => onPick(c.keys)}
             className="group flex min-w-0 flex-col rounded-lg border bg-card px-3.5 py-3 text-left transition-colors hover:border-foreground/20 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <span className="flex w-full items-start gap-1.5">

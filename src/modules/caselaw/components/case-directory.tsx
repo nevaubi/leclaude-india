@@ -24,7 +24,7 @@ type ListState = { hits: CaseHit[]; mode: "search" | "browse"; hasMore: boolean;
 
 export function courtLabel(h: Pick<CaseHit, "court" | "court_id" | "court_code">): string {
   if (h.court) return h.court_id === "sci" ? "Supreme Court" : courtShortName(h.court);
-  return "Court not recorded";
+  return "Other court";
 }
 
 export function benchLabel(h: Pick<CaseHit, "court_id" | "bench_id" | "bench_code" | "bench_strength">): string | null {
@@ -162,17 +162,17 @@ export function CaseDirectory() {
       ),
     },
     {
-      id: "court", header: "Court", width: 190, accessor: (h) => courtLabel(h),
+      id: "court", header: "Court", width: 220, accessor: (h) => courtLabel(h),
       render: (h) => {
         const bench = benchLabel(h);
         return <span className="min-w-0 truncate" title={[h.court ?? "", bench].filter(Boolean).join(" · ")}>
-          <span className={cn(!h.court && "text-warning-foreground dark:text-warning")}>{courtLabel(h)}</span>
+          <span className={cn(!h.court && "text-muted-foreground")}>{courtLabel(h)}</span>
           {bench ? <span className="text-muted-foreground"> · {bench}</span> : null}
         </span>;
       },
     },
     { id: "decided", header: "Decided", width: 104, accessor: (h) => h.decision_date ?? "", render: (h) => <span className="tabular">{formatCaseDate(h.decision_date) ?? dash}</span> },
-    { id: "text", header: "Text", width: 76, accessor: (h) => h.text_status, render: (h) => (h.text_status === "full" ? <FullTextChip /> : <span className="text-[11.5px] text-muted-foreground">PDF only</span>) },
+    { id: "text", header: "Text", width: 96, accessor: (h) => h.text_status, render: (h) => (h.text_status === "full" ? <FullTextChip /> : <span className="text-[11.5px] text-muted-foreground">PDF only</span>) },
     { id: "neutral", header: "Neutral citation", width: 140, accessor: (h) => h.neutral_citation ?? "", render: (h) => <span className="truncate tabular" title={h.neutral_citation ?? undefined}>{h.neutral_citation ?? dash}</span> },
     { id: "case", header: "Case no.", width: 170, accessor: (h) => h.case_number ?? "", render: (h) => <span className="truncate tabular" title={h.case_number ?? undefined}>{h.case_number ?? dash}</span> },
     { id: "reporter", header: "Reporter", width: 150, defaultHidden: true, label: "Reporter citation", accessor: (h) => h.reporter_citation ?? "", render: (h) => <span className="truncate tabular">{h.reporter_citation ?? dash}</span> },
@@ -271,7 +271,7 @@ export function CaseDirectory() {
           <div className="mx-auto w-full max-w-[1180px] space-y-7 px-4 pb-10 pt-4 sm:px-6">
             <section aria-labelledby="cases-courts">
               <div className="flex items-baseline gap-2"><h2 id="cases-courts" className="text-[13px] font-semibold tracking-[-0.005em]">Courts</h2><span className="truncate text-[11.5px] text-muted-foreground">Select a court to browse its decisions</span></div>
-              <div className="mt-2.5"><CourtCoverageCards facets={facets} loading={facetsLoading} error={facetsError?.message ?? null} onRetry={() => setFacetsNonce((n) => n + 1)} onPick={(key) => setFilters({ courts: [key] })} /></div>
+              <div className="mt-2.5"><CourtCoverageCards facets={facets} loading={facetsLoading} error={facetsError?.message ?? null} onRetry={() => setFacetsNonce((n) => n + 1)} onPick={(keys) => setFilters({ courts: keys })} /></div>
             </section>
             <section aria-labelledby="cases-latest">
               <div className="flex items-baseline gap-2">
@@ -365,7 +365,7 @@ function ResultRow({ h, compact }: { h: CaseHit; compact?: boolean }) {
           {!compact ? <span className="shrink-0 pt-px"><MatchChip match={h.match} /></span> : null}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11.5px] text-muted-foreground">
-          <span className={cn("text-foreground/80", !h.court && "text-warning-foreground dark:text-warning")}>{courtLabel(h)}</span>
+          <span className={cn(h.court ? "text-foreground/80" : "text-muted-foreground")}>{courtLabel(h)}</span>
           {bench ? <><span aria-hidden>·</span><span>{bench}</span></> : null}
           {date ? <><span aria-hidden>·</span><span className="tabular">{date}</span></> : null}
           {h.neutral_citation ? <Chip tone="muted" className="ml-1 tabular text-foreground/75" title="Neutral citation">{h.neutral_citation}</Chip> : null}

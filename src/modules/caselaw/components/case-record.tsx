@@ -161,7 +161,7 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
       <div className="border-b pb-3">
         <h1 className="max-w-[900px] text-[18px] font-semibold leading-snug tracking-[-0.01em]">{r.title}</h1>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
-          <span className={cn("inline-flex items-center gap-1.5 text-foreground/85", !r.court && "text-warning-foreground dark:text-warning")}>
+          <span className={cn("inline-flex items-center gap-1.5", r.court ? "text-foreground/85" : "text-muted-foreground")}>
             {r.court_id ? <CourtEmblem courtId={r.court_id} size={18} /> : null}
             {r.court ?? courtLabel(r)}
           </span>

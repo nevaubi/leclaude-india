@@ -74,7 +74,7 @@ const shortPublisher = (p: string) => p.replace(/\s*\(.*\)$/, "");
 
 function HeadlineLink({ item, className }: { item: NewsListItem; className?: string }) {
   return (
-    <a href={item.url} target="_blank" rel="noopener noreferrer" className={cn("decoration-foreground/30 underline-offset-[3px] hover:underline focus-visible:underline focus-visible:outline-none", className)}>
+    <a href={item.url} target="_blank" rel="noopener noreferrer" title={item.title} className={cn("decoration-foreground/30 underline-offset-[3px] hover:underline focus-visible:underline focus-visible:outline-none", className)}>
       {item.title}<span className="sr-only"> (opens {item.publisher} in a new tab)</span>
     </a>
   );
@@ -103,12 +103,15 @@ export function SideStory({ item, now }: { item: NewsListItem; now: Date | null 
     <article className="group flex min-w-0 gap-3 py-3 first:pt-0 last:pb-0">
       <div className="min-w-0 flex-1">
         <NewsMeta item={item} now={now} />
-        <h3 className="mt-1 line-clamp-3 font-serif text-[15px] font-semibold leading-snug text-foreground"><HeadlineLink item={item} /></h3>
+        <h3 className="mt-1 line-clamp-4 font-serif text-[14.5px] font-semibold leading-snug text-foreground"><HeadlineLink item={item} /></h3>
         <LabelList labels={item.labels} maxTopics={1} className="mt-1.5" />
       </div>
-      <a href={item.url} target="_blank" rel="noopener noreferrer" tabIndex={-1} aria-hidden className="block w-[104px] shrink-0">
-        <NewsThumb item={item} ratio="4/3" className="w-full" />
-      </a>
+      {/* No image: the headline takes the full width instead of sitting beside an empty tile. */}
+      {item.image ? (
+        <a href={item.url} target="_blank" rel="noopener noreferrer" tabIndex={-1} aria-hidden className="block w-[96px] shrink-0">
+          <NewsThumb item={item} ratio="4/3" className="w-full" />
+        </a>
+      ) : null}
     </article>
   );
 }
@@ -137,7 +140,7 @@ export function StoryRow({ item, now, summary = true, thumb = true, dense }: { i
         {summary && item.summary && <p className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">{item.summary}</p>}
         <LabelList labels={item.labels} maxTopics={dense ? 1 : 3} className="mt-1" />
       </div>
-      {thumb && (
+      {thumb && item.image && (
         <a href={item.url} target="_blank" rel="noopener noreferrer" tabIndex={-1} aria-hidden className={cn("block shrink-0", dense ? "w-[72px]" : "hidden w-[120px] @md:block")}>
           <NewsThumb item={item} ratio="3/2" className="w-full" />
         </a>

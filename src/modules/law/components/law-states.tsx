@@ -97,7 +97,7 @@ export function LawCoverageStrip({ facets, loading, error, onRetry, onPick, acti
   const loadingFiles = facets.datasets.filter((d) => d.status !== "done");
   const finished = facets.datasets.map((d) => d.finished_at).filter((x): x is string => Boolean(x)).sort().pop() ?? null;
   return (
-    <div className="flex min-h-8 flex-wrap items-center gap-x-1 gap-y-0.5 border-b px-4 py-1 text-[11.5px] text-muted-foreground" aria-label="Corpus coverage">
+    <div className="flex min-h-8 flex-wrap items-center gap-x-1 gap-y-0.5 border-b px-4 py-1 text-[11.5px] text-muted-foreground" aria-label="Statutes coverage">
       <span className="mr-1 font-medium text-foreground">Coverage</span>
       {facets.jurisdictions.map((j, i) => (
         <React.Fragment key={j.value}>

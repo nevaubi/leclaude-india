@@ -101,7 +101,7 @@ function LocalLawPanel({ city }: { city: City }) {
         <h2 id="local-law" className="text-[12.5px] font-semibold">Local law · {stateName(city.state)}</h2>
       </div>
       <div className="px-3 py-2">
-        <p className="mb-2 text-[11px] leading-snug text-muted-foreground">State statutes a litigator here commonly needs. Titles are matched exactly against the law corpus; an unmatched title is shown as not found and is never replaced by a similar Act.</p>
+        <p className="mb-2 text-[11px] leading-snug text-muted-foreground">State statutes a litigator here commonly needs. Each title opens that exact Act; a title that cannot be found is marked as not found and is never replaced by a similar Act.</p>
         <LocalLawList state={state} />
       </div>
     </section>

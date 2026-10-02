@@ -17,7 +17,10 @@ import { parseArray } from "./search";
  * throwing, so callers can fall back to metadata.
  */
 
+/** Provenance carried in tool/agent payloads (names the publisher of the text layer). */
 export const TEXT_ATTRIBUTION = "Text: Open India Law (Vaquill), CC BY 4.0, extracted from the court's published PDF. Verify quotations against the PDF.";
+/** The same attribution as readers see it on the case page. */
+export const TEXT_ATTRIBUTION_DISPLAY = "Text: Open India Law (CC BY 4.0), from the court's published PDF. The official PDF is the text of record.";
 
 export interface JudgmentTextChunk { index: number; pageStart: number | null; pageEnd: number | null; section: string | null; text: string }
 export interface JudgmentText {

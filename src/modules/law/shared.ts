@@ -30,7 +30,7 @@ export const LAW_DATASET = {
 } as const;
 
 /** The one quiet attribution line shown on pages that display statute text. */
-export const LAW_ATTRIBUTION_LINE = "Text from Open India Law (Vaquill, CC BY 4.0), compiled from India Code and regulator publications. Verify against the official text.";
+export const LAW_ATTRIBUTION_LINE = "Text: Open India Law (CC BY 4.0), compiled from India Code and regulator publications. The official text is authoritative.";
 
 export interface LawInstrument {
   id: string;

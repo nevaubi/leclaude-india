@@ -11,9 +11,9 @@ async function handleGET() {
   try {
     return Response.json(await corpusFacets());
   } catch (e) {
-    if (e instanceof CorpusNotConfiguredError) return jsonError(e.message, 503, { code: e.code });
+    if (e instanceof CorpusNotConfiguredError) return jsonError("Case law is not available on this workspace.", 503, { code: e.code });
     console.error(JSON.stringify({ level: "error", event: "cases.facets_failed", error: (e as Error).message }));
-    return jsonError("Coverage for the case law index could not be computed. Try again in a moment.", 502, { code: "corpus_unavailable" });
+    return jsonError("Court coverage could not be loaded just now. Try again in a moment.", 502, { code: "corpus_unavailable" });
   }
 }
 

@@ -43,7 +43,8 @@ function actHref(id: string): string {
   return `/law/${id.split("/").map(encodeURIComponent).join("/")}`;
 }
 
-function ItemRow({ item }: { item: LocalLawItemView }) {
+/** `noted`: the list already says statutes could not be checked, so unchecked rows carry no repeated status line. */
+function ItemRow({ item, noted }: { item: LocalLawItemView; noted?: boolean }) {
   return (
     <li className="py-1.5">
       <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">{TOPIC[item.pointer.topic] ?? item.pointer.topic}</div>
@@ -60,7 +61,7 @@ function ItemRow({ item }: { item: LocalLawItemView }) {
       {(item.status === "not_found" || item.status === "unavailable") && (
         <div>
           <div className="text-[12.5px]">{item.pointer.title}</div>
-          <div className="text-[11px] text-muted-foreground">{item.status === "not_found" ? "Not available in Statutes" : "Not checked: Statutes unavailable"}</div>
+          {item.status === "not_found" || !noted ? <div className="text-[11px] text-muted-foreground">{item.status === "not_found" ? "Not available in Statutes" : "Not checked: Statutes unavailable"}</div> : null}
         </div>
       )}
       {item.pointer.jurisdiction === "central" && <div className="text-[10.5px] text-muted-foreground">Act of Parliament</div>}
@@ -82,10 +83,10 @@ export function LocalLawList({ state }: { state: LocalLawState }) {
       {(!data.configured || data.error) && (
         <div className="mb-1.5 flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-[11px]" role="status">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
-          <span>{!data.configured ? "Statutes are not set up here, so the titles below have not been checked." : `Statutes could not be checked: ${data.error}`}</span>
+          <span>{!data.configured ? "Statutes are not set up here, so the titles below have not been checked." : "Statutes could not be reached just now, so the titles below have not been checked."}</span>
         </div>
       )}
-      <ul className="divide-y divide-line-quiet">{data.items.map((it) => <ItemRow key={it.pointer.title} item={it} />)}</ul>
+      <ul className="divide-y divide-line-quiet">{data.items.map((it) => <ItemRow key={it.pointer.title} item={it} noted={!data.configured || Boolean(data.error)} />)}</ul>
     </>
   );
 }

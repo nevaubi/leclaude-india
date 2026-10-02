@@ -21,9 +21,9 @@ async function handleGET(req: NextRequest) {
   try {
     return Response.json(await listJudgments({ ...f, cursor, limit }));
   } catch (e) {
-    if (e instanceof CorpusNotConfiguredError) return jsonError(e.message, 503, { code: e.code });
+    if (e instanceof CorpusNotConfiguredError) return jsonError("Case law is not available on this workspace.", 503, { code: e.code });
     console.error(JSON.stringify({ level: "error", event: "cases.list_failed", error: (e as Error).message }));
-    return jsonError("The case law index could not be queried. Try again in a moment.", 502, { code: "corpus_unavailable" });
+    return jsonError("Case law could not be searched just now. Try again in a moment.", 502, { code: "corpus_unavailable" });
   }
 }
 

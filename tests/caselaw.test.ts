@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { CORPUS_SCHEMA_VERSION } from "@/modules/india/corpus/schema";
+import { TEXT_ATTRIBUTION, TEXT_ATTRIBUTION_DISPLAY } from "@/modules/india/corpus/text";
 import type { RemoteStore, Row, SqlQuery } from "@/lib/db/remote";
 import { resetCorpusSchemaCacheForTests } from "@/modules/india/corpus/backfill";
 import {
   corpusFacets, CorpusNotConfiguredError, decodeCursor, isoTimestamp, judgmentRecord, listJudgments, parseTranslations, resetFacetsCacheForTests, shapeFacets, sourceInfo,
 } from "@/modules/india/corpus/directory";
-import { caseFiltersToParams, caseHref, caseIdFromSegments, formatCaseDate, parseCaseFilters, yearSpan } from "@/modules/caselaw/shared";
+import { caseFiltersToParams, caseHref, caseIdFromSegments, courtOptions, filterLabel, formatCaseDate, parseCaseFilters, yearSpan, type CourtFacet } from "@/modules/caselaw/shared";
 
 /** A fake Neon store: answers the schema probe, records every other statement, and replies from a handler. */
 class FakeStore implements RemoteStore {
@@ -244,5 +245,53 @@ describe("judgmentRecord", () => {
     expect(sourceInfo("mystery").licence).toMatch(/Unknown/);
     expect(sourceInfo("sci-open-data").licence).toMatch(/AWS Open Data Registry entry/);
     expect(parseTranslations("not json")).toEqual([]);
+  });
+});
+
+describe("court options (unmapped courts merged)", () => {
+  const facet = (over: Partial<CourtFacet>): CourtFacet => ({
+    key: "sci", courtId: "sci", courtCode: null, name: "Supreme Court of India", level: "supreme", records: 10,
+    minDate: "2000-01-01", maxDate: "2024-01-01", minYear: 2000, maxYear: 2024, years: [{ year: 2024, records: 10 }], archives: null, ...over,
+  });
+  const facets: CourtFacet[] = [
+    facet({}),
+    facet({ key: "hc-karnataka", courtId: "hc-karnataka", name: "High Court of Karnataka", level: "high", records: 5 }),
+    facet({ key: "code:99_9", courtId: null, courtCode: "99_9", name: "Unmapped court code 99_9", level: "unmapped", records: 3, minYear: 2015, maxYear: 2019, minDate: "2015-02-01", maxDate: "2019-03-01", years: [{ year: 2019, records: 2 }, { year: 2015, records: 1 }], archives: { done: 1, total: 2 } }),
+    facet({ key: "code:98_1", courtId: null, courtCode: "98_1", name: "Unmapped court code 98_1", level: "unmapped", records: 4, minYear: 2012, maxYear: 2018, minDate: "2012-05-01", maxDate: "2018-06-01", years: [{ year: 2019, records: 4 }], archives: null }),
+  ];
+
+  it("merges every unmapped code into one 'Other courts' option with summed counts and the combined span", () => {
+    const opts = courtOptions(facets);
+    expect(opts.map((o) => o.name)).toEqual(["Supreme Court of India", "High Court of Karnataka", "Other courts"]);
+    const other = opts[2];
+    expect(other).toMatchObject({ level: "unmapped", records: 7, minYear: 2012, maxYear: 2019, minDate: "2012-05-01", maxDate: "2019-03-01", archives: { done: 1, total: 2 } });
+    expect(other.keys).toEqual(["code:99_9", "code:98_1"]);
+    expect(other.years).toEqual([{ year: 2019, records: 6 }, { year: 2015, records: 1 }]);
+    expect(opts[0].keys).toEqual(["sci"]);
+    expect(courtOptions(facets.slice(0, 2)).some((o) => o.level === "unmapped")).toBe(false);
+    expect(courtOptions(null)).toEqual([]);
+  });
+
+  it("labels the filter by option, counting the merged option once and never showing a raw code", () => {
+    const opts = courtOptions(facets);
+    expect(filterLabel(opts, [])).toBe("All courts");
+    expect(filterLabel(opts, ["code:99_9", "code:98_1"])).toBe("Other courts");
+    expect(filterLabel(opts, ["sci", "code:99_9", "code:98_1"])).toBe("2 courts");
+    expect(filterLabel(opts, ["hc-karnataka"])).toBe("Karnataka HC");
+    expect(filterLabel(opts, ["code:gone"])).toBe("Other courts");
+    expect(filterLabel([], ["code:a", "code:b"])).toBe("Other courts");
+  });
+
+  it("keeps all merged codes as filter values through the URL", () => {
+    const f = parseCaseFilters(new URLSearchParams(courtOptions(facets)[2].keys.map((k) => ["court", k])));
+    expect(f.courts).toEqual(["code:99_9", "code:98_1"]);
+    expect(caseFiltersToParams(f).getAll("court")).toEqual(["code:99_9", "code:98_1"]);
+  });
+});
+
+describe("judgment text attribution", () => {
+  it("keeps the full provenance for tools and a plain line for readers", () => {
+    expect(TEXT_ATTRIBUTION).toMatch(/Open India Law \(Vaquill\), CC BY 4\.0/);
+    expect(TEXT_ATTRIBUTION_DISPLAY).toBe("Text: Open India Law (CC BY 4.0), from the court's published PDF. The official PDF is the text of record.");
   });
 });

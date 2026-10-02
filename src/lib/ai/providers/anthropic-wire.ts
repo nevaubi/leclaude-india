@@ -16,7 +16,7 @@
  * - assistant turns are replayed verbatim (including thinking blocks and signatures) via `InferenceMessage.raw`.
  */
 import { toStrictSchema, type JSONSchema } from "../tools";
-import { CODE_EXECUTION_TOOL_VERSION, TOOL_EXAMPLES_BETA, claudeFamily, effortLevelsFor, normalizeClaudeModelId, supportsForcedToolChoice, supportsNativeStructuredOutput, webToolVersions } from "./claude-models";
+import { CODE_EXECUTION_TOOL_VERSION, TOOL_EXAMPLES_BETA, claudeFamily, effortLevelsFor, normalizeClaudeModelId, supportsForcedToolChoice, supportsNativeStructuredOutput, thinksWhenOmitted, webToolVersions } from "./claude-models";
 import { modelLimits } from "./model-limits";
 import { InferenceError, type CapabilityProfile, type ContentPart, type InferenceCitation, type InferenceEvent, type InferenceMessage, type InferenceRequest, type InferenceUsage, type ProviderId, type ReasoningEffort, type SearchResultBlock, type StopReason } from "./types";
 
@@ -334,8 +334,9 @@ export function buildAnthropicRequest(req: InferenceRequest, opts: AnthropicWire
   if (req.historyEdited && body.thinking && (body.thinking as { type?: string }).type !== "disabled") {
     body.thinking = { ...(body.thinking as Record<string, unknown>), block_binding: { prefix_mismatch_behavior: "drop_block" } };
     betas.add(THINKING_BINDING_BETA);
-  } else if (req.historyEdited && !body.thinking && claudeFamily(opts.model) === "adaptive-always") {
-    // Thinking is always on for this family; `{type: "adaptive"}` is equivalent to omitting it and carries the binding.
+  } else if (req.historyEdited && !body.thinking && thinksWhenOmitted(opts.model)) {
+    // These models think when `thinking` is omitted (always-on families, Sonnet 5 / 5.5), so `{type: "adaptive"}` is
+    // equivalent to omitting it and carries the binding (the binding is accepted only alongside adaptive / enabled).
     body.thinking = { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } };
     betas.add(THINKING_BINDING_BETA);
   }

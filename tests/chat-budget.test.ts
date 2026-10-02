@@ -8,11 +8,14 @@ import { chatBudget, routeMessage } from "@/modules/chat/server/routing";
 import { DEFAULT_TOOL_FLAGS } from "@/modules/chat/types";
 
 describe("chat budgets", () => {
-  it("keeps the old floors on an unknown model and grows on gpt-5.4", () => {
+  it("keeps the old floors where the model holds them, never above half the input on a small model, and grows on gpt-5.4", () => {
     const unknownFast = chatBudget("fast", "some-unknown-model", {});
     expect(unknownFast.maxOutputTokens).toBeGreaterThanOrEqual(3_000);
     expect(unknownFast.historyTurns).toBeGreaterThanOrEqual(16);
-    expect(unknownFast.toolResultChars).toBeGreaterThanOrEqual(60_000);
+    // 128K unknown model, fast tier (~26K input tokens): one tool result is capped at half the input, below the old 60K.
+    expect(unknownFast.toolResultChars).toBeLessThanOrEqual(unknownFast.inputTokens * 3 * 0.5);
+    expect(unknownFast.historyChars).toBeLessThanOrEqual(unknownFast.inputTokens * 3 * 0.5);
+    expect(chatBudget("fast", "gpt-5.4-mini", {}).toolResultChars).toBeGreaterThanOrEqual(60_000);
     const unknownStd = chatBudget("standard", "some-unknown-model", {});
     expect(unknownStd.maxOutputTokens).toBeGreaterThanOrEqual(8_000);
     const big = chatBudget("standard", "gpt-5.4", {});

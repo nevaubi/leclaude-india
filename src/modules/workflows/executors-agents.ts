@@ -3,7 +3,7 @@ import type { AgentEvent } from "@/lib/ai/agent";
 import { AGENT_PERSONAS, runPersona, type AgentId } from "@/lib/ai/agents/registry";
 import { contentHash } from "@/lib/integrity/hash";
 import type { AnyNodeType } from "./registry";
-import { StepError, callModel, clipInput, evidenceFor, firmPreamble, num, recordStep, resolveConfig, stepBudget, storeStepProvenance, str, verifyNarrativeStep, verifyStructuredStep, type Executor, type ModelResult } from "./executors";
+import { StepError, callModel, clipToBudget, evidenceFor, firmPreamble, num, recordStep, resolveConfig, stepBudget, storeStepProvenance, str, verifyNarrativeStep, verifyStructuredStep, type Executor, type ModelResult } from "./executors";
 
 /**
  * Agent steps: `ai.route` (the coordinator classifies the input against the
@@ -33,7 +33,7 @@ const aiRoute: Executor = async (x) => {
   };
   const instructions = `${firmPreamble(x)}\n\n${persona.instructions}\n\nBranches:\n${branches.map((b) => `- ${b.id}: ${b.label ?? b.id}${b.description ? ` — ${b.description}` : ""}${b.agent ? ` (handled by the ${b.agent} agent)` : ""}`).join("\n")}\n- else: none of the above\n\nPick exactly one branch and write the brief the specialist will receive.${c.instructions ? `\nAdditional guidance: ${str(c.instructions)}` : ""}`;
   const tier = c.modelTier === "primary" ? "primary" : "fast";
-  const r = await callModel(x, { instructions, input: `REQUEST:\n"""\n${clipInput(x, input, Math.max(40_000, Math.floor(stepBudget("workflow_step", tier).inputChars / 2)), "Request")}\n"""`, tier, json: { name: "route", schema }, taskType: "route" });
+  const r = await callModel(x, { instructions, input: `REQUEST:\n"""\n${clipToBudget(x, input, stepBudget("workflow_step", tier), "Request", { fixed: [instructions, JSON.stringify(schema)] })}\n"""`, tier, json: { name: "route", schema }, taskType: "route" });
   const j = (r.json ?? {}) as { branch?: string; confidence?: number; rationale?: string; brief?: string };
   const branch = branches.find((b) => b.id === j.branch);
   const matched = branch ? branch.id : "else";
@@ -74,7 +74,9 @@ const aiAgent: Executor = async (x) => {
   };
   const tier = c.modelTier === "fast" ? "fast" : c.modelTier === "primary" ? "primary" : undefined;
   const agentBudget = stepBudget(persona.id === "drafter" ? "litigation_draft" : "workflow_agent", tier ?? persona.model);
-  const input = `BRIEF:\n${brief}${context.trim() ? `\n\nCONTEXT:\n${clipInput(x, context, Math.max(100_000, agentBudget.inputChars), "Context")}` : ""}`;
+  // The context takes at most half of the agent's input budget after its brief and instructions; the rest holds the
+  // tool definitions and the results it reads.
+  const input = `BRIEF:\n${brief}${context.trim() ? `\n\nCONTEXT:\n${clipToBudget(x, context, agentBudget, "Context", { fixed: [persona.instructions, brief] })}` : ""}`;
   const res = await runPersona(persona, input, { onEvent, signal: x.signal, context: { matter: x.ctx.matter, user: x.ctx.user as { id: string; name: string }, runId: x.run.id, nodeId: x.node.id, workflowName: x.workflow.name }, tools: extraTools, jsonSchema: schema ? { name: "agent_output", schema } : undefined, maxSteps: c.maxSteps != null && c.maxSteps !== "" ? num(c.maxSteps, persona.maxSteps) : undefined, model: tier, metadata: { workflowRunId: x.run.id, nodeId: x.node.id }, matterId: x.run.matterId ?? undefined, budget: agentBudget.profile });
   const handoffs = res.handoffs.map((h) => x.handoff({ from: h.from, to: h.to, brief: h.brief, evidenceIds: h.evidenceIds }));
   let json: unknown = res.json;

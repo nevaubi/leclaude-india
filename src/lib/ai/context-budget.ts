@@ -11,7 +11,8 @@
  * Rules
  * - Floors are the constants each surface used before budgets existed: a larger model never makes a surface see LESS.
  * - Ceilings are safety bounds (latency, cost, the 272K long-context price tier on OpenAI's 1.05M models, the verifier's
- *   reach). A ceiling never exceeds what the model accepts: the model limit wins over a floor when the model is small.
+ *   reach). A ceiling never exceeds what the model accepts: the model limit wins over a floor when the model is small
+ *   (evidence ≤ 85% and tool results / history ≤ 50% of the input characters, one source ≤ the evidence total).
  * - Character budgets are derived from token budgets at a conservative 3 characters per token; text in Indic scripts
  *   costs more tokens per character, so callers that pack text against `inputTokens` use `estimateTokens` (script-aware).
  * - AI_CONTEXT_SCALE (0.25–1, default 1) shrinks every input-side budget above its floor (cost control).
@@ -118,7 +119,9 @@ export const BUDGET_PROFILES: Readonly<Record<BudgetProfileId, ProfileSpec>> = {
   // search/engine lanes: 1_800 output; read_source 30_000 default / 32_000 result; read caps 3–5 per lane.
   research_lane: { inputShare: 0.3, inputTokens: R(32_000, 120_000, 160_000), outputTokens: R(1_800, 3_000, 6_000), perSourceChars: R(30_000, 60_000, 60_000), totalEvidenceChars: R(80_000, 240_000, 320_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(32_000, 64_000, 64_000), historyChars: R(8_000, 16_000, 24_000), maxFullSources: R(5, 7, 8), historyTurns: R(1, 1, 1), maxSteps: 8, effort: "low", concurrency: 6 },
   // lib/ai/verify: 9_000 chars/source, 24 sources, answer 20_000 chars, 6_000 output; selfCorrect 40_000 evidence / 30_000 output.
-  verify: { inputShare: 0.5, inputTokens: R(64_000, 200_000, 220_000), outputTokens: R(6_000, 12_000, 24_000), perSourceChars: R(9_000, 24_000, 40_000), totalEvidenceChars: R(216_000, 480_000, 560_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(30_000, 60_000, 80_000), historyChars: R(20_000, 60_000, 80_000), maxFullSources: R(24, 32, 40), historyTurns: R(1, 1, 1), maxSteps: 1, effort: "low", concurrency: 4 },
+  // Share 0.75: the verifier must be able to see what the synthesis it checks saw (deep research caps its evidence at
+  // the verifier's capacity — verification is never weaker than synthesis).
+  verify: { inputShare: 0.75, inputTokens: R(64_000, 200_000, 220_000), outputTokens: R(6_000, 12_000, 24_000), perSourceChars: R(9_000, 24_000, 40_000), totalEvidenceChars: R(216_000, 480_000, 560_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(30_000, 60_000, 80_000), historyChars: R(20_000, 60_000, 80_000), maxFullSources: R(24, 32, 40), historyTurns: R(1, 1, 1), maxSteps: 1, effort: "low", concurrency: 4 },
   // workflows/executors: inputs sliced at 40_000–150_000; 24 tool results × 8_000 kept as evidence; 10 research steps; no output cap.
   workflow_step: { inputShare: 0.45, inputTokens: R(64_000, 220_000, 240_000), outputTokens: R(8_000, 16_000, 32_000), perSourceChars: R(20_000, 60_000, 80_000), totalEvidenceChars: R(150_000, 480_000, 600_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(8_000, 24_000, 40_000), historyChars: R(40_000, 120_000, 200_000), maxFullSources: R(24, 32, 40), historyTurns: R(1, 1, 1), maxSteps: 10, effort: "medium", concurrency: 4 },
   // workflows/executors-agents + personas: context 100_000; brief/context/evidence 40_000 each for verification.
@@ -175,13 +178,16 @@ export function resolveContextBudget(profile: BudgetProfileId, descriptor?: Pick
   const inputChars = inputTokens * CHARS_PER_TOKEN;
   // Char targets apply in full at REFERENCE_INPUT_TOKENS of input; smaller budgets scale them toward the floor.
   const ratio = Math.min(1, inputTokens / REFERENCE_INPUT_TOKENS) * scale;
-  const chars = (r: Range, cap = Number.POSITIVE_INFINITY) => Math.round(clamp(Math.min(r.target * ratio, cap), r.floor, r.ceil));
+  // The model-derived cap is applied LAST: on a small model it wins over the profile's floor (a floor is "what the
+  // surface used before budgets", never a reason to ask a model for more than its input holds).
+  const chars = (r: Range, cap = Number.POSITIVE_INFINITY) => Math.max(1, Math.min(Math.round(clamp(r.target * ratio, r.floor, r.ceil)), Math.floor(cap)));
   const count = (r: Range) => Math.round(clamp(r.target, r.floor, r.ceil));
 
   // Evidence must leave room for instructions and the question: at most 85% of the input characters.
   const totalEvidenceChars = chars(spec.totalEvidenceChars, inputChars * 0.85);
   const maxFullSources = count(spec.maxFullSources);
-  const perSourceChars = Math.min(chars(spec.perSourceChars), Math.max(spec.perSourceChars.floor, Math.floor(totalEvidenceChars / Math.max(1, Math.min(maxFullSources, 12)))));
+  // One source never exceeds the evidence total (the floor yields to it on a small model).
+  const perSourceChars = Math.min(chars(spec.perSourceChars, totalEvidenceChars), Math.max(Math.min(spec.perSourceChars.floor, totalEvidenceChars), Math.floor(totalEvidenceChars / Math.max(1, Math.min(maxFullSources, 12)))));
   return {
     profile,
     maxOutputTokens,

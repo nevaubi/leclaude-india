@@ -7,8 +7,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { db, resetSqlite } from "@/lib/db";
 import { buildEvidenceBlocks } from "@/modules/search/engine/evidence";
 import { sourceFromHit } from "@/modules/search/engine/sources";
-import { runResearch } from "@/modules/search/engine/run";
-import { planLanes } from "@/modules/search/engine/planner";
+import { decideOutcome, runResearch } from "@/modules/search/engine/run";
+import { laneReadBoost, planLanes, READ_BOOST_MS } from "@/modules/search/engine/planner";
+import { evidenceText } from "@/modules/search/engine/evidence";
+import { officialHits } from "@/modules/search/engine/deps";
+import { classifyFailure } from "@/lib/ai/events";
+import { verifierCapacity } from "@/lib/ai/verify";
+import type { EngineDeps } from "@/modules/search/engine/deps";
 import { sanitizeSettings } from "@/modules/search/service";
 import { estimateTokens, resolveContextBudget } from "@/lib/ai/context-budget";
 import { modelLimits } from "@/lib/ai/providers/model-limits";
@@ -19,6 +24,7 @@ import { indiaFakeDeps } from "../evals/india-research/fixtures";
 beforeAll(() => { resetSqlite(); db(); });
 
 const BIG = modelLimits("openai", "gpt-5.4");
+const MINI = modelLimits("openai", "gpt-5.4-mini");
 
 function libSource(i: number): ResearchSource {
   const hit: SearchHit = { id: `library:memo${i}`, source: "library", title: `Firm memo ${i}`, snippet: `snippet of memo ${i} on anticipatory bail`, readRef: { kind: "library", id: `memo${i}` } };
@@ -83,5 +89,59 @@ describe("the research run uses the engine's budgets", () => {
     expect(planLanes({ question: "q", settings, mode: "deep", hasMatter: false, readBoost: 99 })[0].maxReads).toBe(base[0].maxReads + 3);
     expect(planLanes({ question: "q", settings, mode: "fast", hasMatter: false, readBoost: 2 })[0].maxReads).toBe(2);
     expect(base.find((l) => l.kind === "statute")?.tools).toContain("search_official_sources");
+  });
+});
+
+describe("verification is never weaker than synthesis", () => {
+  it("the verifier is asked for at least the synthesis per-source reach, over evidence capped at its capacity", async () => {
+    const deps = indiaFakeDeps();
+    // Production shape: synthesis on the 1.05M primary model, lanes and the verifier on the fast mini model.
+    deps.budget = (p) => resolveContextBudget(p, p === "deep_research_synthesis" ? BIG : MINI, {});
+    const seen: Parameters<EngineDeps["verify"]>[0][] = [];
+    const verify = deps.verify.bind(deps);
+    deps.verify = async (input) => { seen.push(input); return verify(input); };
+    const settings = sanitizeSettings({ sources: ["caselaw", "statutes", "library"], jurisdiction: "hc-karnataka" });
+    await runResearch({ question: "Can anticipatory bail be refused only because the offence is economic?", settings, runId: "run_budget_reach" }, () => {}, undefined, deps);
+    expect(seen.length).toBeGreaterThan(0);
+    const blocks = deps.synth[0].evidence;
+    const longest = Math.max(...blocks.map((b) => evidenceText(b).length));
+    for (const v of seen) {
+      expect(v.perSourceChars).toBeGreaterThanOrEqual(longest);
+      for (const src of v.sources) expect(src.text.length).toBeLessThanOrEqual(v.perSourceChars!);
+    }
+    const cap = verifierCapacity(resolveContextBudget("verify", MINI, {}));
+    const tokens = blocks.flatMap((b) => b.content).reduce((a, c) => a + estimateTokens(c), 0);
+    expect(tokens).toBeLessThanOrEqual(cap.totalTokens);
+  });
+
+  it("a partial verification makes the run partial (with what was not checked), never succeeded", () => {
+    const verification = { status: "partially-verified" as const, supported: 4, unsupported: 0, contradicted: 0, score: 1, checkedAt: "2026-10-02T00:00:00Z", verdicts: [], artifactHash: "h", partial: true, coverage: { sourcesGiven: 40, sourcesChecked: 32, sourcesClipped: 1, answerChars: 1_000, answerChecked: 1_000, maxClaims: 25, claimsCapped: false } };
+    const o = decideOutcome({ aborted: false, answer: "answer", noKey: false, coverage: { complete: true, exhausted: false, reason: "ok", refinements: {}, gaps: [] }, timeExceeded: false, verification, verificationCurrent: true, verificationUnavailable: null, sourcesFound: 40, lanes: [] });
+    expect(o.terminal).toBe("partial");
+    expect(o.reason).toMatch(/8 of 40 sources were not shown to the verifier; 1 source\(s\) were shown in part/);
+    expect(decideOutcome({ aborted: false, answer: "answer", noKey: false, coverage: null, timeExceeded: false, verification: { ...verification, partial: false, status: "verified" }, verificationCurrent: true, verificationUnavailable: null, sourcesFound: 40, lanes: [] }).terminal).toBe("succeeded");
+  });
+});
+
+describe("lane read boost follows the lane model's context", () => {
+  it("no extra reads on a 400K mini or 128K model, +3 on a 1.05M fast model; boosted lanes get time for them", () => {
+    expect(laneReadBoost(resolveContextBudget("research_lane", MINI, {}))).toBe(0);
+    expect(laneReadBoost(resolveContextBudget("research_lane", null, {}))).toBe(0);
+    expect(laneReadBoost(resolveContextBudget("research_lane", BIG, {}))).toBe(3);
+    expect(laneReadBoost(null)).toBe(0);
+    const settings = sanitizeSettings({ sources: ["caselaw", "statutes"], jurisdiction: "hc-karnataka" });
+    const base = planLanes({ question: "q", settings, mode: "deep", hasMatter: false });
+    const boosted = planLanes({ question: "q", settings, mode: "deep", hasMatter: false, readBoost: 3 });
+    expect(boosted[0].timeoutMs).toBe(base[0].timeoutMs! + 3 * READ_BOOST_MS);
+  });
+});
+
+describe("official sources unavailable", () => {
+  it("is a typed not_configured failure for the lane, not an empty search", async () => {
+    const err = await officialHits("insider trading", { limit: 5 }).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toMatchObject({ code: "not_configured" });
+    expect(classifyFailure(err)).toBe("not_configured");
+    expect(await officialHits("   ", { limit: 5 })).toEqual([]);
   });
 });

@@ -5,6 +5,7 @@
 import type { FailureKind, ResearchStopState, RunEvent, RunEventBase, RunMetrics, RunTerminalState } from "@/lib/ai/events";
 import type { CitationCheck as EvidenceCitationCheck, CitationState, TrustState } from "@/lib/evidence/types";
 import type { Provenance } from "@/lib/integrity/types";
+import type { VerificationCoverage } from "@/lib/ai/verify";
 import type { Authority, SearchHit, SearchSettings, SearchSource } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -161,6 +162,10 @@ export interface VerificationSummary {
   artifactHash?: string;
   /** Which verification pass produced it (1 = draft, 2 = after correction). */
   pass?: number;
+  /** What the verifier was shown (sources given / checked / cut short, answer characters checked, claim cap). */
+  coverage?: VerificationCoverage;
+  /** True when anything was not checked (a source cut short or not shown, answer text beyond the budget, the claim cap). Never "verified". */
+  partial?: boolean;
 }
 
 export interface CitationCrossCheck {

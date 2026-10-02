@@ -267,8 +267,10 @@ ${issueRubric(codes)}`;
   const perDoc = Math.max(6_000, budget.perSourceChars);
   const batches: EDocument[][] = [];
   for (let i = 0; i < docs.length; i += size) batches.push(docs.slice(i, i + size));
-  await mapPool(batches, budget.concurrency, async (batch) => {
-    if (opts.signal?.aborted) return;
+  // Stop-on-failure: after a failed batch no further batch starts, the ones in flight are aborted (poolSignal), and a
+  // batch whose model call returned after the failure writes nothing (the run fails; earlier batches stay written).
+  await mapPool(batches, budget.concurrency, async (batch, _index, poolSignal) => {
+    if (poolSignal.aborted) return;
     const input = batch.map((d, n) => `### Document ${n + 1} (id: ${d.id})\n${docHeader(d)}\n\n${clip(d.text, perDoc)}`).join("\n\n");
     const res = await generateJSON<{ results: { id: string; score: number; issues: string[]; rationale: string; confidence?: number }[] }>({
       fast: true,
@@ -277,8 +279,9 @@ ${issueRubric(codes)}`;
       schema: BATCH_SCHEMA,
       name: "batch_prediction",
       maxOutputTokens: 220 * batch.length + 200,
-      signal: opts.signal,
+      signal: poolSignal,
     });
+    if (poolSignal.aborted) return;
     audit("ai.generate", { kind: "edoc", label: `batch prediction (${batch.length} docs)`, matterId: opts.matterId }, { surface: "ediscovery.predict", model, batch: batch.map((d) => d.bates), returned: res.results.length });
     const byId = new Map(res.results.map((r) => [r.id, r]));
     const updates: EDocument[] = [];
@@ -301,7 +304,7 @@ ${issueRubric(codes)}`;
     }
     if (updates.length) db().edocs.putMany(updates);
     emit({ type: "progress", done, total, scored });
-  });
+  }, opts.signal);
   const summary = { scored, likelyResponsive, likelyNonResponsive, uncertain, tookMs: Date.now() - t0, belowGate };
   emit({ type: "done", done, total, scored, summary });
   return summary;

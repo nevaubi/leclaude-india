@@ -396,11 +396,16 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   const inputLimit = contextLimit(decision.descriptor, budget, base.maxOutputTokens);
   const fixedTokens = estimateFixedTokens(base);
   let historyEdited = false;
+  /** This request must replay the whole local history on top of the base conversation (see the guard below). */
+  let replayHistory = false;
   let contextRetried = false;
   let elidedTotal = 0;
   emit({ type: "start", model: decisionModel });
 
-  let previousResponseId: string | null = opts.previousResponseId ?? null;
+  // The caller's stored conversation (OpenAI): the local history holds only what came after it. `previousResponseId`
+  // moves on to this run's responses; when it does, the server holds the local history up to the last assistant turn.
+  const basePreviousId: string | null = opts.previousResponseId ?? null;
+  let previousResponseId: string | null = basePreviousId;
   let containerId: string | undefined;
   let responseId: string | null = null;
   let fullText = "";
@@ -430,22 +435,28 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     if (guard.elided) {
       historyEdited = true;
       elidedTotal += guard.elided;
+      // A server-side continuation (OpenAI previous_response_id) still holds the unelided items: the elisions only take
+      // effect when the edited local history is replayed. Continue from the caller's base conversation instead.
+      if (previousResponseId !== basePreviousId) { previousResponseId = basePreviousId; replayHistory = true; }
       emit({ type: "status", message: `Context budget: elided ${guard.elided} earlier tool result${guard.elided === 1 ? "" : "s"} (${guard.chars.toLocaleString("en-US")} chars); the agent can re-read them.` });
     }
 
     let res: InferenceResult;
     try {
       // A copy per round: the provider (and any SDK retry) must never see later mutations of the live history.
-      res = await infer({ ...base, messages: history.slice(), previousResponseId, containerId, historyEdited: historyEdited || undefined }, forward, { onFallback });
+      res = await infer({ ...base, messages: history.slice(), previousResponseId, containerId, historyEdited: historyEdited || undefined, replayHistory: (replayHistory && previousResponseId != null) || undefined }, forward, { onFallback });
     } catch (e) {
       // One retry after aggressive elision when the provider says the context window was exceeded.
       if (e instanceof InferenceError && e.code === "context_length" && !contextRetried) {
         contextRetried = true;
         const again = guardHistory(history, { maxTokens: inputLimit, fixedTokens, aggressive: true, minChars: 400 });
-        if (again.elided || previousResponseId) {
+        const chained = previousResponseId !== basePreviousId || replayHistory;
+        if (again.elided || chained) {
           if (again.elided) { historyEdited = true; elidedTotal += again.elided; }
-          // A server-side continuation cannot be shortened locally: replay the (elided) local history instead.
-          previousResponseId = null;
+          // A server-side continuation cannot be shortened locally: replay the (elided) local history on top of the
+          // caller's base conversation (never dropped silently; if that alone is too long the retry fails, typed).
+          previousResponseId = basePreviousId;
+          replayHistory = true;
           emit({ type: "status", message: `Context window exceeded; elided ${again.elided} earlier tool result${again.elided === 1 ? "" : "s"} and retrying once.` });
           step--;
           continue;
@@ -453,6 +464,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       }
       throw mapConfigError(e);
     }
+    replayHistory = false;
     lastResult = res;
     if (res.text) { fullText += (fullText ? "\n" : "") + res.text; lastStepText = res.text; emit({ type: "text.done", text: res.text }); }
     usage.input += res.usage.input;

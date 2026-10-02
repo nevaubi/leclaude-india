@@ -19,8 +19,9 @@ export interface PlanInput {
   /** English search terms when the question was asked in another language (legal terms preserved). */
   searchQuery?: string;
   /**
-   * Extra reads (and steps) per deep lane from the `research_lane` budget of the configured fast model (0 = the base
-   * caps). Bounded: at most +3; the lane timeouts are unchanged.
+   * Extra reads (and steps) per deep lane, from the `research_lane` budget of the configured fast model (see
+   * laneReadBoost: 0 when the lane's context holds only the base reads). Bounded: at most +3; each extra read adds
+   * READ_BOOST_MS to the lane's timeout (the run still caps every lane at the time it has left).
    */
   readBoost?: number;
 }
@@ -84,6 +85,25 @@ export function contraryQuery(base: string): string {
   return `${base} AND (distinguish* OR "per incuriam" OR overrul* OR doubted OR "larger bench" OR "not good law" OR "cannot be accepted" OR dissent*)`;
 }
 
+/** Base read cap of the widest deep lane (controlling); a lane's context must hold more than this before reads are added. */
+const BASE_DEEP_READS = 5;
+/** Lane time added per extra read (a read plus the agent step that uses it). */
+export const READ_BOOST_MS = 8_000;
+
+/**
+ * Extra reads per deep lane that the lane model's context can hold (0–3): how many full reads (the reader's result
+ * size, as lanes.ts sizes read_source) fit in 75% of the lane's input budget, beyond the base five. A 128K-window or
+ * 400K mini model gets none; a 1M-window fast model gets the full +3. Pure.
+ */
+export function laneReadBoost(b: { inputTokens: number; perSourceChars: number; toolResultChars: number } | null | undefined): number {
+  if (!b) return 0;
+  const readDefault = Math.max(30_000, b.perSourceChars);
+  const readChars = Math.max(32_000, Math.min(b.toolResultChars, readDefault + 4_000));
+  const perRead = Math.ceil(readChars / 3);
+  const fit = Math.floor((b.inputTokens * 0.75) / perRead);
+  return Math.max(0, Math.min(3, fit - BASE_DEEP_READS));
+}
+
 /** Per-lane wall-clock budgets (ms). Deep lanes run a bounded agent; later rounds are narrower. */
 const LANE_TIMEOUT: Record<LaneKind, number> = { controlling: 110_000, persuasive: 90_000, contrary: 90_000, statute: 75_000, regulatory: 75_000, record: 90_000, secondary: 90_000, fast: 40_000 };
 
@@ -109,7 +129,7 @@ export function planLanes(input: PlanInput): ResearchLane[] {
     round,
     intel: intelFeeds(kind, sources),
     note: intelFeeds(kind, sources) || kind === "record" ? INTEL_LANE_NOTE[kind] : undefined,
-    timeoutMs: round > 1 ? Math.min(LANE_TIMEOUT[kind], 75_000) : LANE_TIMEOUT[kind],
+    timeoutMs: (round > 1 ? Math.min(LANE_TIMEOUT[kind], 75_000) : LANE_TIMEOUT[kind]) + boost * READ_BOOST_MS,
     ...(courtFilter?.length ? { courtFilter } : {}),
     };
   };

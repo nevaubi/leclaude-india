@@ -84,12 +84,14 @@ export function answerQuotations(answer: string): { quote: string; n: number }[]
 }
 
 /** Recompute counts, score and status after deterministic demotions (same thresholds as the verifier). */
-export function recountVerification<T extends Pick<VerificationSummary, "verdicts" | "supported" | "unsupported" | "contradicted" | "score" | "status">>(v: T): T {
+export function recountVerification<T extends Pick<VerificationSummary, "verdicts" | "supported" | "unsupported" | "contradicted" | "score" | "status"> & { partial?: boolean }>(v: T): T {
   const supported = v.verdicts.filter((x) => x.status === "supported").length;
   const contradicted = v.verdicts.filter((x) => x.status === "contradicted").length;
   const unsupported = v.verdicts.length - supported - contradicted;
   const score = v.verdicts.length ? supported / v.verdicts.length : 0;
-  const status: VerificationSummary["status"] = contradicted > 0 ? "contradicted" : v.verdicts.length === 0 ? "unverified" : score >= 0.9 ? "verified" : score >= 0.5 ? "partially-verified" : "unverified";
+  let status: VerificationSummary["status"] = contradicted > 0 ? "contradicted" : v.verdicts.length === 0 ? "unverified" : score >= 0.9 ? "verified" : score >= 0.5 ? "partially-verified" : "unverified";
+  // A verification that left something unchecked is never "verified", however the recount comes out.
+  if (v.partial && status === "verified") status = "partially-verified";
   return { ...v, supported, unsupported, contradicted, score, status };
 }
 

@@ -67,7 +67,11 @@ export interface EngineDeps {
    * may carry token usage.
    */
   synthesize(input: { instructions: string; input: string | ResponseInput; evidence?: SearchResultBlock[]; signal?: AbortSignal; onDelta: (d: string) => void }): Promise<string | { text: string; usage?: TokenUsage }>;
-  verify(input: { answer: string; sources: { title?: string; cite?: string; url?: string; text: string }[]; signal?: AbortSignal }): Promise<VerificationResult>;
+  /**
+   * Claim verification against the sources. `perSourceChars` is the reach the verifier must have per source (the most
+   * the synthesis was given for any source): verification is never weaker than synthesis.
+   */
+  verify(input: { answer: string; sources: { title?: string; cite?: string; url?: string; text: string }[]; signal?: AbortSignal; perSourceChars?: number }): Promise<VerificationResult>;
   correct(input: { instructions: string; input: string; signal?: AbortSignal }): Promise<string>;
   refine(input: { question: string; gaps: string[]; laneKinds: LaneKind[]; signal?: AbortSignal }): Promise<Partial<Record<LaneKind, string[]>>>;
   followUps(input: { question: string; answer: string; matterLine: string; signal?: AbortSignal }): Promise<string[]>;
@@ -176,14 +180,27 @@ export function officialHit(h: SourceSearchHit): SearchHit {
   };
 }
 
-/** Official-document search for a research lane (empty, not an error, when the corpus is not on this deployment). */
+/** The official-sources corpus is not on this deployment: a source that could not be searched, never "no results". */
+export class OfficialSourcesUnavailableError extends Error {
+  readonly code = "not_configured";
+  constructor(message = "Official sources: the official-sources corpus is not available on this deployment; nothing was searched.") {
+    super(message);
+    this.name = "OfficialSourcesUnavailableError";
+  }
+}
+
+/**
+ * Official-document search for a research lane. When the corpus is not on this deployment it throws
+ * OfficialSourcesUnavailableError (classified "not_configured", not retried), so the lane records the source as
+ * unavailable instead of reporting an empty search.
+ */
 export async function officialHits(query: string, o: { from?: string; to?: string; limit: number }): Promise<SearchHit[]> {
   if (!query.trim()) return [];
   try {
     const r = await searchOfficial({ q: query, from: o.from, to: o.to, limit: Math.min(o.limit, 12) });
     return r.hits.map(officialHit);
   } catch (e) {
-    if (isOfficialUnavailable(e)) return [];
+    if (isOfficialUnavailable(e)) throw new OfficialSourcesUnavailableError();
     throw e;
   }
 }
@@ -581,8 +598,9 @@ export function defaultDeps(): EngineDeps {
 
     verify(input) {
       // The verifier's reach (sources, characters per source, answer length, output) follows the `verify` budget of the
-      // fast model; what it could not check is reported (coverage / partial), never counted as verified.
-      return verifyClaims({ answer: input.answer, sources: input.sources, maxClaims: 25, signal: input.signal, fast: POLICY.verify.fast, taskType: POLICY.verify.taskType, cacheStablePrefix: POLICY.verify.cacheStablePrefix, budget: aiBudget(POLICY.verify.budget ?? "verify", { fast: POLICY.verify.fast }) });
+      // fast model, raised per source to the synthesis reach; what it could not check is reported (coverage / partial),
+      // never counted as verified.
+      return verifyClaims({ answer: input.answer, sources: input.sources, maxClaims: 25, signal: input.signal, fast: POLICY.verify.fast, taskType: POLICY.verify.taskType, cacheStablePrefix: POLICY.verify.cacheStablePrefix, budget: aiBudget(POLICY.verify.budget ?? "verify", { fast: POLICY.verify.fast }), perSourceChars: input.perSourceChars });
     },
 
     async correct(input) {

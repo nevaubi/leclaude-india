@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { jsonError } from "@/lib/ai/sse";
 import { db } from "@/lib/db";
@@ -59,10 +60,10 @@ async function DELETE__handler(req: NextRequest) {
   return Response.json({ ok: deleteEvent(id) });
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler, { kind: "timeline", records: "timeline_events" }));
 
-export const POST = withDb(withDb(POST__handler));
+export const POST = withDb(edAuth(POST__handler, { kind: "timeline", records: "timeline_events" }));
 
-export const PATCH = withDb(withDb(PATCH__handler));
+export const PATCH = withDb(edAuth(PATCH__handler, { kind: "timeline", records: "timeline_events" }));
 
-export const DELETE = withDb(withDb(DELETE__handler));
+export const DELETE = withDb(edAuth(DELETE__handler, { kind: "timeline", records: "timeline_events" }));

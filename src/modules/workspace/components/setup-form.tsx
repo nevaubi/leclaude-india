@@ -10,30 +10,39 @@ import { Field } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EMAIL_RE, FIRM_ROLES, type FirmRole } from "../roles";
 
-type Errors = Partial<Record<"firmName" | "name" | "email" | "role" | "form", string>>;
+type Errors = Partial<Record<"firmName" | "name" | "email" | "role" | "password" | "confirm" | "token" | "form", string>>;
 
-function validate(v: { firmName: string; name: string; email: string; role: FirmRole | "" }, t: TFunction): Errors {
+const PASSWORD_MIN = 12;
+
+function validate(v: { firmName: string; name: string; email: string; role: FirmRole | ""; password: string; confirm: string; token: string; requireToken: boolean }, t: TFunction): Errors {
   const e: Errors = {};
   if (!v.firmName.trim()) e.firmName = t("setup.err.firm");
   if (!v.name.trim()) e.name = t("setup.err.name");
   if (!v.email.trim()) e.email = t("setup.err.email");
   else if (!EMAIL_RE.test(v.email.trim())) e.email = t("setup.err.emailInvalid");
   if (!v.role) e.role = t("setup.err.role");
+  // Sign-in password for the owner (English until the catalogues carry auth strings).
+  if (v.password.length < PASSWORD_MIN) e.password = `Use at least ${PASSWORD_MIN} characters.`;
+  else if (v.confirm !== v.password) e.confirm = "The passwords do not match.";
+  if (v.requireToken && !v.token.trim()) e.token = "Enter the setup token.";
   return e;
 }
 
 /** First-run setup form: the firm and the owner account. One column, one primary action. */
-export function SetupForm({ appName, defaultFirmName }: { appName: string; defaultFirmName?: string }) {
+export function SetupForm({ appName, defaultFirmName, requireToken = false }: { appName: string; defaultFirmName?: string; requireToken?: boolean }) {
   const t = useT();
   const [firmName, setFirmName] = React.useState(defaultFirmName ?? "");
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [role, setRole] = React.useState<FirmRole | "">("");
+  const [password, setPassword] = React.useState("");
+  const [confirm, setConfirm] = React.useState("");
+  const [token, setToken] = React.useState("");
   const [errors, setErrors] = React.useState<Errors>({});
   const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
-  const values = { firmName, name, email, role };
+  const values = { firmName, name, email, role, password, confirm, token, requireToken };
   const live = touched ? validate(values, t) : {};
   const shown: Errors = { ...live, ...errors };
 
@@ -45,9 +54,12 @@ export function SetupForm({ appName, defaultFirmName }: { appName: string; defau
     setBusy(true);
     setErrors({});
     try {
-      const res = await fetch("/api/workspace", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ firmName: firmName.trim(), name: name.trim(), email: email.trim(), role }) });
+      // With sign-in enforced, setup goes through the token-gated bootstrap, which also signs the owner in.
+      const url = requireToken ? "/api/auth/bootstrap" : "/api/workspace";
+      const payload = { firmName: firmName.trim(), name: name.trim(), email: email.trim(), role, password, ...(requireToken ? { token: token.trim() } : {}) };
+      const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const body = (await res.json().catch(() => ({}))) as { error?: string; fields?: Record<string, string> };
-      if (res.status === 409) { window.location.assign("/matters"); return; }
+      if (res.status === 409) { window.location.assign(requireToken ? "/login" : "/matters"); return; }
       if (!res.ok) {
         setErrors({ ...(body.fields ?? {}), form: body.fields ? undefined : body.error ?? t("setup.err.failed", { status: res.status }) });
         setBusy(false);
@@ -88,6 +100,17 @@ export function SetupForm({ appName, defaultFirmName }: { appName: string; defau
               <SelectContent>{FIRM_ROLES.map((r) => <SelectItem key={r} value={r}>{t(`role.${r}`)}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
+          <Field label="Password" required htmlFor="setup-password" error={shown.password} help={`Your sign-in password. At least ${PASSWORD_MIN} characters.`}>
+            <Input id="setup-password" size="sm" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={!!shown.password} />
+          </Field>
+          <Field label="Confirm password" required htmlFor="setup-confirm" error={shown.confirm}>
+            <Input id="setup-confirm" size="sm" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-invalid={!!shown.confirm} />
+          </Field>
+          {requireToken && (
+            <Field label="Setup token" required htmlFor="setup-token" error={shown.token} help="The value of AUTH_SETUP_TOKEN in the deployment settings.">
+              <Input id="setup-token" size="sm" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} aria-invalid={!!shown.token} />
+            </Field>
+          )}
           {shown.form && <p className="text-[12px] text-destructive" role="alert">{shown.form}</p>}
           <Button type="submit" className="w-full" disabled={busy}>
             {busy && <Loader2 className="size-4 animate-spin" />}

@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { jsonError } from "@/lib/ai/sse";
 import { matterFrom, readJson } from "@/modules/ediscovery/api-utils";
@@ -20,6 +21,6 @@ async function PUT__handler(req: NextRequest) {
   return Response.json({ matterId: m.matterId, rules: setCodingRules(m.matterId, body.rules) });
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler));
 
-export const PUT = withDb(withDb(PUT__handler));
+export const PUT = withDb(edAuth(PUT__handler));

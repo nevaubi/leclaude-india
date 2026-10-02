@@ -67,7 +67,7 @@ function ensureRequest(req: Request | undefined): Request {
   return req instanceof Request ? req : new Request("http://localhost/", { method: "GET" });
 }
 
-function clientIp(req: Request): string | undefined {
+export function clientIp(req: Request): string | undefined {
   const fwd = req.headers.get("x-forwarded-for");
   if (fwd) return fwd.split(",")[0]?.trim() || undefined;
   return req.headers.get("x-real-ip") ?? undefined;

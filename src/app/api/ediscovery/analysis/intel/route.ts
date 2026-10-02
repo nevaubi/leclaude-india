@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { errorResponse, matterFrom, readJson } from "@/modules/ediscovery/api-utils";
 import { matterIntelPanel, mergeIntelChronology } from "@/modules/ediscovery/analysis/intel-panel";
@@ -22,6 +23,6 @@ async function POST__handler(req: NextRequest) {
   catch (e) { return errorResponse(e); }
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler));
 
-export const POST = withDb(withDb(POST__handler));
+export const POST = withDb(edAuth(POST__handler));

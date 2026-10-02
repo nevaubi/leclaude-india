@@ -1,5 +1,7 @@
 # Authorization
 
+Sign-in, the session cookie, the request gate (`src/middleware.ts`), the owner bootstrap and the production rollout order are in [auth.md](auth.md).
+
 Constitution §21 (identity), §22 (authorization is a hard invariant), §41 (security), §42 (observability),
 §54 (human review). Code: `src/lib/auth/**`.
 

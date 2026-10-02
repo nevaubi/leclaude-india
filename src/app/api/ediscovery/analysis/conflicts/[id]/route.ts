@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { jsonError } from "@/lib/ai/sse";
 import { errorResponse, readJson } from "@/modules/ediscovery/api-utils";
@@ -33,8 +34,8 @@ async function DELETE__handler(_req: NextRequest, { params }: { params: Promise<
   return Response.json({ ok: deleteConflict(id) });
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler, { lookup: "conflict" }));
 
-export const PATCH = withDb(withDb(PATCH__handler));
+export const PATCH = withDb(edAuth(PATCH__handler, { lookup: "conflict" }));
 
-export const DELETE = withDb(withDb(DELETE__handler));
+export const DELETE = withDb(edAuth(DELETE__handler, { lookup: "conflict" }));

@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { errorResponse, matterFrom } from "@/modules/ediscovery/api-utils";
 import { crossAnalysis } from "@/modules/ediscovery/analysis/service";
@@ -16,4 +17,4 @@ async function GET__handler(req: NextRequest) {
   } catch (e) { return errorResponse(e); }
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler));

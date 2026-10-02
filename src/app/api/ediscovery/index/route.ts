@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { aiConfig } from "@/lib/ai/config";
 import { errorResponse, matterFrom, readJson } from "@/modules/ediscovery/api-utils";
@@ -19,4 +20,4 @@ async function POST__handler(req: NextRequest) {
   }
 }
 
-export const POST = withDb(withDb(POST__handler));
+export const POST = withDb(edAuth(POST__handler));

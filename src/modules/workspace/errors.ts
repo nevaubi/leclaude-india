@@ -5,7 +5,7 @@ import { jsonError } from "@/lib/ai/sse";
  * duplicate matter number or email), 422 validation (with per-field messages).
  */
 export class ServiceError extends Error {
-  constructor(readonly status: 400 | 403 | 404 | 409 | 422, message: string, readonly fields?: Record<string, string>, readonly code?: string) {
+  constructor(readonly status: 400 | 403 | 404 | 409 | 422 | 429 | 503, message: string, readonly fields?: Record<string, string>, readonly code?: string) {
     super(message);
     this.name = "ServiceError";
   }

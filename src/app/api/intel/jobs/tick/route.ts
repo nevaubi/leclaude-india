@@ -9,6 +9,7 @@ import { ensureIntelSeeded } from "@/modules/intel/seed";
 import { withAuth } from "@/lib/auth/route";
 import { currentPrincipal } from "@/lib/auth/context";
 import { refs } from "@/lib/auth/resources";
+import { withCronGate } from "@/lib/auth/cron";
 import { refreshLegalNews } from "@/modules/news/service";
 import { runNewsImageJobs } from "@/modules/news/image-jobs";
 import { officialIngestEnabled, runOfficialIngest } from "@/modules/official/run";
@@ -82,5 +83,6 @@ async function handlePOST(req: NextRequest) { return tick(req); }
 /** Vercel cron jobs use GET. */
 async function handleGET(req: NextRequest) { return tick(req); }
 
-export const POST = withDb(withAuth(handlePOST, { action: "run", resource: () => refs.intel() }));
-export const GET = withDb(withAuth(handleGET, { action: "run", resource: () => refs.intel() }));
+// Production with sign-in enforced and no CRON_SECRET → 503 cron_not_configured before any work (src/lib/auth/cron.ts).
+export const POST = withCronGate(withDb(withAuth(handlePOST, { action: "run", resource: () => refs.intel() })));
+export const GET = withCronGate(withDb(withAuth(handleGET, { action: "run", resource: () => refs.intel() })));

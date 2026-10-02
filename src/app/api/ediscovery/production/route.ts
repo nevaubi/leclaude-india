@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/integrity/audit";
@@ -21,4 +22,4 @@ async function GET__handler(req: NextRequest) {
   return Response.json(production(m.matterId));
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler));

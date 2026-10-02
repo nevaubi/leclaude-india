@@ -29,15 +29,25 @@ const DEFAULT_SHELL_USER: ShellUser = { ...DEFAULT_USER };
  * that pages fill through <TopbarSlot>, the ⌘K palette and the `?` shortcut
  * help. Designed around a litigator's day: one glance to orient, one key to move.
  */
-export function AppShell({ children, appName, firmName, user }: { children: React.ReactNode; appName: string; firmName: string; user?: ShellUser }) {
+export function AppShell({ children, appName, firmName, user, signInEnabled = false }: { children: React.ReactNode; appName: string; firmName: string; user?: ShellUser; signInEnabled?: boolean }) {
   return (
     <ShortcutHelpProvider>
-      <ShellFrame appName={appName} firmName={firmName} user={user ?? DEFAULT_SHELL_USER}>{children}</ShellFrame>
+      <ShellFrame appName={appName} firmName={firmName} user={user ?? DEFAULT_SHELL_USER} signInEnabled={signInEnabled}>{children}</ShellFrame>
     </ShortcutHelpProvider>
   );
 }
 
-function ShellFrame({ children, appName, firmName, user }: { children: React.ReactNode; appName: string; firmName: string; user: ShellUser }) {
+/** Clear the session cookie, then a full navigation to /login so no signed-in state survives in memory. */
+async function signOut(): Promise<void> {
+  try {
+    await fetch("/api/auth/logout", { method: "POST", cache: "no-store" });
+  } catch {
+    /* the cookie is HttpOnly; navigating to /login still ends the visible session and the next request re-checks */
+  }
+  window.location.assign("/login");
+}
+
+function ShellFrame({ children, appName, firmName, user, signInEnabled }: { children: React.ReactNode; appName: string; firmName: string; user: ShellUser; signInEnabled: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const { sidebarCollapsed, toggleSidebar, setPaletteOpen } = useShellStore();
@@ -136,7 +146,7 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
             </button>
           </Tip>
           {labels && (
-            <button aria-label={t("shell.signOut")} className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] text-muted-foreground/70 hover:bg-sidebar-accent hover:text-foreground" disabled>
+            <button aria-label={t("shell.signOut")} className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] text-muted-foreground/70 hover:bg-sidebar-accent hover:text-foreground cursor-pointer disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" disabled={!signInEnabled} onClick={() => void signOut()}>
               <LogOut className="size-[17px] rtl:-scale-x-100" /> {t("shell.signOut")}
             </button>
           )}
@@ -172,7 +182,11 @@ function ShellFrame({ children, appName, firmName, user }: { children: React.Rea
                 <DropdownMenuSeparator />
                 <ThemeItems />
                 <DropdownMenuSeparator />
-                <DropdownMenuItem disabled>{t("shell.signOut")}</DropdownMenuItem>
+                {signInEnabled ? (
+                  <DropdownMenuItem onSelect={() => void signOut()}><LogOut /> {t("shell.signOut")}</DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem disabled>{t("shell.signOut")}</DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

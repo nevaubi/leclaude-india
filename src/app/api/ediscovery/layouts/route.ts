@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { jsonError } from "@/lib/ai/sse";
 import { errorResponse, readJson } from "@/modules/ediscovery/api-utils";
@@ -25,8 +26,8 @@ async function DELETE__handler(req: NextRequest) {
   return deleteLayout(id) ? Response.json({ ok: true }) : jsonError(`No layout ${id}`, 404);
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler, { records: "ediscovery_layouts" }));
 
-export const POST = withDb(withDb(POST__handler));
+export const POST = withDb(edAuth(POST__handler, { records: "ediscovery_layouts" }));
 
-export const DELETE = withDb(withDb(DELETE__handler));
+export const DELETE = withDb(edAuth(DELETE__handler, { records: "ediscovery_layouts" }));

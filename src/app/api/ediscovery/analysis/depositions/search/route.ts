@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { matterFrom } from "@/modules/ediscovery/api-utils";
 import { searchAllTranscripts } from "@/modules/ediscovery/analysis/service";
@@ -17,4 +18,4 @@ async function GET__handler(req: NextRequest) {
   return Response.json({ q, hits, total: hits.length });
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler, { kind: "deposition" }));

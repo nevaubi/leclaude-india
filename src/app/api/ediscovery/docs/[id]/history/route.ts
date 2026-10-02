@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { jsonError } from "@/lib/ai/sse";
 import { db } from "@/lib/db";
@@ -14,4 +15,4 @@ async function GET__handler(req: NextRequest, { params }: { params: Promise<{ id
   return Response.json({ history: docHistory(id, limit), batches: batchesForDoc(id), redactions: listRedactions({ docId: id }) });
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler, { lookup: "edoc" }));

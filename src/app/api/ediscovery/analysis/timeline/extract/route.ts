@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { jsonError, sseResponse } from "@/lib/ai/sse";
 import { aiConfig } from "@/lib/ai/config";
@@ -41,4 +42,4 @@ async function POST__handler(req: NextRequest) {
   });
 }
 
-export const POST = withDb(withDb(POST__handler));
+export const POST = withDb(edAuth(POST__handler, { kind: "timeline" }));

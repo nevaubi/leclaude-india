@@ -1,5 +1,6 @@
 import "server-only";
 import { decodeHtml, htmlText, isoDate } from "@/modules/india/sources/parse-util";
+import { isSafeFetchError } from "@/lib/net/safe-fetch";
 import { normalizeCaseNumber, qualifiedCaseKey } from "../../case-numbers";
 import type { AdapterContext, DiscoverResult } from "../../adapter";
 import type { DiscoveredDoc } from "../../types";
@@ -487,6 +488,17 @@ export function isNotFound(e: unknown): boolean {
   const st = Number(o?.status ?? o?.statusCode);
   if (st === 404 || st === 410) return true;
   return typeof o?.message === "string" && /\b(404|410)\b/.test(o.message) && /not found|gone|status|http/i.test(o.message);
+}
+
+/**
+ * True when an error from ctx.fetchFile means "the body is larger than the byte limit" — the same test as the
+ * pipeline's isTooLarge (official/http.ts; not imported here: http.ts → registry → adapters would be an import cycle).
+ * Covers safe-fetch's messages ("Response declares N bytes, above the M-byte limit", "Response is larger than ...",
+ * "Response exceeded the M-byte limit") and the official fetcher's "file larger than N bytes".
+ */
+export function isTooLargeError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return (isSafeFetchError(e) && e.code === "body_too_large") || /byte limit|larger than|too large/i.test(msg);
 }
 
 /** HTTP status carried by an error from ctx.fetch*, when it carries one. */

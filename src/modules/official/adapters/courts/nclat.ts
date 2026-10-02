@@ -2,12 +2,12 @@ import "server-only";
 import type { AdapterContext, DiscoverResult, ParseInput, ParseResult, SourceAdapter } from "../../adapter";
 import type { RemoteStore } from "@/lib/db/remote";
 import type { CauseListType, DiscoveredDoc, SourceDef, SourceKind } from "../../types";
-import { NCLAT_COURTS, type NclatCourt } from "../../causelist/forums";
+import { CAPTION_SCOPE, NCLAT_COURTS, type NclatCourt } from "../../causelist/forums";
 import { parseCaseNumber } from "../../case-numbers";
 import { printedDate, squash } from "../../causelist/text";
 import { decodeHtml } from "@/modules/india/sources/parse-util";
 import { calendarParse, calendarPersist, causeListParse, causeListPersist, docText, mergeDocumentMeta } from "./common";
-import { GOV_TERMS, addDays, anchors, runQueries, tableRows } from "./shared";
+import { GOV_TERMS, addDays, anchors, markRefetch, runQueries, tableRows } from "./shared";
 
 /**
  * National Company Law Appellate Tribunal (https://nclat.nic.in).
@@ -16,7 +16,9 @@ import { GOV_TERMS, addDays, anchors, runQueries, tableRows } from "./shared";
  *   YYYY-MM-DD; verified 2026-10-02). Table: Sr. No. | Court Name | Description | Date (DD/MM/YYYY) | View/Download.
  * - Latest judgments and daily orders: homepage links to /display-board/view_order_pdf?fid=..&&l={delhi|chennai}&&d=
  *   {date}&&order_type={J|D}; the anchor text is the parties' names only, so case numbers are read from page 1 of the
- *   PDF (appeal numbers only) and merged into the document's metadata.
+ *   PDF and merged into the document's metadata. Only the caption binds (meta.caseKeys, meta.caseKeysScope "caption"):
+ *   the first appeal number, plus the numbers joined to it by "With" / "&" / brackets before the parties; appeal
+ *   numbers cited further down (tagged matters, earlier orders) are kept as meta.mentionedCaseKeys, which never bind.
  * - Calendar: /calendar links the year PDF.
  * The judgment / order search screens need a session and CSRF token and are not used.
  */
@@ -90,17 +92,57 @@ export function nclatOrderItems(html: string, since: string | null): DiscoveredD
 
 const APPEAL_RE = /\b(?:Comp(?:any)?\.?\s*App(?:eal)?\.?|Competition\s+App(?:eal)?\.?|Insolvency\s+App(?:eal)?\.?)\s*\(\s*AT\s*\)(?:\s*\(\s*(?:CH|Ch|Ins|Insolvency|INS)\.?\s*\))*\s*No\.?\s*\d{1,6}\s*(?:of|\/)\s*(?:19|20)\d{2}/gi;
 
-/** NCLAT appeal numbers printed on page 1 of a judgment / order (other numbers on the page are not the appeal's). */
-export function nclatAppealNumbers(text: string): { printed: string[]; keys: string[] } {
-  const printed: string[] = [];
-  const keys: string[] = [];
-  for (const m of text.slice(0, 2500).matchAll(APPEAL_RE)) {
+/**
+ * Where the body starts: the parties block ("IN THE MATTER OF", "Versus") or the upper-case order / judgment heading
+ * ("ORDER", "J U D G M E N T"; not "ORDER DATED" inside an "Arising out of" note). The caption is printed above it.
+ */
+const BODY_START = /\b[Ii][Nn]\s+[Tt][Hh][Ee]\s+[Mm][Aa][Tt][Tt][Ee][Rr]\s+[Oo][Ff]\b|\b(?:Versus|VERSUS)\b|\bJ\s?U\s?D\s?G\s?E?\s?M\s?E\s?N\s?T\b|\bO\s?R\s?D\s?E\s?R\b(?!\s+(?:dated|DATED|Dated|passed|PASSED))/;
+
+/**
+ * Whether the text between two appeal numbers joins them in one caption: only connectors ("With", "&", "and",
+ * "Along with", "Connected with", "Tagged with"), punctuation, I.A. numbers and bracketed asides ("[Arising out of ...]",
+ * "(IA No. 456/2025)"). Anything else (parties, "Present", the order's text) ends the caption.
+ */
+function joinsCaption(gap: string): boolean {
+  let g = gap;
+  for (let i = 0; i < 6 && /\([^()]*\)|\[[^[\]]*\]/.test(g); i++) g = g.replace(/\([^()]*\)|\[[^[\]]*\]/g, " ");
+  g = g.replace(/\bI\.?\s*A\.?\s*(?:Nos?\.?)?\s*\d{1,6}(?:\s*(?:,|&|and)\s*\d{1,6})*\s*(?:of|\/)\s*(?:19|20)\d{2}/gi, " ");
+  return /^(?:[\s,;:&.\-\u2013]|\b(?:with|and|along\s*with|alongwith|connected\s+with|tagged\s+with)\b)*$/i.test(g);
+}
+
+export interface NclatPageNumbers {
+  /** Appeal numbers of the caption, as printed (bind the order to those appeals). */
+  printed: string[];
+  keys: string[];
+  /** Other appeal numbers printed on page 1 (cited, tagged, earlier orders): kept for display, never bound. */
+  mentioned: string[];
+  mentionedKeys: string[];
+}
+
+/**
+ * NCLAT appeal numbers on page 1 of a judgment / order. The caption is the first appeal number, provided it is printed
+ * before the parties / order heading, plus the numbers joined to it (see joinsCaption); every other appeal number on
+ * the page is "mentioned" only. A page whose first appeal number follows the parties block has no caption number.
+ */
+export function nclatAppealNumbers(text: string): NclatPageNumbers {
+  const head = text.slice(0, 2500);
+  const out: NclatPageNumbers = { printed: [], keys: [], mentioned: [], mentionedKeys: [] };
+  const body = BODY_START.exec(head);
+  const bodyAt = body ? body.index : head.length;
+  let inCaption = true;
+  let prevEnd = -1;
+  for (const m of head.matchAll(APPEAL_RE)) {
     const p = parseCaseNumber(squash(m[0]));
-    if (!p.normalized || printed.includes(p.printed)) continue;
+    if (!p.normalized) continue;
+    const at = m.index ?? 0;
+    if (inCaption) inCaption = prevEnd < 0 ? at < bodyAt : joinsCaption(head.slice(prevEnd, at));
+    prevEnd = at + m[0].length;
+    const [printed, keys] = inCaption ? [out.printed, out.keys] : [out.mentioned, out.mentionedKeys];
+    if (out.printed.includes(p.printed) || out.mentioned.includes(p.printed)) continue;
     printed.push(p.printed);
-    for (const k of p.keys) if (!keys.includes(k)) keys.push(k);
+    for (const k of p.keys) if (!out.keys.includes(k) && !keys.includes(k)) keys.push(k);
   }
-  return { printed, keys };
+  return out;
 }
 
 /** Calendar PDFs linked from /calendar. */
@@ -152,14 +194,14 @@ export const adapter: SourceAdapter = {
       if (i < NCLAT_COURTS.length) {
         const court = NCLAT_COURTS[i];
         const page = await ctx.fetchPage(nclatListUrl(court.id, from, to));
-        return nclatListingItems(page.html ?? "", court);
+        return markRefetch(nclatListingItems(page.html ?? "", court), ctx.today);
       }
       if (i === NCLAT_COURTS.length) {
         const page = await ctx.fetchPage(NCLAT_HOME);
         return nclatOrderItems(page.html ?? "", addDays(ctx.today, -14));
       }
       const page = await ctx.fetchPage(NCLAT_CALENDAR);
-      return nclatCalendarItems(page.html ?? "", year - 1);
+      return markRefetch(nclatCalendarItems(page.html ?? "", year - 1), ctx.today);
     });
   },
   parse(doc: ParseInput): ParseResult {
@@ -168,7 +210,8 @@ export const adapter: SourceAdapter = {
     if (kind === "judgment" || kind === "order") {
       const first = doc.pages?.find((p) => p.page === 1)?.text ?? docText(doc);
       const found = nclatAppealNumbers(first);
-      return { records: found.keys.length ? [found] : [], unparsed: found.keys.length ? 0 : 1, notes: found.keys.length ? [] : ["no NCLAT appeal number on page 1"] };
+      // Always one record: an order with no caption number still replaces keys an earlier parse may have stored.
+      return { records: [found], unparsed: found.keys.length ? 0 : 1, notes: found.keys.length ? [] : ["no NCLAT appeal number in the caption on page 1; not bound to any appeal"] };
     }
     return causeListParse(doc, { layout: "tribunal" });
   },
@@ -176,10 +219,18 @@ export const adapter: SourceAdapter = {
     const kind = doc.meta.docKind;
     if (kind === "calendar") return calendarPersist(store, doc, result);
     if (kind === "judgment" || kind === "order") {
-      const r = result.records[0] as { printed?: unknown; keys?: unknown } | undefined;
-      const printed = Array.isArray(r?.printed) ? r!.printed.filter((x): x is string => typeof x === "string") : [];
-      const keys = Array.isArray(r?.keys) ? r!.keys.filter((x): x is string => typeof x === "string") : [];
-      return keys.length ? mergeDocumentMeta(store, doc.id, { caseNumbers: printed, caseKeys: keys, caseNumbersFrom: "page1" }) : { stored: 0 };
+      const r = result.records[0] as Partial<Record<keyof NclatPageNumbers, unknown>> | undefined;
+      const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+      if (!r) return { stored: 0 };
+      // caseKeys holds the caption only (scope "caption"); cited numbers go to keys that are never queried for binding.
+      return mergeDocumentMeta(store, doc.id, {
+        caseNumbers: strings(r.printed),
+        caseKeys: strings(r.keys),
+        caseKeysScope: CAPTION_SCOPE,
+        mentionedCaseNumbers: strings(r.mentioned),
+        mentionedCaseKeys: strings(r.mentionedKeys),
+        caseNumbersFrom: "page1",
+      });
     }
     return causeListPersist(store, doc, result);
   },

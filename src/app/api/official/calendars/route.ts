@@ -13,6 +13,8 @@ export const runtime = "nodejs";
  *
  * The court's notified calendar built from official holiday lists (court_holidays). `calendar` is null when no official
  * calendar is loaded for those years (never a sample). 503 when the official-sources corpus is not configured.
+ * Dates read from a scan are flagged: `sources[].ocr` / `sources[].note`, a warning in `notes` and first in
+ * `calendar.source`, an id ending in ":ocr", and "(OCR-read; verify against the PDF)" on closures only OCR text gives.
  */
 async function handleGET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;

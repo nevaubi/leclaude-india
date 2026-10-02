@@ -15,6 +15,9 @@ export const runtime = "nodejs";
  * Exact matches only: `case` is normalized (a value that is not one recognisable case number is a 400, never guessed),
  * `diary` must be a diary number, `advocate` matches a whole printed name (case-insensitive). Without a date window or
  * an identifier the request is rejected (400). Entries are "as published": lists are not authoritative.
+ * NCLT numbers repeat at every bench: a printed bench code is kept ("CP(IB)/29(MP)2022" → "CPIB/29/2022@MP") and
+ * matches only that bench's listing; a number without one lists NCLT entries only with `forum` set to one bench, and
+ * never an entry whose printed number carries a bench code.
  */
 async function handleGET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;

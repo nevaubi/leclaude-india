@@ -2,7 +2,7 @@ import "server-only";
 import type { AdapterContext, DiscoverResult, ParseInput, SourceAdapter } from "../../adapter";
 import type { CauseListType, DiscoveredDoc, SourceDef } from "../../types";
 import { causeListParse, causeListPersist } from "./common";
-import { GOV_TERMS, addDays, pageOf } from "./shared";
+import { GOV_TERMS, addDays, markRefetch, pageOf } from "./shared";
 
 /**
  * Supreme Court cause lists (https://www.sci.gov.in/cause-list/, "Cause Lists at a Glance").
@@ -11,7 +11,8 @@ import { GOV_TERMS, addDays, pageOf } from "./shared";
  * supplementary = _2), advance/{date}/M_J.pdf, wk/{from}_{to}/weekly.pdf. webapi.sci.gov.in serves the same paths and is
  * kept as `meta.mirrorUrl`. The listing page is the source of truth for which files exist; only when it cannot be read
  * are the documented daily file names for the next working days tried (`meta.urlFromPattern`; a 404 there means
- * "not published").
+ * "not published"). Lists dated today or later are re-read on every pass (`meta.refetch`): the Court replaces a list
+ * file in place when it revises it.
  */
 
 export const SCI_CAUSELIST_PAGE = "https://www.sci.gov.in/cause-list/";
@@ -126,7 +127,7 @@ export const adapter: SourceAdapter = {
       notes.push(`listing page unavailable (${(e as Error).message.slice(0, 160)}); trying the documented daily file names`);
       items = sciPatternFallback(ctx.today);
     }
-    return pageOf(items, ctx, notes);
+    return pageOf(markRefetch(items, ctx.today), ctx, notes);
   },
   parse(doc: ParseInput) {
     const lt = doc.meta.listType;

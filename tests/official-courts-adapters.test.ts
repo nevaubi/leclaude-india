@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AdapterContext, FetchedPage, ParseInput } from "@/modules/official/adapter";
+import type { RemoteStore, Row, SqlQuery } from "@/lib/db/remote";
 import type { CauseListEntry, DiscoveredDoc } from "@/modules/official/types";
 import { SOURCE_IDS } from "@/modules/official/types";
 import { COURT_ADAPTERS } from "@/modules/official/adapters/courts";
@@ -13,6 +14,7 @@ import { classifyDhcTitle, DHC_CAUSELIST_INDEX, dhcListingItems, takenUpOn } fro
 import { ncltForumOf, ncltListingItems, ncltListUrl } from "@/modules/official/adapters/courts/nclt";
 import { nclatAppealNumbers, nclatListingItems, nclatListUrl, nclatOrderItems } from "@/modules/official/adapters/courts/nclat";
 import { NCLAT_COURTS, NCLT_BENCHES } from "@/modules/official/causelist/forums";
+import { markRefetch } from "@/modules/official/adapters/courts/shared";
 
 /** Listing fixtures are verbatim excerpts of the live pages captured 2026-10-02 (Firecrawl, location IN). */
 const FIX = path.resolve(__dirname, "fixtures/official/courts");
@@ -146,9 +148,11 @@ describe("sci-orders", () => {
         parties: "THE STATE OF HIMACHAL PRADESH VS. ANCHLA @ CHANCHLA",
         orderType: "j",
         uploadedAt: "2026-10-01T17:22:12+05:30",
-        fileUrlFromPattern: true,
+        // The /sci-get-pdf/ file URL is built from the documented pattern: the adapter contract's flag.
+        urlFromPattern: true,
       },
     });
+    expect(j.meta).not.toHaveProperty("fileUrlFromPattern");
     expect(items.filter((d) => d.kind === "order")).toHaveLength(4);
   });
 
@@ -317,9 +321,59 @@ describe("nclt and nclat", () => {
 
   it("reads only NCLAT appeal numbers from page 1 of a judgment", () => {
     const page1 = "NATIONAL COMPANY LAW APPELLATE TRIBUNAL PRINCIPAL BENCH, NEW DELHI 30.09.2026 Present: JUSTICE SHARAD KUMAR SHARMA COMP. APP. (AT) NO. 8 OF 2023 (Arising out of order in CP(IB)/123(MB)2022) J U D G M E N T";
-    expect(nclatAppealNumbers(page1)).toEqual({ printed: ["COMP. APP. (AT) NO. 8 OF 2023"], keys: ["COMPAPPAT/8/2023"] });
+    const want = { printed: ["COMP. APP. (AT) NO. 8 OF 2023"], keys: ["COMPAPPAT/8/2023"], mentioned: [], mentionedKeys: [] };
+    expect(nclatAppealNumbers(page1)).toEqual(want);
     const p = COURT_ADAPTERS.nclat!.parse!(parseInput({ meta: { docKind: "judgment", forum: "nclat-delhi" }, pages: [{ page: 1, text: page1 }] }));
-    expect(p.records).toEqual([{ printed: ["COMP. APP. (AT) NO. 8 OF 2023"], keys: ["COMPAPPAT/8/2023"] }]);
+    expect(p.records).toEqual([want]);
+  });
+
+  it("an NCLAT daily order binds only its caption: an appeal cited in the order's text is 'mentioned', never a key", async () => {
+    const page1 = [
+      "NATIONAL COMPANY LAW APPELLATE TRIBUNAL",
+      "PRINCIPAL BENCH, NEW DELHI",
+      "Company Appeal (AT) (Insolvency) No. 1474 of 2025",
+      "& I.A. No. 4567 of 2025",
+      "IN THE MATTER OF:",
+      "Rajesh Kumar …Appellant",
+      "Versus",
+      "Alpha Infra Ltd. …Respondent",
+      "Present: For Appellant: Mr. X, Advocate.",
+      "O R D E R",
+      "02.10.2026: Learned counsel submits that the issue is covered by the judgment in Comp. App. (AT) (Ins.) No. 999 of 2024",
+      "and the connected Company Appeal (AT) (Insolvency) No. 1500 of 2025. List on 20.10.2026.",
+    ].join("\n");
+    const r = nclatAppealNumbers(page1);
+    expect(r.keys).toEqual(["COMPAPPATINS/1474/2025"]);
+    expect(r.mentionedKeys).toEqual(["COMPAPPATINS/999/2024", "COMPAPPATINS/1500/2025"]);
+    // The adapter stores the caption keys (scope "caption") and the cited ones under keys that are never queried.
+    const calls: SqlQuery[] = [];
+    const store: RemoteStore = {
+      async query(q: SqlQuery): Promise<Row[]> { calls.push(q); return []; },
+      async transaction(qs: SqlQuery[]): Promise<Row[][]> { for (const q of qs) calls.push(q); return qs.map(() => []); },
+    };
+    const doc = parseInput({ id: "nclat_d1", meta: { docKind: "order", forum: "nclat-delhi" }, pages: [{ page: 1, text: page1 }] });
+    const a = COURT_ADAPTERS.nclat!;
+    await a.persist!(store, doc, a.parse!(doc));
+    expect(calls).toHaveLength(1);
+    expect(calls[0].query).toBe("UPDATE official_documents SET meta = meta || $2::jsonb WHERE id = $1");
+    expect(JSON.parse(String(calls[0].params![1]))).toEqual({
+      caseNumbers: ["Company Appeal (AT) (Insolvency) No. 1474 of 2025"], caseKeys: ["COMPAPPATINS/1474/2025"], caseKeysScope: "caption",
+      mentionedCaseNumbers: ["Comp. App. (AT) (Ins.) No. 999 of 2024", "Company Appeal (AT) (Insolvency) No. 1500 of 2025"],
+      mentionedCaseKeys: ["COMPAPPATINS/999/2024", "COMPAPPATINS/1500/2025"], caseNumbersFrom: "page1",
+    });
+  });
+
+  it("an NCLAT caption binds appeals joined by 'With' / brackets; none when the first appeal number follows the parties", () => {
+    const tagged = "NATIONAL COMPANY LAW APPELLATE TRIBUNAL, NEW DELHI Company Appeal (AT) (Insolvency) No. 100 of 2025 [Arising out of the Impugned Order dated 22.03.2025 passed by NCLT, Mumbai Bench in C.P. (IB) No. 117/MB/2024] With Company Appeal (AT) (Insolvency) No. 101 of 2025 (IA No. 45/2025) IN THE MATTER OF: A …Appellant Versus B …Respondent ORDER 01.10.2026: Heard. See Comp. App. (AT) No. 7 of 2020.";
+    const t = nclatAppealNumbers(tagged);
+    expect(t.keys).toEqual(["COMPAPPATINS/100/2025", "COMPAPPATINS/101/2025"]);
+    expect(t.mentionedKeys).toEqual(["COMPAPPAT/7/2020"]);
+    // Caption without an appeal number in the recognised form (a diary-stage appeal): the body's citation never binds.
+    const diary = "NATIONAL COMPANY LAW APPELLATE TRIBUNAL Company Appeal (AT) (Insolvency) Diary No. 12345 of 2026 IN THE MATTER OF: X …Appellant Versus Y ORDER The Appellant has also filed Comp. App. (AT) (Ins) No. 99 of 2025.";
+    expect(nclatAppealNumbers(diary)).toMatchObject({ keys: [], mentionedKeys: ["COMPAPPATINS/99/2025"] });
+    const p = COURT_ADAPTERS.nclat!.parse!(parseInput({ meta: { docKind: "order", forum: "nclat-delhi" }, pages: [{ page: 1, text: diary }] }));
+    expect(p.unparsed).toBe(1);
+    expect(p.notes?.[0]).toMatch(/caption/);
   });
 
   it("parses NCLT / NCLAT cause lists through the adapters", () => {
@@ -351,5 +405,60 @@ describe("discovered documents are well formed", () => {
         expect(d.title.length).toBeGreaterThan(3);
       }
     }
+  });
+});
+
+describe("re-reading lists revised in place (meta.refetch)", () => {
+  const doc = (kind: DiscoveredDoc["kind"], meta: DiscoveredDoc["meta"], docDate: string | null = null): DiscoveredDoc => ({ sourceId: "nclt", kind, url: `https://nclt.gov.in/${Math.random()}.pdf`, title: "t", docDate, meta });
+
+  it("flags cause lists dated today or later (IST date from ctx.today) and calendars weekly; leaves other kinds alone", () => {
+    const today = "2026-10-02"; // a Friday
+    const [past, same, future, byDocDate, bad] = markRefetch(
+      [doc("cause_list", { listDate: "2026-10-01" }), doc("cause_list", { listDate: today }), doc("cause_list", { listDate: "2026-10-09" }), doc("cause_list", {}, "2026-10-05"), doc("cause_list", { listDate: "05.10.2026" })],
+      today,
+    );
+    expect([past, same, future, byDocDate, bad].map((d) => d.meta?.refetch)).toEqual([false, true, true, true, false]);
+    // Explicit false (not absent): the flag merged into the stored metadata stops once the list date has passed.
+    expect(past.meta).toHaveProperty("refetch", false);
+    const cal = [doc("calendar", { year: 2026 }), doc("calendar", { year: 2025 }), doc("calendar", { year: 2027 })];
+    expect(markRefetch(cal, today).map((d) => d.meta?.refetch)).toEqual([false, false, false]);
+    expect(markRefetch(cal, "2026-10-05").map((d) => d.meta?.refetch)).toEqual([true, false, true]); // Monday
+    const order = doc("order", { forum: "nclat-delhi" });
+    expect(markRefetch([order], today)[0]).toBe(order);
+  });
+
+  it("sci-causelist: listed and pattern-built lists for today and later are re-read; earlier ones are not", async () => {
+    const a = COURT_ADAPTERS["sci-causelist"]!;
+    const r = await a.discover(fakeCtx({ [SCI_CAUSELIST_PAGE]: read("sci-causelist-glance.html") }));
+    expect(r.items.length).toBeGreaterThan(0);
+    for (const d of r.items) expect(d.meta?.refetch).toBe(String(d.meta?.listDate) >= "2026-10-02");
+    expect(r.items.some((d) => d.meta?.refetch === true) && r.items.some((d) => d.meta?.refetch === false)).toBe(true);
+    const failed = await a.discover(fakeCtx({ [SCI_CAUSELIST_PAGE]: new Error("timeout") }));
+    expect(failed.items.every((d) => d.meta?.urlFromPattern === true && d.meta?.refetch === true)).toBe(true);
+  });
+
+  it("dhc-causelist: a moved list is re-read until its 'taken up on' date", async () => {
+    const pages = { [DHC_CAUSELIST_INDEX]: read("dhc-causelist-index.html") };
+    const r = await COURT_ADAPTERS["dhc-causelist"]!.discover(fakeCtx(pages, { today: "2026-10-05" }));
+    for (const d of r.items) expect(d.meta?.refetch).toBe(String(d.meta?.listDate) >= "2026-10-05");
+    expect(r.items.find((d) => d.url.endsWith("cause_list_03.10.2026.pdf"))?.meta).toMatchObject({ docKind: "cause_list", listDate: "2026-10-05", refetch: true });
+  });
+
+  it("nclt / nclat: bench lists dated today or later are re-read; sci-calendar's page and holiday data every pass", async () => {
+    const html = read("nclt-all-cause-list.html");
+    const pages: Record<string, string> = {};
+    for (const b of NCLT_BENCHES) pages[ncltListUrl(b.id, "2026-10-01", "2026-10-12")] = b.id === 100 ? html : "<table></table>";
+    const nclt = await COURT_ADAPTERS.nclt!.discover(fakeCtx(pages));
+    expect(nclt.items.map((d) => [d.docDate, d.meta?.refetch])).toEqual([["2026-10-05", true], ["2026-10-01", false]]);
+
+    const court = NCLAT_COURTS.find((c) => c.id === 44)!;
+    const nclatPages = { [nclatListUrl(court.id, "2026-10-01", "2026-10-12")]: read("nclat-daily-cause-list.html") };
+    const nclat = await COURT_ADAPTERS.nclat!.discover(fakeCtx(nclatPages));
+    const lists = nclat.items.filter((d) => d.kind === "cause_list");
+    expect(lists.length).toBeGreaterThan(0);
+    for (const d of lists) expect(d.meta?.refetch).toBe(String(d.meta?.listDate) >= "2026-10-02");
+
+    const cal = await COURT_ADAPTERS["sci-calendar"]!.discover(fakeCtx({ [SCI_CALENDAR_PAGE]: read("sci-calendar-page.html") }));
+    expect(cal.items.map((d) => d.meta?.refetch)).toEqual([true, true, false, false]); // page, holiday data, PDFs (not a Monday)
   });
 });

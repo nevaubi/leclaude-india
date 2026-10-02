@@ -1,13 +1,13 @@
 import "server-only";
 import type { RemoteStore } from "@/lib/db/remote";
-import { embeddingModel, type EmbedFn } from "./embed";
-import { createOfficialHttp, type OfficialHttp, type OfficialHttpOptions } from "./http";
-import { defaultOcrModel, ocrConcurrency, ocrMaxPages, type OcrModel } from "./ocr";
-import { BytesCache, PRIORITY, processUnit, type StageCounts, type UnitOutcome } from "./pipeline";
+import { embeddingModel, queueMissingEmbeddings, type EmbedFn } from "./embed";
+import { createOfficialHttp, OfficialDeadlineError, type OfficialHttp, type OfficialHttpOptions } from "./http";
+import { defaultOcrModel, ocrConcurrency, ocrMaxPages, OCR_STOP_BEFORE_DEADLINE_MS, type OcrModel } from "./ocr";
+import { BytesCache, PRIORITY, processUnit, scrubIndexedDocuments, type StageCounts, type UnitOutcome } from "./pipeline";
 import { officialSources, sourceEnabled } from "./registry";
 import type { IngestRunReport, SourceDef, SourceId } from "./types";
 import { isSourceId } from "./types";
-import { claimUnit, dbSize, officialLimitBytes, officialStore, pgArray, sweepExpiredUnits, UNIT_STAGES, type UnitStage } from "./units";
+import { claimUnit, dbSize, enqueueUnits, officialLimitBytes, officialStore, pgArray, sweepExpiredUnits, unitId, UNIT_STAGES, type OfficialUnit, type UnitStage } from "./units";
 
 /**
  * Bounded ingest runs for the official-sources corpus (one API call / one cron slice). Durable and resumable: all work
@@ -20,6 +20,19 @@ import { claimUnit, dbSize, officialLimitBytes, officialStore, pgArray, sweepExp
  *   budget    the database reached OFFICIAL_MAX_DB_MB (default 60,000 MB)
  *   error     the store failed (the run stops; units keep their leases and are retried later)
  *   disabled  none of the requested sources is enabled
+ *
+ * Bounded by its deadline: one AbortController per run aborts at the deadline (chained with the caller's signal); it
+ * reaches every fetch (each request is also cut 5 s before the deadline), embedding call and OCR request, and a unit
+ * interrupted that way is released, not failed (its attempt is given back). OCR units are not started with less than
+ * OCR_MIN_MS left, index units not once the run's embedding budget is used (no claim / release busy loop).
+ *
+ * Fair: about a quarter of the workers (at least one; every fourth claim with a single worker) first try the later
+ * stages — index (embeddings), ocr, parse — in rotation, so a long discovery backlog (hundreds of fetch units) cannot
+ * starve them; the other workers take the queue in priority order.
+ *
+ * Before the workers start, bounded housekeeping: re-scrub contact data out of documents indexed before the scrubber
+ * (`scrubIndexedDocuments`), queue embeddings for indexed documents that have unembedded chunks, and re-queue OCR for
+ * documents left `ocr_needed` above an OCR page cap that has since been raised (OFFICIAL_OCR_MAX_PAGES).
  */
 
 export const DEFAULT_CONCURRENCY = 4;
@@ -27,6 +40,19 @@ export const DEFAULT_DISCOVER_LIMIT = 50;
 export const DEFAULT_EMBED_MAX_CHUNKS = 5_000;
 /** A unit is not started with less than this left. */
 const MIN_UNIT_MS = 30_000;
+/** An OCR unit is not started with less than this left (its requests stop OCR_STOP_BEFORE_DEADLINE_MS early). */
+export const OCR_MIN_MS = OCR_STOP_BEFORE_DEADLINE_MS + 30_000;
+/** Stages the reserved workers try first, in rotation. */
+const LATER_STAGES: readonly UnitStage[] = ["index", "ocr", "parse"];
+/**
+ * Documents re-scrubbed per run (OFFICIAL_SCRUB_BACKFILL_PER_RUN, default 200; cause lists and defect lists first). The
+ * backfill also stops after about a fifth of the run's time, so ingestion always keeps most of the run.
+ */
+export const DEFAULT_SCRUB_PER_RUN = 200;
+/** Indexed documents queued for embeddings per run. */
+const EMBED_QUEUE_PER_RUN = 200;
+/** ocr_needed documents re-queued per run after the OCR cap was raised. */
+const OCR_REQUEUE_PER_RUN = 50;
 const IDLE_WAIT_MS = 1_500;
 const BUDGET_CHECK_TTL_MS = 5_000;
 
@@ -59,6 +85,10 @@ export interface OfficialRunOptions {
   embedMaxChunks?: number;
   limitBytes?: number;
   log?: (line: Record<string, unknown>) => void;
+  /** Tests: minimum time left to start a unit (default 30 s). */
+  minUnitMs?: number;
+  /** Documents re-scrubbed by the contact-data backfill this run (default OFFICIAL_SCRUB_BACKFILL_PER_RUN or 200; 0 = off). */
+  scrubPerRun?: number;
 }
 
 export interface OfficialRunResult {
@@ -153,119 +183,213 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
   const store = await officialStore(o.store); // OfficialNotConfiguredError propagates (503 at the route)
   if (!enabled.length) { result.notes.push("none of the requested sources is enabled"); return finish("disabled"); }
 
+  // One abort for the whole run: at the deadline, or when the caller aborts.
+  const ctrl = new AbortController();
+  const onCallerAbort = () => ctrl.abort(o.signal?.reason);
+  if (o.signal?.aborted) ctrl.abort(o.signal.reason);
+  else o.signal?.addEventListener("abort", onCallerAbort, { once: true });
+  const timer = setTimeout(() => ctrl.abort(new OfficialDeadlineError()), Math.max(0, deadline - now()));
+  (timer as { unref?: () => void }).unref?.();
   try {
-    await sweepExpiredUnits(store);
-    if (o.retryFailed || o.redrive) {
-      const n = await retryFailedUnits(store, enabled.map((d) => d.id), o.retryFailed ? undefined : o.redrive);
-      if (n) result.notes.push(`${n} failed unit(s) re-queued`);
-    }
-    if (stages.includes("discover")) {
-      const queued = await scheduleDiscovery(store, enabled, o.forceDiscover === true);
-      if (queued) result.notes.push(`${queued} discovery unit(s) scheduled`);
-    }
-  } catch (e) {
-    result.error = (e as Error).message.slice(0, 500);
-    return finish("error");
+    return await runWorkers();
+  } finally {
+    clearTimeout(timer);
+    o.signal?.removeEventListener("abort", onCallerAbort);
   }
 
-  // Budget check (shared by workers, at most every few seconds).
-  let budgetAt = 0;
-  let budgetPromise: Promise<number> | null = null;
-  const overBudget = async (): Promise<boolean> => {
-    if (!budgetPromise || now() - budgetAt > BUDGET_CHECK_TTL_MS) { budgetAt = now(); budgetPromise = dbSize(store); }
-    const size = await budgetPromise;
-    result.dbBytes = size;
-    return size >= limitBytes;
-  };
-
-  const perSourceUnits = new Map<string, number>();
-  const unitCap = o.limitPerSource && o.limitPerSource > 0 ? Math.floor(o.limitPerSource) : null;
-  const httpBySource = new Map<SourceId, OfficialHttp>();
-  let ocrModelCache: OcrModel | null = o.ocrModel ?? null;
-  const embedModel = o.embedModel === undefined ? embeddingModel() : o.embedModel;
-  const deps = {
-    store,
-    now,
-    deadline,
-    http: (def: SourceDef) => {
-      let h = httpBySource.get(def.id);
-      if (!h) { h = o.http ? o.http(def) : createOfficialHttp(def, { ...(o.httpOptions ?? {}), signal: o.signal }); httpBySource.set(def.id, h); }
-      return h;
-    },
-    ocrModel: () => (ocrModelCache ??= defaultOcrModel()),
-    embed: o.embed,
-    embedModel,
-    embedBudget: { left: o.embedMaxChunks ?? envInt(process.env.OFFICIAL_EMBED_MAX_CHUNKS_PER_RUN, DEFAULT_EMBED_MAX_CHUNKS, 0, 1_000_000) },
-    discoverLimit: Math.max(1, Math.min(unitCap ?? DEFAULT_DISCOVER_LIMIT, 500)),
-    maxOcrPages: o.maxOcrPages ?? ocrMaxPages(),
-    ocrConcurrency: ocrConcurrency(),
-    bytes: new BytesCache(),
-    signal: o.signal,
-    log: (event: string, data: Record<string, unknown>) => log({ level: "info", event, ...data }),
-  };
-
-  const concurrency = Math.max(1, Math.min(Math.floor(o.concurrency ?? DEFAULT_CONCURRENCY), 16));
-  let active = 0;
-  // Shared by the workers (an object, so control-flow narrowing does not assume it stays null).
-  const run: { stop: IngestRunReport["stop"] | null } = { stop: null };
-
-  const claimable = (): string[] => enabled.map((d) => d.id).filter((id) => unitCap == null || (perSourceUnits.get(id) ?? 0) < unitCap);
-
-  const worker = async () => {
+  async function runWorkers(): Promise<OfficialRunResult> {
+    const signal = ctrl.signal;
+    const embedModel = o.embedModel === undefined ? embeddingModel() : o.embedModel;
+    const maxOcrPages = o.maxOcrPages ?? ocrMaxPages();
+    const sourceIds = enabled.map((d) => d.id);
     try {
-      await work();
+      await sweepExpiredUnits(store);
+      if (o.retryFailed || o.redrive) {
+        const n = await retryFailedUnits(store, sourceIds, o.retryFailed ? undefined : o.redrive);
+        if (n) result.notes.push(`${n} failed unit(s) re-queued`);
+      }
+      if (stages.includes("discover")) {
+        const queued = await scheduleDiscovery(store, enabled, o.forceDiscover === true);
+        if (queued) result.notes.push(`${queued} discovery unit(s) scheduled`);
+      }
     } catch (e) {
-      // A store failure: stop every worker; claimed units keep their lease and are retried by a later run.
-      result.error ??= (e as Error).message.slice(0, 500);
-      run.stop = "error";
+      result.error = (e as Error).message.slice(0, 500);
+      return finish("error");
     }
-  };
-
-  const work = async () => {
-    for (;;) {
-      if (run.stop) return;
-      if (o.signal?.aborted) { run.stop = "deadline"; return; }
-      if (now() > deadline - MIN_UNIT_MS) { run.stop ??= "deadline"; return; }
-      if (await overBudget()) { run.stop = "budget"; return; }
-      const sources = claimable();
-      const unit = sources.length ? await claimUnit(store, { sources, stages }) : null;
-      if (!unit) {
-        if (active > 0 && sources.length) { await sleep(IDLE_WAIT_MS); continue; } // another worker may enqueue more
-        return;
-      }
-      active++;
-      let out: UnitOutcome;
+    // Housekeeping (bounded; a failure is noted and never stops ingestion).
+    const scrubLimit = o.scrubPerRun ?? envInt(process.env.OFFICIAL_SCRUB_BACKFILL_PER_RUN, DEFAULT_SCRUB_PER_RUN, 0, 500);
+    if (scrubLimit > 0) {
       try {
-        out = await processUnit(unit, deps);
-      } finally {
-        active--;
-      }
-      result.units++;
-      if (unit.stage !== "discover" && unit.stage !== "index" && unit.stage !== "parse") perSourceUnits.set(unit.source, (perSourceUnits.get(unit.source) ?? 0) + 1);
-      const rep = reports.get(unit.source as SourceId);
-      if (rep) {
-        addCounts(rep, out.counts);
-        if (out.error && rep.errors.length < 50) rep.errors.push(out.error);
+        const s = await scrubIndexedDocuments(store, { limit: scrubLimit, deadline: Math.min(deadline - MIN_UNIT_MS, now() + Math.max(5_000, Math.floor((deadline - now()) / 5))), now, embedModel, signal });
+        if (s.documents || s.purged || s.payloads) {
+          result.notes.push(`contact-data scrub: ${s.documents} document(s) checked, ${s.changed} rewritten (${s.chunks} chunk(s); ${s.redacted.phones} phone(s), ${s.redacted.emails} e-mail(s), ${s.redacted.links} link(s) removed)${s.purged ? `, ${s.purged} stale document(s) purged` : ""}${s.payloads ? `, ${s.payloads} unit payload(s) cleared` : ""}`);
+          log({ level: "info", event: "official.scrub_backfill", documents: s.documents, changed: s.changed, chunks: s.chunks, purged: s.purged, payloads: s.payloads, phones: s.redacted.phones, emails: s.redacted.emails, links: s.redacted.links });
+        }
+      } catch (e) {
+        result.notes.push(`contact-data scrub skipped: ${(e as Error).message.slice(0, 200)}`);
       }
     }
-  };
+    if (embedModel && stages.includes("index")) {
+      try {
+        const n = await queueMissingEmbeddings(store, sourceIds, EMBED_QUEUE_PER_RUN, PRIORITY.index);
+        if (n) result.notes.push(`${n} document(s) queued for embeddings`);
+      } catch (e) {
+        result.notes.push(`embedding queue skipped: ${(e as Error).message.slice(0, 200)}`);
+      }
+    }
+    if (stages.includes("ocr")) {
+      try {
+        const n = await requeueCappedOcr(store, sourceIds, maxOcrPages, OCR_REQUEUE_PER_RUN);
+        if (n) result.notes.push(`${n} document(s) above the previous OCR cap re-queued for OCR (cap ${maxOcrPages})`);
+      } catch (e) {
+        result.notes.push(`OCR re-queue skipped: ${(e as Error).message.slice(0, 200)}`);
+      }
+    }
 
-  await Promise.all(Array.from({ length: concurrency }, worker));
-  if (run.stop === "error") return finish("error");
-  if (run.stop === "budget") {
-    result.notes.push(`database size ${result.dbBytes ?? "?"} bytes reached the budget of ${limitBytes} bytes (OFFICIAL_MAX_DB_MB)`);
-    return finish("budget");
+    // Budget check (shared by workers, at most every few seconds).
+    let budgetAt = 0;
+    let budgetPromise: Promise<number> | null = null;
+    const overBudget = async (): Promise<boolean> => {
+      if (!budgetPromise || now() - budgetAt > BUDGET_CHECK_TTL_MS) { budgetAt = now(); budgetPromise = dbSize(store); }
+      const size = await budgetPromise;
+      result.dbBytes = size;
+      return size >= limitBytes;
+    };
+
+    const perSourceUnits = new Map<string, number>();
+    const unitCap = o.limitPerSource && o.limitPerSource > 0 ? Math.floor(o.limitPerSource) : null;
+    const httpBySource = new Map<SourceId, OfficialHttp>();
+    let ocrModelCache: OcrModel | null = o.ocrModel ?? null;
+    const minUnitMs = Math.max(0, o.minUnitMs ?? MIN_UNIT_MS);
+    const deps = {
+      store,
+      now,
+      deadline,
+      http: (def: SourceDef) => {
+        let h = httpBySource.get(def.id);
+        if (!h) { h = o.http ? o.http(def) : createOfficialHttp(def, { ...(o.httpOptions ?? {}), signal, deadline, now }); httpBySource.set(def.id, h); }
+        return h;
+      },
+      ocrModel: () => (ocrModelCache ??= defaultOcrModel()),
+      embed: o.embed,
+      embedModel,
+      embedBudget: { left: o.embedMaxChunks ?? envInt(process.env.OFFICIAL_EMBED_MAX_CHUNKS_PER_RUN, DEFAULT_EMBED_MAX_CHUNKS, 0, 1_000_000) },
+      discoverLimit: Math.max(1, Math.min(unitCap ?? DEFAULT_DISCOVER_LIMIT, 500)),
+      maxOcrPages,
+      ocrConcurrency: ocrConcurrency(),
+      bytes: new BytesCache(),
+      signal,
+      log: (event: string, data: Record<string, unknown>) => log({ level: "info", event, ...data }),
+    };
+
+    const concurrency = Math.max(1, Math.min(Math.floor(o.concurrency ?? DEFAULT_CONCURRENCY), 16));
+    const reserved = concurrency >= 2 ? Math.max(1, Math.floor(concurrency / 4)) : 0;
+    let active = 0;
+    let claims = 0;
+    let laneTurn = 0;
+    let laneIdleUntil = 0;
+    // Shared by the workers (an object, so control-flow narrowing does not assume it stays null).
+    const run: { stop: IngestRunReport["stop"] | null } = { stop: null };
+
+    const claimable = (): string[] => enabled.map((d) => d.id).filter((id) => unitCap == null || (perSourceUnits.get(id) ?? 0) < unitCap);
+    /** Stages a worker may claim now: no OCR without enough time left, no index once the embedding budget is used. */
+    const stagesNow = (): UnitStage[] => stages.filter((s) => (s !== "ocr" || deadline - now() >= OCR_MIN_MS) && (s !== "index" || deps.embedBudget.left > 0));
+
+    async function claimNext(w: number, sources: string[], allowed: UnitStage[]): Promise<OfficialUnit | null> {
+      const lane = LATER_STAGES.filter((s) => allowed.includes(s));
+      const prefer = lane.length > 0 && lane.length < allowed.length && now() >= laneIdleUntil && (w < reserved || (concurrency === 1 && claims % 4 === 3));
+      claims++;
+      if (prefer) {
+        const turn = laneTurn++;
+        for (let i = 0; i < lane.length; i++) {
+          const u = await claimUnit(store, { sources, stages: [lane[(turn + i) % lane.length]] });
+          if (u) return u;
+        }
+        laneIdleUntil = now() + 5_000; // nothing in the later stages: do not ask again for a few seconds
+      }
+      return claimUnit(store, { sources, stages: allowed });
+    }
+
+    const worker = async (w: number) => {
+      try {
+        await work(w);
+      } catch (e) {
+        // A store failure: stop every worker; claimed units keep their lease and are retried by a later run.
+        result.error ??= (e as Error).message.slice(0, 500);
+        run.stop = "error";
+      }
+    };
+
+    const work = async (w: number) => {
+      for (;;) {
+        if (run.stop) return;
+        if (signal.aborted) { run.stop = "deadline"; return; }
+        if (now() > deadline - minUnitMs) { run.stop ??= "deadline"; return; }
+        if (await overBudget()) { run.stop = "budget"; return; }
+        const sources = claimable();
+        const allowed = stagesNow();
+        const unit = sources.length && allowed.length ? await claimNext(w, sources, allowed) : null;
+        if (!unit) {
+          if (active > 0 && sources.length) { await sleep(IDLE_WAIT_MS); continue; } // another worker may enqueue more
+          return;
+        }
+        active++;
+        let out: UnitOutcome;
+        try {
+          out = await processUnit(unit, deps);
+        } finally {
+          active--;
+        }
+        result.units++;
+        if (unit.stage !== "discover" && unit.stage !== "index" && unit.stage !== "parse") perSourceUnits.set(unit.source, (perSourceUnits.get(unit.source) ?? 0) + 1);
+        const rep = reports.get(unit.source as SourceId);
+        if (rep) {
+          addCounts(rep, out.counts);
+          if (out.error && rep.errors.length < 50) rep.errors.push(out.error);
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: concurrency }, (_, w) => worker(w)));
+    if (run.stop === "error") return finish("error");
+    if (run.stop === "budget") {
+      result.notes.push(`database size ${result.dbBytes ?? "?"} bytes reached the budget of ${limitBytes} bytes (OFFICIAL_MAX_DB_MB)`);
+      return finish("budget");
+    }
+    if (run.stop === "deadline") {
+      // Deadline with nothing left to claim is still "done".
+      const pending = await store.query({
+        query: `SELECT count(*)::int AS n FROM official_units WHERE (status = 'pending' OR (status = 'running' AND lease_until < now())) AND (run_after IS NULL OR run_after <= now()) AND source = ANY($1::text[]) AND stage = ANY($2::text[])`,
+        params: [pgArray(enabled.map((d) => d.id)), pgArray(stages)],
+      }).catch(() => [{ n: "1" }]);
+      return finish(Number(pending[0]?.n ?? 1) > 0 ? "deadline" : "done");
+    }
+    if (unitCap != null && !claimable().length) result.notes.push(`limitPerSource (${unitCap}) reached for every source`);
+    return finish("done");
   }
-  if (run.stop === "deadline") {
-    // Deadline with nothing left to claim is still "done".
-    const pending = await store.query({
-      query: `SELECT count(*)::int AS n FROM official_units WHERE (status = 'pending' OR (status = 'running' AND lease_until < now())) AND (run_after IS NULL OR run_after <= now()) AND source = ANY($1::text[]) AND stage = ANY($2::text[])`,
-      params: [pgArray(enabled.map((d) => d.id)), pgArray(stages)],
-    }).catch(() => [{ n: "1" }]);
-    return finish(Number(pending[0]?.n ?? 1) > 0 ? "deadline" : "done");
+}
+
+/**
+ * Documents left `ocr_needed` because their scanned pages exceeded the OCR cap ("N page(s) … above the OCR cap") whose
+ * N is now within `cap`: their OCR unit is (re-)queued to re-target the current version (bounded, idempotent — the
+ * document's note changes so it is not selected again).
+ */
+export async function requeueCappedOcr(store: RemoteStore, sources: string[], cap: number, limit: number): Promise<number> {
+  if (!sources.length || limit <= 0) return 0;
+  const rows = await store.query({
+    query: `SELECT id, source, url, error FROM official_documents
+      WHERE status = 'ocr_needed' AND error LIKE '%above the OCR cap%' AND source = ANY($1::text[])
+        AND coalesce(substring(error from '^([0-9]+) page')::int, 2147483647) <= $2
+      ORDER BY id LIMIT ${Math.max(1, Math.min(Math.floor(limit), 500))}`,
+    params: [pgArray(sources), Math.floor(cap)],
+  });
+  if (!rows.length) return 0;
+  await enqueueUnits(store, rows.map((r) => ({ id: unitId("ocr", String(r.id)), source: String(r.source), stage: "ocr" as const, key: String(r.url), documentId: String(r.id), priority: PRIORITY.ocr, payload: { sha256: null, requeuedForCap: cap } })), { requeue: true });
+  for (const r of rows) {
+    const n = /^(\d+) page/.exec(String(r.error ?? ""))?.[1] ?? "?";
+    await store.query({ query: `UPDATE official_documents SET error = $2, updated_at = now() WHERE id = $1 AND status = 'ocr_needed'`, params: [String(r.id), `${n} page(s) queued for OCR (OFFICIAL_OCR_MAX_PAGES raised to ${Math.floor(cap)})`] });
   }
-  if (unitCap != null && !claimable().length) result.notes.push(`limitPerSource (${unitCap}) reached for every source`);
-  return finish("done");
+  return rows.length;
 }
 
 export interface RedriveOptions {

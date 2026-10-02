@@ -239,7 +239,8 @@ export function parseCommonsResponse(body: unknown, query: CommonsQuery): Common
     if (!p.title || !ii) continue;
     const imageUrl = ii.thumburl || ii.url;
     const pageUrl = ii.descriptionurl;
-    if (!imageUrl || !pageUrl || !/^https:\/\/upload\.wikimedia\.org\//.test(imageUrl) || !/^https:\/\/commons\.wikimedia\.org\//.test(pageUrl)) continue;
+    // Wikimedia serves originals from upload.wikimedia.org and (since 2026) scaled thumbnails from thumb.wikimedia.org.
+    if (!imageUrl || !pageUrl || !/^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(imageUrl) || !/^https:\/\/commons\.wikimedia\.org\//.test(pageUrl)) continue;
     out.push({
       title: p.title, imageUrl, pageUrl, width: Number(ii.width) || 0, height: Number(ii.height) || 0, mime: ii.mime ?? "",
       licence: commonsLicence(ii.extmetadata), author: stripHtml(meta(ii.extmetadata, "Artist")), query: query.q, label: query.label,

@@ -52,7 +52,18 @@ export function sanitizeSettings(raw: Partial<SearchSettings> | undefined | null
     order: r.order === "date" ? "date" : "score",
     matterId: typeof r.matterId === "string" && r.matterId ? r.matterId : null,
     fast: Boolean(r.fast),
+    ...(typeof r.answerLanguage === "string" && /^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(r.answerLanguage) ? { answerLanguage: r.answerLanguage } : {}),
+    ...(isIsoDay(r.offenceDate) ? { offenceDate: r.offenceDate } : {}),
+    ...(isIsoDay(r.proceedingDate) ? { proceedingDate: r.proceedingDate } : {}),
+    ...(Number.isFinite(Number(r.benchMin)) && Number(r.benchMin) >= 2 ? { benchMin: Math.min(15, Math.floor(Number(r.benchMin))) } : {}),
+    ...(typeof r.judge === "string" && r.judge.trim() ? { judge: r.judge.trim().slice(0, 80) } : {}),
+    ...(typeof r.disposal === "string" && r.disposal.trim() ? { disposal: r.disposal.trim().slice(0, 40) } : {}),
+    ...(typeof r.section === "string" && r.section.trim() ? { section: r.section.trim().slice(0, 60) } : {}),
   };
+}
+
+function isIsoDay(v: unknown): v is string {
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,176 @@
+{
+ "suite": "citation_format",
+ "version": 1,
+ "cases": [
+  {
+   "id": "bench-cf-scc-bracket-volume",
+   "category": "citation_format",
+   "question": "Arnesh Kumar 2014 (8) SCC 273 arrest checklist",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "arnesh",
+     "title": "Arnesh Kumar v. State of Bihar",
+     "citation": "(2014) 8 SCC 273",
+     "court": "sci",
+     "year": 2014,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "arrest",
+       "Section 41 CrPC",
+       "Section 41A CrPC",
+       "Section 498A IPC",
+       "seven years",
+       "checklist",
+       "magistrate detention"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "citeAs": "2014 (8) SCC 273",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-cf-scc-dots",
+   "category": "citation_format",
+   "question": "Lalita Kumari (2014) 2 S.C.C. 1 registration of FIR",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "lalita",
+     "title": "Lalita Kumari v. Government of Uttar Pradesh",
+     "citation": "(2014) 2 SCC 1",
+     "court": "sci",
+     "year": 2014,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "FIR",
+       "Section 154 CrPC",
+       "registration mandatory",
+       "preliminary inquiry",
+       "cognizable offence",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "citeAs": "(2014) 2 S.C.C. 1",
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-cf-supp",
+   "category": "citation_format",
+   "question": "Bhajan Lal 1992 Supp. (1) S.C.C. 335 quashing categories",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "bhajanlal",
+     "title": "State of Haryana v. Bhajan Lal",
+     "citation": "1992 Supp (1) SCC 335",
+     "court": "sci",
+     "year": 1990,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "quashing",
+       "Section 482 CrPC",
+       "inherent powers",
+       "categories",
+       "FIR",
+       "abuse of process"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "citeAs": "1992 Supp. (1) S.C.C. 335",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-cf-air",
+   "category": "citation_format",
+   "question": "Kathi Kalu Oghad A.I.R. 1961 S.C. 1808 specimen handwriting",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "kathikalu",
+     "title": "State of Bombay v. Kathi Kalu Oghad",
+     "citation": "AIR 1961 SC 1808",
+     "court": "sci",
+     "year": 1961,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "All India Reporter (AIR) citation",
+     "fixture": {
+      "keywords": [
+       "Article 20(3)",
+       "specimen handwriting",
+       "fingerprints",
+       "witness against himself",
+       "self-incrimination"
+      ],
+      "fullText": false
+     }
+    }
+   ],
+   "citeAs": "A.I.R. 1961 S.C. 1808",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-cf-neutral-hc",
+   "category": "citation_format",
+   "question": "Tatheer Jafri 2025:AHC-LKO:18131 anticipatory bail",
+   "forum": "hc-allahabad",
+   "expected": [
+    {
+     "key": "tatheer",
+     "title": "Tatheer Jafri v. State of U.P.",
+     "citation": "2025:AHC-LKO:18131",
+     "court": "hc-allahabad",
+     "year": 2025,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "docs/product/roadmap-india.md P3.3 (product owner benchmark; Allahabad High Court, Lucknow Bench, neutral citation) — verify against the official copy",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 482 BNSS",
+       "Section 438 CrPC",
+       "offence before 1 July 2024",
+       "Section 531 BNSS",
+       "transition"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "citeAs": "2025 : AHC-LKO : 18131",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  }
+ ]
+}

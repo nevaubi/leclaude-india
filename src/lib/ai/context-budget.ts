@@ -122,13 +122,19 @@ export const BUDGET_PROFILES: Readonly<Record<BudgetProfileId, ProfileSpec>> = {
   // chat/server: standard tier 8_000 output (+12_000 reasoning headroom); tool output 60_000; 16 turns.
   chat_standard: { inputShare: 0.4, inputTokens: R(48_000, 160_000, 200_000), outputTokens: R(8_000, 12_000, 32_000), perSourceChars: R(6_000, 30_000, 40_000), totalEvidenceChars: R(80_000, 240_000, 360_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(60_000, 120_000, 150_000), historyChars: R(12_000, 40_000, 80_000), maxFullSources: R(5, 10, 12), historyTurns: R(16, 24, 40), maxSteps: 8, effort: "medium", concurrency: 4 },
   // search/engine: synthesis 8_000 output; evidence 6_000/source, 80_000 total, 1_400 per block.
-  deep_research_synthesis: { inputShare: 0.5, inputTokens: R(32_000, 240_000, 240_000), outputTokens: R(8_000, 16_000, 32_000), perSourceChars: R(6_000, 40_000, 48_000), totalEvidenceChars: R(80_000, 520_000, 560_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(32_000, 60_000, 64_000), historyChars: R(2_500, 8_000, 16_000), maxFullSources: R(12, 12, 12), historyTurns: R(4, 6, 8), maxSteps: 1, effort: "medium", concurrency: 6 },
+  // 2026-10 (India research recall): output target 16K → 24K (ceil 32K → 48K), full sources 12 → 16, evidence target
+  // 520K → 600K chars (ceil 560K → 640K; the 85%-of-input cap still applies: ≈612K at the 240K-token input ceiling).
+  deep_research_synthesis: { inputShare: 0.5, inputTokens: R(32_000, 240_000, 240_000), outputTokens: R(8_000, 24_000, 48_000), perSourceChars: R(6_000, 40_000, 48_000), totalEvidenceChars: R(80_000, 600_000, 640_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(32_000, 60_000, 64_000), historyChars: R(2_500, 8_000, 16_000), maxFullSources: R(12, 16, 16), historyTurns: R(4, 6, 8), maxSteps: 1, effort: "medium", concurrency: 6 },
   // search/engine lanes: 1_800 output; read_source 30_000 default / 32_000 result; read caps 3–5 per lane.
-  research_lane: { inputShare: 0.3, inputTokens: R(32_000, 120_000, 160_000), outputTokens: R(1_800, 3_000, 6_000), perSourceChars: R(30_000, 60_000, 60_000), totalEvidenceChars: R(80_000, 240_000, 320_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(32_000, 64_000, 64_000), historyChars: R(8_000, 16_000, 24_000), maxFullSources: R(5, 7, 8), historyTurns: R(1, 1, 1), maxSteps: 8, effort: "low", concurrency: 6 },
+  // 2026-10: input target 120K → 160K tokens (ceil 160K → 200K, so a 1M-window fast model earns extra reads), output
+  // 3K → 6K (ceil 6K → 12K), steps 8 → 10, full sources 7 → 8 (ceil 8 → 10), input share 0.3 → 0.4 (400K models: 79K → 106K).
+  research_lane: { inputShare: 0.4, inputTokens: R(32_000, 160_000, 200_000), outputTokens: R(1_800, 6_000, 12_000), perSourceChars: R(30_000, 60_000, 60_000), totalEvidenceChars: R(80_000, 240_000, 320_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(32_000, 64_000, 64_000), historyChars: R(8_000, 16_000, 24_000), maxFullSources: R(5, 8, 10), historyTurns: R(1, 1, 1), maxSteps: 10, effort: "low", concurrency: 6 },
   // lib/ai/verify: 9_000 chars/source, 24 sources, answer 20_000 chars, 6_000 output; selfCorrect 40_000 evidence / 30_000 output.
   // Share 0.75: the verifier must be able to see what the synthesis it checks saw (deep research caps its evidence at
   // the verifier's capacity — verification is never weaker than synthesis).
-  verify: { inputShare: 0.75, inputTokens: R(64_000, 200_000, 220_000), outputTokens: R(6_000, 12_000, 24_000), perSourceChars: R(9_000, 24_000, 40_000), totalEvidenceChars: R(216_000, 480_000, 560_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(30_000, 60_000, 80_000), historyChars: R(20_000, 60_000, 80_000), maxFullSources: R(24, 32, 40), historyTurns: R(1, 1, 1), maxSteps: 1, effort: "low", concurrency: 4 },
+  // 2026-10: input target 200K → 220K tokens (ceil 220K → 240K), output 12K → 20K (ceil 24K → 32K), evidence target
+  // 480K → 560K chars (ceil 560K → 640K) so the larger synthesis evidence stays fully verifiable.
+  verify: { inputShare: 0.75, inputTokens: R(64_000, 220_000, 240_000), outputTokens: R(6_000, 20_000, 32_000), perSourceChars: R(9_000, 24_000, 40_000), totalEvidenceChars: R(216_000, 560_000, 640_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(30_000, 60_000, 80_000), historyChars: R(20_000, 60_000, 80_000), maxFullSources: R(24, 32, 40), historyTurns: R(1, 1, 1), maxSteps: 1, effort: "low", concurrency: 4 },
   // workflows/executors: inputs sliced at 40_000–150_000; 24 tool results × 8_000 kept as evidence; 10 research steps; no output cap.
   workflow_step: { inputShare: 0.45, inputTokens: R(64_000, 220_000, 240_000), outputTokens: R(8_000, 16_000, 32_000), perSourceChars: R(20_000, 60_000, 80_000), totalEvidenceChars: R(150_000, 480_000, 600_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(8_000, 24_000, 40_000), historyChars: R(40_000, 120_000, 200_000), maxFullSources: R(24, 32, 40), historyTurns: R(1, 1, 1), maxSteps: 10, effort: "medium", concurrency: 4 },
   // workflows/executors-agents + personas: context 100_000; brief/context/evidence 40_000 each for verification.
@@ -195,7 +201,7 @@ export function resolveContextBudget(profile: BudgetProfileId, descriptor?: Pick
   const totalEvidenceChars = chars(spec.totalEvidenceChars, inputChars * 0.85);
   const maxFullSources = count(spec.maxFullSources);
   // One source never exceeds the evidence total (the floor yields to it on a small model).
-  const perSourceChars = Math.min(chars(spec.perSourceChars, totalEvidenceChars), Math.max(Math.min(spec.perSourceChars.floor, totalEvidenceChars), Math.floor(totalEvidenceChars / Math.max(1, Math.min(maxFullSources, 12)))));
+  const perSourceChars = Math.min(chars(spec.perSourceChars, totalEvidenceChars), Math.max(Math.min(spec.perSourceChars.floor, totalEvidenceChars), Math.floor(totalEvidenceChars / Math.max(1, Math.min(maxFullSources, 16)))));
   return {
     profile,
     maxOutputTokens,

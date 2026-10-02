@@ -99,7 +99,7 @@ describe("contextLimit (when the guard elides)", () => {
     expect(limit).toBeLessThanOrEqual(haiku.maxInput);
     // A large model is still capped by the profile ceiling (cost / long-context price tier), not by its 1M window.
     const big = modelLimits("openai", "gpt-5.4");
-    expect(contextLimit(big, resolveContextBudget("research_lane", big, {}), 3_000)).toBe(160_000);
+    expect(contextLimit(big, resolveContextBudget("research_lane", big, {}), 3_000)).toBe(200_000); // research_lane ceiling (160K before 2026-10)
     expect(contextLimit(big, resolveContextBudget("deep_research_synthesis", big, {}), 16_000)).toBeLessThan(272_000);
     // chat_fast on gpt-5.4 is unchanged (share = ceiling = 96K).
     const fast = resolveContextBudget("chat_fast", big, {});
@@ -108,7 +108,7 @@ describe("contextLimit (when the guard elides)", () => {
     expect(contextLimit(haiku, lane, 100_000)).toBe(Math.max(lane.inputTokens, Math.min(haiku.maxInput, haiku.contextWindow - 100_000) - 8_000));
     // AI_CONTEXT_SCALE shrinks the guard with the other input budgets.
     const scaled = resolveContextBudget("research_lane", haiku, { AI_CONTEXT_SCALE: "0.25" });
-    expect(scaled.guardTokens).toBe(Math.max(scaled.inputTokens, 40_000));
+    expect(scaled.guardTokens).toBe(Math.max(scaled.inputTokens, 50_000));
   });
 });
 

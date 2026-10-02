@@ -6,7 +6,7 @@ import { withAuth } from "@/lib/auth/route";
 import { bodyMatterId, refs } from "@/lib/auth/resources";
 
 export const runtime = "nodejs";
-/** The run stops itself at its wall (researchWallMs, 265s) and persists; the function allows 300s. */
+/** The run stops itself at its wall (researchWallMs, 280s) and persists; the function allows 300s (the platform max). */
 export const maxDuration = 300;
 
 /**

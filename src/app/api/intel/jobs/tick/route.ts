@@ -14,9 +14,11 @@ import { refreshLegalNews } from "@/modules/news/service";
 import { runNewsImageJobs } from "@/modules/news/image-jobs";
 import { officialIngestEnabled, runOfficialIngest } from "@/modules/official/run";
 import { OfficialNotConfiguredError } from "@/modules/official/service";
+import { judgmentEmbedEnabled, runJudgmentEmbedding } from "@/modules/india/corpus/embeddings";
+import { remoteStore } from "@/lib/db/remote";
 
 export const runtime = "nodejs";
-/** The tick runs due intel jobs (up to ~50s), then continues the judgment corpus backfill and the official-sources ingest when they are enabled, and returns before 300s. */
+/** The tick runs due intel jobs (up to ~50s), then continues the judgment corpus backfill, the official-sources ingest and the judgment-text embedding queue when they are enabled, and returns before 300s. */
 export const maxDuration = 300;
 
 /**
@@ -76,7 +78,17 @@ async function tick(req: NextRequest) {
       }
     }
   }
-  return Response.json({ ...result, corpus, official, legalNews, health: intelHealth() });
+  // Judgment-text embeddings (JUDGMENT_EMBED=1; tiered queue in Postgres): whatever time is left after the ingests.
+  let judgmentEmbeddings: Record<string, unknown> = { stop: "skipped" };
+  const store = remoteStore();
+  if (url.searchParams.get("embed") !== "0" && judgmentEmbedEnabled() && store) {
+    const left = 270_000 - (Date.now() - started);
+    if (left > 30_000) {
+      try { judgmentEmbeddings = { ...(await runJudgmentEmbedding(store, { deadline: Date.now() + left - 5_000, maxChunks: 4_000 })) }; }
+      catch (e) { judgmentEmbeddings = { stop: "error", error: e instanceof Error ? e.message.slice(0, 300) : String(e) }; }
+    }
+  }
+  return Response.json({ ...result, corpus, official, judgmentEmbeddings, legalNews, health: intelHealth() });
 }
 
 async function handlePOST(req: NextRequest) { return tick(req); }

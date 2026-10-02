@@ -1,0 +1,576 @@
+{
+ "suite": "adverse",
+ "version": 1,
+ "cases": [
+  {
+   "id": "bench-adv-65b",
+   "category": "adverse",
+   "question": "Can electronic evidence be admitted without a section 65B Evidence Act certificate when the party is not in possession of the device?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "arjun",
+     "title": "Arjun Panditrao Khotkar v. Kailash Kushanrao Gorantyal",
+     "citation": "(2020) 7 SCC 1",
+     "court": "sci",
+     "year": 2020,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "electronic evidence",
+       "Section 65B Evidence Act",
+       "certificate mandatory",
+       "electronic record"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "shafhi",
+     "title": "Shafhi Mohammad v. State of Himachal Pradesh",
+     "citation": "(2018) 2 SCC 801",
+     "court": "sci",
+     "year": 2018,
+     "bench": null,
+     "role": "overruled",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "electronic evidence",
+       "Section 65B Evidence Act",
+       "certificate",
+       "electronic record",
+       "relaxation"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "anvar",
+     "title": "Anvar P.V. v. P.K. Basheer",
+     "citation": "(2014) 10 SCC 473",
+     "court": "sci",
+     "year": 2014,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "electronic evidence",
+       "Section 65B Evidence Act",
+       "certificate",
+       "secondary evidence",
+       "electronic record"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-adv-ndps-informant",
+   "category": "adverse",
+   "question": "Is an NDPS trial vitiated when the informant is also the investigating officer?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "mukesh_ndps",
+     "title": "Mukesh Singh v. State (NCT of Delhi)",
+     "citation": "(2020) 10 SCC 120",
+     "court": "sci",
+     "year": 2020,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "NDPS",
+       "informant",
+       "investigating officer",
+       "same officer",
+       "fair investigation",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "mohanlal",
+     "title": "Mohan Lal v. State of Punjab",
+     "citation": "(2018) 17 SCC 627",
+     "court": "sci",
+     "year": 2018,
+     "bench": null,
+     "role": "overruled",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "NDPS",
+       "informant",
+       "investigating officer",
+       "same officer",
+       "fair investigation"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-adv-377",
+   "category": "adverse",
+   "question": "Is consensual sexual conduct between adults of the same sex an offence under section 377 IPC?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "navtej",
+     "title": "Navtej Singh Johar v. Union of India",
+     "citation": "(2018) 10 SCC 1",
+     "court": "sci",
+     "year": 2018,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 377 IPC",
+       "consensual sexual conduct",
+       "homosexuality",
+       "decriminalisation",
+       "Article 14",
+       "Article 21"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "koushal",
+     "title": "Suresh Kumar Koushal v. Naz Foundation",
+     "citation": "(2014) 1 SCC 1",
+     "court": "sci",
+     "year": 2013,
+     "bench": null,
+     "role": "overruled",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 377 IPC",
+       "consensual sexual conduct",
+       "homosexuality",
+       "constitutional validity"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-adv-coparcenary",
+   "category": "adverse",
+   "question": "Must the father be alive on 9 September 2005 for a daughter to claim coparcenary rights under section 6 of the Hindu Succession Act?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "vineeta",
+     "title": "Vineeta Sharma v. Rakesh Sharma",
+     "citation": "(2020) 9 SCC 1",
+     "court": "sci",
+     "year": 2020,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "coparcenary",
+       "daughters",
+       "Section 6 Hindu Succession Act",
+       "2005 amendment",
+       "living coparcener"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "phulavati",
+     "title": "Prakash v. Phulavati",
+     "citation": "(2016) 2 SCC 36",
+     "court": "sci",
+     "year": 2015,
+     "bench": null,
+     "role": "overruled",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "coparcenary",
+       "daughters",
+       "Section 6 Hindu Succession Act",
+       "2005 amendment",
+       "living coparcener"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "danamma",
+     "title": "Danamma v. Amar",
+     "citation": "(2018) 3 SCC 343",
+     "court": "sci",
+     "year": 2018,
+     "bench": null,
+     "role": "overruled",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "coparcenary",
+       "daughters",
+       "Section 6 Hindu Succession Act",
+       "2005 amendment",
+       "partition"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-adv-foreign-seat",
+   "category": "adverse",
+   "question": "Does Part I of the Arbitration and Conciliation Act apply to foreign-seated arbitrations?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "balco",
+     "title": "Bharat Aluminium Co. v. Kaiser Aluminium Technical Services Inc.",
+     "citation": "(2012) 9 SCC 552",
+     "court": "sci",
+     "year": 2012,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Part I",
+       "foreign-seated arbitration",
+       "seat of arbitration",
+       "territoriality",
+       "Section 2(2) Arbitration Act"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "bhatia",
+     "title": "Bhatia International v. Bulk Trading S.A.",
+     "citation": "(2002) 4 SCC 105",
+     "court": "sci",
+     "year": 2002,
+     "bench": null,
+     "role": "overruled",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Part I",
+       "foreign-seated arbitration",
+       "interim measures",
+       "Section 9 Arbitration Act"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-adv-unstamped",
+   "category": "adverse",
+   "question": "Is an unstamped arbitration agreement void and unenforceable at the section 11 stage?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "interplay",
+     "title": "In re: Interplay between Arbitration Agreements under the Arbitration and Conciliation Act, 1996 and the Indian Stamp Act, 1899",
+     "citation": "2023 INSC 1066",
+     "court": "sci",
+     "year": 2023,
+     "bench": 7,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "Supreme Court neutral citation",
+     "fixture": {
+      "keywords": [
+       "unstamped arbitration agreement",
+       "Stamp Act",
+       "Section 11 Arbitration Act",
+       "curable defect",
+       "seven judges"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "nnglobal",
+     "title": "N.N. Global Mercantile Pvt. Ltd. v. Indo Unique Flame Ltd.",
+     "citation": "(2023) 7 SCC 1",
+     "court": "sci",
+     "year": 2023,
+     "bench": 5,
+     "role": "overruled",
+     "confidence": "medium",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "unstamped arbitration agreement",
+       "Stamp Act",
+       "Section 11 Arbitration Act",
+       "enforceability",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-adv-privacy-emergency",
+   "category": "adverse",
+   "question": "Can the right to approach courts for habeas corpus be suspended during an Emergency?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "puttaswamy",
+     "title": "K.S. Puttaswamy v. Union of India",
+     "citation": "(2017) 10 SCC 1",
+     "court": "sci",
+     "year": 2017,
+     "bench": 9,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "privacy",
+       "Article 21",
+       "fundamental right",
+       "nine judges",
+       "informational privacy"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "admjabalpur",
+     "title": "Additional District Magistrate, Jabalpur v. Shivkant Shukla",
+     "citation": "(1976) 2 SCC 521",
+     "court": "sci",
+     "year": 1976,
+     "bench": 5,
+     "role": "overruled",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Emergency",
+       "habeas corpus",
+       "Article 21",
+       "Article 359",
+       "suspension of rights"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-adv-amendment-fr",
+   "category": "adverse",
+   "question": "Can Parliament amend fundamental rights under Article 368?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "kesavananda",
+     "title": "Kesavananda Bharati v. State of Kerala",
+     "citation": "(1973) 4 SCC 225",
+     "court": "sci",
+     "year": 1973,
+     "bench": 13,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "basic structure",
+       "Article 368",
+       "constitutional amendment",
+       "amending power",
+       "thirteen judges"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "golaknath",
+     "title": "I.C. Golak Nath v. State of Punjab",
+     "citation": "AIR 1967 SC 1643",
+     "court": "sci",
+     "year": 1967,
+     "bench": 11,
+     "role": "overruled",
+     "confidence": "high",
+     "source": "All India Reporter (AIR) citation",
+     "fixture": {
+      "keywords": [
+       "Article 368",
+       "fundamental rights",
+       "amending power",
+       "constitutional amendment",
+       "prospective overruling"
+      ],
+      "fullText": false
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-adv-498a-committees",
+   "category": "adverse",
+   "question": "Are family welfare committees required to screen complaints of cruelty under section 498A IPC before arrest?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "socialaction",
+     "title": "Social Action Forum for Manav Adhikar v. Union of India",
+     "citation": "(2018) 10 SCC 443",
+     "court": "sci",
+     "year": 2018,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 498A IPC",
+       "family welfare committees",
+       "directions modified",
+       "cruelty"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "rajeshsharma",
+     "title": "Rajesh Sharma v. State of Uttar Pradesh",
+     "citation": "(2018) 10 SCC 472",
+     "court": "sci",
+     "year": 2017,
+     "bench": null,
+     "role": "overruled",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 498A IPC",
+       "family welfare committees",
+       "misuse",
+       "directions",
+       "cruelty"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-adv-maneka-gopalan",
+   "category": "adverse",
+   "question": "Are Articles 14, 19 and 21 mutually exclusive when testing a law on personal liberty?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "maneka",
+     "title": "Maneka Gandhi v. Union of India",
+     "citation": "(1978) 1 SCC 248",
+     "court": "sci",
+     "year": 1978,
+     "bench": 7,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Article 21",
+       "procedure established by law",
+       "passport",
+       "fair just and reasonable",
+       "Article 14",
+       "Article 19"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "gopalan",
+     "title": "A.K. Gopalan v. State of Madras",
+     "citation": "AIR 1950 SC 27",
+     "court": "sci",
+     "year": 1950,
+     "bench": 6,
+     "role": "overruled",
+     "confidence": "high",
+     "source": "All India Reporter (AIR) citation",
+     "fixture": {
+      "keywords": [
+       "Article 21",
+       "preventive detention",
+       "procedure established by law",
+       "Article 19"
+      ],
+      "fullText": false
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  }
+ ]
+}

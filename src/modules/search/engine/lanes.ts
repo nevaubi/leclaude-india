@@ -23,6 +23,7 @@ import type { EngineDeps, ResearchPlan } from "./deps";
 import { focusTerms, splitParagraphs } from "./paragraphs";
 import { priorQueries } from "./planner";
 import { laneInstructions } from "./prompts";
+import { rerankEnabled, rerankSources } from "./rerank";
 import { abortError, settleWithin, withRetry, type LaneBoard, type MetricsRecorder, type RunPolicy } from "./runtime";
 import { mergeSources, sourceFromHit, sourceKey } from "./sources";
 import type { LaneStatus, ResearchEventInput, ResearchLane, ResearchSource } from "./types";
@@ -59,6 +60,10 @@ export interface LaneContext {
   plan?: Promise<ResearchPlan | null>;
   /** Indian law corpus coverage block (courts/years with full text vs metadata, statutes breadth); user turn only. */
   coverage?: string;
+  /** The run's sub-questions (issues) for the issue-level reranker. */
+  issues?: string[];
+  /** Reranking switch (default: RESEARCH_RERANK); tests set it explicitly. */
+  rerank?: boolean;
 }
 
 export interface LaneFailure {
@@ -129,6 +134,8 @@ export async function runLane(lane: ResearchLane, ctx: LaneContext, slot: { queu
   const nextToolId = () => `${lane.id}:t${++toolSeq}`;
   const retry = { retries: policy.retrievalRetries, baseMs: policy.retryBaseMs, maxMs: policy.retryMaxMs, signal };
   const ran = new Set<string>();
+  /** Coverage notes from retrieval (e.g. "keyword matches only: no judgment embeddings in scope"), deduplicated. */
+  const retrievalNotes: string[] = [];
 
   const record = (incoming: ResearchSource[], announce = true) => {
     for (const s of incoming) {
@@ -150,12 +157,13 @@ export async function runLane(lane: ResearchLane, ctx: LaneContext, slot: { queu
     const started = Date.now();
     emit({ type: "tool.started", laneId: lane.id, toolId, name, label });
     try {
-      const { hits } = await withRetry(() => deps.retrieve(source, q, laneSettings(lane, ctx.settings, source), signal), {
+      const { hits, notes } = await withRetry(() => deps.retrieve(source, q, laneSettings(lane, ctx.settings, source), signal), {
         ...retry,
         onRetry: ({ error, failure, delayMs }) => emit({ type: "tool.failed", laneId: lane.id, toolId, name, label, error: `${providerMessage(error)} Retrying in ${(delayMs / 1000).toFixed(1)}s.`, failure, durationMs: Date.now() - started, retrying: true }),
       });
       ctx.metrics?.addToolTime(Date.now() - started);
-      record(hits.slice(0, 10).map((h) => sourceFromHit(h, lane.id)));
+      record(hits.slice(0, 12).map((h) => sourceFromHit(h, lane.id)));
+      for (const n of notes ?? []) if (!retrievalNotes.includes(n)) retrievalNotes.push(n);
       emit({ type: "tool.completed", laneId: lane.id, toolId, name, label, durationMs: Date.now() - started });
     } catch (e) {
       if (isAbortError(e)) throw e;
@@ -194,8 +202,31 @@ export async function runLane(lane: ResearchLane, ctx: LaneContext, slot: { queu
       ctx.board?.publish(lane.id, sources);
     }
 
-    // 3. Reading. Fast lanes (and the no-key path) read the best hits deterministically and in parallel;
-    //    deep lanes hand the found list to a bounded fast-model agent.
+    // 2b. Issue-level rerank of the judgment candidates (bounded fast-model call; deterministic tie-breaks; retrieval
+    //     order kept when off, unconfigured or failing). It orders what the lane reads and what the agent is shown.
+    let reranked = false;
+    const enabled = ctx.rerank ?? rerankEnabled();
+    if (enabled && deps.rerank && deps.hasKey && lane.sources.includes("caselaw")) {
+      const cases = Array.from(found.values()).filter((x) => x.kind === "caselaw");
+      const toolId = nextToolId();
+      const started = Date.now();
+      emit({ type: "tool.started", laneId: lane.id, toolId, name: "rerank", label: `Ranking ${Math.min(cases.length, 20)} judgments by issue` });
+      const r = await rerankSources(cases, { question: ctx.question, issues: ctx.issues, scorer: deps.rerank.bind(deps), enabled, signal });
+      ctx.metrics?.addModelTime(Date.now() - started, null);
+      if (r.applied) {
+        reranked = true;
+        const others = Array.from(found.values()).filter((x) => x.kind !== "caselaw");
+        found.clear();
+        for (const x of [...r.items, ...others]) found.set(x.id, x);
+        sources = Array.from(found.values());
+        emit({ type: "tool.completed", laneId: lane.id, toolId, name: "rerank", label: `Ranked ${r.scored} judgments by issue`, durationMs: Date.now() - started });
+      } else {
+        emit({ type: "tool.failed", laneId: lane.id, toolId, name: "rerank", label: "Ranking judgments by issue", error: r.reason ?? "reranker unavailable", failure: "unknown", durationMs: Date.now() - started, retrying: false });
+      }
+    }
+
+    // 3. Reading. Fast lanes, deterministic lanes (agent: false) and the no-key path read the best hits deterministically
+    //    and in parallel; deep lanes hand the found list to a bounded fast-model agent.
     const readOne = async (s: ResearchSource, ref: ReadRef) => {
       if (reads >= lane.maxReads) throw new Error(`Read cap (${lane.maxReads}) reached for this lane; write the lane note from what you have already read.`);
       // A read counts against the cap only when it succeeds (a failed or unknown read never costs the lane a read).
@@ -218,9 +249,10 @@ export async function runLane(lane: ResearchLane, ctx: LaneContext, slot: { queu
       return text;
     };
 
-    if (lane.kind === "fast" || !deps.hasKey) {
+    if (lane.kind === "fast" || lane.agent === false || !deps.hasKey) {
       const terms = focusTerms([ctx.question, ...lane.queries]);
-      const top = rankForReading(Array.from(found.values()).filter((s) => s.hit.readRef && s.kind !== "web"), terms).slice(0, lane.kind === "fast" ? 2 : Math.min(2, lane.maxReads));
+      const readable = Array.from(found.values()).filter((s) => s.hit.readRef && s.kind !== "web");
+      const top = (reranked ? readable : rankForReading(readable, terms)).slice(0, lane.kind === "fast" ? 2 : Math.min(2, lane.maxReads));
       await Promise.all(top.map(async (s) => {
         try { await readOne(s, s.hit.readRef!); } catch (e) {
           if (isAbortError(e)) throw e;
@@ -278,6 +310,7 @@ export async function runLane(lane: ResearchLane, ctx: LaneContext, slot: { queu
     }
 
     ctx.board?.publish(lane.id, sources);
+    if (retrievalNotes.length) note = [`Retrieval coverage: ${retrievalNotes.join(" ")}`, note].filter(Boolean).join("\n");
     const durationMs = Date.now() - t0;
     const error = failures.length ? failures.map((f) => f.error).join("; ") : undefined;
     const failure = failures.length ? failures[0].failure : undefined;

@@ -37,14 +37,15 @@ describe("resolveContextBudget", () => {
     }
   });
 
-  it("deep research on a 1.05M model: 12 sources in full at ~40k chars each, ≤2k-character blocks, under the 272K price tier", () => {
+  it("deep research on a 1.05M model: 16 sources in full at ~40k chars each, ≤2k-character blocks, under the 272K price tier", () => {
     const b = resolveContextBudget("deep_research_synthesis", BIG, NO_ENV);
-    expect(b.maxFullSources).toBe(12);
-    expect(b.perSourceChars).toBe(40_000);
+    expect(b.maxFullSources).toBe(16);
+    // 16 full sources share the evidence total (600K): 37.5K each (40K for 12 before 2026-10).
+    expect(b.perSourceChars).toBe(37_500);
     expect(b.blockChars).toBe(2_000);
-    expect(b.totalEvidenceChars).toBeGreaterThanOrEqual(12 * 40_000);
+    expect(b.totalEvidenceChars).toBeGreaterThanOrEqual(16 * 37_500);
     expect(b.inputTokens).toBeLessThanOrEqual(240_000);
-    expect(b.maxOutputTokens).toBe(16_000);
+    expect(b.maxOutputTokens).toBe(24_000);
     // A conservative unknown model still gets at least the old 6k/80k evidence.
     const small = resolveContextBudget("deep_research_synthesis", null, NO_ENV);
     expect(small.perSourceChars).toBeGreaterThanOrEqual(6_000);

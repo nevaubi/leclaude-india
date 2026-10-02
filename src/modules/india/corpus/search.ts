@@ -45,6 +45,14 @@ export interface CorpusQuery {
   judge?: string;
   /** Case-insensitive substring of the disposal ("Dismissed", "Allowed"). */
   disposal?: string;
+  /** Minimum bench strength (2 = Division Bench and larger). */
+  benchMin?: number;
+  /**
+   * Citator statute keys ("BNSS 2023 s.482"): judgments whose text cites one of them. Applied only when the citator
+   * (corpus_citations) exists — `searchCorpus` checks; callers of `corpusFilters` pass `citator: true` themselves.
+   */
+  sectionKeys?: string[];
+  citator?: boolean;
   limit?: number;
   /**
    * Skip this many merged hits (exact, then text, then partial). When set, one extra hit is probed so the result can
@@ -109,12 +117,21 @@ export function corpusFilters(o: CorpusQuery, params: SqlValue[]): string {
   if (o.yearTo) { params.push(o.yearTo); where.push(`year <= $${params.length}`); }
   if (o.judge?.trim()) { params.push(`%${o.judge.trim().replace(/[%_]/g, "")}%`); where.push(`judges_text ILIKE $${params.length}`); }
   if (o.disposal?.trim()) { params.push(`%${o.disposal.trim().replace(/[%_\\]/g, "")}%`); where.push(`disposal ILIKE $${params.length}`); }
+  if (o.benchMin && o.benchMin > 1) { params.push(Math.floor(o.benchMin)); where.push(`coalesce(bench_strength, 0) >= $${params.length}`); }
+  if (o.sectionKeys?.length && o.citator) {
+    params.push(arrayLiteral(o.sectionKeys));
+    where.push(`EXISTS (SELECT 1 FROM corpus_citations cc WHERE cc.citing_id = corpus_judgments.id AND cc.kind = 'statute' AND cc.key = ANY($${params.length}::text[]))`);
+  }
   return where.length ? ` AND ${where.join(" AND ")}` : "";
 }
 
 export async function searchCorpus(o: CorpusQuery, store: RemoteStore | null = remoteStore()): Promise<{ hits: CorpusHit[]; total?: number; hasMore?: boolean }> {
   if (!store) throw new Error("The judgment corpus is not configured (DATABASE_URL).");
   await ensureCorpusSchema(store);
+  if (o.sectionKeys?.length && o.citator === undefined) {
+    const t = await store.query({ query: `SELECT to_regclass('public.corpus_citations') IS NOT NULL AS ok` }).catch(() => [] as Record<string, string | null>[]);
+    o = { ...o, citator: String(t[0]?.ok) === "true" || String(t[0]?.ok) === "t" };
+  }
   const q = o.q.trim();
   const pageSize = Math.max(1, Math.min(o.limit ?? 10, 50));
   const paged = o.offset !== undefined;

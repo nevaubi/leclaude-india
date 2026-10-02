@@ -15,6 +15,7 @@ import { AssistantMark } from "@/components/ai/chat";
 import { FAILURE_LABEL, STOP_LABEL, TERMINAL_LABEL, type RunMetrics, type RunTerminalState } from "@/lib/ai/events";
 import { buildResearchMemo, buildTableOfAuthorities, memoTitle } from "../memo";
 import type { CitationCrossCheck, ResearchMessage, ResearchSource } from "../engine/types";
+import { AUTHORITY_STATUS_LABEL, type AuthorityStatus, type AuthorityStatusTable } from "../engine/authority-status";
 import { annotateAnswer, citationCounts, isMessageVerificationCurrent, messageTrustState } from "../engine/trust";
 import type { LaneView, ResearchError, ResearchState } from "./use-research";
 import { ActivityStrip } from "./activity-strip";
@@ -204,6 +205,71 @@ function CitationsStrip({ checks }: { checks: CitationCrossCheck[] }) {
   );
 }
 
+const AUTHORITY_BADGE: Record<AuthorityStatus, "info" | "muted" | "warning" | "destructive"> = { supported: "info", read: "muted", found: "muted", text_not_available: "warning", unresolved: "destructive" };
+const AUTHORITY_ORDER: AuthorityStatus[] = ["unresolved", "text_not_available", "found", "read", "supported"];
+
+/**
+ * Authority status (constitution §23, §34): every authority the answer relies on, with what was established for it —
+ * found, read, supported by its text, unresolved or text not available. Problems are shown by default.
+ */
+function AuthorityStatusStrip({ table, message, sources }: { table: AuthorityStatusTable; message: ResearchMessage; sources: ResearchSource[] }) {
+  const a = useResearchActions();
+  const flagged = table.rows.filter((r) => r.status === "unresolved" || r.status === "text_not_available");
+  const [open, setOpen] = React.useState(flagged.length > 0);
+  const rows = [...table.rows].sort((x, y) => AUTHORITY_ORDER.indexOf(x.status) - AUTHORITY_ORDER.indexOf(y.status) || (x.sourceN ?? 999) - (y.sourceN ?? 999));
+  const byN = (n?: number) => { const id = n == null ? undefined : message.citeMap?.[n]; return id ? sources.find((s) => s.id === id) : undefined; };
+  return (
+    <div className="mt-3 rounded-md border bg-muted/30 font-sans text-xs" data-authorities>
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full flex-wrap items-center gap-1.5 px-2.5 py-1.5 text-left cursor-pointer" aria-expanded={open}>
+        <Scale className="size-3.5 text-muted-foreground" />
+        <span className="text-muted-foreground">Authorities</span>
+        {AUTHORITY_ORDER.slice().reverse().filter((k) => table.counts[k] > 0).map((k) => <Badge key={k} variant={AUTHORITY_BADGE[k]} size="sm">{table.counts[k]} {AUTHORITY_STATUS_LABEL[k].toLowerCase()}</Badge>)}
+        <div className="flex-1" />
+        <span className="text-[10.5px] text-muted-foreground">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <ul className="divide-y border-t">
+          {rows.map((r, i) => {
+            const src = byN(r.sourceN);
+            return (
+              <li key={`${r.authority}-${i}`} className="flex items-start gap-2 px-2.5 py-1.5" data-authority-status={r.status}>
+                <Badge variant={AUTHORITY_BADGE[r.status]} size="xs" className="mt-0.5 shrink-0">{AUTHORITY_STATUS_LABEL[r.status]}</Badge>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-foreground/90" title={r.authority}>
+                    {r.sourceN != null && (src ? <button onClick={() => a.openSource(src)} className="mr-1 tabular text-primary hover:underline cursor-pointer">[{r.sourceN}]</button> : <span className="mr-1 tabular text-primary">[{r.sourceN}]</span>)}
+                    {r.authority}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">{r.note}{r.citedBy != null ? ` · cited by ${r.citedBy}${r.citedBy >= 25 ? "+" : ""} judgment${r.citedBy === 1 ? "" : "s"} in the text corpus` : ""}</div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** The deterministic IPC/BNS, CrPC/BNSS transition note (coded savings provisions), shown with the answer. */
+function TransitionStrip({ transition }: { transition: NonNullable<ResearchMessage["transition"]> }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div className="mt-3 rounded-md border bg-muted/30 font-sans text-xs" data-transition>
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-muted-foreground hover:text-foreground cursor-pointer" aria-expanded={open}>
+        <Scale className="size-3.5" />
+        <span className="flex-1">Transition law · offence: <span className="text-foreground">{transition.substantive === "requires_review" ? "date needed" : transition.substantive}</span> · procedure: <span className="text-foreground">{transition.procedure === "requires_review" ? "date needed" : transition.procedure}</span></span>
+        <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
+      </button>
+      {open && (
+        <div className="space-y-1 border-t px-2.5 py-1.5 text-[11.5px] text-foreground/85">
+          {transition.lines.map((l) => <p key={l}>{l}</p>)}
+          <p className="text-[10.5px] text-muted-foreground">{transition.source}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CitationRow({ c }: { c: CitationCrossCheck }) {
   const state = c.state ?? (c.matched ? "resolved" : c.sourceN != null || c.resolvedRemotely ? "requires_review" : "unresolved");
   const reason = state === "resolved" ? `Read source [${c.sourceN}]` : c.sourceN != null ? `Source [${c.sourceN}] was found but not read` : c.resolvedRemotely ? "Resolves on CourtListener; not read in this run" : "Not among the sources read in this run";
@@ -316,6 +382,8 @@ function Turn({ threadId, question, message, sources, userName, matter, aiConfig
             </div>
           )}
           {message.subQuestions && message.subQuestions.length > 0 && <PlanLine questions={message.subQuestions} />}
+          {message.transition && <TransitionStrip transition={message.transition} />}
+          {message.authorities && message.authorities.rows.length > 0 && message.authorities.artifactHash === message.artifactHash && <AuthorityStatusStrip table={message.authorities} message={message} sources={sources} />}
           {message.citations && message.citations.length > 0 && <CitationsStrip checks={message.citations} />}
           {message.verification && message.verification.verdicts && message.verification.verdicts.length > 0 && <VerdictSummary message={message} sources={sources} />}
           <StatusLine message={message} sources={sources} />

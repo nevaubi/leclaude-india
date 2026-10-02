@@ -106,8 +106,11 @@ Current state:
   shown in the reader.
 - Full text comes only from the Open India Law parquet (`scripts/law-corpus/load_hc_judgment_text.py`), linked by CNR
   and decision date. Which courts are loaded is deployment state: verify current state.
-- The application does not download HC PDFs to extract text. OCR exists only in the official-sources pipeline
-  (`src/modules/official/ocr.ts`, scanned pages only, page-capped). It is not wired to the judgment corpus.
+- A durable worker (`src/modules/india/corpus/hc-text`, cron `/api/india/hc-text/run`, `HC_TEXT_INGEST=1`) fetches
+  each record's PDF from the bucket, hashes it, extracts the text layer, OCRs scanned pages with the official OCR module,
+  and writes page-numbered chunks to `corpus_texts` (`text_status` `full_text` / `ocr` / `partial` / `failed`). Open
+  India Law text wins where both exist. Coverage per court × year: `/sources/coverage`. Design and estimates:
+  `docs/architecture/hc-judgment-text.md`. It runs on Vercel cron, not yet on a P5.5 worker; deployment state: verify.
 
 Acceptance:
 

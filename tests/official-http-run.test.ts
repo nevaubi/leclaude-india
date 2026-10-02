@@ -271,7 +271,7 @@ describe("citator storage budget", () => {
     const over = new CitatorBudgetFake(61_000 * 1024 * 1024);
     const r = await runCitatorBuild({ store: over, deadlineMs: 30_000 });
     expect(r).toMatchObject({ stop: "storage_budget", processed: 0, batches: 0, limitBytes: 60_000 * 1024 * 1024 });
-    expect(over.calls.some((c) => c.query.includes("WHERE text_status = 'full'"))).toBe(false);
+    expect(over.calls.some((c) => c.query.includes("WHERE text_status IN ("))).toBe(false);
     const under = new CitatorBudgetFake(1024);
     const ok = await runCitatorBuild({ store: under, deadlineMs: 30_000 });
     expect(ok.stop).toBe("pass_complete");

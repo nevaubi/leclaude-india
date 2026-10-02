@@ -21,6 +21,14 @@ import { parseArray } from "./search";
 export const TEXT_ATTRIBUTION = "Text: Open India Law (Vaquill), CC BY 4.0, extracted from the court's published PDF. Verify quotations against the PDF.";
 /** The same attribution as readers see it on the case page. */
 export const TEXT_ATTRIBUTION_DISPLAY = "Text: Open India Law (CC BY 4.0), from the court's published PDF. The official PDF is the text of record.";
+/** Text this application extracted from the court's own PDF (AWS Open Data indian-high-court-judgments; hc-text worker). */
+export const PDF_TEXT_ATTRIBUTION = "Text: extracted by LeClaude from the court's PDF (AWS Open Data, indian-high-court-judgments). Verify quotations against the PDF.";
+export const PDF_TEXT_ATTRIBUTION_DISPLAY = "Text: extracted from the court's published PDF (AWS Open Data). The official PDF is the text of record.";
+/** Added when any returned page was transcribed by OCR (corpus_texts.section_type = 'ocr'). */
+export const OCR_TEXT_NOTE = " Pages marked OCR are a model transcription of a scanned page.";
+
+/** Rows the hc-text worker wrote (src/modules/india/corpus/hc-text): dataset_version starts with this. */
+const PDF_TEXT_VERSION_PREFIX = "aws-hc-pdf";
 
 export interface JudgmentTextChunk { index: number; pageStart: number | null; pageEnd: number | null; section: string | null; text: string }
 export interface JudgmentText {
@@ -39,6 +47,10 @@ export interface JudgmentText {
   /** Index of the first chunk not returned (null when the text ended). */
   nextChunk: number | null;
   attribution: string;
+  /** Who produced the text layer: Open India Law, or this application from the court's PDF. */
+  source?: "open_india_law" | "court_pdf";
+  /** True when any returned chunk holds OCR text (model transcription of a scanned page). */
+  ocr?: boolean;
 }
 
 export interface TextSearchHit {
@@ -167,7 +179,7 @@ export async function readJudgmentText(
     from = Number(p[0].i);
   }
   const rows = await store.query({
-    query: `SELECT chunk_index, total_chunks, page_start, page_end, section_type, text FROM corpus_texts
+    query: `SELECT chunk_index, total_chunks, page_start, page_end, section_type, text, dataset_version FROM corpus_texts
       WHERE ${where} AND chunk_index >= $${keyParams.length + 1} ORDER BY chunk_index LIMIT 400`,
     params: [...keyParams, from],
   });
@@ -183,7 +195,9 @@ export async function readJudgmentText(
   const last = chunks[chunks.length - 1];
   const total = Number(rows[0]?.total_chunks ?? 0) || (last ? last.index + 1 : 0);
   const nextChunk = rows.length > chunks.length ? Number(rows[chunks.length].chunk_index) : null;
-  return { ...base, totalChunks: total, chunks, nextChunk };
+  const pdf = String(rows[0]?.dataset_version ?? "").startsWith(PDF_TEXT_VERSION_PREFIX);
+  const ocr = chunks.some((c) => c.section === "ocr");
+  return { ...base, totalChunks: total, chunks, nextChunk, source: pdf ? "court_pdf" : "open_india_law", ocr, attribution: `${pdf ? PDF_TEXT_ATTRIBUTION : TEXT_ATTRIBUTION}${ocr ? OCR_TEXT_NOTE : ""}` };
 }
 
 /** Remove the dataset's structural markers ("[SECTION] ## ", "[TITLE] # ") without changing any words. */
@@ -196,7 +210,7 @@ export function chunksToText(chunks: JudgmentTextChunk[]): string {
   let page: number | null = null;
   const out: string[] = [];
   for (const c of chunks) {
-    if (c.pageStart != null && c.pageStart !== page) { out.push(`[p. ${c.pageStart}]`); page = c.pageStart; }
+    if (c.pageStart != null && c.pageStart !== page) { out.push(`[p. ${c.pageStart}${c.section === "ocr" ? ", OCR" : ""}]`); page = c.pageStart; }
     out.push(cleanJudgmentText(c.text));
   }
   return out.join("\n\n");

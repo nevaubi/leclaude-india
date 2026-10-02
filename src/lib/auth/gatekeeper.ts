@@ -16,8 +16,8 @@ import { readCookie, safeNextPath, SESSION_COOKIE, verifySessionTokenEdge } from
 
 /** Pages reachable without a session. /setup is closed by the page itself once the workspace exists, and its POST needs AUTH_SETUP_TOKEN. */
 export const PUBLIC_PAGES: readonly string[] = ["/login", "/setup"];
-/** API routes reachable without a session: sign-in/out, owner bootstrap, liveness, and the two cron routes (which authenticate themselves with CRON_SECRET). */
-export const PUBLIC_API: readonly string[] = ["/api/auth/login", "/api/auth/logout", "/api/auth/bootstrap", "/api/health", "/api/official/run", "/api/intel/jobs/tick"];
+/** API routes reachable without a session: sign-in/out, owner bootstrap, liveness, and the cron routes (which authenticate themselves with CRON_SECRET). */
+export const PUBLIC_API: readonly string[] = ["/api/auth/login", "/api/auth/logout", "/api/auth/bootstrap", "/api/health", "/api/official/run", "/api/intel/jobs/tick", "/api/india/hc-text/run"];
 /** Static asset prefixes / files. */
 export const PUBLIC_ASSET_PREFIXES: readonly string[] = ["/_next/", "/brand/", "/vendor/"];
 export const PUBLIC_ASSET_FILES: readonly string[] = ["/icon.svg", "/favicon.ico", "/robots.txt"];

@@ -20,6 +20,7 @@ import { mapCriminalSection } from "./india-criminal-map";
 import { JUDGMENT_TEXT_TOOLS } from "./india-judgment-text";
 import { CITATOR_TOOLS } from "./india-citator";
 import { OFFICIAL_TOOLS } from "./india-official";
+import { hasJudgmentText, textStatusForTools } from "@/modules/india/corpus/text-status";
 import { jurisdictionLabel, lawCitation, lawSourceId, publisherLabel, statusLabel } from "@/modules/law/shared";
 
 /**
@@ -830,7 +831,7 @@ export const searchJudgmentIndexTool = defineTool<CorpusIndexArgs>({
         content: [h.snippet ? h.snippet.slice(0, 1200) : "(no snippet published in the source metadata)"],
         id: h.id, match: h.match, court: h.court, court_id: h.court_id, bench: h.bench_code, decided: h.decision_date, case_number: h.case_number, cnr: h.cnr,
         neutral_citation: h.neutral_citation, reporter_citation: h.reporter_citation, judges: h.judges, disposal: h.disposal, pdf_url: h.pdf_url,
-        text: h.text_status === "full" ? `full: read_judgment_text with id ${h.id}` : h.text_status === "none" ? "metadata only (no judgment text here; cite only the record, never a holding)" : h.text_status, issues: h.issues ?? undefined,
+        text: hasJudgmentText(h.text_status) ? `${h.text_status === "full" ? "full" : textStatusForTools(h.text_status) ?? "full (court PDF text layer)"}: read_judgment_text with id ${h.id}` : h.text_status === "none" || h.text_status === "metadata" || h.text_status === "failed" ? "metadata only (no judgment text here; cite only the record, never a holding)" : h.text_status, issues: h.issues ?? undefined,
       })),
       ...(hits.length ? {} : { note: "No judgment in the index matched. Broaden the query or filters; do not cite authority that was not found." }),
     };

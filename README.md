@@ -28,8 +28,11 @@ database and change over time. Check them on the running instance (Settings → 
 | Judgment **full text** (page-numbered chunks) | Open India Law (Vaquill) parquet snapshots, CC BY 4.0, text extracted from the courts' published PDFs | **Supreme Court:** English text, linked to metadata records only by exact neutral citation (`load_sc_judgment_text.py`). **High Courts:** the loader accepts any of the 25 courts. Records are linked only when both the CNR and the decision date match (`load_hc_judgment_text.py <court>…`). Which High Courts are actually loaded is deployment state. The design record names Karnataka, Andhra Pradesh and Telangana as the first ones. | `scripts/law-corpus/`, `src/modules/india/corpus/text.ts` |
 
 Most High Court records are **metadata-only** (`text_status = 'none'`). A record is marked `text_status = 'full'` only
-after an exact identifier match. The application does not extract High Court text from the PDFs in the AWS bucket. The
-`pdf_url` is stored and linked, but nothing reads the PDF itself (see roadmap P1). In the reader, the official PDF is
+after an exact identifier match with Open India Law text. When `HC_TEXT_INGEST=1`, a worker
+(`src/modules/india/corpus/hc-text`, cron `/api/india/hc-text/run`) extracts the text of High Court records from their
+PDF in the AWS bucket (text layer; OCR of scanned pages, labelled as OCR) into the same `corpus_texts` table, and sets
+`text_status` to `full_text`, `ocr`, `partial` or `failed`. Open India Law text is never replaced. Coverage per court
+and year is on `/sources/coverage`. See `docs/architecture/hc-judgment-text.md`. In the reader, the official PDF is
 always the text of record.
 
 Other case-law features:
@@ -198,6 +201,7 @@ Judgment metadata is ingested by the application backfill (`CORPUS_BACKFILL=1`, 
 | Scheduled jobs | `CRON_SECRET`, `LECLAUDE_BACKGROUND` |
 | Models | `MODEL_PROVIDER`; `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_BEARER_TOKEN_BEDROCK`, `BEDROCK_MODEL`, `BEDROCK_FAST_MODEL`, `BEDROCK_EMBEDDING_MODEL`; `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_FAST_MODEL`; `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_FAST_MODEL`, `OPENAI_EMBEDDING_MODEL`, `OPENAI_REASONING_EFFORT`; `OPENROUTER_API_KEY`, `OPENROUTER_ROUTER_MODEL`, `ROUTER_ALLOW_MATTER_DATA` (full list: [model-runtime.md](docs/architecture/model-runtime.md)) |
 | Judgment corpus | `CORPUS_BACKFILL`, `CORPUS_MAX_DB_MB`, `LECLAUDE_INDIA_OPEN_DATA`; loaders: `LAW_DATASET_VERSION`, `TEXT_MAX_DB_MB`, `LAW_MAX_DB_MB`; citator: `CITATOR_MAX_DB_MB` |
+| High Court PDF text | `HC_TEXT_INGEST`, `HC_TEXT_MAX_DB_MB`, `HC_TEXT_CONCURRENCY`, `HC_TEXT_LIMIT_PER_RUN`, `HC_TEXT_OCR`, `HC_TEXT_OCR_MAX_PAGES`, `HC_TEXT_OCR_MODEL`, `HC_TEXT_MAX_PDF_MB` (all in `docs/architecture/hc-judgment-text.md`) |
 | Official sources | `OFFICIAL_INGEST`, `OFFICIAL_INGEST_TOKEN`, `OFFICIAL_MAX_DB_MB`, `OFFICIAL_CONCURRENCY`, `OFFICIAL_OCR_CONCURRENCY`, `OFFICIAL_OCR_MAX_PAGES`, `OFFICIAL_EMBED_MAX_CHUNKS_PER_RUN`, `OFFICIAL_SEMANTIC_MAX_DISTANCE`, `FIRECRAWL_API_KEY`, `DATA_GOV_IN_API_KEY`, `DATA_GOV_IN_MCA_RESOURCE` |
 | Licensed / paid research (off by default) | `INDIAN_KANOON_API_TOKEN`, `SCC_ONLINE_API_TOKEN` / `SCC_ONLINE_EXPORT_DIR`, `MANUPATRA_API_TOKEN` / `MANUPATRA_EXPORT_DIR` |
 | Product switches | `NEXT_PUBLIC_ENABLE_EDISCOVERY`, `NEXT_PUBLIC_ENABLE_OFFICE_ALL`, `NEXT_PUBLIC_ENABLE_WORKFLOWS`, `NEXT_PUBLIC_ENABLE_INTEL` (all off: frozen surfaces stay hidden), `NEXT_PUBLIC_APP_NAME` |

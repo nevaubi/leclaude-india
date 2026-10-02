@@ -3,7 +3,7 @@ import { jsonError } from "@/lib/ai/sse";
 import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 import { withDb } from "@/lib/db/request";
-import { judgmentTextAvailable, readJudgmentText, searchJudgmentText, TEXT_ATTRIBUTION_DISPLAY } from "@/modules/india/corpus/text";
+import { judgmentTextAvailable, OCR_TEXT_NOTE, PDF_TEXT_ATTRIBUTION_DISPLAY, readJudgmentText, searchJudgmentText, TEXT_ATTRIBUTION_DISPLAY } from "@/modules/india/corpus/text";
 import { remoteStore } from "@/lib/db/remote";
 
 export const runtime = "nodejs";
@@ -28,7 +28,7 @@ async function handleGET(req: NextRequest) {
     const text = await readJudgmentText(id, { fromChunk: int("chunk"), page: int("page"), maxChars: int("maxChars") ?? 80_000 });
     // This route serves the case page reader: it carries the reader-facing attribution. Agent tools read the text
     // through readJudgmentText directly and keep the full provenance string.
-    return text ? Response.json({ ...text, attribution: TEXT_ATTRIBUTION_DISPLAY }) : jsonError("The full text of this judgment is not available here. Open the official PDF.", 404, { code: "no_text" });
+    return text ? Response.json({ ...text, attribution: `${text.source === "court_pdf" ? PDF_TEXT_ATTRIBUTION_DISPLAY : TEXT_ATTRIBUTION_DISPLAY}${text.ocr ? OCR_TEXT_NOTE : ""}` }) : jsonError("The full text of this judgment is not available here. Open the official PDF.", 404, { code: "no_text" });
   } catch (e) {
     console.error(JSON.stringify({ level: "error", event: "cases.text_failed", error: (e as Error).message }));
     return jsonError("The judgment text could not be loaded. Try again in a moment.", 502, { code: "corpus_unavailable" });

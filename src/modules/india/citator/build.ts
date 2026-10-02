@@ -1,6 +1,7 @@
 import "server-only";
 import { remoteStore, type RemoteStore, type Row, type SqlQuery, type SqlValue } from "@/lib/db/remote";
 import { canonicalNeutral } from "../corpus/text";
+import { TEXT_STATUSES_SQL } from "../corpus/text-status";
 import { getState, setState } from "../corpus/backfill";
 import { CorpusNotConfiguredError } from "../corpus/directory";
 import { canonicalCitation, compactKey, EXTRACTOR_VERSION, extractCitationDrafts, type CitationDraft, type TextChunkIn } from "./extract";
@@ -143,7 +144,7 @@ export async function buildCitationsBatch(o: { store: RemoteStore; limit?: numbe
 
   const rows = await store.query({
     query: `SELECT id, court_id, year, neutral_citation, reporter_citation, cnr, decision_date::text AS decision_date FROM corpus_judgments
-      WHERE text_status = 'full'${o.afterId ? " AND id > $1" : ""} ORDER BY id LIMIT ${limit}`,
+      WHERE text_status IN (${TEXT_STATUSES_SQL})${o.afterId ? " AND id > $1" : ""} ORDER BY id LIMIT ${limit}`,
     params: o.afterId ? [o.afterId] : [],
   });
   const judgments: JudgmentRow[] = rows.filter((r) => r.id).map((r) => ({

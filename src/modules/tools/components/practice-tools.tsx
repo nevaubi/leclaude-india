@@ -49,7 +49,7 @@ export function PracticeTools({ initialTool }: { initialTool: ToolId }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <nav aria-label="Practice tools" className="shrink-0 border-b bg-surface-quiet md:w-[220px] md:border-b-0 md:border-r">
+      <nav aria-label="Practice tools" className="shrink-0 border-b md:w-[220px] md:border-b-0 md:border-r">
         <h1 className="sr-only md:not-sr-only md:block md:px-4 md:pt-4 md:pb-2 md:text-[12px] md:font-medium md:text-muted-foreground">Practice tools</h1>
         <div role="tablist" aria-orientation="vertical" onKeyDown={onKeyDown} className="flex gap-0.5 overflow-x-auto px-2 py-2 [scrollbar-width:none] md:flex-col md:overflow-visible md:pt-0">
           {TOOL_IDS.map((id) => {
@@ -68,7 +68,7 @@ export function PracticeTools({ initialTool }: { initialTool: ToolId }) {
                 onClick={() => select(id)}
                 className={cn(
                   "flex shrink-0 items-start gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                  active ? "bg-primary/10 text-primary shadow-[inset_2px_0_0_var(--primary)]" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                 )}
               >
                 <t.icon className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />

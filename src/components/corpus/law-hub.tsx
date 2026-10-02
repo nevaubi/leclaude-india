@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/client";
 import { areaOfPath, routeLawQuery, type LawArea, type LawScope } from "./law-intent";
+import { loadVisuals } from "@/modules/media/use-visuals";
 
 /**
  * The Law area header shared by Case law, Statutes, Courts and Judges: a compact row with the area tabs and one search
@@ -63,6 +64,8 @@ function ModeSync({ onChange }: { onChange: (sections: boolean) => void }) {
 }
 
 export function LawHub({ children }: { children: React.ReactNode }) {
+  // Start loading the photo library with the header, not when the first card mounts (cards wait for court statistics).
+  React.useEffect(() => { loadVisuals().catch(() => {}); }, []);
   const pathname = usePathname();
   const router = useRouter();
   const t = useT();

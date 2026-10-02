@@ -1,7 +1,8 @@
 import "server-only";
 import { remoteStore } from "@/lib/db/remote";
-import type { CodingDecision, DocReview, IssueAssessment, PrivilegeScreen, ReviewCell, ReviewReport } from "../review-types";
+import { RELEVANCE_RANK, type CodingDecision, type DocReview, type IssueAssessment, type PrivilegeScreen, type ReviewCell, type ReviewCounts, type ReviewFacets, type ReviewReport, type RowQuery } from "../review-types";
 import type { DocEvent, DocFact, DocFile, DocFileStatus, DocSet } from "../types";
+import { normalizeForMatch } from "./text";
 
 /**
  * Storage for document sets: dedicated tables queried in place (never the mirror collections). Postgres (Neon, via
@@ -46,6 +47,17 @@ export interface ExtractionRow {
   updatedAt: string;
 }
 
+/** Bumped whenever the reviewer prompt, schema or checks change; rows produced by an older reviewer are pending again. */
+export const REVIEWER_VERSION = 2;
+
+/**
+ * Cheap fingerprint of a file's text state; it changes when pages are appended or OCR'd. Must equal `fileStampSql`
+ * (review-sql.ts) character for character: the row query decides "current" in SQL with the same formula.
+ */
+export function fileStamp(f: Pick<DocFile, "chars" | "pagesReceived" | "pages" | "status" | "ocrDonePages">): string {
+  return `r${REVIEWER_VERSION}|${f.chars}|${f.pagesReceived ?? f.pages}|${f.pages}|${f.status}|${JSON.stringify(f.ocrDonePages ?? [])}`;
+}
+
 /** A review's definition as stored (counts are computed, never stored). */
 export type StoredReview = Omit<DocReview, "counts">;
 
@@ -57,7 +69,15 @@ export interface ReviewResult {
   issues: IssueAssessment[];
   privilege: PrivilegeScreen | null;
   cells: Record<string, ReviewCell>;
-  coverage: { read: number; total: number };
+  coverage: ReviewCoverage;
+}
+
+/** Characters read vs total (unread scanned pages counted into total) and the pages that had no text to read. */
+export interface ReviewCoverage { read: number; total: number; unreadPages: number[] }
+
+/** True when part of the file was not read (length cap or pages awaiting OCR). */
+export function coveragePartial(c: Partial<ReviewCoverage> | null | undefined): boolean {
+  return !!c && ((c.read ?? 0) < (c.total ?? 0) || (c.unreadPages?.length ?? 0) > 0);
 }
 
 /**
@@ -84,6 +104,12 @@ export interface ReviewRowRecord {
   attempts: number;
   updatedAt: string;
 }
+
+/** A row record without its model output (what run bookkeeping and listings need). */
+export type ReviewRowMeta = Omit<ReviewRowRecord, "result" | "partials">;
+
+/** One file with its row record (result loaded, partials never) for a page of the row query. */
+export interface ReviewRowItem { file: StoredFile; rec: ReviewRowRecord | null }
 
 export interface SetListFilter {
   tenantId: string;
@@ -151,18 +177,29 @@ export interface DocStore {
   insertReview(review: StoredReview): Promise<void>;
   getReview(setId: string, reviewId: string): Promise<StoredReview | null>;
   listReviews(setId: string): Promise<StoredReview[]>;
-  updateReview(review: StoredReview): Promise<void>;
+  /** Compare-and-set on the stored version: false when the review changed (or vanished) since `expectedVersion` was read. */
+  updateReview(review: StoredReview, expectedVersion: number): Promise<boolean>;
   /** The review, its rows and its report. */
   deleteReview(setId: string, reviewId: string): Promise<void>;
-  listReviewRows(reviewId: string): Promise<ReviewRowRecord[]>;
-  getReviewRow(reviewId: string, fileId: string): Promise<ReviewRowRecord | null>;
+  /** Row bookkeeping only (never result or partials). */
+  listReviewRows(reviewId: string): Promise<ReviewRowMeta[]>;
+  /** One row with its result; `partials` only when asked (the run resuming a long file). */
+  getReviewRow(reviewId: string, fileId: string, opts?: { partials?: boolean }): Promise<ReviewRowRecord | null>;
   /** Upsert the model columns of a row; an existing decision is never touched. */
   putReviewRow(row: ReviewRowRecord): Promise<void>;
+  /** Bulk form of putReviewRow (one statement / transaction). */
+  putReviewRows(rows: ReviewRowRecord[]): Promise<void>;
   /**
-   * Set (or clear) the decision only if the row's hash still equals `expectedRowHash` ("" = row not reviewed yet).
+   * Set (or clear) the decision only if the row's stored hash still equals `expectedRowHash` ("" = no hash stored).
    * Creates a placeholder row when none exists and "" is expected. Returns false on a hash mismatch.
    */
   setReviewDecision(reviewId: string, setId: string, fileId: string, decision: CodingDecision | null, expectedRowHash: string): Promise<boolean>;
+  /** Counts per review of the set (computed in SQL over every file); reviews with no files are absent (all zero). */
+  reviewCounts(setId: string, reviewId?: string): Promise<Map<string, ReviewCounts>>;
+  /** Facets over every file of one review (computed in SQL). */
+  reviewFacets(setId: string, reviewId: string, issueIds: string[]): Promise<ReviewFacets>;
+  /** Filtered, sorted page of rows (filters, sort and paging in SQL); results are loaded for the page only. */
+  queryReviewRows(setId: string, reviewId: string, q: RowQuery, page: { offset: number; limit: number }): Promise<{ total: number; items: ReviewRowItem[] }>;
   putReviewReport(reviewId: string, report: ReviewReport): Promise<void>;
   getReviewReport(reviewId: string): Promise<ReviewReport | null>;
   // storage
@@ -271,8 +308,45 @@ export function reviewToRow(v: StoredReview): Record<(typeof REVIEW_COLS)[number
   };
 }
 
-/** Columns the run writes (decision is written only by setReviewDecision). */
-export const ROW_COLS = ["review_id", "file_id", "set_id", "state", "review_version", "text_hash", "file_stamp", "windows_done", "result", "partials", "row_hash", "error", "attempts", "updated_at"] as const;
+/**
+ * Columns derived from a row's result / decision so that counts, facets, filters, sort and paging run in SQL. Added to
+ * existing tables by migration (guarded ADD COLUMN) and backfilled from `result` / `decision` where `derived_v` is
+ * missing or older than ROW_DERIVED_VERSION.
+ */
+export const ROW_DERIVED_VERSION = 1;
+export const ROW_ADDED_COLUMNS: ReadonlyArray<readonly [string, "INTEGER" | "TEXT"]> = [
+  ["cov_partial", "INTEGER"], ["doc_type", "TEXT"], ["importance", "INTEGER"], ["privilege_flag", "TEXT"], ["issue_ranks", "TEXT"], ["search_text", "TEXT"],
+  ["coding", "TEXT"], ["decision_hash", "TEXT"], ["coding_note", "TEXT"], ["derived_v", "INTEGER"],
+];
+
+/** Run-derived columns: coverage, doc type, importance, privilege flag, "|issue:rank|…|" and normalized search text. */
+export function derivedRunCols(result: ReviewResult | null) {
+  if (!result) return { cov_partial: null, doc_type: null, importance: null, privilege_flag: null, issue_ranks: null, search_text: null };
+  const ranked = (result.issues ?? []).filter((i) => i.relevance !== "none" && RELEVANCE_RANK[i.relevance]).map((i) => `${i.issueId}:${RELEVANCE_RANK[i.relevance]}`);
+  const values = Object.values(result.cells ?? {}).flatMap((c) => [c.value ?? "", ...(c.alternatives ?? []).map((a) => a.value)]);
+  const search = normalizeForMatch([result.docType ?? "", result.summary ?? "", ...values, ...(result.issues ?? []).map((i) => i.reason), result.privilege?.basis ?? ""].join(" \u0001 "));
+  return {
+    cov_partial: coveragePartial(result.coverage) ? 1 : 0,
+    doc_type: result.docType ?? null,
+    importance: typeof result.importance === "number" ? result.importance : null,
+    privilege_flag: result.privilege?.flag ?? null,
+    issue_ranks: ranked.length ? `|${ranked.join("|")}|` : "",
+    search_text: search,
+  };
+}
+
+/** Decision-derived columns (written with the decision). */
+export function derivedDecisionCols(d: CodingDecision | null) {
+  return { coding: d?.coding ?? null, decision_hash: d ? d.rowHash ?? "" : null, coding_note: d?.note ? normalizeForMatch(d.note) : null };
+}
+
+/** Columns the run writes (decision columns are written only by setReviewDecision). */
+export const ROW_COLS = [
+  "review_id", "file_id", "set_id", "state", "review_version", "text_hash", "file_stamp", "windows_done", "result", "partials", "row_hash", "error", "attempts", "updated_at",
+  "cov_partial", "doc_type", "importance", "privilege_flag", "issue_ranks", "search_text", "derived_v",
+] as const;
+/** Row columns without the large JSON ones (result, partials). */
+export const ROW_META_COLS = ["review_id", "file_id", "set_id", "state", "review_version", "text_hash", "file_stamp", "windows_done", "row_hash", "decision", "error", "attempts", "updated_at"] as const;
 
 export function reviewRowFromRow(r: Raw): ReviewRowRecord {
   const state = String(r.state);
@@ -285,13 +359,22 @@ export function reviewRowFromRow(r: Raw): ReviewRowRecord {
   };
 }
 
+export function reviewRowMetaFromRow(r: Raw): ReviewRowMeta {
+  const { result, partials, ...meta } = reviewRowFromRow({ ...r, result: null, partials: null });
+  void result; void partials;
+  return meta;
+}
+
 export function reviewRowToRow(x: ReviewRowRecord): Record<(typeof ROW_COLS)[number], string | number | null> {
   return {
     review_id: x.reviewId, file_id: x.fileId, set_id: x.setId, state: x.state, review_version: x.reviewVersion, text_hash: x.textHash, file_stamp: x.fileStamp,
     windows_done: x.windowsDone, result: x.result ? JSON.stringify(x.result) : null, partials: JSON.stringify(x.partials ?? []), row_hash: x.rowHash,
-    error: x.error, attempts: x.attempts, updated_at: x.updatedAt,
+    error: x.error, attempts: x.attempts, updated_at: x.updatedAt, ...derivedRunCols(x.result), derived_v: ROW_DERIVED_VERSION,
   };
 }
+
+/** Parse a number column (Postgres returns text, SQLite numbers). */
+export const numOf = (v: unknown) => num(v);
 
 export function reportFromJson(v: unknown): ReviewReport | null {
   return jsonOf<ReviewReport>(v);

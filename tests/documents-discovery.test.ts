@@ -9,13 +9,14 @@ vi.hoisted(() => {
 });
 
 /** The model is scripted per window (by the page markers in the excerpt); every call is recorded. */
-const ai = vi.hoisted(() => ({ calls: [] as Array<{ name?: string; input: string; instructions: string; schema: unknown }>, answer: "" }));
+const ai = vi.hoisted(() => ({ calls: [] as Array<{ name?: string; input: string; instructions: string; schema: unknown }>, answer: "", agentFailures: 0, failReview: "" }));
 
 vi.mock("@/lib/ai/agent", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/ai/agent")>();
   return {
     ...actual,
     runAgent: async (opts: { onEvent: (e: unknown) => void }) => {
+      if (ai.agentFailures > 0) { ai.agentFailures--; throw new Error("model overloaded"); }
       opts.onEvent({ type: "start", model: "test-model" });
       opts.onEvent({ type: "text.delta", delta: ai.answer });
       return { text: ai.answer, responseId: null, steps: 1, toolCalls: [], usage: { input: 0, output: 0, total: 0 } };
@@ -24,6 +25,39 @@ vi.mock("@/lib/ai/agent", async (importOriginal) => {
       ai.calls.push(opts);
       const input = String(opts.input);
       const none = { flag: "none", basis: "", quote: "", page: null };
+      if (ai.failReview && input.includes(ai.failReview)) throw new Error("provider error");
+      // Hardening fixtures (custom review: seat text, claim/fee amount, signed date, counterparty party, clause yes_no).
+      if (input.includes("CONFLICT DEED")) {
+        return {
+          docType: "Agreement", summary: "Deed fixing the seat at Mumbai. It also records the claim.", importance: 4,
+          issues: [{ issueId: "payment", relevance: "high", reason: "Claim stated.", quote: "claim", page: 1 }],
+          privilege: { flag: "possible", basis: "Mentions advice.", quote: "advice", page: 1 },
+          cells: [
+            { column: "seat", value: "Mumbai", quote: "The seat of arbitration shall be Mumbai", page: 1 },
+            { column: "claim", value: "Rs. 50,00,000", quote: "The total claim is Rs. 50,00,000", page: 1 },
+            { column: "fee", value: "Rs. 2,00,000", quote: "The total claim is Rs. 50,00,000", page: 1 }, // found, but the amount is not in it
+            { column: "signed", value: "03.04.2022", quote: "signed on 3rd April 2022", page: 1 },
+            { column: "counterparty", value: "Zenith Corp", quote: "made between Acme Traders and Bharat Logistics", page: 1 },
+            { column: "clause", value: "Yes", quote: "arbitration", page: 1 }, // one word: proves nothing
+          ],
+        };
+      }
+      if (input.includes("ADDENDUM")) {
+        return {
+          docType: "Agreement", summary: "Addendum moving the seat to Delhi. Payment terms unchanged.", importance: 3, issues: [], privilege: none,
+          cells: [
+            { column: "seat", value: "Delhi", quote: "The seat of arbitration shall be Delhi", page: 3 },
+            { column: "claim", value: "₹50 lakh", quote: "Amount payable is ₹50 lakh in full", page: 3 }, // same amount: no conflict
+            { column: "counterparty", value: "Bharat Logistics LLP", quote: "made between Acme Traders and Bharat Logistics LLP", page: 3 },
+          ],
+        };
+      }
+      if (input.includes("SCANNED BUNDLE")) {
+        return {
+          docType: "Agreement", summary: "Partly scanned bundle naming Pune as the seat.", importance: 2, issues: [], privilege: none,
+          cells: [{ column: "seat", value: "Pune", quote: "The seat of arbitration shall be Pune", page: 1 }, { column: "claim", value: null, quote: "", page: null }],
+        };
+      }
       if (input.includes("[Page 1]") && input.includes("SUPPLY AGREEMENT")) {
         return {
           docType: "agreement / contract",
@@ -87,8 +121,11 @@ import { createSet, deleteFile, deleteSet, resetStorageCacheForTests } from "@/m
 import { uploadBrowserPdf, uploadServerFile } from "@/modules/documents/server/ingest";
 import { PLAYBOOKS, getPlaybook } from "@/modules/documents/server/playbooks";
 import { codeRow, createReview, deleteReview, getReview, listReviews, listRows, parseRowQuery, reviewRowsForChat, updateReview } from "@/modules/documents/server/review";
-import { limitPages, runReview } from "@/modules/documents/server/review-run";
-import { exportReview, toCsv } from "@/modules/documents/server/review-export";
+import { amountNumbers, blankRecord, limitPages, mergeSummaries, runReview, substantiveQuote, valueInQuote } from "@/modules/documents/server/review-run";
+import { exportReview, toCsv, toXlsx } from "@/modules/documents/server/review-export";
+import { migrateReviewRows } from "@/modules/documents/server/store-sqlite";
+import { DatabaseSync } from "node:sqlite";
+import * as XLSX from "xlsx";
 import * as reviewsRoute from "@/app/api/documents/sets/[id]/reviews/route";
 import * as reportRoute from "@/app/api/documents/sets/[id]/reviews/[rid]/report/route";
 import * as exportRoute from "@/app/api/documents/sets/[id]/reviews/[rid]/export/route";
@@ -290,17 +327,19 @@ describe("document review", () => {
     expect(coded.decisionStale).toBe(false);
     expect((await getReview(alice, setId, reviewId)).counts).toMatchObject({ coded: 1, stale: 0 });
 
-    // Changing the columns bumps the version: rows are pending again, the decision is not yet stale.
+    // Changing the columns bumps the version: rows are pending again and blank (no old cells, no old hash), so the
+    // decision no longer matches what the row shows and is stale at once.
     const review = await getReview(alice, setId, reviewId);
     const renamed = await updateReview(alice, setId, reviewId, { name: "Renamed" });
     expect(renamed.version).toBe(review.version);
     const bumped = await updateReview(alice, setId, reviewId, { columns: review.columns.filter((c) => c.id !== "custom_note") });
     expect(bumped.version).toBe(review.version + 1);
-    expect(bumped.counts).toMatchObject({ pending: 2, done: 0, coded: 1 });
+    expect(bumped.counts).toMatchObject({ pending: 2, done: 0, partial: 0, coded: 0, stale: 1, privilegeFlags: 0 });
     const pendingRow = (await listRows(alice, setId, reviewId, { q: "agreement.pdf" })).rows[0];
-    expect(pendingRow.status).toBe("pending");
-    expect(pendingRow.cells.custom_note).toBeUndefined();
-    expect(pendingRow.decisionStale).toBe(false);
+    expect(pendingRow).toMatchObject({ status: "pending", rowHash: null, docType: null, importance: null, privilege: null, issues: [], cells: {}, summary: "" });
+    expect(pendingRow.decisionStale).toBe(true);
+    // Coding a pending row binds to "" (what is shown), not to the old stored hash.
+    await expectStatus(codeRow(alice, setId, reviewId, fileA, { coding: "key", rowHash: a.rowHash! }), 409);
 
     // Re-run under the new version: the row hash changes, the decision becomes stale.
     expect(await runReview(alice, setId, reviewId)).toMatchObject({ processed: 2, remaining: 0 });
@@ -323,10 +362,11 @@ describe("document review", () => {
     expect(out.contentType).toMatch(/text\/csv/);
     expect(out.filename).toMatch(/^renamed-\d{4}-\d{2}-\d{2}\.csv$/);
     const csv = String(out.body);
-    expect(csv).toContain("Amount claimed — verified");
+    expect(csv).toContain("Amount claimed — quote found");
+    expect(csv).not.toContain("— verified");
     expect(csv).toContain("Seat — page");
-    expect(csv).toMatch(/Mumbai,1,verified/);
-    expect(csv).toMatch(/Rs\. 10,00,000",1,unverified/);
+    expect(csv).toMatch(/Mumbai,1,found,yes,The seat of arbitration shall be Mumbai/);
+    expect(csv).toMatch(/Rs\. 10,00,000",1,unverified,no,/);
     expect(csv).toContain("Relevant");
     expect(csv).toContain("Alice Rao");
     expect(toCsv([["=SUM(A1)", "a,b"]])).toContain(`'=SUM(A1),"a,b"`);
@@ -355,7 +395,7 @@ describe("document review", () => {
       expect(events.at(-1)?.type).toBe("report.completed");
       expect(report?.answers[0]).toMatchObject({ question: "Where is the seat?", noEvidence: false, unresolved: [99] });
       expect(report?.answers[0].citations[0]).toMatchObject({ n: 1 });
-      expect(report).toMatchObject({ reviewId, generatedBy: "Alice Rao", fileCount: 2 });
+      expect(report).toMatchObject({ reviewId, status: "complete", failed: [], generatedBy: "Alice Rao", fileCount: 2 });
       const { getReport } = await import("@/modules/documents/server/review-report");
       expect((await getReport(guest, setId, reviewId))?.answers).toHaveLength(2);
       await expectStatus(getReport(bob, setId, reviewId), 404);
@@ -424,5 +464,201 @@ describe("document review", () => {
     await deleteSet(alice, setId);
     expect(await store.listReviewRows(reviewId)).toEqual([]);
     expect(await store.getReview(setId, reviewId)).toBeNull();
+  });
+});
+
+describe("review hardening", () => {
+  const FILLER = "Schedule of deliveries. ".repeat(1100); // pushes page 3 into a second window
+  const DEED1 = "CONFLICT DEED made between Acme Traders and Bharat Logistics LLP, signed on 3rd April 2022. The seat of arbitration shall be Mumbai. The total claim is Rs. 50,00,000 as per the invoice; any arbitration shall follow.";
+  const DEED3 = "ADDENDUM made between Acme Traders and Bharat Logistics LLP. The seat of arbitration shall be Delhi. Amount payable is ₹50 lakh in full.";
+  const SCANNED = "SCANNED BUNDLE. The seat of arbitration shall be Pune.";
+  const columns = [
+    { id: "seat", label: "Seat", prompt: "Seat of arbitration.", kind: "text" as const },
+    { id: "claim", label: "Claim", prompt: "Amount claimed.", kind: "amount" as const },
+    { id: "fee", label: "Fee", prompt: "Arbitrator's fee.", kind: "amount" as const },
+    { id: "signed", label: "Signed on", prompt: "Date of signing.", kind: "date" as const },
+    { id: "counterparty", label: "Counterparty", prompt: "The other party.", kind: "party" as const },
+    { id: "clause", label: "Arbitration clause", prompt: "Is there an arbitration clause?", kind: "yes_no" as const },
+  ];
+  let hSet = "";
+  let hReview = "";
+  let deed = "";
+  let scanned = "";
+
+  beforeAll(async () => {
+    const set = await createSet(alice, { name: "Hardening bundle", matterId: MATTER });
+    hSet = set.id;
+    const d = await uploadBrowserPdf(alice, hSet, { kind: "pdf-text", name: "deed.pdf", size: 1000, sha256: "c".repeat(64), pages: [DEED1, FILLER, DEED3] });
+    const sc = await uploadBrowserPdf(alice, hSet, { kind: "pdf-text", name: "scanned.pdf", size: 1000, sha256: "d".repeat(64), pages: [SCANNED, ""] });
+    if (d.status !== "created" || sc.status !== "created") throw new Error("upload failed");
+    deed = d.file.id;
+    scanned = sc.file.id;
+    expect(sc.file).toMatchObject({ status: "partial", ocrPages: [2] });
+    hReview = (await createReview(alice, hSet, { name: "Hardening", columns, issues: [{ id: "payment", label: "Payment", description: "Payment default." }] })).id;
+  });
+
+  it("checks quotes for substance and for the value (amounts in Indian forms, dates, names)", () => {
+    expect(substantiveQuote("arbitration")).toBe(false);
+    expect(substantiveQuote("Mumbai", "Mumbai")).toBe(true); // the quote is the value itself
+    expect(substantiveQuote("seat … at … Mumbai shall")).toBe(false); // an ellipsis part shorter than 4 characters
+    expect(substantiveQuote("The seat shall be Mumbai")).toBe(true);
+    expect(amountNumbers("₹50 lakh")).toEqual([5_000_000]);
+    expect(amountNumbers("Rs. 50,00,000/-")).toEqual([5_000_000]);
+    expect(amountNumbers("Rs 1.5 crore")).toEqual([15_000_000]);
+    expect(valueInQuote("amount", "Rs. 50,00,000", "a sum of ₹50 lakh is due")).toBe(true);
+    expect(valueInQuote("amount", "Rs. 2,00,000", "The total claim is Rs. 50,00,000")).toBe(false);
+    expect(valueInQuote("date", "03.04.2022", "signed on 3rd April 2022")).toBe(true);
+    expect(valueInQuote("date", "03.05.2022", "signed on 3rd April 2022")).toBe(false);
+    expect(valueInQuote("party", "M/s Acme Traders Pvt. Ltd.", "between Acme Traders and Bharat")).toBe(true);
+    expect(valueInQuote("party", "Zenith Corp", "between Acme Traders and Bharat")).toBe(false);
+    expect(mergeSummaries(["Deed fixing the seat at Mumbai. More.", "", "Addendum moving the seat to Delhi. Payment terms unchanged."])).toBe("Deed fixing the seat at Mumbai. Addendum moving the seat to Delhi.");
+  });
+
+  it("marks unread scanned pages, conflicts across windows and unsupported quotes", async () => {
+    const progress = await runReview(alice, hSet, hReview);
+    expect(progress).toMatchObject({ processed: 2, failed: 0, remaining: 0 });
+    expect(ai.calls.some((c) => c.input.includes("SCANNED BUNDLE") && /1 scanned page\(s\) have no text yet/.test(c.input))).toBe(true);
+    const { rows } = await listRows(alice, hSet, hReview, { sort: "name" });
+    const d = rows.find((r) => r.fileId === deed)!;
+    expect(d.status).toBe("done");
+    // Two supported, different seats: conflict, first value kept, the other as an alternative.
+    expect(d.cells.seat).toMatchObject({ value: "Mumbai", status: "conflict", page: 1, alternatives: [{ value: "Delhi", page: 3, quoteFound: true }] });
+    // Same amount in two Indian forms: one supported value, no conflict.
+    expect(d.cells.claim).toMatchObject({ value: "Rs. 50,00,000", status: "found", page: 1 });
+    expect(d.cells.claim.alternatives).toBeUndefined();
+    // The quote is real but does not contain the fee: unverified.
+    expect(d.cells.fee).toMatchObject({ value: "Rs. 2,00,000", status: "unverified", quoteFound: true });
+    expect(d.cells.signed).toMatchObject({ value: "03.04.2022", status: "found" });
+    // The counterparty's name is not in its quote; a later window gives a supported name.
+    expect(d.cells.counterparty).toMatchObject({ value: "Bharat Logistics LLP", status: "found", page: 3 });
+    // One word ("arbitration") proves nothing.
+    expect(d.cells.clause).toMatchObject({ value: "Yes", status: "unverified", quoteFound: false });
+    expect(d.issues[0]).toMatchObject({ issueId: "payment", relevance: "high", quoteFound: false });
+    expect(d.privilege).toMatchObject({ flag: "possible", quoteFound: false }); // "advice": one word
+    expect(d.summary).toMatch(/Mumbai/);
+    expect(d.summary).toMatch(/Delhi/); // built from every window, not only the first
+
+    const sc = rows.find((r) => r.fileId === scanned)!;
+    expect(sc.status).toBe("partial");
+    expect(sc.coverage.unreadPages).toEqual([2]);
+    expect(sc.coverage.read).toBeLessThan(sc.coverage.total);
+    expect(sc.cells.seat).toMatchObject({ value: "Pune", status: "found" });
+    expect(sc.cells.claim).toMatchObject({ value: null, status: "not_read" }); // never "not_stated" when a page was not read
+    expect(sc.cells.fee).toMatchObject({ status: "not_read" });
+
+    const counts = (await getReview(alice, hSet, hReview)).counts;
+    expect(counts).toMatchObject({ files: 2, done: 1, partial: 1, pending: 0, failed: 0, privilegeFlags: 1 });
+    expect((await listRows(alice, hSet, hReview, parseRowQuery({ status: "partial" }))).rows.map((r) => r.fileId)).toEqual([scanned]);
+    expect((await listRows(alice, hSet, hReview, parseRowQuery({ q: "delhi" }))).rows.map((r) => r.fileId)).toEqual([deed]); // alternatives are searchable
+
+    const csv = String((await exportReview(alice, hSet, hReview, "csv")).body);
+    expect(csv).toContain("Mumbai | conflicts with: Delhi (p. 3)");
+    expect(csv).toMatch(/scanned\.pdf,2,partial,\d+%,2,/);
+    const chat = await reviewRowsForChat(alice, [hSet], { reviewId: hReview, limit: Number.NaN });
+    expect(chat.rows).toHaveLength(2); // NaN limit falls back to the default
+    expect(chat.rows.find((r) => r.fileId === deed)?.values.find((v) => v.column === "Seat")).toMatchObject({ status: "conflict", alternatives: [{ value: "Delhi", page: 3 }] });
+  });
+
+  it("never exposes old results for rows that are not current (rows, facets, export, chat)", async () => {
+    const before = await getReview(alice, hSet, hReview);
+    const bumped = await updateReview(alice, hSet, hReview, { columns: columns.filter((c) => c.id !== "fee"), version: before.version });
+    expect(bumped.counts).toMatchObject({ files: 2, done: 0, partial: 0, pending: 2, privilegeFlags: 0 });
+    const page = await listRows(alice, hSet, hReview, {});
+    for (const r of page.rows) expect(r).toMatchObject({ status: "pending", cells: {}, issues: [], privilege: null, docType: null, rowHash: null, summary: "" });
+    expect(page.facets).toMatchObject({ docTypes: [], privilege: { possible: 0, likely: 0 }, issues: [{ issueId: "payment", high: 0, medium: 0, low: 0 }] });
+    expect((await listRows(alice, hSet, hReview, parseRowQuery({ q: "mumbai" }))).total).toBe(0);
+    expect((await listRows(alice, hSet, hReview, parseRowQuery({ privilege: "possible" }))).total).toBe(0);
+    const csv = String((await exportReview(alice, hSet, hReview, "csv")).body);
+    expect(csv).not.toMatch(/Mumbai|Pune|50,00,000/);
+    const chat = await reviewRowsForChat(alice, [hSet], { reviewId: hReview });
+    expect(chat.rows.every((r) => r.docType === null && r.values.length === 0 && r.privilege === null)).toBe(true);
+
+    // A failed run under the new basis stores no old result either.
+    ai.failReview = "SCANNED BUNDLE";
+    try {
+      const progress = await runReview(alice, hSet, hReview);
+      expect(progress).toMatchObject({ processed: 1, failed: 1 });
+      expect(progress.errors[0]).toMatchObject({ fileId: scanned, error: "provider error" });
+    } finally { ai.failReview = ""; }
+    const store = await docStore();
+    const rec = await store.getReviewRow(hReview, scanned);
+    expect(rec).toMatchObject({ state: "failed", result: null, rowHash: null, attempts: 1 });
+    const failedRow = (await listRows(alice, hSet, hReview, parseRowQuery({ status: "failed" }))).rows[0];
+    expect(failedRow).toMatchObject({ fileId: scanned, cells: {}, privilege: null, error: "provider error" });
+    // The retry (attempt 2 of 2) completes it.
+    expect(await runReview(alice, hSet, hReview)).toMatchObject({ processed: 1, failed: 0, remaining: 0 });
+  });
+
+  it("carries a previous result forward only under the same review version and file text", async () => {
+    const store = await docStore();
+    const review = (await store.getReview(hSet, hReview))!;
+    const [file] = await store.getFiles(hSet, [deed]);
+    const prev = (await store.getReviewRow(hReview, deed))!;
+    expect(prev.result).not.toBeNull();
+    const fresh = blankRecord(review, file, { ...prev, reviewVersion: review.version - 1, attempts: 1 }, false);
+    expect(fresh).toMatchObject({ result: null, rowHash: null, attempts: 0 });
+    const same = blankRecord(review, file, { ...prev, attempts: 1 }, true);
+    expect(same).toMatchObject({ rowHash: prev.rowHash, attempts: 1 });
+    expect(same.result).toEqual(prev.result);
+  });
+
+  it("rejects a definition change made against an older version (409 review_changed)", async () => {
+    const current = await getReview(alice, hSet, hReview);
+    const e = await updateReview(alice, hSet, hReview, { name: "Late edit", version: current.version - 1 }).then(() => null, (x: unknown) => x);
+    expect(e).toBeInstanceOf(DocsError);
+    expect(e).toMatchObject({ status: 409, code: "review_changed" });
+    // The store's compare-and-set loses a race the same way.
+    const store = await docStore();
+    const stored = (await store.getReview(hSet, hReview))!;
+    expect(await store.updateReview({ ...stored, name: "Raced" }, stored.version + 7)).toBe(false);
+    expect((await store.getReview(hSet, hReview))!.name).toBe(stored.name);
+    expect(await store.updateReview({ ...stored, name: "Won" }, stored.version)).toBe(true);
+    await expectStatus(updateReview(alice, hSet, hReview, { version: "2" }), 422);
+  });
+
+  it("stores a partial report that lists its failed questions", async () => {
+    const prevKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "sk-test";
+    try {
+      const { runReport, getReport } = await import("@/modules/documents/server/review-report");
+      ai.answer = "Mumbai [1].";
+      ai.agentFailures = 1;
+      const events: ReportEvent[] = [];
+      const report = await runReport(alice, hSet, hReview, ["Where is the seat?", "What is claimed?"], (e) => events.push(e));
+      expect(report?.status).toBe("partial");
+      expect(report?.answers).toHaveLength(1);
+      expect(report?.failed).toHaveLength(1);
+      expect(report?.failed[0]).toMatchObject({ error: "model overloaded" });
+      expect(["Where is the seat?", "What is claimed?"]).toContain(report?.failed[0].question);
+      expect(events.filter((e) => e.type === "question.failed")).toHaveLength(1);
+      expect((await getReport(alice, hSet, hReview))?.status).toBe("partial");
+    } finally {
+      ai.agentFailures = 0;
+      if (prevKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prevKey;
+    }
+  });
+
+  it("writes XLSX string cells without apostrophes and keeps the CSV guard", async () => {
+    const review = (await (await docStore()).getReview(hSet, hReview))!;
+    const wb = XLSX.read(toXlsx([["Header"], ["=SUM(A1)"], ["+91 98200 00000"]], review), { type: "array" });
+    const ws = wb.Sheets.Review;
+    expect(ws.A2).toMatchObject({ t: "s", v: "=SUM(A1)" });
+    expect(ws.A2.f).toBeUndefined();
+    expect(ws.A3.v).toBe("+91 98200 00000");
+    expect(toCsv([["=SUM(A1)"]])).toContain("'=SUM(A1)");
+  });
+
+  it("migrates and backfills review rows created before the derived columns", () => {
+    const mem = new DatabaseSync(":memory:");
+    mem.exec(`CREATE TABLE docs_review_rows (review_id TEXT NOT NULL, file_id TEXT NOT NULL, set_id TEXT NOT NULL, state TEXT NOT NULL, review_version INTEGER, text_hash TEXT,
+      file_stamp TEXT, windows_done INTEGER NOT NULL DEFAULT 0, result TEXT, partials TEXT NOT NULL DEFAULT '[]', row_hash TEXT, decision TEXT, error TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, PRIMARY KEY (review_id, file_id))`);
+    const result = { docType: "Notice", summary: "s", importance: 4, issues: [{ issueId: "breach", relevance: "medium", reason: "r", quote: "", page: null, quoteFound: false }], privilege: { flag: "likely", basis: "b", quote: "", page: null, quoteFound: false }, cells: { seat: { value: "Mumbai", status: "found", quote: "q", page: 1, quoteFound: true } }, coverage: { read: 5, total: 10 } };
+    mem.prepare(`INSERT INTO docs_review_rows (review_id, file_id, set_id, state, result, decision, updated_at) VALUES ('r1', 'f1', 's1', 'done', ?, ?, 'x')`)
+      .run(JSON.stringify(result), JSON.stringify({ coding: "key", issues: [], note: "Core Note", reviewer: "u", reviewerName: null, at: "x", rowHash: "h1" }));
+    migrateReviewRows(mem);
+    migrateReviewRows(mem); // idempotent
+    expect(mem.prepare(`SELECT cov_partial, doc_type, importance, privilege_flag, issue_ranks, coding, decision_hash, coding_note, derived_v, instr(search_text, 'mumbai') > 0 AS hit FROM docs_review_rows`).get())
+      .toMatchObject({ cov_partial: 1, doc_type: "Notice", importance: 4, privilege_flag: "likely", issue_ranks: "|breach:2|", coding: "key", decision_hash: "h1", coding_note: "core note", derived_v: 1, hit: 1 });
   });
 });

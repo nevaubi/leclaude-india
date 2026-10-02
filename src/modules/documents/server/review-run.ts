@@ -2,28 +2,38 @@ import "server-only";
 import type { Principal } from "@/lib/auth/types";
 import { generateJSON } from "@/lib/ai/agent";
 import {
-  PRACTICE_AREA_LABEL, RELEVANCE_RANK, REVIEW_LIMITS, type IssueAssessment, type PrivilegeFlag, type PrivilegeScreen, type Relevance, type ReviewCell,
-  type ReviewColumn, type ReviewProgress,
+  PRACTICE_AREA_LABEL, RELEVANCE_RANK, REVIEW_LIMITS, type ColumnKind, type IssueAssessment, type PrivilegeFlag, type PrivilegeScreen, type Relevance,
+  type ReviewCell, type ReviewColumn, type ReviewEvidence, type ReviewProgress,
 } from "../review-types";
 import { loadSet } from "./access";
 import { buildWindows, pagesFromChunks, textHash, type PageText, type Window } from "./extract";
 import { getPlaybook } from "./playbooks";
-import { computeRowHash, fileReviewable, fileStamp, loadReview, MAX_REVIEW_ATTEMPTS, needsWork } from "./review";
-import { docStore, type DocStore, type ReviewResult, type ReviewRowRecord, type StoredFile, type StoredReview } from "./store";
-import { quoteFound } from "./text";
+import { computeRowHash, fileReviewable, fileStamp, loadReview, MAX_REVIEW_ATTEMPTS, needsWork, unreadPagesOf } from "./review";
+import { coveragePartial, docStore, type DocStore, type ReviewCoverage, type ReviewResult, type ReviewRowMeta, type ReviewRowRecord, type StoredFile, type StoredReview } from "./store";
+import { normalizeForMatch, quoteFound } from "./text";
 
 /**
  * The review run: per file, page-marked windows (up to REVIEW_LIMITS.maxCharsPerFile) each get one structured call to
- * the fast model; window results are checked in code (quotes located on the window's pages only, never re-bound to
- * another page or file; values whose quote is not found stay "unverified"; docType outside the review's list becomes
- * "Other"; importance clamped 1-5) and merged. Rows are stored with the text hash, review version and a row hash. Like
- * runExtraction, a call works for ≈200 s and is resumable: long files keep their finished windows and continue.
+ * the fast model; window results are checked in code and merged:
+ *  - a quote must be substantive (not a word or two) and is located on the window's own pages only, never re-bound to
+ *    another page or file; for date, amount and party columns the quote must also contain the value (digits, Indian
+ *    amount forms such as "Rs. 50,00,000" / "₹50 lakh", significant name words); anything else stays "unverified";
+ *  - different supported values in different windows make the cell a "conflict" with the others as `alternatives`;
+ *  - when part of the file was not read (pages awaiting OCR, or the length cap) a value not found is "not_read", never
+ *    "not_stated", and the row is "partial";
+ *  - docType outside the review's list becomes "Other"; importance is clamped 1-5.
+ * Rows are stored with the text hash, review version and a row hash. Like runExtraction, a call works for ≈200 s and
+ * is resumable: long files keep their finished windows and continue; failures and repeated timeouts count as attempts.
  */
 
 export const REVIEW_WINDOW_CHARS = 20_000;
 export const REVIEW_CONCURRENCY = 4;
 export const REVIEW_BUDGET_MS = 200_000;
 const HARD_EXTRA_MS = 70_000;
+/** A window call that times out with at least this much budget counts as an attempt (shorter: the clock ran out). */
+const FAIR_TIMEOUT_MS = 60_000;
+/** At most this many per-file errors are listed in a progress response (all are counted). */
+const MAX_LISTED_ERRORS = 100;
 
 const RELEVANCES: Relevance[] = ["high", "medium", "low", "none"];
 const FLAGS: PrivilegeFlag[] = ["none", "possible", "likely"];
@@ -96,7 +106,7 @@ export function reviewInstructions(review: StoredReview): string {
   ].filter((l, i, a) => l !== "" || (i > 0 && a[i - 1] !== "")).join("\n");
 }
 
-// ---- checking one window ----------------------------------------------------------------------------------------
+// ---- checks -----------------------------------------------------------------------------------------------------
 
 interface RawEvidence { quote?: unknown; page?: unknown }
 interface RawWindow {
@@ -109,13 +119,85 @@ interface RawWindow {
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
 /**
- * Place a quote on the window's pages only: the stated page when the quote is on it, else the window page where it
- * occurs. A quote not found keeps the model's page only when that page belongs to the window; it is never re-bound.
+ * A quote that can support something: at least 3 words or 12 characters (unless it is exactly the value), and every
+ * part of an ellipsis quote at least 4 characters. A word or two found somewhere in the file proves nothing.
  */
-export function locateQuote(quote: string, statedPage: unknown, win: Window, pageText: Map<number | null, string>): { page: number | null; found: boolean } {
+export function substantiveQuote(quote: string, value?: string | null): boolean {
+  const q = (quote ?? "").trim().replace(/^["'“‘]+|["'”’]+$/g, "").trim();
+  if (!q) return false;
+  const parts = q.split(/\s*(?:\.{3}|…)\s*/).map((x) => x.trim()).filter(Boolean);
+  if (!parts.length || parts.some((x) => x.length < 4)) return false;
+  if (value && normalizeForMatch(q) === normalizeForMatch(value)) return true;
+  const joined = parts.join(" ");
+  const words = joined.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  return words >= 3 || joined.length >= 12;
+}
+
+const UNIT: Record<string, number> = { lakh: 1e5, lakhs: 1e5, lac: 1e5, lacs: 1e5, crore: 1e7, crores: 1e7, cr: 1e7, crs: 1e7, thousand: 1e3, k: 1e3, million: 1e6, mn: 1e6, billion: 1e9, bn: 1e9 };
+
+/** Amounts in a text, Indian forms included: "Rs. 50,00,000", "₹50 lakh", "1.5 crore", "INR 5,000/-". */
+export function amountNumbers(text: string): number[] {
+  const out: number[] = [];
+  for (const m of (text ?? "").matchAll(/(\d[\d,]*(?:\.\d+)?)(?:\s*(lakhs?|lacs?|crores?|crs?|thousand|million|mn|billion|bn|k)\b)?/gi)) {
+    const n = Number(m[1].replace(/,/g, ""));
+    if (!Number.isFinite(n)) continue;
+    out.push(Math.round(n * (m[2] ? UNIT[m[2].toLowerCase()] ?? 1 : 1) * 100) / 100);
+  }
+  return out;
+}
+
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/** Date tokens: numbers without leading zeros, month names as month numbers ("3rd April 2022" → 3, 4, 2022). */
+export function dateTokens(text: string): string[] {
+  const out: string[] = [];
+  for (const m of normalizeForMatch(text).matchAll(/\d+|[a-z]+/g)) {
+    const t = m[0];
+    if (/^\d+$/.test(t)) out.push(String(Number(t)));
+    else if (t.length >= 3) { const i = MONTHS.indexOf(t.slice(0, 3)); if (i >= 0 && (t.length === 3 || t.startsWith(MONTHS[i]))) out.push(String(i + 1)); }
+  }
+  return out;
+}
+
+const NAME_STOP = new Set("m s mr mrs ms miss shri smt sri kumari dr adv advocate the and of a an pvt private ltd limited llp inc co company corp corporation plc llc".split(" "));
+
+/** Significant words of a name (titles and company suffixes dropped). */
+export function nameTokens(text: string): string[] {
+  return Array.from(normalizeForMatch(text).matchAll(/[\p{L}\p{M}\p{N}]+/gu), (m) => m[0]).filter((t) => t.length >= 2 && !NAME_STOP.has(t));
+}
+
+/** For date, amount and party columns: does the quote actually contain the value? Other kinds: true. */
+export function valueInQuote(kind: ColumnKind, value: string, quote: string): boolean {
+  if (kind === "amount") {
+    const v = amountNumbers(value);
+    if (!v.length) return nameTokens(value).every((t) => nameTokens(quote).includes(t)) && nameTokens(value).length > 0;
+    const q = amountNumbers(quote);
+    const digits = (s: string) => s.replace(/\D/g, "");
+    return v.every((n) => q.includes(n)) || (digits(value).length > 0 && digits(quote).includes(digits(value)));
+  }
+  if (kind === "date") {
+    const v = dateTokens(value);
+    if (!v.length) return normalizeForMatch(quote).includes(normalizeForMatch(value));
+    const q = dateTokens(quote);
+    return v.every((t) => q.includes(t) || (t.length === 2 && q.some((x) => x.length === 4 && x.endsWith(t))));
+  }
+  if (kind === "party") {
+    const v = nameTokens(value);
+    const q = new Set(nameTokens(quote));
+    return v.length > 0 && v.every((t) => q.has(t));
+  }
+  return true;
+}
+
+/**
+ * Place a quote on the window's pages only: the stated page when the quote is on it, else the window page where it
+ * occurs. A quote not found (or not substantive) keeps the model's page only when that page belongs to the window; it
+ * is never re-bound.
+ */
+export function locateQuote(quote: string, statedPage: unknown, win: Window, pageText: Map<number | null, string>, value?: string | null): { page: number | null; found: boolean } {
   const stated = typeof statedPage === "number" && win.pages.includes(statedPage) ? statedPage : null;
   const paged = win.pages.some((p) => p != null);
-  if (!quote) return { page: paged ? stated : null, found: false };
+  if (!quote || !substantiveQuote(quote, value)) return { page: paged ? stated : null, found: false };
   if (stated != null && quoteFound(quote, pageText.get(stated) ?? "")) return { page: stated, found: true };
   for (const p of win.pages) if (quoteFound(quote, pageText.get(p) ?? "")) return { page: p, found: true };
   return { page: paged ? stated : null, found: false };
@@ -142,17 +224,20 @@ export function checkDocType(review: Pick<StoredReview, "docTypes">, raw: unknow
   return review.docTypes.find((d) => d.toLowerCase() === v) ?? "Other";
 }
 
+const noValue = (status: "not_stated" | "not_read"): ReviewCell => ({ value: null, status, quote: "", page: null, quoteFound: false });
+
 /** Turn one window's model output into a checked result for that window. */
-export function processReviewWindow(review: StoredReview, win: Window, raw: RawWindow, pageText: Map<number | null, string>, coverage: { read: number; total: number }): ReviewResult {
+export function processReviewWindow(review: StoredReview, win: Window, raw: RawWindow, pageText: Map<number | null, string>, coverage: ReviewCoverage): ReviewResult {
   const cells: Record<string, ReviewCell> = {};
   const rawCells = Array.isArray(raw?.cells) ? raw.cells : [];
   for (const c of review.columns) {
     const r = rawCells.find((x) => x?.column === c.id);
     const value = r ? normalizeValue(c, r.value) : null;
-    if (value == null) { cells[c.id] = { value: null, status: "not_stated", quote: "", page: null, quoteFound: false }; continue; }
+    if (value == null) { cells[c.id] = noValue("not_stated"); continue; }
     const quote = str(r!.quote, 400);
-    const loc = locateQuote(quote, r!.page, win, pageText);
-    cells[c.id] = { value, status: loc.found ? "found" : "unverified", quote, page: loc.page, quoteFound: loc.found };
+    const loc = locateQuote(quote, r!.page, win, pageText, value);
+    const supported = loc.found && valueInQuote(c.kind, value, quote);
+    cells[c.id] = { value, status: supported ? "found" : "unverified", quote, page: loc.page, quoteFound: loc.found };
   }
   const rawIssues = Array.isArray(raw?.issues) ? raw.issues : [];
   const issues: IssueAssessment[] = review.issues.map((i) => {
@@ -181,12 +266,54 @@ export function processReviewWindow(review: StoredReview, win: Window, raw: RawW
   };
 }
 
-/** Merge window results: cells take the first found value (else the first unverified), issues the highest relevance, privilege the highest flag. */
-export function mergeResults(review: StoredReview, parts: ReviewResult[], coverage: { read: number; total: number }): ReviewResult {
+/** Key for "the same value" across windows (amounts and dates compared by their numbers). */
+function valueKey(kind: ColumnKind, v: string): string {
+  if (kind === "amount") { const n = amountNumbers(v); if (n.length) return `#${n.join(",")}`; }
+  if (kind === "date") { const t = dateTokens(v); if (t.length) return `@${t.join(".")}`; }
+  return normalizeForMatch(v).replace(/[^\p{L}\p{M}\p{N}]+/gu, "");
+}
+
+/** One summary from every window: the first sentence of each distinct window summary, in order. */
+export function mergeSummaries(summaries: string[]): string {
+  const parts = summaries.map((x) => x.trim()).filter(Boolean);
+  if (parts.length <= 1) return parts[0] ?? "";
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of parts) {
+    const first = (s.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? s).trim();
+    const k = normalizeForMatch(first);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(/[.!?]$/.test(first) ? first : `${first}.`);
+  }
+  return out.join(" ").slice(0, 800);
+}
+
+/**
+ * Merge window results. Cells: the first supported ("found") value; other different supported values make the cell a
+ * "conflict" with them as alternatives; else the first unverified value; else not_stated (not_read when part of the
+ * file was not read). Issues: the highest relevance. Privilege: the highest flag. Summary: from every window.
+ */
+export function mergeResults(review: StoredReview, parts: ReviewResult[], coverage: ReviewCoverage): ReviewResult {
+  const partial = coveragePartial(coverage);
   const cells: Record<string, ReviewCell> = {};
   for (const c of review.columns) {
     const all = parts.map((p) => p.cells[c.id]).filter(Boolean);
-    cells[c.id] = all.find((x) => x.status === "found") ?? all.find((x) => x.status === "unverified") ?? { value: null, status: "not_stated", quote: "", page: null, quoteFound: false };
+    const found = all.filter((x) => x.status === "found" && x.value != null);
+    if (found.length) {
+      const first = found[0];
+      const seen = new Set([valueKey(c.kind, first.value!)]);
+      const alternatives: (ReviewEvidence & { value: string })[] = [];
+      for (const x of found.slice(1)) {
+        const k = valueKey(c.kind, x.value!);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        alternatives.push({ value: x.value!, quote: x.quote, page: x.page, quoteFound: x.quoteFound });
+      }
+      cells[c.id] = alternatives.length ? { ...first, status: "conflict", alternatives } : first;
+      continue;
+    }
+    cells[c.id] = all.find((x) => x.status === "unverified") ?? noValue(partial ? "not_read" : "not_stated");
   }
   const issues = review.issues.map((i) => {
     let best: IssueAssessment = { issueId: i.id, relevance: "none", reason: "", quote: "", page: null, quoteFound: false };
@@ -208,7 +335,7 @@ export function mergeResults(review: StoredReview, parts: ReviewResult[], covera
   const imps = parts.map((p) => p.importance).filter((x): x is number => typeof x === "number");
   return {
     docType,
-    summary: parts.map((p) => p.summary).find(Boolean) ?? "",
+    summary: mergeSummaries(parts.map((p) => p.summary)),
     importance: imps.length ? Math.max(...imps) : null,
     issues,
     privilege,
@@ -231,6 +358,17 @@ export function limitPages(pages: PageText[], max = REVIEW_LIMITS.maxCharsPerFil
   return { pages: out, read, total };
 }
 
+/**
+ * Coverage of a file: characters read vs total, where pages awaiting OCR count into the total (at the average length
+ * of the file's text pages, at least 1 character each) so a file with unread pages never looks fully read.
+ */
+export function fileCoverage(file: StoredFile, pages: PageText[], limited: { read: number; total: number }): ReviewCoverage {
+  const unreadPages = unreadPagesOf(file);
+  const textPages = pages.filter((p) => p.text.trim()).length;
+  const avg = textPages ? Math.round(limited.total / textPages) : 2000;
+  return { read: limited.read, total: limited.total + unreadPages.length * Math.max(1, avg), unreadPages };
+}
+
 // ---- running ----------------------------------------------------------------------------------------------------
 
 function semaphore(n: number) {
@@ -243,42 +381,62 @@ function semaphore(n: number) {
   };
 }
 
-interface Outcome { status: "done" | "failed" | "partial"; error?: string }
+interface Outcome { status: "done" | "failed" | "partial" | "skipped"; error?: string }
 
-/** A new record for this run; the previous result and its hash stay visible (as pending/failed) until replaced. */
-const blankRecord = (review: StoredReview, file: StoredFile, prev: ReviewRowRecord | null): ReviewRowRecord => ({
-  reviewId: review.id, setId: review.setId, fileId: file.id, state: "progress", reviewVersion: review.version, textHash: null, fileStamp: fileStamp(file),
-  windowsDone: 0, result: prev?.result ?? null, partials: [], rowHash: prev?.rowHash ?? null, decision: prev?.decision ?? null, error: null, attempts: prev?.attempts ?? 0,
-  updatedAt: new Date().toISOString(),
-});
+/**
+ * A new record for this run. The previous result, row hash and attempt count are carried only when the previous record
+ * was produced under the same review version and file text; otherwise nothing of it survives (the decision is kept by
+ * the store, which never writes it from the run).
+ */
+export function blankRecord(review: StoredReview, file: StoredFile, prev: ReviewRowRecord | null, sameBasis: boolean): ReviewRowRecord {
+  return {
+    reviewId: review.id, setId: review.setId, fileId: file.id, state: "progress", reviewVersion: review.version, textHash: null, fileStamp: fileStamp(file),
+    windowsDone: 0, result: sameBasis ? prev?.result ?? null : null, partials: [], rowHash: sameBasis ? prev?.rowHash ?? null : null, decision: prev?.decision ?? null,
+    error: null, attempts: sameBasis ? prev?.attempts ?? 0 : 0, updatedAt: new Date().toISOString(),
+  };
+}
 
-async function reviewFile(store: DocStore, review: StoredReview, file: StoredFile, prev: ReviewRowRecord | null, limit: ReturnType<typeof semaphore>, clock: { stopAt: number; hardAt: number }, signal?: AbortSignal): Promise<Outcome> {
+const sameBasisOf = (review: StoredReview, file: StoredFile, prev: Pick<ReviewRowMeta, "reviewVersion" | "fileStamp"> | null | undefined) =>
+  !!prev && prev.reviewVersion === review.version && prev.fileStamp === fileStamp(file);
+
+function noTextReason(file: StoredFile): string {
+  if (file.status === "needs_ocr") return "The file has no text layer; run OCR on its pages first";
+  if (file.status === "failed") return `The file could not be read${file.note ? `: ${file.note}` : ""}`;
+  return "The file contains no text";
+}
+
+/** Settled failed record for a file with no text (no model call). */
+function noTextRecord(review: StoredReview, file: StoredFile, prev: ReviewRowMeta | null): ReviewRowRecord {
+  const base = blankRecord(review, file, null, false);
+  return { ...base, decision: prev?.decision ?? null, state: "failed", error: noTextReason(file), attempts: MAX_REVIEW_ATTEMPTS };
+}
+
+async function reviewFile(store: DocStore, review: StoredReview, file: StoredFile, windowSlots: ReturnType<typeof semaphore>, clock: { stopAt: number; hardAt: number }, signal?: AbortSignal): Promise<Outcome> {
+  if (signal?.aborted || Date.now() >= clock.stopAt) return { status: "skipped" };
   const now = () => new Date().toISOString();
-  // A changed review version or file text restarts the failure count; a retry of the same text keeps it.
-  const sameBasis = !!prev && prev.reviewVersion === review.version && prev.fileStamp === fileStamp(file);
-  const base = blankRecord(review, file, sameBasis ? prev : prev ? { ...prev, attempts: 0 } : null);
-  if (fileReviewable(file) === "no_text") {
-    const why = file.status === "needs_ocr" ? "The file has no text layer; run OCR on its pages first" : file.status === "failed" ? `The file could not be read${file.note ? `: ${file.note}` : ""}` : "The file contains no text";
-    await store.putReviewRow({ ...base, state: "failed", error: why, attempts: MAX_REVIEW_ATTEMPTS, updatedAt: now() });
-    return { status: "failed", error: why };
-  }
+  const prev = await store.getReviewRow(review.id, file.id, { partials: true });
+  const sameBasis = sameBasisOf(review, file, prev);
+  const base = blankRecord(review, file, prev, sameBasis);
   const allPages = pagesFromChunks(await store.fileChunks(file.id));
   const hash = textHash(allPages);
   const limited = limitPages(allPages);
-  const coverage = { read: limited.read, total: limited.total };
+  const coverage = fileCoverage(file, allPages, limited);
   const windows = buildWindows(limited.pages, REVIEW_WINDOW_CHARS);
-  const resume = prev && prev.state === "progress" && prev.textHash === hash && prev.reviewVersion === review.version && prev.partials.length === prev.windowsDone ? prev : null;
+  const resume = sameBasis && prev && (prev.state === "progress" || prev.state === "failed") && prev.textHash === hash && prev.windowsDone > 0 && prev.partials.length === prev.windowsDone ? prev : null;
   const startAt = resume ? Math.min(resume.windowsDone, windows.length) : 0;
   const pageText = new Map<number | null, string>(limited.pages.map((p) => [p.page, p.text]));
   const results: (ReviewResult | null)[] = windows.map((_, i) => (resume && i < startAt ? resume.partials[i] : null));
   const instructions = reviewInstructions(review);
   const schema = reviewSchema(review);
   let error: string | null = null;
-  let stoppedByClock = false;
+  let timedOut = false;
+  const partNote = coveragePartial(coverage)
+    ? ` (the review reads ${coverage.read.toLocaleString("en-IN")} characters${limited.read < limited.total ? ` of ${limited.total.toLocaleString("en-IN")}` : ""}${coverage.unreadPages.length ? `; ${coverage.unreadPages.length} scanned page(s) have no text yet` : ""})`
+    : "";
 
-  await Promise.all(windows.slice(startAt).map((win) => limit(async () => {
-    if (error || signal?.aborted) return;
-    if (Date.now() >= clock.stopAt) { stoppedByClock = true; return; }
+  await Promise.all(windows.slice(startAt).map((win) => windowSlots(async () => {
+    if (error || timedOut || signal?.aborted) return;
+    if (Date.now() >= clock.stopAt) return;
     const budget = Math.max(5_000, Math.min(REVIEW_BUDGET_MS, clock.hardAt - Date.now()));
     const timeout = AbortSignal.timeout(budget);
     try {
@@ -288,27 +446,27 @@ async function reviewFile(store: DocStore, review: StoredReview, file: StoredFil
         name: "document_review",
         schema,
         instructions,
-        input: `Document: ${file.name}\nExcerpt ${win.index + 1} of ${windows.length}${coverage.read < coverage.total ? ` (the review reads the first ${coverage.read.toLocaleString("en-IN")} of ${coverage.total.toLocaleString("en-IN")} characters)` : ""}:\n\n${win.text}`,
+        input: `Document: ${file.name}\nExcerpt ${win.index + 1} of ${windows.length}${partNote}:\n\n${win.text}`,
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         metadata: { surface: "documents.review" },
       });
       results[win.index] = processReviewWindow(review, win, raw ?? {}, pageText, coverage);
     } catch (e) {
-      if (timeout.aborted && !signal?.aborted) { stoppedByClock = true; return; }
       if (signal?.aborted) return;
+      // A timeout with a fair budget is an attempt (so a window that always times out ends as failed); a short one is the clock.
+      if (timeout.aborted) { if (budget >= FAIR_TIMEOUT_MS) timedOut = true; return; }
       error = (e as Error).message || String(e);
     }
   })));
+  if (signal?.aborted) return { status: "skipped" };
 
   let done = 0;
   while (done < windows.length && results[done]) done++;
 
   // The text or the review may have changed while the model ran: results bound to the old basis are discarded.
-  const currentFile = await store.getFile(file.setId, file.id);
-  if (!currentFile || fileStamp(currentFile) !== fileStamp(file)) return { status: "partial" };
-  if (textHash(pagesFromChunks(await store.fileChunks(file.id))) !== hash) return { status: "partial" };
-  const currentReview = await store.getReview(review.setId, review.id);
-  if (!currentReview || currentReview.version !== review.version) return { status: "partial" };
+  const [currentFile, currentReview] = await Promise.all([store.getFile(file.setId, file.id), store.getReview(review.setId, review.id)]);
+  if (!currentFile || fileStamp(currentFile) !== fileStamp(file)) return { status: "skipped" };
+  if (!currentReview || currentReview.version !== review.version) return { status: "skipped" };
 
   const record: ReviewRowRecord = { ...base, textHash: hash, windowsDone: done, partials: results.slice(0, done) as ReviewResult[], updatedAt: now() };
   if (done >= windows.length) {
@@ -316,10 +474,11 @@ async function reviewFile(store: DocStore, review: StoredReview, file: StoredFil
     await store.putReviewRow({ ...record, state: "done", result, partials: [], rowHash: computeRowHash(review.version, hash, result), error: null, attempts: 0 });
     return { status: "done" };
   }
-  if (error && !stoppedByClock) {
-    // A failed row keeps its previous result (if any) under status "failed"; nothing partial is shown as done.
-    await store.putReviewRow({ ...record, state: "failed", error: String(error).slice(0, 500), attempts: base.attempts + 1 });
-    return { status: "failed", error: String(error) };
+  if (error || timedOut) {
+    // Finished windows are kept for the retry; the row shows "failed" (no result) until a retry completes it.
+    const why = error ?? `Excerpt ${done + 1} of ${windows.length} timed out`;
+    await store.putReviewRow({ ...record, state: "failed", error: why.slice(0, 500), attempts: base.attempts + 1 });
+    return { status: "failed", error: why };
   }
   await store.putReviewRow({ ...record, state: "progress" });
   return { status: "partial" };
@@ -334,22 +493,36 @@ export async function runReview(principal: Principal, setId: string, reviewId: s
   const started = Date.now();
   const budget = opts.budgetMs ?? REVIEW_BUDGET_MS;
   const clock = { stopAt: started + budget, hardAt: started + budget + HARD_EXTRA_MS };
-  const [files, recs] = await Promise.all([store.allFiles(set.id), store.listReviewRows(review.id)]);
-  const byFile = new Map(recs.map((r) => [r.fileId, r]));
+  const [files, metas] = await Promise.all([store.allFiles(set.id), store.listReviewRows(review.id)]);
+  const byFile = new Map(metas.map((r) => [r.fileId, r]));
   const pending = files.filter((f) => needsWork(review, f, byFile.get(f.id)));
-  // Files with no text are settled without a model call (all of them); text files up to `max` per call.
-  const noText = pending.filter((f) => fileReviewable(f) === "no_text");
-  const work = [...noText, ...pending.filter((f) => fileReviewable(f) === "yes").slice(0, max)];
-  const limit = semaphore(REVIEW_CONCURRENCY);
   const progress: ReviewProgress = { processed: 0, failed: 0, remaining: 0, errors: [] };
-  const outcomes = await Promise.all(work.map((f) => reviewFile(store, review, f, byFile.get(f.id) ?? null, limit, clock, opts.signal).catch((e): Outcome => ({ status: "failed", error: (e as Error).message }))));
+  const fail = (f: StoredFile, error: string) => {
+    progress.failed++;
+    if (progress.errors.length < MAX_LISTED_ERRORS) progress.errors.push({ fileId: f.id, name: f.name, error: error.slice(0, 300) });
+  };
+
+  // Files with no text are settled without a model call, all of them, in one bulk write.
+  const noText = pending.filter((f) => fileReviewable(f) === "no_text");
+  if (noText.length) {
+    await store.putReviewRows(noText.map((f) => noTextRecord(review, f, byFile.get(f.id) ?? null)));
+    for (const f of noText) fail(f, noTextReason(f));
+  }
+
+  // Text files, up to `max` per call: at most REVIEW_CONCURRENCY files load their text at a time, and at most
+  // REVIEW_CONCURRENCY model calls run at a time across them.
+  const work = pending.filter((f) => fileReviewable(f) === "yes").slice(0, max);
+  const fileSlots = semaphore(REVIEW_CONCURRENCY);
+  const windowSlots = semaphore(REVIEW_CONCURRENCY);
+  const outcomes = await Promise.all(work.map((f) => fileSlots(() => reviewFile(store, review, f, windowSlots, clock, opts.signal)).catch((e): Outcome => ({ status: "failed", error: (e as Error).message }))));
   outcomes.forEach((o, i) => {
     if (o.status === "done") progress.processed++;
-    else if (o.status === "failed") { progress.failed++; progress.errors.push({ fileId: work[i].id, name: work[i].name, error: (o.error ?? "failed").slice(0, 300) }); }
+    else if (o.status === "failed") fail(work[i], o.error ?? "failed");
   });
-  const [filesAfter, recsAfter] = await Promise.all([store.allFiles(set.id), store.listReviewRows(review.id)]);
-  const after = new Map(recsAfter.map((r) => [r.fileId, r]));
+
+  const [filesAfter, after] = await Promise.all([store.allFiles(set.id), store.listReviewRows(review.id)]);
+  const afterBy = new Map(after.map((r) => [r.fileId, r]));
   const fresh = (await store.getReview(set.id, review.id)) ?? review;
-  progress.remaining = filesAfter.filter((f) => needsWork(fresh, f, after.get(f.id))).length;
+  progress.remaining = filesAfter.filter((f) => needsWork(fresh, f, afterBy.get(f.id))).length;
   return progress;
 }

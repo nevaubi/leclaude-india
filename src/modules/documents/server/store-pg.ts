@@ -3,11 +3,13 @@ import type { RemoteStore, SqlQuery, SqlValue } from "@/lib/db/remote";
 import type { CodingDecision, ReviewReport } from "../review-types";
 import { DOCS_LIMITS, type DocSet } from "../types";
 import {
-  chunkFromRow, DuplicateFileError, EXTRACTOR_VERSION, extractionFromRow, FILE_COLS, fileFromRow, fileToRow, MAX_EXTRACTION_ATTEMPTS, queryTerms,
-  reportFromJson, REVIEW_COLS, reviewFromRow, reviewRowFromRow, reviewRowToRow, reviewToRow, ROW_COLS, SET_COLS, setFromRow, setToRow, type ChunkRow,
-  type DocStore, type ExtractionRow, type FileListFilter, type ReviewRowRecord, type ScoredChunk, type SearchOptions, type SetListFilter, type StoredFile,
-  type StoredReview,
+  chunkFromRow, derivedDecisionCols, derivedRunCols, DuplicateFileError, EXTRACTOR_VERSION, extractionFromRow, FILE_COLS, fileFromRow, fileToRow,
+  MAX_EXTRACTION_ATTEMPTS, queryTerms, reportFromJson, REVIEW_COLS, reviewFromRow, reviewRowFromRow, reviewRowMetaFromRow, reviewRowToRow, reviewToRow,
+  ROW_ADDED_COLUMNS, ROW_COLS, ROW_DERIVED_VERSION, ROW_META_COLS, SET_COLS, setFromRow, setToRow, type ChunkRow, type DocStore, type ExtractionRow,
+  type FileListFilter, type ReviewResult, type ReviewRowRecord, type ScoredChunk, type SearchOptions, type SetListFilter, type StoredFile, type StoredReview,
 } from "./store";
+import { countsFromRows, countsSql, facetsFromRows, facetsSql, rowItems, rowQuerySql, rowResultsSql, type Sql } from "./review-sql";
+import type { RowQuery } from "../review-types";
 
 /**
  * Production backend: Postgres (Neon HTTP) queried in place. Chunk text carries a generated english tsvector with a
@@ -63,15 +65,35 @@ export const DOCS_PG_SCHEMA: SqlQuery[] = [
       review_id text NOT NULL, file_id text NOT NULL, set_id text NOT NULL, state text NOT NULL, review_version int, text_hash text, file_stamp text,
       windows_done int NOT NULL DEFAULT 0, result text, partials text NOT NULL DEFAULT '[]', row_hash text, decision text, error text,
       attempts int NOT NULL DEFAULT 0, updated_at text NOT NULL,
+      cov_partial int, doc_type text, importance int, privilege_flag text, issue_ranks text, search_text text,
+      coding text, decision_hash text, coding_note text, derived_v int,
       PRIMARY KEY (review_id, file_id)
     )`,
   },
+  // Migration for tables created before the derived row columns (backfilled in ensure()).
+  ...ROW_ADDED_COLUMNS.map(([name, type]) => ({ query: `ALTER TABLE docs_review_rows ADD COLUMN IF NOT EXISTS ${name} ${type === "INTEGER" ? "int" : "text"}` })),
   { query: `CREATE INDEX IF NOT EXISTS docs_review_rows_set ON docs_review_rows (set_id)` },
   { query: `CREATE INDEX IF NOT EXISTS docs_review_rows_file ON docs_review_rows (file_id)` },
 ];
 
 const ROW_DEFS = `review_id text, file_id text, set_id text, state text, review_version int, text_hash text, file_stamp text, windows_done int, result text,
-  partials text, row_hash text, error text, attempts int, updated_at text`;
+  partials text, row_hash text, error text, attempts int, updated_at text, cov_partial int, doc_type text, importance int, privilege_flag text,
+  issue_ranks text, search_text text, derived_v int`;
+
+/** Row upserts split so one request stays well under the HTTP body limit. */
+function rowBatches<T>(rows: T[], size: (r: T) => number, maxChars = 1_500_000, maxRows = 500): T[][] {
+  const out: T[][] = [];
+  let cur: T[] = [];
+  let chars = 0;
+  for (const r of rows) {
+    const n = size(r);
+    if (cur.length && (chars + n > maxChars || cur.length >= maxRows)) { out.push(cur); cur = []; chars = 0; }
+    cur.push(r);
+    chars += n;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
 
 const PENDING_WHERE = `set_id = $1 AND status IN ('ready','partial') AND chars > 0 AND pages_received >= pages AND (
   extraction = 'pending' OR (extraction = 'done' AND (extraction_version IS NULL OR extraction_version <> ${EXTRACTOR_VERSION}))
@@ -113,7 +135,10 @@ export class PgDocStore implements DocStore {
 
   private ensure(): Promise<void> {
     if (!this.schema) {
-      this.schema = (async () => { for (const q of DOCS_PG_SCHEMA) await this.store.query(q); })().catch((e) => { this.schema = null; throw e; });
+      this.schema = (async () => {
+        for (const q of DOCS_PG_SCHEMA) await this.store.query(q);
+        await this.backfillReviewRows();
+      })().catch((e) => { this.schema = null; throw e; });
     }
     return this.schema;
   }
@@ -126,6 +151,34 @@ export class PgDocStore implements DocStore {
   private async tx(qs: SqlQuery[]) {
     await this.ensure();
     return this.store.transaction(qs);
+  }
+
+  /** Fill the derived row columns of rows written before they existed (or by an older derivation), in batches. */
+  private async backfillReviewRows() {
+    for (;;) {
+      const rows = await this.store.query({
+        query: `SELECT review_id, file_id, result, decision FROM docs_review_rows WHERE derived_v IS NULL OR derived_v < $1 LIMIT 200`,
+        params: [ROW_DERIVED_VERSION],
+      });
+      if (!rows.length) return;
+      const data = rows.map((r) => {
+        const rec = reviewRowFromRow({ ...r, state: "done", set_id: "", updated_at: "" });
+        return { review_id: r.review_id, file_id: r.file_id, ...derivedRunCols(rec.result as ReviewResult | null), ...derivedDecisionCols(rec.decision), derived_v: ROW_DERIVED_VERSION };
+      });
+      await this.store.query({
+        query: `UPDATE docs_review_rows d SET cov_partial = x.cov_partial, doc_type = x.doc_type, importance = x.importance, privilege_flag = x.privilege_flag,
+            issue_ranks = x.issue_ranks, search_text = x.search_text, coding = x.coding, decision_hash = x.decision_hash, coding_note = x.coding_note, derived_v = x.derived_v
+          FROM jsonb_to_recordset($1::jsonb) AS x(review_id text, file_id text, cov_partial int, doc_type text, importance int, privilege_flag text, issue_ranks text,
+            search_text text, coding text, decision_hash text, coding_note text, derived_v int)
+          WHERE d.review_id = x.review_id AND d.file_id = x.file_id`,
+        params: [JSON.stringify(data)],
+      });
+      if (rows.length < 200) return;
+    }
+  }
+
+  private async sql(s: Sql) {
+    return this.q(s.text, s.params);
   }
 
   /** `col IN (…)` over a JSON array parameter (no string building of ids). */
@@ -391,13 +444,15 @@ export class PgDocStore implements DocStore {
     return rows.map(reviewFromRow);
   }
 
-  async updateReview(review: StoredReview) {
+  async updateReview(review: StoredReview, expectedVersion: number) {
     const row = reviewToRow(review);
     const cols = REVIEW_COLS.filter((c) => c !== "id" && c !== "set_id");
-    await this.q(
-      `UPDATE docs_reviews SET ${cols.map((c, i) => `${c} = $${i + 1}`).join(", ")} WHERE id = $${cols.length + 1} AND set_id = $${cols.length + 2}`,
-      [...cols.map((c) => row[c]), review.id, review.setId],
+    const n = cols.length;
+    const rows = await this.q(
+      `UPDATE docs_reviews SET ${cols.map((c, i) => `${c} = $${i + 1}`).join(", ")} WHERE id = $${n + 1} AND set_id = $${n + 2} AND version = $${n + 3} RETURNING id`,
+      [...cols.map((c) => row[c]), review.id, review.setId, expectedVersion],
     );
+    return rows.length > 0;
   }
 
   async deleteReview(setId: string, reviewId: string) {
@@ -408,41 +463,71 @@ export class PgDocStore implements DocStore {
   }
 
   async listReviewRows(reviewId: string) {
-    const rows = await this.q(`SELECT * FROM docs_review_rows WHERE review_id = $1`, [reviewId]);
-    return rows.map(reviewRowFromRow);
+    const rows = await this.q(`SELECT ${ROW_META_COLS.join(", ")} FROM docs_review_rows WHERE review_id = $1`, [reviewId]);
+    return rows.map(reviewRowMetaFromRow);
   }
 
-  async getReviewRow(reviewId: string, fileId: string) {
-    const rows = await this.q(`SELECT * FROM docs_review_rows WHERE review_id = $1 AND file_id = $2`, [reviewId, fileId]);
+  async getReviewRow(reviewId: string, fileId: string, opts: { partials?: boolean } = {}) {
+    const rows = await this.q(`SELECT ${ROW_META_COLS.join(", ")}, result${opts.partials ? ", partials" : ""} FROM docs_review_rows WHERE review_id = $1 AND file_id = $2`, [reviewId, fileId]);
     return rows[0] ? reviewRowFromRow(rows[0]) : null;
   }
 
   async putReviewRow(x: ReviewRowRecord) {
-    const row = reviewRowToRow(x);
+    await this.putReviewRows([x]);
+  }
+
+  async putReviewRows(xs: ReviewRowRecord[]) {
+    if (!xs.length) return;
     const upd = ROW_COLS.filter((c) => c !== "review_id" && c !== "file_id");
-    await this.q(
-      `INSERT INTO docs_review_rows (${ROW_COLS.join(", ")}) SELECT ${ROW_COLS.join(", ")} FROM jsonb_to_recordset($1::jsonb) AS x(${ROW_DEFS})
+    const rows = xs.map(reviewRowToRow);
+    const stmts = rowBatches(rows, (r) => String(r.result ?? "").length + String(r.partials ?? "").length + String(r.search_text ?? "").length + 500).map((b) => ({
+      query: `INSERT INTO docs_review_rows (${ROW_COLS.join(", ")}) SELECT ${ROW_COLS.join(", ")} FROM jsonb_to_recordset($1::jsonb) AS x(${ROW_DEFS})
        ON CONFLICT (review_id, file_id) DO UPDATE SET ${upd.map((c) => `${c} = EXCLUDED.${c}`).join(", ")}`,
-      [JSON.stringify([row])],
-    );
+      params: [JSON.stringify(b)],
+    }));
+    if (stmts.length === 1) await this.q(stmts[0].query, stmts[0].params);
+    else await this.tx(stmts);
   }
 
   async setReviewDecision(reviewId: string, setId: string, fileId: string, decision: CodingDecision | null, expectedRowHash: string) {
     const d = decision ? JSON.stringify(decision) : null;
+    const dc = derivedDecisionCols(decision);
     if (expectedRowHash) {
       const rows = await this.q(
-        `UPDATE docs_review_rows SET decision = $1 WHERE review_id = $2 AND file_id = $3 AND set_id = $4 AND row_hash = $5 RETURNING file_id`,
-        [d, reviewId, fileId, setId, expectedRowHash],
+        `UPDATE docs_review_rows SET decision = $1, coding = $2, decision_hash = $3, coding_note = $4
+         WHERE review_id = $5 AND file_id = $6 AND set_id = $7 AND row_hash = $8 RETURNING file_id`,
+        [d, dc.coding, dc.decision_hash, dc.coding_note, reviewId, fileId, setId, expectedRowHash],
       );
       return rows.length > 0;
     }
     const rows = await this.q(
-      `INSERT INTO docs_review_rows (review_id, file_id, set_id, state, decision, updated_at) VALUES ($1, $2, $3, 'pending', $4, $5)
-       ON CONFLICT (review_id, file_id) DO UPDATE SET decision = EXCLUDED.decision WHERE docs_review_rows.row_hash IS NULL OR docs_review_rows.row_hash = ''
+      `INSERT INTO docs_review_rows (review_id, file_id, set_id, state, decision, coding, decision_hash, coding_note, derived_v, updated_at)
+       VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (review_id, file_id) DO UPDATE SET decision = EXCLUDED.decision, coding = EXCLUDED.coding, decision_hash = EXCLUDED.decision_hash,
+         coding_note = EXCLUDED.coding_note WHERE docs_review_rows.row_hash IS NULL OR docs_review_rows.row_hash = ''
        RETURNING file_id`,
-      [reviewId, fileId, setId, d, new Date().toISOString()],
+      [reviewId, fileId, setId, d, dc.coding, dc.decision_hash, dc.coding_note, ROW_DERIVED_VERSION, new Date().toISOString()],
     );
     return rows.length > 0;
+  }
+
+  async reviewCounts(setId: string, reviewId?: string) {
+    return countsFromRows(await this.sql(countsSql("pg", setId, reviewId)));
+  }
+
+  async reviewFacets(setId: string, reviewId: string, issueIds: string[]) {
+    const q = facetsSql("pg", setId, reviewId, issueIds);
+    const [agg, docTypes, coding] = await Promise.all([this.sql(q.agg), this.sql(q.docTypes), this.sql(q.coding)]);
+    return facetsFromRows(issueIds, agg[0], docTypes, coding);
+  }
+
+  async queryReviewRows(setId: string, reviewId: string, query: RowQuery, page: { offset: number; limit: number }) {
+    const q = rowQuerySql("pg", setId, reviewId, query, page);
+    const [count, rows] = await Promise.all([this.sql(q.count), this.sql(q.page)]);
+    const shown = rows.filter((r) => r.row_status === "done" || r.row_status === "partial").map((r) => String(r.f_id));
+    const results = new Map<string, unknown>();
+    if (shown.length) for (const r of await this.sql(rowResultsSql("pg", reviewId, shown))) results.set(String(r.file_id), r.result);
+    return { total: Number(count[0]?.n ?? 0), items: rowItems(rows, results) };
   }
 
   async putReviewReport(reviewId: string, report: ReviewReport) {

@@ -10,7 +10,9 @@ import { docStore } from "./store";
 /**
  * The review report: each question is answered across the whole set with the same retrieval and citation mapping as
  * Ask (askDocSet), so answers carry [n] citations to file + page and unresolved markers are kept, never re-bound.
- * Questions run with small concurrency; the latest report (answered questions only, in order) is stored on the review.
+ * Questions run with small concurrency. The latest report is stored on the review: answered questions in order, plus
+ * every failed question in `failed` with status "partial" (never silently dropped). When no question could be
+ * answered nothing is stored and the previous report stays; a cancelled run stores nothing either.
  */
 
 export const REPORT_CONCURRENCY = 2;
@@ -44,6 +46,7 @@ export async function runReport(principal: Principal, setId: string, reviewId: s
   const review = await loadReview(store, set, reviewId);
   emit({ type: "report.started", total: questions.length });
   const answers: (ReportAnswer | null)[] = questions.map(() => null);
+  const failed: ReviewReport["failed"] = [];
   let next = 0;
   const worker = async () => {
     while (next < questions.length && !signal?.aborted) {
@@ -57,7 +60,9 @@ export async function runReport(principal: Principal, setId: string, reviewId: s
         emit({ type: "question.completed", index, answer });
       } catch (e) {
         if (signal?.aborted) return;
-        emit({ type: "question.failed", index, question, error: ((e as Error).message || String(e)).slice(0, 300) });
+        const error = ((e as Error).message || String(e)).slice(0, 300);
+        failed.push({ index, question, error });
+        emit({ type: "question.failed", index, question, error });
       }
     }
   };
@@ -69,9 +74,13 @@ export async function runReport(principal: Principal, setId: string, reviewId: s
     return null;
   }
   const fresh = await store.getSet(set.id);
-  const report: ReviewReport = { reviewId: review.id, answers: done, generatedAt: new Date().toISOString(), generatedBy: principal.name || principal.id, fileCount: fresh?.fileCount ?? set.fileCount };
+  failed.sort((a, b) => a.index - b.index);
+  const report: ReviewReport = {
+    reviewId: review.id, status: failed.length ? "partial" : "complete", answers: done, failed,
+    generatedAt: new Date().toISOString(), generatedBy: principal.name || principal.id, fileCount: fresh?.fileCount ?? set.fileCount,
+  };
   await store.putReviewReport(review.id, report);
-  recordAudit(principal, "ai.generate", { kind: "document_review_report", id: review.id, label: review.name, matterId: set.matterId ?? undefined }, { setId: set.id, questions: questions.length, answered: done.length });
+  recordAudit(principal, "ai.generate", { kind: "document_review_report", id: review.id, label: review.name, matterId: set.matterId ?? undefined }, { setId: set.id, questions: questions.length, answered: done.length, failed: failed.length, status: report.status });
   emit({ type: "report.completed", report });
   return report;
 }

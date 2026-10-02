@@ -3,16 +3,21 @@ import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import type { Principal } from "@/lib/auth/types";
 import {
-  CODING_LABEL, isColumnId, PRACTICE_AREA_LABEL, RELEVANCE_RANK, REVIEW_LIMITS, type Coding, type CodingDecision, type CodingInput, type ColumnKind,
+  CODING_LABEL, isColumnId, PRACTICE_AREA_LABEL, REVIEW_LIMITS, type Coding, type CodingDecision, type CodingInput, type ColumnKind,
   type CreateReviewInput, type DocReview, type DocReviewRow, type IssueAssessment, type PracticeAreaId, type PrivilegeFlag, type Relevance,
-  type ReviewCell, type ReviewColumn, type ReviewCounts, type ReviewFacets, type ReviewIssue, type RowQuery, type RowStatus,
+  type ReviewCell, type ReviewColumn, type ReviewFacets, type ReviewIssue, type RowQuery, type RowStatus,
 } from "../review-types";
 import type { DocSet } from "../types";
 import { DocsError, loadSet, readableSetIds } from "./access";
 import { getPlaybook } from "./playbooks";
 import { recordAudit } from "./sets";
-import { docStore, type DocStore, type ReviewResult, type ReviewRowRecord, type StoredFile, type StoredReview } from "./store";
-import { normalizeForMatch } from "./text";
+import { zeroCounts } from "./review-sql";
+import {
+  coveragePartial, docStore, fileStamp, REVIEWER_VERSION, type DocStore, type ReviewResult, type ReviewRowMeta, type ReviewRowRecord, type StoredFile,
+  type StoredReview,
+} from "./store";
+
+export { fileStamp, REVIEWER_VERSION };
 
 /**
  * Document review (discovery) service: review definitions, the per-file rows (built in code from the set's files and
@@ -23,8 +28,6 @@ import { normalizeForMatch } from "./text";
  * change is 403. A review id that does not belong to the set is 404.
  */
 
-/** Bumped whenever the reviewer prompt or schema changes; rows produced by an older reviewer are pending again. */
-export const REVIEWER_VERSION = 1;
 /** Failed rows are retried this many times in total before they stop counting as remaining. */
 export const MAX_REVIEW_ATTEMPTS = 2;
 
@@ -124,45 +127,51 @@ export function fileReviewable(f: StoredFile): "yes" | "uploading" | "no_text" {
   return "yes";
 }
 
-/** Cheap fingerprint of a file's text state; it changes when pages are appended or OCR'd. */
-export function fileStamp(f: StoredFile): string {
-  return `r${REVIEWER_VERSION}|${f.chars}|${f.pagesReceived ?? f.pages}|${f.pages}|${f.status}|${(f.ocrDonePages ?? []).join(",")}`;
-}
-
 /** True when the record was produced under the current review version and file text. */
-export function rowCurrent(review: Pick<StoredReview, "version">, file: StoredFile, rec: ReviewRowRecord | undefined | null): rec is ReviewRowRecord {
+export function rowCurrent<R extends ReviewRowMeta>(review: Pick<StoredReview, "version">, file: StoredFile, rec: R | undefined | null): rec is R {
   return !!rec && rec.state !== "pending" && rec.reviewVersion === review.version && rec.fileStamp === fileStamp(file);
 }
 
 /** Whether a run should (re)process this file. Files still uploading never count. */
-export function needsWork(review: Pick<StoredReview, "version">, file: StoredFile, rec: ReviewRowRecord | undefined | null): boolean {
+export function needsWork(review: Pick<StoredReview, "version">, file: StoredFile, rec: ReviewRowMeta | undefined | null): boolean {
   if (fileReviewable(file) === "uploading") return false;
   if (!rowCurrent(review, file, rec)) return true;
-  if (rec.state === "progress") return true;
-  if (rec.state === "failed") return rec.attempts < MAX_REVIEW_ATTEMPTS;
+  if (rec.state === "progress" || rec.state === "failed") return rec.attempts < MAX_REVIEW_ATTEMPTS;
   return false;
 }
 
-function emptyCell(): ReviewCell {
-  return { value: null, status: "not_stated", quote: "", page: null, quoteFound: false };
+/** Pages with no text that the review could not read: scanned pages still awaiting OCR. */
+export function unreadPagesOf(file: Pick<StoredFile, "ocrPages" | "ocrDonePages">): number[] {
+  const done = new Set(file.ocrDonePages ?? []);
+  return Array.from(new Set((file.ocrPages ?? []).filter((p) => !done.has(p)))).sort((a, b) => a - b);
 }
 
 function emptyIssue(issueId: string): IssueAssessment {
   return { issueId, relevance: "none", reason: "", quote: "", page: null, quoteFound: false };
 }
 
-/** The public row for one file (record may be missing: pending). Stale results are shown filtered to the current definition. */
+/** Whether a row's result may be shown: produced under the current review version and file text, and done. */
+export function rowShown(review: Pick<StoredReview, "version">, file: StoredFile, rec: ReviewRowRecord | undefined | null): boolean {
+  return rowCurrent(review, file, rec) && rec.state === "done" && !!rec.result;
+}
+
+/**
+ * The public row for one file. Only a current, done row exposes its result and hash; a pending row (never reviewed, or
+ * reviewed under an older version or text) and a failed row show empty cells, issues and privilege and no row hash.
+ */
 export function toRow(review: StoredReview, file: StoredFile, rec: ReviewRowRecord | undefined | null): DocReviewRow {
   const current = rowCurrent(review, file, rec);
-  const result = rec?.result ?? null;
+  const shown = rowShown(review, file, rec);
+  const result = shown ? rec!.result : null;
   let status: RowStatus = "pending";
   if (current && rec.state === "failed") status = "failed";
-  else if (current && rec.state === "done" && result) status = result.coverage.read < result.coverage.total ? "partial" : "done";
+  else if (result) status = coveragePartial(result.coverage) ? "partial" : "done";
   const cells: Record<string, ReviewCell> = {};
-  for (const c of review.columns) cells[c.id] = result?.cells?.[c.id] ?? emptyCell();
+  if (result) for (const c of review.columns) { const cell = result.cells?.[c.id]; if (cell) cells[c.id] = cell; }
   const issues = result ? review.issues.map((i) => result.issues.find((x) => x.issueId === i.id) ?? emptyIssue(i.id)) : [];
-  const rowHash = rec?.rowHash ?? null;
+  const rowHash = result ? rec!.rowHash ?? null : null;
   const decision = rec?.decision ?? null;
+  const cov = result?.coverage;
   return {
     reviewId: review.id,
     setId: review.setId,
@@ -178,34 +187,16 @@ export function toRow(review: StoredReview, file: StoredFile, rec: ReviewRowReco
     cells,
     rowHash,
     decision,
-    decisionStale: !!decision && decision.rowHash !== (rowHash ?? ""),
-    coverage: result?.coverage ?? { read: 0, total: file.chars },
-    error: rec?.state === "failed" ? rec.error : null,
+    decisionStale: !!decision && (decision.rowHash ?? "") !== (rowHash ?? ""),
+    coverage: cov ? { read: cov.read, total: cov.total, unreadPages: cov.unreadPages ?? [] } : { read: 0, total: file.chars, unreadPages: unreadPagesOf(file) },
+    error: current && rec.state === "failed" ? rec.error : null,
     updatedAt: rec && rec.state !== "pending" ? rec.updatedAt : null,
   };
 }
 
-export function countsFor(review: StoredReview, files: StoredFile[], recs: Map<string, ReviewRowRecord>): ReviewCounts {
-  const c: ReviewCounts = { files: files.length, done: 0, pending: 0, failed: 0, coded: 0, stale: 0, privilegeFlags: 0 };
-  for (const f of files) {
-    const row = toRow(review, f, recs.get(f.id));
-    if (row.status === "done" || row.status === "partial") c.done++;
-    else if (row.status === "failed") c.failed++;
-    else c.pending++;
-    if (row.decision) { if (row.decisionStale) c.stale++; else c.coded++; }
-    if (row.status !== "pending" && row.privilege && row.privilege.flag !== "none") c.privilegeFlags++;
-  }
-  return c;
-}
-
-async function loadParts(store: DocStore, review: StoredReview) {
-  const [files, recs] = await Promise.all([store.allFiles(review.setId), store.listReviewRows(review.id)]);
-  return { files, recs: new Map(recs.map((r) => [r.fileId, r])) };
-}
-
 export async function withCounts(store: DocStore, review: StoredReview): Promise<DocReview> {
-  const { files, recs } = await loadParts(store, review);
-  return { ...review, counts: countsFor(review, files, recs) };
+  const counts = await store.reviewCounts(review.setId, review.id);
+  return { ...review, counts: counts.get(review.id) ?? zeroCounts() };
 }
 
 /** Resolve a review of an authorized set (404 when it is not in that set). */
@@ -222,11 +213,8 @@ export async function listReviews(principal: Principal, setId: string): Promise<
   const store = await docStore();
   const reviews = await store.listReviews(set.id);
   if (!reviews.length) return [];
-  const files = await store.allFiles(set.id);
-  return Promise.all(reviews.map(async (r) => {
-    const recs = await store.listReviewRows(r.id);
-    return { ...r, counts: countsFor(r, files, new Map(recs.map((x) => [x.fileId, x]))) };
-  }));
+  const counts = await store.reviewCounts(set.id); // one grouped query for every review of the set
+  return reviews.map((r) => ({ ...r, counts: counts.get(r.id) ?? zeroCounts() }));
 }
 
 export async function getReview(principal: Principal, setId: string, reviewId: string): Promise<DocReview> {
@@ -261,12 +249,18 @@ export async function createReview(principal: Principal, setId: string, input: C
   return withCounts(store, review);
 }
 
-export interface ReviewPatch { name?: unknown; columns?: unknown; issues?: unknown; questions?: unknown; docTypes?: unknown }
+export interface ReviewPatch { name?: unknown; columns?: unknown; issues?: unknown; questions?: unknown; docTypes?: unknown; /** Expected current version (optional). */ version?: unknown }
+
+const reviewChanged = () => new DocsError("This review was changed by someone else. Reload it and apply your change again.", 409, "review_changed");
 
 export async function updateReview(principal: Principal, setId: string, reviewId: string, patch: ReviewPatch): Promise<DocReview> {
   const set = await loadSet(principal, setId, "write");
   const store = await docStore();
   const review = await loadReview(store, set, reviewId);
+  if (patch.version !== undefined && patch.version !== null) {
+    if (typeof patch.version !== "number" || !Number.isInteger(patch.version)) throw invalid("version must be an integer");
+    if (patch.version !== review.version) throw reviewChanged();
+  }
   const next: StoredReview = { ...review };
   if (patch.name !== undefined) {
     const n = cleanText(patch.name, 200);
@@ -281,7 +275,8 @@ export async function updateReview(principal: Principal, setId: string, reviewId
   const changed = JSON.stringify([next.columns, next.issues, next.docTypes]) !== JSON.stringify([review.columns, review.issues, review.docTypes]);
   if (changed) next.version = review.version + 1;
   next.updatedAt = new Date().toISOString();
-  await store.updateReview(next);
+  // Compare-and-set on the version read above: a concurrent definition change makes this a 409, never a silent overwrite.
+  if (!(await store.updateReview(next, review.version))) throw reviewChanged();
   recordAudit(principal, "update", { kind: "document_review", id: next.id, label: next.name, matterId: set.matterId ?? undefined }, { setId: set.id, version: next.version, definitionChanged: changed });
   return withCounts(store, next);
 }
@@ -315,82 +310,25 @@ export function parseRowQuery(q: Record<string, unknown>): RowQuery {
   };
 }
 
-function rowText(r: DocReviewRow): string {
-  return normalizeForMatch([r.fileName, r.docType ?? "", r.summary, r.decision?.note ?? "", ...Object.values(r.cells).map((c) => c.value ?? ""), ...r.issues.map((i) => i.reason), r.privilege?.basis ?? ""].join(" \u0001 "));
-}
-
-export function filterRows(rows: DocReviewRow[], q: RowQuery): DocReviewRow[] {
-  const words = q.q ? normalizeForMatch(q.q).split(" ").filter(Boolean) : [];
-  const min = RELEVANCE_RANK[q.minRelevance ?? "low"];
-  const docType = q.docType?.toLowerCase();
-  return rows.filter((r) => {
-    if (q.status && r.status !== q.status) return false;
-    if (docType && (r.docType ?? "").toLowerCase() !== docType) return false;
-    if (q.privilege && (r.privilege?.flag ?? "none") !== q.privilege) return false;
-    if (q.issue) {
-      const a = r.issues.find((i) => i.issueId === q.issue);
-      if (!a || RELEVANCE_RANK[a.relevance] < Math.max(1, min)) return false;
-    }
-    if (q.coding) {
-      if (q.coding === "uncoded") { if (r.decision) return false; }
-      else if (q.coding === "stale") { if (!r.decisionStale) return false; }
-      else if (r.decision?.coding !== q.coding) return false;
-    }
-    if (words.length) { const hay = rowText(r); if (!words.every((w) => hay.includes(w))) return false; }
-    return true;
-  });
-}
-
-export function sortRows(rows: DocReviewRow[], sort: RowQuery["sort"]): DocReviewRow[] {
-  const byName = (a: DocReviewRow, b: DocReviewRow) => a.fileName.localeCompare(b.fileName) || a.fileId.localeCompare(b.fileId);
-  const out = [...rows];
-  if (sort === "name") out.sort(byName);
-  else if (sort === "updated") out.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "") || byName(a, b));
-  else out.sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0) || byName(a, b));
-  return out;
-}
-
-export function facetsFor(review: StoredReview, rows: DocReviewRow[]): ReviewFacets {
-  const docTypes = new Map<string, number>();
-  const issues = review.issues.map((i) => ({ issueId: i.id, high: 0, medium: 0, low: 0 }));
-  const privilege = { possible: 0, likely: 0 };
-  const coding: ReviewFacets["coding"] = {};
-  for (const r of rows) {
-    if (r.docType) docTypes.set(r.docType, (docTypes.get(r.docType) ?? 0) + 1);
-    for (const a of r.issues) {
-      const f = issues.find((x) => x.issueId === a.issueId);
-      if (f && a.relevance !== "none") f[a.relevance]++;
-    }
-    if (r.privilege?.flag === "possible") privilege.possible++;
-    else if (r.privilege?.flag === "likely") privilege.likely++;
-    const k = !r.decision ? "uncoded" : r.decision.coding;
-    coding[k] = (coding[k] ?? 0) + 1;
-    if (r.decisionStale) coding.stale = (coding.stale ?? 0) + 1;
-  }
-  return {
-    docTypes: Array.from(docTypes.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value)),
-    issues,
-    privilege,
-    coding,
-  };
-}
-
-/** Every row of a review (one per file in the set), unfiltered. */
-export async function allRows(store: DocStore, review: StoredReview): Promise<DocReviewRow[]> {
-  const { files, recs } = await loadParts(store, review);
-  return files.map((f) => toRow(review, f, recs.get(f.id)));
-}
-
-/** Rows page + total (after filters) + facets (over every row of the review, unfiltered). */
+/** Rows page + total (after filters) + facets (over every row of the review, unfiltered), all computed in SQL. */
 export async function listRows(principal: Principal, setId: string, reviewId: string, query: RowQuery): Promise<{ rows: DocReviewRow[]; total: number; facets: ReviewFacets }> {
   const set = await loadSet(principal, setId, "read");
   const store = await docStore();
   const review = await loadReview(store, set, reviewId);
-  const rows = await allRows(store, review);
-  const filtered = sortRows(filterRows(rows, query), query.sort);
-  const offset = query.offset ?? 0;
-  const limit = query.limit ?? 100;
-  return { rows: filtered.slice(offset, offset + limit), total: filtered.length, facets: facetsFor(review, rows) };
+  const [page, facets] = await Promise.all([
+    store.queryReviewRows(set.id, review.id, query, { offset: query.offset ?? 0, limit: query.limit ?? 100 }),
+    store.reviewFacets(set.id, review.id, review.issues.map((i) => i.id)),
+  ]);
+  return { rows: page.items.map((x) => toRow(review, x.file, x.rec)), total: page.total, facets };
+}
+
+/** Every row of a review in `sort` order, read page by page (exports). */
+export async function* allRowPages(store: DocStore, review: StoredReview, sort: RowQuery["sort"], pageSize = 500): AsyncGenerator<DocReviewRow[]> {
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await store.queryReviewRows(review.setId, review.id, { sort }, { offset, limit: pageSize });
+    if (page.items.length) yield page.items.map((x) => toRow(review, x.file, x.rec));
+    if (page.items.length < pageSize) return;
+  }
 }
 
 // ---- coding -----------------------------------------------------------------------------------------------------
@@ -405,7 +343,9 @@ export async function codeRow(principal: Principal, setId: string, reviewId: str
   const [file] = typeof fileId === "string" && fileId ? await store.getFiles(set.id, [fileId]) : [];
   if (!file) throw new DocsError("File not found", 404, "not_found");
   const rec = await store.getReviewRow(review.id, file.id);
-  const current = rec?.rowHash ?? "";
+  // The hash the reviewer can have seen ("" for a row that is pending or failed); the store compares against what is stored.
+  const current = toRow(review, file, rec).rowHash ?? "";
+  const stored = rec?.rowHash ?? "";
   const conflict = () => new DocsError("This row changed since it was shown (it was re-run). Reload it and code it again.", 409, "row_changed");
   if (body.rowHash !== current) throw conflict();
   let decision: CodingDecision | null = null;
@@ -415,7 +355,7 @@ export async function codeRow(principal: Principal, setId: string, reviewId: str
     const note = body.note == null ? null : cleanText(body.note, 2000);
     decision = { coding: body.coding as Coding, issues, note, reviewer: principal.id, reviewerName: principal.name ?? null, at: new Date().toISOString(), rowHash: current };
   }
-  if (!(await store.setReviewDecision(review.id, set.id, file.id, decision, current))) throw conflict();
+  if (!(await store.setReviewDecision(review.id, set.id, file.id, decision, stored))) throw conflict();
   recordAudit(principal, "coding.change", { kind: "document_review_row", id: `${review.id}/${file.id}`, label: file.name, matterId: set.matterId ?? undefined }, {
     setId: set.id, reviewId: review.id, fileId: file.id, coding: decision?.coding ?? null, label: decision ? CODING_LABEL[decision.coding] : "cleared", rowHash: current,
   });
@@ -455,14 +395,16 @@ export async function reviewRowsForChat(principal: Principal, setIds: string[], 
   const chosen = query.reviewId ? reviews.find((x) => x.r.id === query.reviewId) : reviews[0];
   if (!chosen) return { reviews: listed, review: null, total: 0, rows: [] };
   const review = chosen.r;
-  const rows = sortRows(filterRows(await allRows(store, review), parseRowQuery({ issue: query.issue, docType: query.docType, privilege: query.privilege, coding: query.coding, q: query.q })), "importance");
-  const limit = Math.max(1, Math.min(Math.floor(query.limit ?? 15), 40));
+  const limit = Number.isFinite(Number(query.limit)) && Number(query.limit) > 0 ? Math.max(1, Math.min(Math.floor(Number(query.limit)), 40)) : 15;
+  const rq = parseRowQuery({ issue: query.issue, docType: query.docType, privilege: query.privilege, coding: query.coding, q: query.q, sort: "importance" });
+  const page = await store.queryReviewRows(review.setId, review.id, rq, { offset: 0, limit });
+  const rows = page.items.map((x) => toRow(review, x.file, x.rec));
   const labelOf = new Map(review.columns.map((c) => [c.id, c.label]));
   return {
     reviews: listed,
     review: { id: review.id, name: review.name, setId: review.setId, issues: review.issues.map((i) => ({ id: i.id, label: i.label })), docTypes: review.docTypes },
-    total: rows.length,
-    rows: rows.slice(0, limit).map((r) => ({
+    total: page.total,
+    rows: rows.map((r) => ({
       file: r.fileName,
       fileId: r.fileId,
       status: r.status,
@@ -471,7 +413,11 @@ export async function reviewRowsForChat(principal: Principal, setIds: string[], 
       summary: r.summary.slice(0, 400),
       issues: r.issues.filter((i) => i.relevance !== "none").map((i) => ({ issue: i.issueId, relevance: i.relevance, reason: i.reason.slice(0, 200), page: i.page, quoteFound: i.quoteFound })),
       privilege: r.privilege && r.privilege.flag !== "none" ? { flag: r.privilege.flag, basis: r.privilege.basis.slice(0, 200), page: r.privilege.page, quoteFound: r.privilege.quoteFound } : null,
-      values: Object.entries(r.cells).filter(([, c]) => c.status !== "not_stated").map(([id, c]) => ({ column: labelOf.get(id) ?? id, value: (c.value ?? "").slice(0, 300), page: c.page, quoteFound: c.quoteFound, quote: c.quote.slice(0, 200) })),
+      coverage: r.status === "partial" ? { read: r.coverage.read, total: r.coverage.total, unreadPages: r.coverage.unreadPages.slice(0, 50) } : undefined,
+      values: Object.entries(r.cells).filter(([, c]) => c.value != null).map(([id, c]) => ({
+        column: labelOf.get(id) ?? id, value: (c.value ?? "").slice(0, 300), status: c.status, page: c.page, quoteFound: c.quoteFound, quote: c.quote.slice(0, 200),
+        alternatives: c.alternatives?.length ? c.alternatives.map((a) => ({ value: a.value.slice(0, 200), page: a.page })) : undefined,
+      })),
       coding: r.decision ? { coding: r.decision.coding, stale: r.decisionStale } : null,
     })),
   };

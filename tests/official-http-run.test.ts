@@ -211,7 +211,7 @@ describe("official run route gate", () => {
     expect(on.status).toBe(200);
     expect(ran).toEqual({ deadlineMs: CRON_DEADLINE_MS, concurrency: 16, redrive: { ...CRON_REDRIVE } });
     expect(claims).toBe(0); // the authenticated cron is not throttled
-    expect(CRON_DEADLINE_MS).toBeLessThanOrEqual(280_000);
+    expect(CRON_DEADLINE_MS).toBeLessThanOrEqual(240_000); // a minute of margin under maxDuration (300 s)
   });
 
   it("cron GET without CRON_SECRET: a kick runs only when the global start slot is free (no faster than the schedule)", async () => {

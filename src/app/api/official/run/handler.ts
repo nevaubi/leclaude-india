@@ -109,8 +109,12 @@ export async function handleRunRequest(req: Request, deps: RunRouteDeps): Promis
   }
 }
 
-/** Scheduled runs: work until shortly before the function limit, and redrive old failures a bounded number of times. */
-export const CRON_DEADLINE_MS = 270_000;
+/**
+ * Scheduled runs: work until a minute before the 300 s function limit (a unit started just before the deadline, e.g. a
+ * large PDF extraction, must finish and release its lease; a killed run leaves leases that cost their units an
+ * attempt), and redrive old failures a bounded number of times.
+ */
+export const CRON_DEADLINE_MS = 240_000;
 export const CRON_REDRIVE = { cooldownMinutes: 60, maxRedrives: 3 } as const;
 /** Minimum seconds between scheduled starts when the deployment has no CRON_SECRET (just under the 2-minute schedule). */
 export const CRON_MIN_INTERVAL_S = 110;

@@ -133,6 +133,7 @@ describe("enrichment run", () => {
   function deps(store: FakeStore, over: Partial<EnrichDeps> = {}): EnrichDeps {
     return {
       store,
+      fetchPage: null,
       scrape: async (url, o) => {
         if (url.includes("sci.gov.in/chief-justice-judges")) return { markdown: fx("sci-chief-justice-judges.md"), links: [], json: null, logo: null };
         if (o.branding) return { markdown: "", links: [], json: null, logo: "https://tshc.gov.in/assets/logo.png" };

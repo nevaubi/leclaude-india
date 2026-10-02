@@ -11,6 +11,8 @@ import type { VisualKind } from "@/modules/media/visuals-types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+// Several Indian court and government sites only answer requests from India; run enrichment in Mumbai.
+export const preferredRegion = ["bom1"];
 
 type RunTarget = EnrichmentTarget | "visuals" | "emblems_audit";
 const TARGETS: RunTarget[] = ["judges", "courts", "all", "visuals", "emblems_audit"];

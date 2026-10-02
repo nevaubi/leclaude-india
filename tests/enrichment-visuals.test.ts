@@ -131,6 +131,7 @@ describe("judge roster fallbacks", () => {
     return { id, url: `/api/media/${id}`, mime: "image/jpeg", size: 100, width: 300, height: 375, existed: false, dataUrl: "data:image/jpeg;base64,AA==" };
   }
   const base = (store: FakeStore, over: Partial<EnrichDeps>): EnrichDeps => ({
+    fetchPage: null,
     store,
     storeImage: async (url) => media(url),
     classify: async () => ({ raw: { kind: "portrait", single_person: true, placeholder: false, reason: "portrait" }, model: null }),
@@ -175,5 +176,34 @@ describe("judge roster fallbacks", () => {
     expect(r.judges[0].status).toBe("failed");
     expect(r.judges[0].error).toMatch(/judiciary\.karnataka\.gov\.in.*HTTP 408.*karnatakajudiciary\.kar\.nic\.in.*HTTP 408.*second reader: tavily down/);
     expect(store.find(/INSERT INTO judges|UPDATE judges/)).toHaveLength(0);
+  });
+});
+
+describe("direct roster reader", () => {
+  it("keeps images as absolute markdown URLs and drops data URIs", async () => {
+    const { rosterHtmlToText } = await import("@/modules/judges/enrich");
+    const html = `<main><h1>Sitting Judges</h1><div><img src="/images/judges/cj.jpg" alt="Hon'ble Chief Justice"><p>Hon'ble Mr. Justice A. B. Rao</p><img src="data:image/png;base64,AAAA"></div>${"<p>filler text for the main region</p>".repeat(20)}</main>`;
+    const text = rosterHtmlToText(html, "https://judiciary.karnataka.gov.in/submenujprofile.php?nid=1");
+    expect(text).toContain("![Hon'ble Chief Justice](https://judiciary.karnataka.gov.in/images/judges/cj.jpg)");
+    expect(text).toContain("Justice A. B. Rao");
+    expect(text).not.toContain("data:image");
+  });
+
+  it("reads a roster directly when the scraper fails, with the same name guard", async () => {
+    const { runEnrichment } = await import("@/modules/judges/enrich");
+    const store = new FakeStore();
+    const page = "Sitting Judges\n![Justice A. B. Rao](https://judiciary.karnataka.gov.in/images/abr.jpg)\nHon'ble Mr. Justice A. B. Rao, Judge";
+    const r = await runEnrichment({ target: "judges", courts: ["hc-karnataka"] }, {
+      store: store as never,
+      storeImage: async (url: string) => ({ id: "a".repeat(64), url: `/api/media/${"a".repeat(64)}`, mime: "image/jpeg", size: 1000, width: 300, height: 400, existed: false, dataUrl: `data:image/jpeg;base64,${url.length}` }),
+      classify: async () => ({ raw: { kind: "portrait", single_person: true, placeholder: false, reason: "portrait" }, model: null }) as never,
+      scrape: async () => { throw new Error("HTTP 408"); },
+      extractText: async () => [],
+      fetchPage: async (url: string) => ({ url, text: page }),
+      extractJudges: async () => [{ name: "A. B. Rao", photo_url: "https://judiciary.karnataka.gov.in/images/abr.jpg" }, { name: "Not On Page" }] as never,
+    });
+    const k = r.judges[0];
+    expect(k.found).toBe(1);
+    expect(k.notes.join(" ")).toMatch(/Read directly from the official page/);
   });
 });

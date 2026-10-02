@@ -3,6 +3,8 @@ import { generateJSON } from "@/lib/ai/agent";
 import { AIConfigError } from "@/lib/ai/config";
 import { COURTS, courtById } from "@/lib/india/courts";
 import { remoteStore, type RemoteStore } from "@/lib/db/remote";
+import { fetchText, htmlToText } from "@/lib/ai/toolkit/http";
+import { isLegacyTlsError, legacyTlsAllowed, legacyTlsFetch } from "@/modules/media/legacy-tls";
 import { createFirecrawl } from "@/modules/intel/providers/firecrawl";
 import { createTavily } from "@/modules/intel/providers/tavily";
 import { setMediaVision, storeImageFromUrl, type MediaMeta, type StoredMedia, type VisionVerdict } from "@/modules/media/store";
@@ -46,6 +48,12 @@ export interface EnrichDeps {
   extractText?: (urls: string[]) => Promise<{ url: string; text: string }[]>;
   /** Structured extraction of judges from page text (model); every result is still guarded against the text. */
   extractJudges?: (text: string, url: string) => Promise<ExtractedJudge[] | null>;
+  /**
+   * Direct reader: fetch the official page from this server (SSRF-safe) and return it as text with image URLs kept as
+   * ![alt](url). Used when the scraper cannot reach a site (several Indian court sites only answer requests from India,
+   * so the enrichment route runs in the Mumbai region). Null when the page could not be read.
+   */
+  fetchPage?: ((url: string) => Promise<{ url: string; text: string } | null>) | null;
 }
 
 export interface PhotoStats { stored: number; accepted: number; rejected: number; unchecked: number; failed: number; missing: number; reused: number }
@@ -108,6 +116,33 @@ async function defaultClassify(dataUrl: string, expect: VisionExpect): Promise<{
   }
 }
 
+/** HTML → text for roster extraction, keeping each image as ![alt](absolute url) so photographs stay traceable. */
+export function rosterHtmlToText(html: string, pageUrl: string): string {
+  const withImages = html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const src = /\ssrc\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2];
+    if (!src || src.startsWith("data:")) return " ";
+    let abs: string;
+    try { abs = new URL(src, pageUrl).toString(); } catch { return " "; }
+    if (!/^https?:\/\//.test(abs)) return " ";
+    const alt = (/\salt\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2] ?? "").replace(/[\[\]]/g, "").slice(0, 120);
+    return ` ![${alt}](${abs.replace(/\)/g, "%29").replace(/\s/g, "%20")}) `;
+  });
+  return htmlToText(withImages, { maxChars: 150_000 }).text;
+}
+
+async function defaultFetchPage(url: string): Promise<{ url: string; text: string } | null> {
+  let res: Awaited<ReturnType<typeof fetchText>>;
+  try {
+    res = await fetchText(url, { timeoutMs: 25_000 });
+  } catch (e) {
+    // Older government servers need TLS legacy renegotiation (see media/legacy-tls.ts); https gov.in / nic.in only.
+    if (!isLegacyTlsError(e) || !legacyTlsAllowed(url)) throw e;
+    res = await fetchText(url, { timeoutMs: 25_000, fetchImpl: legacyTlsFetch });
+  }
+  if (!/html|text\/plain/i.test(res.contentType || "text/html")) return null;
+  return { url: res.finalUrl || url, text: rosterHtmlToText(res.text, res.finalUrl || url) };
+}
+
 function defaultExtractText(): NonNullable<EnrichDeps["extractText"]> {
   const tv = createTavily();
   return async (urls) => {
@@ -143,6 +178,7 @@ interface Ctx {
   scrape: NonNullable<EnrichDeps["scrape"]>;
   extractText?: EnrichDeps["extractText"];
   extractJudges?: EnrichDeps["extractJudges"];
+  fetchPage?: EnrichDeps["fetchPage"];
   storeImage: NonNullable<EnrichDeps["storeImage"]>;
   classify: NonNullable<EnrichDeps["classify"]>;
   now: () => Date;
@@ -195,7 +231,7 @@ async function readRosterAt(ctx: Ctx, src: RosterSource, url: string): Promise<R
   return parseRoster(src.parser, page.markdown, url, { designations: src.designations });
 }
 
-interface RosterRead { parsed: RosterParseResult; url: string; via: "scrape" | "extract_text" }
+interface RosterRead { parsed: RosterParseResult; url: string; via: "scrape" | "direct" | "extract_text" }
 
 /**
  * Read a roster: the registered page, then its official fallback pages, then the same pages through the second reader
@@ -213,6 +249,27 @@ async function readRoster(ctx: Ctx, src: RosterSource): Promise<RosterRead> {
       empty ??= { parsed, url, via: "scrape" };
     } catch (e) {
       errors.push(urls.length > 1 ? `${url}: ${(e as Error).message}` : (e as Error).message);
+    }
+  }
+  if (ctx.fetchPage) {
+    for (const url of urls) {
+      if (Date.now() >= ctx.deadline) break;
+      try {
+        const page = await ctx.fetchPage(url);
+        if (!page) continue;
+        let parsed: RosterParseResult;
+        if (src.parser === "extract") {
+          const items = ctx.extractJudges ? await ctx.extractJudges(page.text, page.url) : null;
+          if (items === null) { errors.push(`${page.url}: read directly, but no extraction model is configured`); continue; }
+          parsed = guardExtracted(items, page.text, page.url, []);
+        } else {
+          parsed = parseRoster(src.parser, page.text, page.url, { designations: src.designations });
+        }
+        if (parsed.entries.length) return { parsed: { ...parsed, notes: [`Read directly from the official page at ${page.url}.`, ...parsed.notes] }, url: page.url, via: "direct" };
+        empty ??= { parsed, url: page.url, via: "direct" };
+      } catch (e) {
+        errors.push(`direct read ${url}: ${(e as Error).message.slice(0, 200)}`);
+      }
     }
   }
   if (ctx.extractText && Date.now() < ctx.deadline) {
@@ -352,6 +409,7 @@ export async function runEnrichment(input: RunEnrichmentInput, deps: EnrichDeps 
     scrape: deps.scrape ?? defaultScrape(),
     extractText: deps.extractText === undefined ? defaultExtractText() : deps.extractText,
     extractJudges: deps.extractJudges ?? defaultExtractJudges,
+    fetchPage: deps.fetchPage === undefined ? defaultFetchPage : deps.fetchPage ?? undefined,
     storeImage: deps.storeImage ?? ((url, meta) => storeImageFromUrl(url, meta, { store })),
     classify: deps.classify ?? defaultClassify,
     now,

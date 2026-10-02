@@ -22,7 +22,7 @@ import { DemoDataSection } from "@/modules/settings/demo-data";
 import { demoStatus } from "@/modules/demo";
 import { getI18n } from "@/lib/i18n/server";
 import { effectiveLanguagePreferences } from "@/lib/i18n/preferences";
-import { currentPrincipal } from "@/lib/auth/context";
+import { pagePrincipal, signInEnforced } from "@/lib/auth/page";
 import { LanguageSettings } from "@/modules/settings/language-settings";
 
 export const dynamic = "force-dynamic";
@@ -42,9 +42,10 @@ export default async function SettingsPage() {
   const ai = aiRuntimeStatus();
   const d = db();
   const me = currentUser((id) => d.people.get(id)?.name);
-  const signedIn = me.id === DEFAULT_USER.id && me.name === DEFAULT_USER.name ? t("common.notSetUp") : me.name;
+  const principal = await pagePrincipal("/settings");
+  // With sign-in enforced the signed-in member is shown; in dev mode the workspace owner persona, as before.
+  const signedIn = signInEnforced() && principal ? principal.name : me.id === DEFAULT_USER.id && me.name === DEFAULT_USER.name ? t("common.notSetUp") : me.name;
   const lang = effectiveLanguagePreferences();
-  const principal = currentPrincipal();
   const workspace = workspaceView();
   const providers = providersPayload();
   const demo = demoStatus();

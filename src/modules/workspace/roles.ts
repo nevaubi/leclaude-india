@@ -39,6 +39,8 @@ export interface TeamMember {
   deactivatedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+  /** Whether the member has a sign-in password (returned to workspace managers only). */
+  hasPassword?: boolean;
 }
 
 export interface WorkspaceView {

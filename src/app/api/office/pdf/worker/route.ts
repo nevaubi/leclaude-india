@@ -1,6 +1,8 @@
 import { withDb } from "@/lib/db/request";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { withAuth } from "@/lib/auth/route";
+import { refs } from "@/lib/auth/resources";
 
 export const runtime = "nodejs";
 
@@ -27,4 +29,5 @@ async function GET__handler() {
   }
 }
 
-export const GET = withDb(withDb(GET__handler));
+// Same-origin worker fetches carry the session cookie, so the viewer keeps working with sign-in enforced.
+export const GET = withDb(withAuth(GET__handler, { action: "read", resource: () => refs.settings() }));

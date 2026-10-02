@@ -4,16 +4,26 @@ import { db } from "@/lib/db";
 import { jsonError } from "@/lib/ai/sse";
 import { AIConfigError } from "@/lib/ai/config";
 import { ensureReviewSeeded } from "./seed-review";
+import { currentPrincipal } from "@/lib/auth/context";
+import { authorize } from "@/lib/auth/policy";
 
 /** Make sure the review-workflow records (batches, saved searches, productions…) exist on databases seeded before phase 3. */
 export function ensureReview() {
   ensureReviewSeeded(db());
 }
 
-/** Resolve `?matter=` (or `?matterId=`) and validate it exists. */
+/**
+ * Resolve `?matter=` (or `?matterId=`, or the body's `matterId`), validate it exists and that the request's principal
+ * may access it (403 otherwise, checked before existence so a denial never reveals whether a matter exists).
+ */
 export function matterFrom(req: NextRequest, body?: { matterId?: string } | null): { matterId: string } | { error: Response } {
   const id = body?.matterId ?? req.nextUrl.searchParams.get("matter") ?? req.nextUrl.searchParams.get("matterId") ?? "";
   if (!id) return { error: jsonError("`matter` is required") };
+  const principal = currentPrincipal();
+  if (!principal) return { error: jsonError("Authentication required", 401, { code: "unauthenticated" }) };
+  // Matter membership only; the action × role decision is the route wrapper's (edAuth / withAuth).
+  const decision = authorize({ principal, action: "read", resource: { kind: "matter", id }, via: "ediscovery.matterFrom" });
+  if (!decision.allow) return { error: jsonError("Forbidden", 403, { code: "forbidden" }) };
   if (!db().matters.get(id)) return { error: jsonError(`Unknown matter ${id}`, 404) };
   return { matterId: id };
 }

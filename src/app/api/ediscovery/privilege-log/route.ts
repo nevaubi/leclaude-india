@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { jsonError } from "@/lib/ai/sse";
 import { audit } from "@/lib/integrity/audit";
@@ -36,8 +37,8 @@ async function DELETE__handler(req: NextRequest) {
   return Response.json({ ok: deletePrivilegeEntry(id) });
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler, { records: "privilege_log" }));
 
-export const PATCH = withDb(withDb(PATCH__handler));
+export const PATCH = withDb(edAuth(PATCH__handler, { records: "privilege_log" }));
 
-export const DELETE = withDb(withDb(DELETE__handler));
+export const DELETE = withDb(edAuth(DELETE__handler, { records: "privilege_log" }));

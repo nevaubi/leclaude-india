@@ -3,8 +3,10 @@ import { createHmac, timingSafeEqual, verify as cryptoVerify, constants as crypt
 import { currentUser } from "@/lib/current-user";
 import { db } from "@/lib/db";
 import type { Person } from "@/lib/types/domain";
+import { activeMember, getCredential } from "./accounts";
 import { AuthError } from "./errors";
 import { ALL_ROLES } from "./policy";
+import { readCookie, SESSION_COOKIE, SESSION_TYP } from "./session-token";
 import { AUTH_HEADER_USER, AUTH_MODES, type AuthMode, type Principal, type Role } from "./types";
 
 /**
@@ -15,7 +17,10 @@ import { AUTH_HEADER_USER, AUTH_MODES, type AuthMode, type Principal, type Role 
  *   AUTH_MODE=header  a reverse proxy that authenticated upstream asserts the user in `x-leclaude-user` (JSON or
  *                     base64url JSON); trusted only when AUTH_TRUST_HEADER=true
  *   AUTH_MODE=jwt     `Authorization: Bearer <jwt>` verified with HS256 (AUTH_JWT_SECRET) or RS256
- *                     (AUTH_JWT_PUBLIC_KEY, PEM); exp/nbf always, iss/aud when AUTH_JWT_ISSUER / AUTH_JWT_AUDIENCE are set
+ *                     (AUTH_JWT_PUBLIC_KEY, PEM); exp/nbf always, iss/aud when AUTH_JWT_ISSUER / AUTH_JWT_AUDIENCE are set.
+ *                     Without a bearer, the HttpOnly session cookie issued by POST /api/auth/login (same HS256 claims
+ *                     plus typ/sv) is accepted; it is re-checked against the account on every request (active member,
+ *                     session version), and roles and matter access come from the current person record.
  *
  * In every mode a request carrying `Authorization: Bearer <CRON_SECRET>` (when CRON_SECRET is set) resolves to the
  * cron service principal so scheduled drivers keep working behind real authentication.
@@ -231,11 +236,78 @@ export function verifyJwt(token: string, cfg: JwtConfig): Record<string, unknown
   return claims;
 }
 
+// ---------------------------------------------------------------------------
+// session cookie (issued by POST /api/auth/login)
+// ---------------------------------------------------------------------------
+
+/** Matter access for a signed-in member: tenant-wide for the owner, partners and admins; otherwise the matters they staff. */
+export function matterIdsForPerson(personId: string, roles: readonly Role[], ownerId?: string): Principal["matterIds"] {
+  if (personId === ownerId || roles.includes("partner") || roles.includes("admin")) return "*";
+  return db().matters.all().filter((m) => m.leadAttorneyId === personId || (m.teamIds ?? []).includes(personId)).map((m) => m.id);
+}
+
+function workspaceOwnerId(): string | undefined {
+  const w = db().kv.get<{ owner?: { id?: string } | null }>("workspace");
+  return w?.owner?.id ?? undefined;
+}
+
+/**
+ * Verify a session token and build the principal from the live account: the person must still be an active team
+ * member, the token's session version must match the credential (a password change revokes older sessions), and the
+ * tenant must be this deployment's. Roles are derived from the person record now, not trusted from the token.
+ */
+export function sessionPrincipalFromToken(token: string, cfg: JwtConfig = jwtConfigFromEnv()): Principal {
+  if (!cfg.secret) throw AuthError.unauthenticated("Sign-in sessions are not configured: AUTH_JWT_SECRET is not set");
+  const claims = verifyJwt(token, { ...cfg, publicKey: undefined });
+  if (claims.typ !== SESSION_TYP) throw AuthError.unauthenticated("Token is not a session token");
+  const sub = typeof claims.sub === "string" ? claims.sub : "";
+  if (!ID_RE.test(sub)) throw AuthError.unauthenticated("Principal id is missing or malformed");
+  const tenant = typeof claims.tenant === "string" ? claims.tenant : tenantId();
+  if (tenant !== tenantId()) throw AuthError.unauthenticated("Session belongs to another tenant");
+  const person = activeMember(sub);
+  if (!person) throw AuthError.unauthenticated("This account is not active");
+  const cred = getCredential(sub);
+  if (!cred || typeof claims.sv !== "number" || claims.sv !== cred.sessionVersion) throw AuthError.unauthenticated("This session has been signed out");
+  const roles = rolesForPerson(person);
+  return {
+    id: person.id,
+    name: person.name,
+    email: person.email,
+    tenantId: tenant,
+    roles,
+    matterIds: matterIdsForPerson(person.id, roles, workspaceOwnerId()),
+    source: "jwt",
+    sessionId: typeof claims.sid === "string" ? claims.sid : undefined,
+    expiresAt: typeof claims.exp === "number" ? new Date(claims.exp * 1000).toISOString() : undefined,
+  };
+}
+
+export function sessionCookieToken(req: Request): string | undefined {
+  return readCookie(req.headers.get("cookie"), SESSION_COOKIE);
+}
+
+/** The signed-in member from the session cookie in any AUTH_MODE, or null (used where an action needs a real sign-in even in dev mode). */
+export function sessionPrincipalFromRequest(req: Request, cfg: JwtConfig = jwtConfigFromEnv()): Principal | null {
+  const token = sessionCookieToken(req);
+  if (!token || !cfg.secret) return null;
+  try {
+    return sessionPrincipalFromToken(token, cfg);
+  } catch {
+    return null;
+  }
+}
+
 export function jwtPrincipal(req: Request, cfg: JwtConfig = jwtConfigFromEnv()): Principal {
   const token = bearerToken(req);
-  if (!token) throw AuthError.unauthenticated("Missing bearer token");
-  const claims = verifyJwt(token, cfg);
-  return principalFromObject(claims, "jwt");
+  if (token) {
+    const claims = verifyJwt(token, cfg);
+    // A session token presented as a bearer gets the same live-account checks as the cookie (no revocation bypass).
+    if (claims.typ === SESSION_TYP) return sessionPrincipalFromToken(token, cfg);
+    return principalFromObject(claims, "jwt");
+  }
+  const session = sessionCookieToken(req);
+  if (session) return sessionPrincipalFromToken(session, cfg);
+  throw AuthError.unauthenticated("Missing bearer token or session");
 }
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,8 @@ import { jsonError, sseResponse } from "@/lib/ai/sse";
 import { researchToolset } from "@/lib/ai/toolkit";
 import { FIRM_NAME, LEGAL_STYLE_RULES, RESEARCH_METHOD, todayLine } from "@/lib/ai/prompts";
 import { db } from "@/lib/db";
+import { withAuth } from "@/lib/auth/route";
+import { bodyMatterId, refs } from "@/lib/auth/resources";
 
 export const runtime = "nodejs";
 
@@ -48,4 +50,5 @@ async function POST__handler(req: Request) {
   });
 }
 
-export const POST = withDb(withDb(POST__handler));
+// The selected matter (body.matterId) is authorized at the boundary; research tools re-check matter scope inside.
+export const POST = withDb(withAuth(POST__handler, { action: "run", resource: async (req) => refs.research(undefined, await bodyMatterId(req)) }));

@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { jsonError } from "@/lib/ai/sse";
 import type { SavedSearchRecord } from "@/lib/types/domain";
@@ -30,8 +31,8 @@ async function DELETE__handler(_req: NextRequest, { params }: { params: Promise<
   return deleteSavedSearch(id) ? Response.json({ ok: true }) : jsonError(`No saved search ${id}`, 404);
 }
 
-export const PATCH = withDb(withDb(PATCH__handler));
+export const PATCH = withDb(edAuth(PATCH__handler, { lookup: "savedSearch" }));
 
-export const POST = withDb(withDb(POST__handler));
+export const POST = withDb(edAuth(POST__handler, { lookup: "savedSearch" }));
 
-export const DELETE = withDb(withDb(DELETE__handler));
+export const DELETE = withDb(edAuth(DELETE__handler, { lookup: "savedSearch" }));

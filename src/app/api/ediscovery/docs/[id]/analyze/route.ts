@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { errorResponse, readJson } from "@/modules/ediscovery/api-utils";
 import { analyzeDocument } from "@/modules/ediscovery/ai";
@@ -16,4 +17,4 @@ async function POST__handler(req: NextRequest, { params }: { params: Promise<{ i
   }
 }
 
-export const POST = withDb(withDb(POST__handler));
+export const POST = withDb(edAuth(POST__handler, { lookup: "edoc" }));

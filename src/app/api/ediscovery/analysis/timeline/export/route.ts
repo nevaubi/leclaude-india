@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/integrity/audit";
@@ -24,4 +25,4 @@ async function GET__handler(req: NextRequest) {
   return new Response(chronologyCsv(events, people), { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="chronology-${matter?.slug ?? m.matterId}.csv"` } });
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler, { kind: "timeline", action: "export" }));

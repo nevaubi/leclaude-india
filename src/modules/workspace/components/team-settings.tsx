@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Loader2, Pencil, Plus, UserMinus, UserPlus } from "lucide-react";
+import { KeyRound, Loader2, Pencil, Plus, UserMinus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,10 +9,10 @@ import { Field } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { apiJSON, type ApiError } from "@/modules/matters/components/api";
+import { apiJSON, ApiError } from "@/modules/matters/components/api";
 import { EMAIL_RE, FIRM_ROLES, type FirmRole, type TeamMember } from "../roles";
 
-type Load = { status: "loading" } | { status: "ready"; people: TeamMember[]; canManage: boolean } | { status: "error"; message: string; denied: boolean };
+type Load = { status: "loading" } | { status: "ready"; people: TeamMember[]; canManage: boolean; me?: string } | { status: "error"; message: string; denied: boolean };
 
 interface MemberDraft { name: string; email: string; role: FirmRole | ""; title: string }
 type Errors = Partial<Record<keyof MemberDraft | "form", string>>;
@@ -36,13 +36,14 @@ export function TeamSettings({ className }: { className?: string }) {
   const [showInactive, setShowInactive] = React.useState(false);
   const [editing, setEditing] = React.useState<TeamMember | "new" | null>(null);
   const [confirm, setConfirm] = React.useState<TeamMember | null>(null);
+  const [passwordFor, setPasswordFor] = React.useState<TeamMember | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [reload, setReload] = React.useState(0);
 
   React.useEffect(() => {
     const ac = new AbortController();
-    apiJSON<{ people: TeamMember[]; canManage: boolean }>(`/api/people${showInactive ? "?inactive=1" : ""}`, { signal: ac.signal })
-      .then((r) => setState({ status: "ready", people: r.people, canManage: r.canManage }))
+    apiJSON<{ people: TeamMember[]; canManage: boolean; me?: string }>(`/api/people${showInactive ? "?inactive=1" : ""}`, { signal: ac.signal })
+      .then((r) => setState({ status: "ready", people: r.people, canManage: r.canManage, me: r.me }))
       .catch((e) => {
         if ((e as Error).name === "AbortError") return;
         const a = e as ApiError;
@@ -108,6 +109,7 @@ export function TeamSettings({ className }: { className?: string }) {
                       <span className="font-medium">{p.name}</span>
                       {p.owner && <span className="text-[11px] text-muted-foreground">Owner</span>}
                       {!p.active && <span className="text-[11px]">Deactivated</span>}
+                      {canManage && p.active && p.hasPassword === false && <span className="text-[11px] text-muted-foreground">No password</span>}
                     </div>
                     <div className="text-[11.5px] text-muted-foreground md:hidden">{p.email}</div>
                   </td>
@@ -120,6 +122,7 @@ export function TeamSettings({ className }: { className?: string }) {
                     {canManage && (
                       <div className="flex justify-end gap-0.5">
                         {p.active && <Button size="icon-xs" variant="ghost" aria-label={`Edit ${p.name}`} title="Edit" onClick={() => setEditing(p)}><Pencil className="size-3.5" /></Button>}
+                        {p.active && (!p.owner || p.id === state.me) && <Button size="icon-xs" variant="ghost" aria-label={`${p.hasPassword ? "Reset" : "Set"} password for ${p.name}`} title={p.hasPassword ? "Reset password" : "Set password"} onClick={() => setPasswordFor(p)}><KeyRound className="size-3.5" /></Button>}
                         {p.active && !p.owner && <Button size="icon-xs" variant="ghost" aria-label={`Deactivate ${p.name}`} title="Deactivate" onClick={() => setConfirm(p)} disabled={busyId === p.id}><UserMinus className="size-3.5" /></Button>}
                         {!p.active && <Button size="xs" variant="ghost" onClick={() => void setActive(p, true)} disabled={busyId === p.id}>Reactivate</Button>}
                       </div>
@@ -132,6 +135,7 @@ export function TeamSettings({ className }: { className?: string }) {
         )}
       </div>
       <MemberDialog member={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setReload((n) => n + 1); }} />
+      <PasswordDialog member={passwordFor} onClose={() => setPasswordFor(null)} onSaved={() => { setPasswordFor(null); setReload((n) => n + 1); }} />
       <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
         <DialogContent size="sm">
           <DialogHeader>
@@ -210,6 +214,71 @@ function MemberDialog({ member, onClose, onSaved }: { member: TeamMember | "new"
           <DialogFooter>
             <Button type="button" size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
             <Button type="submit" size="sm" disabled={busy}>{busy ? <Loader2 className="size-3.5 animate-spin" /> : isNew ? <Plus className="size-3.5" /> : null} {isNew ? "Add member" : "Save"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const PASSWORD_MIN = 12;
+
+/** Set or reset a member's sign-in password. Their existing sessions end; tell them the new password out of band. */
+function PasswordDialog({ member, onClose, onSaved }: { member: TeamMember | null; onClose: () => void; onSaved: () => void }) {
+  const [password, setPassword] = React.useState("");
+  const [confirm, setConfirm] = React.useState("");
+  const [touched, setTouched] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!member) return;
+    setPassword("");
+    setConfirm("");
+    setTouched(false);
+    setError(null);
+  }, [member]);
+
+  const pwError = touched && password.length < PASSWORD_MIN ? `Use at least ${PASSWORD_MIN} characters.` : undefined;
+  const confirmError = touched && !pwError && confirm !== password ? "The passwords do not match." : undefined;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTouched(true);
+    if (!member || password.length < PASSWORD_MIN || confirm !== password) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/people/${encodeURIComponent(member.id)}/password`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; fields?: Record<string, string> };
+      // The server's message names the reason (sign in first, owner only, too short), so it is shown as is.
+      if (!res.ok) throw new ApiError(body.error ?? `Request failed (${res.status})`, res.status, body.fields);
+      toast.success(member.hasPassword ? `Password reset for ${member.name}` : `Password set for ${member.name}`, { description: "Their other sessions have been signed out." });
+      onSaved();
+    } catch (err) {
+      const a = err as ApiError;
+      setError(a.fields?.password ?? a.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!member} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent size="sm">
+        <form onSubmit={submit} noValidate className="grid gap-4">
+          <DialogHeader>
+            <DialogTitle>{member?.hasPassword ? "Reset password" : "Set password"}</DialogTitle>
+            <DialogDescription>{member ? `${member.name} signs in with ${member.email ?? "their email"} and this password. Share it with them directly; it is not shown again.` : null}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Field label="New password" required htmlFor="pw-new" error={pwError} help={`At least ${PASSWORD_MIN} characters.`}><Input id="pw-new" size="sm" type="password" autoComplete="new-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={!!pwError} /></Field>
+            <Field label="Confirm password" required htmlFor="pw-confirm" error={confirmError}><Input id="pw-confirm" size="sm" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-invalid={!!confirmError} /></Field>
+            {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
+          </div>
+          <DialogFooter>
+            <Button type="button" size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button type="submit" size="sm" disabled={busy}>{busy ? <Loader2 className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />} Save password</Button>
           </DialogFooter>
         </form>
       </DialogContent>

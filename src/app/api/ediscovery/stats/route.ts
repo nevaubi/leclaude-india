@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { aiConfig } from "@/lib/ai/config";
 import { ensureReview, matterFrom } from "@/modules/ediscovery/api-utils";
@@ -13,4 +14,4 @@ async function GET__handler(req: NextRequest) {
   return Response.json({ ...matterStats(m.matterId), aiConfigured: aiConfig().hasKey });
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler));

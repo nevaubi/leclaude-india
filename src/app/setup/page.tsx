@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { workspaceView } from "@/modules/workspace/service";
 import { SetupForm } from "@/modules/workspace/components/setup-form";
+import { signInEnforced } from "@/lib/auth/page";
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
@@ -15,6 +16,6 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function Page() {
   await pageDb();
   const ws = workspaceView();
-  if (ws.configured) redirect("/matters");
-  return <SetupForm appName={process.env.NEXT_PUBLIC_APP_NAME?.trim() || "LeClaude India"} defaultFirmName={process.env.NEXT_PUBLIC_FIRM_NAME?.trim() || ""} />;
+  if (ws.configured) redirect(signInEnforced() ? "/login" : "/matters");
+  return <SetupForm appName={process.env.NEXT_PUBLIC_APP_NAME?.trim() || "LeClaude India"} defaultFirmName={process.env.NEXT_PUBLIC_FIRM_NAME?.trim() || ""} requireToken={signInEnforced()} />;
 }

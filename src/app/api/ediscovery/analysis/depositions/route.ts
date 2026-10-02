@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { matterFrom } from "@/modules/ediscovery/api-utils";
 import { listDepositions } from "@/modules/ediscovery/analysis/service";
@@ -12,4 +13,4 @@ async function GET__handler(req: NextRequest) {
   return Response.json({ depositions: listDepositions(m.matterId) });
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler, { kind: "deposition" }));

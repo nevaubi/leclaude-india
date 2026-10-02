@@ -1,4 +1,5 @@
 import { withDb } from "@/lib/db/request";
+import { edAuth } from "@/modules/ediscovery/route-auth";
 import type { NextRequest } from "next/server";
 import { jsonError } from "@/lib/ai/sse";
 import type { ReviewBatch } from "@/lib/types/domain";
@@ -33,8 +34,8 @@ async function DELETE__handler(_req: NextRequest, { params }: { params: Promise<
   return deleteBatch(id) ? Response.json({ ok: true }) : jsonError(`No batch ${id}`, 404);
 }
 
-export const GET = withDb(withDb(GET__handler));
+export const GET = withDb(edAuth(GET__handler, { lookup: "batch" }));
 
-export const PATCH = withDb(withDb(PATCH__handler));
+export const PATCH = withDb(edAuth(PATCH__handler, { lookup: "batch" }));
 
-export const DELETE = withDb(withDb(DELETE__handler));
+export const DELETE = withDb(edAuth(DELETE__handler, { lookup: "batch" }));

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { withAuth } from "@/lib/auth/route";
 import { currentPrincipal } from "@/lib/auth/context";
 import { refs } from "@/lib/auth/resources";
+import { withCronGate } from "@/lib/auth/cron";
 import { handleCronRun, handleRunRequest } from "./handler";
 
 export const runtime = "nodejs";
@@ -19,7 +20,10 @@ async function handlePOST(req: NextRequest) {
 
 export const POST = withAuth(handlePOST, { action: "run", resource: () => refs.intel() });
 
-/** Vercel cron (GET, CRON_SECRET bearer → service principal); runs only when OFFICIAL_INGEST is on. */
+/**
+ * Vercel cron (GET, CRON_SECRET bearer → service principal); runs only when OFFICIAL_INGEST is on. On a production
+ * deployment that enforces sign-in, a missing CRON_SECRET answers 503 cron_not_configured (src/lib/auth/cron.ts).
+ */
 async function handleGET(req: NextRequest) {
   const res = await handleCronRun({ principal: currentPrincipal });
   if (res.status === 403) {
@@ -36,4 +40,4 @@ async function handleGET(req: NextRequest) {
   return res;
 }
 
-export const GET = withAuth(handleGET, { action: "run", resource: () => refs.intel() });
+export const GET = withCronGate(withAuth(handleGET, { action: "run", resource: () => refs.intel() }));

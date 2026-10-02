@@ -161,6 +161,7 @@ export const def: SourceDef = {
   enabled: true,
   notes: [
     "Only the 10 newest cards of each list are readable (client-rendered; the data API needs a browser session). Backfill is not possible.",
+    "Re-checked 2026-10-02: the circulars list reports 1,381 items in 139 pages, but paging runs only through the session-bound Liferay search API (POST /o/search/v1.0/search with the page's auth token), the page has no URL parameter for a page or year, and scripted clicks on its pager stop the list from rendering. Older circulars stay out of scope until an open listing exists; CBDT notifications published in the Gazette are ingested through egazette.",
     "Cards do not link the circular/notification file; such entries are metadata records (title and date) and must be read on the official site.",
     "The Act (1961 or 2025) is recorded only when the title names it.",
   ],

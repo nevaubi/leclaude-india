@@ -36,6 +36,13 @@ export const ALLOW_HOSTS: Record<SourceId, string[]> = {
   cbdt: ["incometaxindia.gov.in", "incometax.gov.in"],
   "mca-master": ["data.gov.in", "mca.gov.in"],
   sansad: ["sansad.in", "rsdoc.nic.in", "loksabhadocs.nic.in", "eparlib.nic.in"],
+  rbi: ["rbi.org.in"],
+  "itat-orders": ["itat.gov.in"],
+  "cestat-orders": ["cestat.gov.in"],
+  aptel: ["aptel.gov.in"],
+  ncdrc: ["ncdrc.nic.in", "e-jagriti.gov.in"],
+  "cic-decisions": ["cic.gov.in", "dsscic.nic.in"],
+  "rera-appellate": ["erera.co.in", "mahareat.maharashtra.gov.in"],
 };
 
 /** Placeholder definitions for sources without a registered adapter (disabled; shown as "not available"). */
@@ -58,6 +65,13 @@ const PLACEHOLDER: Record<SourceId, { name: string; publisher: string; kinds: So
   cbdt: { name: "Income-tax circulars and notifications", publisher: "Central Board of Direct Taxes", kinds: ["circular", "notification"], forum: "cbdt", homepage: "https://incometaxindia.gov.in/", cadenceMinutes: 1440 },
   "mca-master": { name: "MCA company master data", publisher: "Ministry of Corporate Affairs", kinds: ["company_record", "dataset"], forum: "mca", homepage: "https://data.gov.in/", cadenceMinutes: 1440 * 7 },
   sansad: { name: "Parliament questions, debates and committee reports", publisher: "Parliament of India", kinds: ["parliament_question", "parliament_debate", "committee_report"], forum: "parliament", homepage: "https://sansad.in/", cadenceMinutes: 1440 },
+  rbi: { name: "RBI notifications, master directions and master circulars", publisher: "Reserve Bank of India", kinds: ["circular", "notification", "regulation"], forum: "rbi", homepage: "https://www.rbi.org.in/Scripts/NotificationUser.aspx", cadenceMinutes: 720 },
+  "itat-orders": { name: "ITAT orders", publisher: "Income Tax Appellate Tribunal", kinds: ["order"], forum: "itat", homepage: "https://itat.gov.in/judicial/sborders", cadenceMinutes: 1440 },
+  "cestat-orders": { name: "CESTAT final orders", publisher: "Customs, Excise and Service Tax Appellate Tribunal", kinds: ["order"], forum: "cestat", homepage: "https://cestat.gov.in/final-order-status", cadenceMinutes: 1440 },
+  aptel: { name: "APTEL judgments and orders", publisher: "Appellate Tribunal for Electricity", kinds: ["judgment", "order"], forum: "aptel", homepage: "https://aptel.gov.in/en/old-judgement-data", cadenceMinutes: 1440 },
+  ncdrc: { name: "NCDRC judgments", publisher: "National Consumer Disputes Redressal Commission", kinds: ["judgment", "order"], forum: "ncdrc", homepage: "https://e-jagriti.gov.in/", cadenceMinutes: 1440 },
+  "cic-decisions": { name: "CIC decisions", publisher: "Central Information Commission", kinds: ["order"], forum: "cic", homepage: "https://cic.gov.in/decision", cadenceMinutes: 1440 },
+  "rera-appellate": { name: "Real Estate Appellate Tribunal orders", publisher: "Real Estate Appellate Tribunals", kinds: ["order", "judgment"], forum: "reat", homepage: "https://erera.co.in/reradelhiindex/courtREAT/REATcourtOrderJudgementsAppellateTribunalInfo", cadenceMinutes: 1440 },
 };
 
 function placeholderDef(id: SourceId): SourceDef {

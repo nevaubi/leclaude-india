@@ -263,8 +263,20 @@ export async function extractPdf(bytes: Uint8Array, opts: { maxChars?: number; w
     await task.destroy().catch(() => undefined);
   }
   const all = pages.map((p) => p.text).join("\n\n");
-  const ocrPages = quality.filter((q) => q.needsOcr).map((q) => q.page);
-  const anyText = pages.some((p) => p.text.trim());
+  let ocrPages = quality.filter((q) => q.needsOcr).map((q) => q.page);
+  let anyText = pages.some((p) => p.text.trim());
+  let warning: string | null = truncated ? `text cut at ${opts.maxChars ?? MAX_TEXT_CHARS} characters` : null;
+  // A PDF with no readable text on any page and no page marked for OCR is a scan whose images pdf.js did not report
+  // (image XObjects behind forms or patterns, or an operator list that failed): every page goes to OCR instead of the
+  // document being rejected as "no readable text". Short text (a stamp or a signature line) is not a reading of it.
+  if (!ocrPages.length && doc.numPages > 0 && !quality.some((q) => q.readable && q.letters >= 40)) {
+    ocrPages = quality.map((q) => q.page);
+    for (const q of quality) q.needsOcr = true;
+    for (const p of pages) p.text = "";
+    anyText = false;
+    items.length = 0;
+    warning = "no text layer on any page; sent to OCR";
+  }
   return {
     kind: "pdf",
     method: anyText ? "text_layer" : null,
@@ -276,9 +288,9 @@ export async function extractPdf(bytes: Uint8Array, opts: { maxChars?: number; w
     ocrPages,
     title: null,
     links: [],
-    language: languageOf(all),
+    language: anyText ? languageOf(all) : null,
     truncated,
-    warning: truncated ? `text cut at ${opts.maxChars ?? MAX_TEXT_CHARS} characters` : null,
+    warning,
   };
 }
 

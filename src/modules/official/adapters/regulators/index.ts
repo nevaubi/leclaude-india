@@ -11,9 +11,15 @@ import { adapter as mca } from "./mca";
 import { adapter as sansad } from "./sansad";
 import { adapter as sat } from "./sat";
 import { adapter as sebi } from "./sebi";
+import { adapter as rbi } from "./rbi";
+import { adapter as itat } from "./itat";
+import { adapter as aptel } from "./aptel";
+import { adapter as reraAppellate } from "./rera-appellate";
+import { cestat, cic, ncdrc } from "./disabled-tribunals";
 
-/** Regulator, gazette, tax and Parliament adapters (owned by the regulators stream): ibbi, sebi-orders, sat-orders,
- *  cci-orders, egazette, cbic, gst-council, cbdt, mca-master, sansad. */
+/** Regulator, gazette, tax, Parliament and tribunal-listing adapters (owned by the regulators stream): ibbi, sebi-orders,
+ *  sat-orders, cci-orders, egazette, cbic, gst-council, cbdt, mca-master, sansad, rbi, itat-orders, aptel,
+ *  rera-appellate, and the disabled cestat-orders, ncdrc, cic-decisions. */
 export const REGULATOR_ADAPTERS: Partial<Record<SourceId, SourceAdapter>> = {
   ibbi,
   "sebi-orders": sebi,
@@ -25,6 +31,13 @@ export const REGULATOR_ADAPTERS: Partial<Record<SourceId, SourceAdapter>> = {
   cbdt,
   "mca-master": mca,
   sansad,
+  rbi,
+  "itat-orders": itat,
+  aptel,
+  "rera-appellate": reraAppellate,
+  "cestat-orders": cestat,
+  ncdrc,
+  "cic-decisions": cic,
 };
 
 export { backfillCursor, parseCursor } from "./common";

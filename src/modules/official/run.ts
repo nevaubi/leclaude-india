@@ -492,7 +492,7 @@ export interface BackfillRequest {
 }
 
 /** Sources whose cursor is the walker's (./adapters/regulators/common.ts); court adapters keep their own cursors. */
-export const BACKFILL_SOURCES: readonly SourceId[] = ["ibbi", "sebi-orders", "cci-orders", "sansad", "egazette", "cbic", "gst-council", "cbdt"];
+export const BACKFILL_SOURCES: readonly SourceId[] = ["ibbi", "sebi-orders", "cci-orders", "sansad", "egazette", "cbic", "gst-council", "cbdt", "rbi", "aptel"];
 
 export function backfillRequest(env: Readonly<Record<string, string | undefined>> = process.env): BackfillRequest | null {
   const sources = (env.OFFICIAL_BACKFILL ?? "").split(",").map((x) => x.trim()).filter(Boolean);

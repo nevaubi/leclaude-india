@@ -1,7 +1,7 @@
 import "server-only";
 import type { AdapterContext, SourceAdapter } from "../../adapter";
 import type { DiscoveredDoc, SourceDef } from "../../types";
-import { GOV_TERMS, clean, printedDate, walkStreams, type ListingPage, type ListingStream, type StreamSpec } from "./common";
+import { GOV_TERMS, clean, errorStatus, isNotJsonError, isStopError, printedDate, walkStreams, type ListingPage, type ListingStream, type StreamSpec } from "./common";
 
 /**
  * CBIC tax information portal (taxinformation.cbic.gov.in), JHipster JSON API, anonymous GET. Verified 2026-10-02:
@@ -84,12 +84,17 @@ export function cbicViewerUrl(id: number, kind: "Notifications" | "Circulars"): 
  */
 export function decodeCbicPdf(answer: unknown): { bytes: Uint8Array; fileName: string | null } {
   let obj: unknown = answer;
-  if (answer instanceof Uint8Array) obj = new TextDecoder().decode(answer);
+  if (answer instanceof Uint8Array) {
+    // The portal sometimes serves the PDF itself (not wrapped in JSON): those bytes are the document.
+    if (answer.length >= 5 && new TextDecoder("latin1").decode(answer.slice(0, 5)) === "%PDF-") return { bytes: answer, fileName: null };
+    obj = new TextDecoder().decode(answer);
+  }
   if (typeof obj === "string") {
     try {
       obj = JSON.parse(obj);
     } catch {
-      throw new Error("CBIC content answer is not JSON");
+      // The HTML app shell answered instead of the file (the path is not served): never stored as the document.
+      throw new Error(/^\s*</.test(obj as string) ? "CBIC content answer is the portal's HTML page, not the file (not published at this path)" : "CBIC content answer is not JSON");
     }
   }
   const o = obj as { data?: unknown; fileName?: unknown } | null;
@@ -194,7 +199,22 @@ function streamFor(id: string): StreamSpec | null {
         : p.category === "*"
           ? `${BASE}/api/cbic-circular-msts/fetchAllCircularsByTaxId/${p.tax.id}`
           : `${BASE}/api/cbic-circular-msts/fetchCategoryRelatedCirculars/${p.tax.id}/${cat}`;
-      const records = await ctx.fetchJson<CbicRecord[]>(url);
+      let records: CbicRecord[];
+      try {
+        records = await ctx.fetchJson<CbicRecord[]>(url);
+      } catch (e) {
+        // Categories read from the update feeds can be ones the list endpoints do not serve: the portal then answers its
+        // HTML app shell (HTTP 200, not JSON) or refuses (4xx / 500). That is a fact about this category, not a passing
+        // failure: the stream ends with a note instead of failing the pass (an incremental pass would skip it, but a
+        // backfill would stop on it for good). Transient failures (network, timeout, 408, 429, 501-504) and the run's
+        // own deadline are thrown so the walker's retry rules apply.
+        const st = errorStatus(e);
+        const refused = isNotJsonError(e) || (st != null && st >= 400 && st <= 500 && st !== 408 && st !== 429);
+        if (refused && !isStopError(e, ctx)) {
+          return { items: [], last: true, notes: [`${p.kind} list for ${p.tax.name} / ${p.category} did not answer with JSON (${e instanceof Error ? e.message : String(e)}); skipped.`] };
+        }
+        throw e;
+      }
       if (!Array.isArray(records)) return { items: [], last: true, notes: ["answer was not a list"] };
       return { items: cbicItems(records, p.tax, p.kind), last: true };
     },
@@ -249,6 +269,7 @@ export const def: SourceDef = {
   notes: [
     "PDFs come from the portal's /content/pdf endpoint as base64 JSON; the stored hash is of the decoded PDF bytes.",
     "Categories: a verified seed plus every category named in the portal's update feeds (the category-list endpoints answer HTTP 500).",
+    "A category list that answers with the portal's HTML page or a refusal instead of JSON is skipped with a note (it never stops a backfill); a file served as a raw PDF instead of base64 JSON is accepted as is.",
   ],
 };
 

@@ -442,7 +442,7 @@ describe("stream walker", () => {
 });
 
 describe("regulator registry", () => {
-  const IDS = ["ibbi", "sebi-orders", "sat-orders", "cci-orders", "egazette", "cbic", "gst-council", "cbdt", "mca-master", "sansad"];
+  const IDS = ["ibbi", "sebi-orders", "sat-orders", "cci-orders", "egazette", "cbic", "gst-council", "cbdt", "mca-master", "sansad", "rbi", "itat-orders", "aptel", "rera-appellate", "cestat-orders", "ncdrc", "cic-decisions"];
 
   it("registers every regulator source with a complete definition", () => {
     expect(Object.keys(REGULATOR_ADAPTERS).sort()).toEqual([...IDS].sort());

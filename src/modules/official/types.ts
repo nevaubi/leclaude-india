@@ -35,12 +35,20 @@ export type SourceId =
   | "gst-council" // GST Council meeting agenda and minutes
   | "cbdt" // Income-tax circulars and notifications (Income-tax Act 1961 and 2025)
   | "mca-master" // MCA company / LLP master data (data.gov.in, GODL-India)
-  | "sansad"; // Parliament: Lok Sabha / Rajya Sabha questions, debates, committee reports (sansad.in, elibrary.sansad.in)
+  | "sansad" // Parliament: Lok Sabha / Rajya Sabha questions, debates, committee reports (sansad.in, elibrary.sansad.in)
+  | "rbi" // Reserve Bank of India: notifications / circulars (incl. master directions and master circulars) — rbi.org.in
+  | "itat-orders" // Income Tax Appellate Tribunal: Special Bench orders (regular orders are CAPTCHA-gated)
+  | "cestat-orders" // CESTAT final orders (session-bound search form: registered disabled)
+  | "aptel" // Appellate Tribunal for Electricity judgments and orders (year listings)
+  | "ncdrc" // NCDRC judgments (e-Jagriti: registered disabled)
+  | "cic-decisions" // Central Information Commission decisions (CAPTCHA-gated search: registered disabled)
+  | "rera-appellate"; // Real Estate Appellate Tribunals with open listings (Delhi REAT; MahaREAT pending)
 
 /** Every registered source id, in display order. */
 export const SOURCE_IDS: readonly SourceId[] = [
   "sci-causelist", "sci-orders", "sci-calendar", "hc-calendars", "dhc-causelist", "nclt", "nclat", "ibbi", "sebi-orders",
   "sat-orders", "cci-orders", "ngt-orders", "egazette", "cbic", "gst-council", "cbdt", "mca-master", "sansad",
+  "rbi", "itat-orders", "cestat-orders", "aptel", "ncdrc", "cic-decisions", "rera-appellate",
 ];
 
 export function isSourceId(v: unknown): v is SourceId {

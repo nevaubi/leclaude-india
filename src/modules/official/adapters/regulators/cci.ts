@@ -82,6 +82,20 @@ export function parseCciDetail(html: string, pageUrl: string): CciDetail | null 
   };
 }
 
+/**
+ * The portal also serves records that are not orders (verified 2026-10-02: id 5 prints Case No "123456789", Type
+ * "tezst"; their files are not published, so fetching them only produced 404s). A record is taken to be such a test
+ * entry when its case number prints no year and its type names no provision or track. Deterministic; such ids count as
+ * "nothing published".
+ */
+export function cciLooksLikeTestRecord(det: Pick<CciDetail, "caseNo" | "type">): boolean {
+  const caseNo = clean(det.caseNo);
+  const type = clean(det.type);
+  const hasYear = /\b(?:19|20)\d{2}\b/.test(caseNo);
+  const knownType = /section|anti|combination|ref|information|suo|moto|regulation|\d/i.test(type);
+  return !hasYear && !knownType;
+}
+
 /** "11/2020" printed under the "Case No" label → normalized "CASE/11/2020"; other forms ("77 (11)/2015") → null. */
 export function cciCaseKey(caseNo: string | null): string | null {
   const m = caseNo ? /^(\d{1,5})\s*\/\s*((?:19|20)\d{2})$/.exec(clean(caseNo)) : null;
@@ -135,6 +149,10 @@ const antitrust: SequenceStream = {
     }
     if (page.status >= 400) return null;
     const det = parseCciDetail(page.html ?? "", page.finalUrl || cciDetailUrl(id));
+    if (det && cciLooksLikeTestRecord(det)) {
+      ctx.log("cci: test record, not an order; not ingested", { id, caseNo: det.caseNo, type: det.type });
+      return null;
+    }
     return det ? cciDetailDoc(id, det) : null;
   },
 };
@@ -229,6 +247,7 @@ export const def: SourceDef = {
     "Antitrust orders are found by probing detail-page ids (the order listing needs a session token and is not used).",
     "The order PDF is read from the detail page's server HTML; when the page carries no PDF reference the record keeps the page only (pdfLinkFound = false).",
     "Combination (Section 31) listing access is unverified; it is skipped with a note when it does not answer with DataTables JSON.",
+    "Test records the portal serves under low ids (Case No without a year, Type such as \"tezst\") are not orders; they are not ingested (their files 404).",
   ],
 };
 

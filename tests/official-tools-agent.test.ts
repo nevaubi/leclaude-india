@@ -160,6 +160,12 @@ describe("with the official corpus", () => {
     const diary = await run(causelistLookupTool, { date: "2026-10-05", diary_no: "Diary No. 54583-2026" });
     expect(causeQueries.at(-1)).toMatchObject({ diaryNos: ["54583/2026"] });
     expect(diary).toMatchObject({ status: "no_match_in_loaded_lists" });
+    // NCLT numbers repeat across benches: a bench-coded number is looked up with its bench, never as the bare key.
+    const nclt = (await run(causelistLookupTool, { forum: "nclt", date: "2026-10-05", case_number: "CP(IB)/29(MP)2022" })) as { matched_on: { case_number: string } };
+    const sent = causeQueries.at(-1)?.caseKeys ?? [];
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatch(/@MP$/);
+    expect(nclt.matched_on.case_number).toBe(sent[0]);
     await expect(run(causelistLookupTool, { case_number: "SLP(C) No. 1234/2026" })).rejects.toThrow(/Give a list date/);
     await expect(run(causelistLookupTool, { from: "2026-01-01", to: "2026-03-01", case_number: "SLP(C) No. 1234/2026" })).rejects.toThrow(/longer than 31 days/);
     await expect(run(causelistLookupTool, { date: "2026-10-05" })).rejects.toThrow(/case_number, diary_no or advocate/);

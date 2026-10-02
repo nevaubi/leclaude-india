@@ -2,7 +2,7 @@ import "server-only";
 import { defineTool, type EvidenceProvenance, type ToolContext } from "../tools";
 import { contentHash } from "@/lib/integrity/hash";
 import type { EvidenceKind } from "@/lib/evidence/types";
-import { normalizeCaseNumber, normalizeDiaryNo } from "@/modules/official/case-numbers";
+import { normalizeCaseNumber, normalizeDiaryNo, qualifiedCaseKey } from "@/modules/official/case-numbers";
 import { causeListEntries, courtCalendar, readOfficialDocument, searchOfficial } from "@/modules/official/service";
 import { isSourceId, parseSourceRef, sourceRef, SOURCE_IDS, type CauseListEntry, type SourceKind, type SourceSearchHit } from "@/modules/official/types";
 
@@ -329,6 +329,8 @@ export const causelistLookupTool = defineTool<CauseArgs>({
     const advocate = args.advocate?.trim();
     if (!caseInput && !diaryInput && !advocate) throw new Error("Give a case_number, diary_no or advocate to look up; a cause list is not dumped wholesale.");
     const caseKey = caseInput ? normalizeCaseNumber(caseInput) : null;
+    // A bench-coded number (NCLT "CP(IB)/29(MP)2022") is looked up with its bench: NCLT numbers repeat across benches.
+    const lookupKey = caseKey ? (qualifiedCaseKey(caseKey) ?? caseKey.key) : null;
     const diaryKey = diaryInput ? normalizeDiaryNo(diaryInput) : null;
     const unparsed: string[] = [];
     if (caseInput && !caseKey) unparsed.push(`case number "${caseInput}"`);
@@ -341,7 +343,7 @@ export const causelistLookupTool = defineTool<CauseArgs>({
     const limit = Math.max(1, Math.min(50, Math.floor(args.limit ?? 25)));
     let entries: CauseListEntry[];
     try {
-      entries = await causeListEntries({ forum: args.forum?.trim() || undefined, date, from: date ? undefined : from, to: date ? undefined : to, caseKeys: caseKey ? [caseKey.key] : undefined, diaryNos: diaryKey ? [diaryKey] : undefined, advocate: advocate || undefined, limit });
+      entries = await causeListEntries({ forum: args.forum?.trim() || undefined, date, from: date ? undefined : from, to: date ? undefined : to, caseKeys: lookupKey ? [lookupKey] : undefined, diaryNos: diaryKey ? [diaryKey] : undefined, advocate: advocate || undefined, limit });
     } catch (e) {
       const na = unavailable(e);
       if (na) return { ...na, count: 0, entries: [] };
@@ -352,7 +354,7 @@ export const causelistLookupTool = defineTool<CauseArgs>({
     return {
       status: matched.length ? "listed" : "no_match_in_loaded_lists",
       count: matched.length,
-      matched_on: { case_number: caseKey?.key ?? null, diary_no: diaryKey, advocate: advocate || null },
+      matched_on: { case_number: lookupKey, diary_no: diaryKey, advocate: advocate || null },
       entries: matched.map(entryRow),
       caveat: CAUSELIST_CAVEAT,
       ...(matched.length ? {} : { note: "No parsed cause-list entry matched in the lists loaded for this date range. This does not prove the matter is not listed: the list may not be loaded yet or the entry may be unparsed. Check the court's website." }),

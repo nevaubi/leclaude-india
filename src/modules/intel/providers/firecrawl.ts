@@ -42,7 +42,7 @@ export function createFirecrawl(opts: ProviderFactoryOptions = {}) {
      * One scrape asking for several formats at once: markdown, links, branding (site logo) and/or JSON extraction
      * against a schema. Returns the raw pieces; callers validate them (extraction output is untrusted).
      */
-    async scrapeRich(url: string, o: { markdown?: boolean; links?: boolean; branding?: boolean; json?: { schema: Record<string, unknown>; prompt?: string }; onlyMainContent?: boolean; waitFor?: number; signal?: AbortSignal; ttlMs?: number; timeoutMs?: number } = {}): Promise<FirecrawlPage & { links: string[]; json: unknown; logo: string | null }> {
+    async scrapeRich(url: string, o: { markdown?: boolean; links?: boolean; branding?: boolean; json?: { schema: Record<string, unknown>; prompt?: string }; onlyMainContent?: boolean; waitFor?: number; signal?: AbortSignal; ttlMs?: number; timeoutMs?: number; country?: string; actions?: Array<Record<string, unknown>> } = {}): Promise<FirecrawlPage & { links: string[]; json: unknown; logo: string | null }> {
       require();
       const formats: string[] = [];
       if (o.markdown !== false) formats.push("markdown");
@@ -51,6 +51,9 @@ export function createFirecrawl(opts: ProviderFactoryOptions = {}) {
       if (o.json) formats.push("json");
       const body: Record<string, unknown> = { url, formats, onlyMainContent: o.onlyMainContent ?? true, waitFor: o.waitFor, timeout: o.timeoutMs ?? 55_000 };
       if (o.json) body.jsonOptions = { schema: o.json.schema, ...(o.json.prompt ? { prompt: o.json.prompt } : {}) };
+      // Fetch from a proxy in this country (some official Indian sites only answer requests from India).
+      if (o.country) body.location = { country: o.country };
+      if (o.actions?.length) body.actions = o.actions;
       const data = await client.postJSON<{ success?: boolean; data?: Record<string, unknown>; error?: string }>(`${BASE}/scrape`, body, { headers: headers(), signal: o.signal, ttlMs: o.ttlMs ?? 0, timeoutMs: (o.timeoutMs ?? 55_000) + 5_000 });
       if (!data?.success || !data.data) throw new ProviderError("firecrawl", "parse", `firecrawl: scrape failed (${data?.error ?? "no data"})`, false, undefined, url);
       const d = data.data;

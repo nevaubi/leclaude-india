@@ -395,7 +395,8 @@ function defaultScrapeBranding(): NonNullable<VisualsDeps["scrapeBranding"]> {
   const fc = createFirecrawl();
   return async (url) => {
     if (!fc.configured) return null;
-    const p = await fc.scrapeRich(url, { markdown: false, branding: true, onlyMainContent: false });
+    // Indian government sites often refuse foreign requests: read them through a proxy in India.
+    const p = await fc.scrapeRich(url, { markdown: false, branding: true, onlyMainContent: false, ...(/(^|\.)(gov\.in|nic\.in)$/i.test(new URL(url).hostname) ? { country: "IN" } : {}) });
     return { logo: p.logo, image: p.image ?? null };
   };
 }

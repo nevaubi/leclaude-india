@@ -91,11 +91,25 @@ export interface EnrichmentReport {
   skippedCourts: { courtId: string; reason: string }[];
 }
 
+/** Official Indian government hosts (gov.in / nic.in). */
+export function isIndianGovHost(url: string): boolean {
+  try { return /(^|\.)(gov\.in|nic\.in)$/i.test(new URL(url).hostname); } catch { return false; }
+}
+
+/** Expands client-side paged tables (jQuery DataTables) to show every row before the page is read; a no-op elsewhere. */
+export const SHOW_ALL_TABLE_ROWS = `(() => { try { const $ = window.jQuery; if (!$ || !$.fn || !$.fn.dataTable) return; $.fn.dataTable.tables().forEach((t) => { try { $(t).DataTable().page.len(-1).draw(false); } catch (e) {} }); } catch (e) {} })();`;
+
 function defaultScrape(): NonNullable<EnrichDeps["scrape"]> {
   const fc = createFirecrawl();
   return async (url, o) => {
     if (!fc.configured) throw new Error("FIRECRAWL_API_KEY is not configured; official pages cannot be read");
-    const p = await fc.scrapeRich(url, { markdown: o.markdown !== false, links: o.links, branding: o.branding, json: o.json, onlyMainContent: !o.branding });
+    const indian = isIndianGovHost(url);
+    const p = await fc.scrapeRich(url, {
+      markdown: o.markdown !== false, links: o.links, branding: o.branding, json: o.json, onlyMainContent: !o.branding,
+      // Indian court sites often refuse foreign requests; and rosters in paged tables show only the first page unless expanded.
+      ...(indian ? { country: "IN" } : {}),
+      ...(o.json ? { actions: [{ type: "executeJavascript", script: SHOW_ALL_TABLE_ROWS }, { type: "wait", milliseconds: 1500 }] } : {}),
+    });
     return { markdown: p.markdown, links: p.links, json: p.json, logo: p.logo, title: p.title };
   };
 }

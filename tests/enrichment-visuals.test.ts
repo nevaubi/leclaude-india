@@ -207,3 +207,29 @@ describe("direct roster reader", () => {
     expect(k.notes.join(" ")).toMatch(/Read directly from the official page/);
   });
 });
+
+describe("reading Indian official sites", () => {
+  it("recognises gov.in and nic.in hosts only", async () => {
+    const { isIndianGovHost, SHOW_ALL_TABLE_ROWS } = await import("@/modules/judges/enrich");
+    expect(isIndianGovHost("https://judiciary.karnataka.gov.in/submenujprofile.php?nid=1")).toBe(true);
+    expect(isIndianGovHost("https://delhihighcourt.nic.in/web/")).toBe(true);
+    expect(isIndianGovHost("https://gov.in.example.com/x")).toBe(false);
+    expect(isIndianGovHost("not a url")).toBe(false);
+    expect(SHOW_ALL_TABLE_ROWS).toContain("page.len(-1)");
+  });
+
+  it("asks Firecrawl for an Indian location and actions when given", async () => {
+    const { createFirecrawl } = await import("@/modules/intel/providers/firecrawl");
+    const bodies: Record<string, unknown>[] = [];
+    const orig = globalThis.fetch;
+    process.env.FIRECRAWL_API_KEY ??= "test-key";
+    globalThis.fetch = (async (_u: unknown, init?: RequestInit) => { bodies.push(JSON.parse(String(init?.body ?? "{}"))); return new Response(JSON.stringify({ success: true, data: { markdown: "x", metadata: {} } }), { status: 200, headers: { "content-type": "application/json" } }); }) as typeof fetch;
+    try {
+      const fc = createFirecrawl();
+      await fc.scrapeRich("https://judiciary.karnataka.gov.in/a", { country: "IN", actions: [{ type: "wait", milliseconds: 10 }] });
+    } catch { /* transport details vary; the request body is what matters */ } finally { globalThis.fetch = orig; }
+    const b = bodies.find((x) => x.url === "https://judiciary.karnataka.gov.in/a");
+    expect(b?.location).toEqual({ country: "IN" });
+    expect(b?.actions).toEqual([{ type: "wait", milliseconds: 10 }]);
+  });
+});

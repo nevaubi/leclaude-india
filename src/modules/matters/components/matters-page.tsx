@@ -302,9 +302,10 @@ function MatterInspector({ matter: m, initialTab, onClose, onSaved, onArchived }
   const tabs = editing ? undefined : INSPECTOR_TABS.map((id) => ({ id, label: t(`matters.tab.${id}`) }));
   return (
     <Inspector title={m.shortName || m.name} subtitle={m.number ? `${m.number} · ${m.practiceArea}` : m.practiceArea} icon={Briefcase} onClose={onClose} width={420} footer={editing || tab === "details" ? footer : undefined} ariaLabel={t("matters.detailsAria")} tabs={tabs} activeTab={editing ? "details" : tab} onTabChange={(id) => showTab(id as InspectorTabId)}>
-      {!editing && opened.has("hearings") && <div hidden={tab !== "hearings"}><HearingsPanel matter={m} onBrief={(listingId) => { setBriefRequest((r) => ({ listingId, nonce: (r?.nonce ?? 0) + 1 })); showTab("brief"); }} /></div>}
-      {!editing && opened.has("orders") && <div hidden={tab !== "orders"}><OrdersPanel matter={m} /></div>}
-      {!editing && opened.has("brief") && <div hidden={tab !== "brief"}><BriefPanel matter={m} request={briefRequest} /></div>}
+      {/* Hidden, not unmounted, while editing: a running brief or extraction is not aborted by opening the editor. */}
+      {opened.has("hearings") && <div hidden={editing || tab !== "hearings"}><HearingsPanel matter={m} onBrief={(listingId) => { setBriefRequest((r) => ({ listingId, nonce: (r?.nonce ?? 0) + 1 })); showTab("brief"); }} /></div>}
+      {opened.has("orders") && <div hidden={editing || tab !== "orders"}><OrdersPanel matter={m} /></div>}
+      {opened.has("brief") && <div hidden={editing || tab !== "brief"}><BriefPanel matter={m} request={briefRequest} /></div>}
       {!editing && tab !== "details" ? null : editing ? (
         <div className="p-3"><MatterFields draft={draft} onChange={setDraft} errors={errors} team={team} idPrefix={`edit-${m.id}`} compact /></div>
       ) : (

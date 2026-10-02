@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { addDays } from "@/lib/india/holidays";
 import { matterHref } from "@/lib/features";
 import { indiaToday } from "@/modules/matters/desk/dates";
+import { OfficialNotice } from "@/modules/matters/components/desk/shared";
 import type { DiaryResponse } from "@/modules/matters/desk/types";
 import { useHome } from "./home-provider";
 import { listedSoonEntries } from "./listed-soon-model";
@@ -15,7 +16,8 @@ import { Section } from "./shared";
 /**
  * "Listed today and tomorrow" on Home, right after the Today spine: official listings, hand-entered hearings and
  * recorded next hearings for the matters the user can see (from /api/diary, which is scoped to the principal).
- * Renders nothing when there is nothing listed, and nothing when the user has no access.
+ * Renders nothing while loading, when there is nothing listed and nothing failed, and when the user has no access; a
+ * failed listing check is always shown (a quiet notice), never hidden behind an empty section.
  */
 export function ListedSoon() {
   const { matters, matterFilter } = useHome();
@@ -39,17 +41,18 @@ export function ListedSoon() {
 
   const entries = React.useMemo(() => listedSoonEntries({ status: state.status, diary: state.data?.entries, matters, today, matterFilter }), [state, matters, today, matterFilter]);
 
-  if (!entries.length) return null;
-  const partial = state.status === "ready" && state.data && state.data.official.state !== "ok";
+  // Cause lists could not be checked (diary failed, or the official sources failed for tracked matters).
+  const failure = state.status === "error" ? { state: "error" as const, message: undefined } : state.status === "ready" && state.data && state.data.official.state !== "ok" ? { state: state.data.official.state, message: state.data.official.message } : null;
+  if (!entries.length && !failure) return null;
   return (
     <Section
       title={t("home.listed.title")}
       icon={CalendarClock}
-      count={entries.length}
+      count={entries.length || undefined}
       description={t("desk.notAuthoritative")}
       actions={<Link href="/diary" className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground hover:text-foreground">{t("home.listed.openDiary")}<ArrowRight className="size-3" aria-hidden /></Link>}
     >
-      <ul className="divide-y rounded-md border">
+      {!!entries.length && <ul className="divide-y rounded-md border">
         {entries.map((e) => (
           <li key={e.id} className="grid items-baseline gap-x-3 gap-y-0.5 px-3 py-2 text-[12.5px] sm:grid-cols-[88px_minmax(0,220px)_minmax(0,1fr)]">
             <span className={cn("text-[11.5px] font-medium", e.date === today ? "text-foreground" : "text-muted-foreground")}>{e.date === today ? t("diary.today") : t("diary.tomorrow")}</span>
@@ -81,8 +84,8 @@ export function ListedSoon() {
             </span>
           </li>
         ))}
-      </ul>
-      {partial && <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">{state.data!.official.state === "not_configured" ? t("desk.state.notConfigured") : state.data!.official.state === "not_available" ? t("desk.state.notAvailable") : t("desk.state.error")}</p>}
+      </ul>}
+      {failure && <OfficialNotice state={failure.state} message={failure.message} compact className={entries.length ? "mt-1.5" : undefined} />}
     </Section>
   );
 }

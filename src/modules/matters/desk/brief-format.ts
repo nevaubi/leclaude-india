@@ -1,19 +1,25 @@
 /**
  * Hearing brief, the deterministic half (client-safe, pure): which sources a research run actually touched, how each
  * claim's references resolve, and the brief's markdown. Listing details, orders and pending compliance are written
- * from records, not by the model; only the points, authorities and questions are model-written, and each keeps the
- * references it cites, resolved against what was supplied or returned by a tool in the same run.
+ * from records, not by the model; only the summary, points, authorities and questions are model-written, and each
+ * keeps the references it cites, resolved against what was supplied or returned by a tool in the same run.
  */
 import type { BriefClaim, BriefSource, BriefSourceState, CauseListEntry, ManualHearing, MatterCaseIdentifier } from "./types";
 
 const REF_RE = /^[a-z][a-z0-9+.-]{1,20}:\/\/\S{2,400}$/i;
 
-/** Tools whose result is a full read of a source (vs. a search hit list). */
-const READ_TOOL = /^(read_|get_|citator_check|citing_references|map_criminal_section)/;
+/**
+ * Tools whose result is a reading of one source's text. Search tools return hit lists; citator / citing-reference and
+ * mapping tools return signals about other judgments or sections without reading them, so they are not read tools.
+ */
+const READ_TOOL = /^(read_|get_)/;
+const REF_KEYS = ["source", "ref", "id", "act_id"] as const;
 
 /**
- * Walk tool results and register every reference they returned. A ref returned by a read tool is "read"; one returned
- * by a search tool only is "found" (a snippet, not a reading). A read upgrades an earlier find.
+ * Walk tool results and register every reference they returned. Only what a read tool read is "read": the top-level
+ * source / ref / id of its result and locations inside that source ("judgment://sci/x/para/3" under
+ * "judgment://sci/x", "src://doc#p2" under "src://doc"). Every other reference — search hits, judgments a tool lists
+ * as citing, refs nested in a read result — is "found": a mention or a snippet, not a reading. A read upgrades a find.
  */
 export function collectToolSources(calls: { name: string; result?: unknown }[]): Map<string, BriefSource> {
   const out = new Map<string, BriefSource>();
@@ -22,7 +28,16 @@ export function collectToolSources(calls: { name: string; result?: unknown }[]):
     if (!prev || (prev.state === "found" && state === "read")) out.set(ref, { ref, title: title || prev?.title || ref, url: url ?? prev?.url ?? null, state });
   };
   for (const call of calls) {
-    const state: BriefSourceState = READ_TOOL.test(call.name) ? "read" : "found";
+    let result = call.result;
+    if (typeof result === "string") { try { result = JSON.parse(result); } catch { result = null; } }
+    const readRefs: string[] = [];
+    if (READ_TOOL.test(call.name) && result && typeof result === "object" && !Array.isArray(result)) {
+      for (const k of REF_KEYS) {
+        const r = (result as Record<string, unknown>)[k];
+        if (typeof r === "string" && REF_RE.test(r)) readRefs.push(r);
+      }
+    }
+    const wasRead = (ref: string) => readRefs.some((t) => ref === t || ref.startsWith(`${t}/`) || ref.startsWith(`${t}#`));
     const visit = (v: unknown, depth: number) => {
       if (depth > 6 || v == null) return;
       if (Array.isArray(v)) { for (const x of v.slice(0, 200)) visit(x, depth + 1); return; }
@@ -30,14 +45,12 @@ export function collectToolSources(calls: { name: string; result?: unknown }[]):
       const o = v as Record<string, unknown>;
       const title = [o.title, o.case_name, o.citation, o.name].find((x) => typeof x === "string") as string | undefined;
       const url = [o.url, o.official_source, o.source_url, o.pdf_url].find((x) => typeof x === "string" && /^https?:\/\//.test(x)) as string | undefined;
-      for (const k of ["source", "ref", "id", "act_id"]) {
+      for (const k of REF_KEYS) {
         const r = o[k];
-        if (typeof r === "string" && REF_RE.test(r)) add(r, title ?? "", url ?? null, state);
+        if (typeof r === "string" && REF_RE.test(r)) add(r, title ?? "", url ?? null, wasRead(r) ? "read" : "found");
       }
       for (const [k, x] of Object.entries(o)) if (k !== "text" && typeof x === "object") visit(x, depth + 1);
     };
-    let result = call.result;
-    if (typeof result === "string") { try { result = JSON.parse(result); } catch { result = null; } }
     visit(result, 0);
   }
   return out;
@@ -106,7 +119,7 @@ export interface BriefInput {
   orders: { title: string; date: string | null; url: string }[];
   compliance: { title: string; dueAt?: string }[];
   pendingReview: number;
-  summary: string | null;
+  /** Model-written claims, the summary included (section "summary"), each with its resolved status. */
   claims: BriefClaim[];
   sources: BriefSource[];
   notes: string[];
@@ -137,6 +150,7 @@ function md(s: string): string {
 export function composeBriefMarkdown(b: BriefInput): string {
   const idx = new Map(b.sources.map((s, i) => [s.ref, i + 1]));
   const marks = (refs: string[]) => refs.map((r) => idx.get(r)).filter((n): n is number => n != null).map((n) => `[${n}]`).join("");
+  const claimLine = (c: BriefClaim) => `${[md(c.text), marks(c.sources)].filter(Boolean).join(" ")}${CLAIM_MARK[c.status]}`;
   const out: string[] = [];
   out.push(`# Hearing brief: ${md(b.matterName)}`);
   const sub = [b.caption, b.caseNumber, b.court].filter(Boolean).map((x) => md(x!)).join(" · ");
@@ -170,12 +184,13 @@ export function composeBriefMarkdown(b: BriefInput): string {
   else out.push("None recorded.");
   if (b.pendingReview) out.push(`- ${b.pendingReview} extracted action item set${b.pendingReview === 1 ? "" : "s"} await review in the Orders tab.`);
 
-  if (b.summary) out.push("", "## Summary", md(b.summary));
+  const summary = b.claims.find((c) => c.section === "summary");
+  if (summary) out.push("", "## Summary", claimLine(summary));
   const section = (title: string, key: BriefClaim["section"], ordered: boolean) => {
     const list = b.claims.filter((c) => c.section === key);
     if (!list.length) return;
     out.push("", `## ${title}`);
-    list.forEach((c, i) => out.push(`${ordered ? `${i + 1}.` : "-"} ${md(c.text)} ${marks(c.sources)}${CLAIM_MARK[c.status]}`.replace(/\s+$/, "")));
+    list.forEach((c, i) => out.push(`${ordered ? `${i + 1}.` : "-"} ${claimLine(c)}`));
   };
   section("Points for the hearing", "points", true);
   section("Authorities", "authorities", true);

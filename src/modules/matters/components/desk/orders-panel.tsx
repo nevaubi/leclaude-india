@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { apiJSON, ApiError } from "../api";
 import type { MatterRow } from "../../types";
 import type { MatterOrder, OrderActionItem, OrderActionSet, OrdersResponse } from "../../desk/types";
+import { NotCheckable } from "./hearings-panel";
 import { OfficialNotice, PanelError, PanelSkeleton, safeHref, useDeskFetch } from "./shared";
 
 const GAP_KEYS = {
@@ -44,6 +45,7 @@ export function OrdersPanel({ matter }: { matter: MatterRow }) {
           ))}
         </ul>
       )}
+      {d.state === "ok" && !!d.unmatchable?.length && <NotCheckable ids={d.unmatchable} />}
     </div>
   );
 }
@@ -109,7 +111,7 @@ function OrderRow({ matterId, order, open, onToggle, onChanged }: { matterId: st
       </div>
       {open && (
         <div className="border-t px-2 pb-2 pt-1.5">
-          {loadError ? <PanelError error={loadError} /> : !set ? <PanelSkeleton rows={1} /> : <ActionSetView matterId={matterId} set={set} stale={!!a?.stale} onReviewed={(s) => { setSet(s); onChanged(); }} />}
+          {loadError ? <PanelError error={loadError} /> : !set ? <PanelSkeleton rows={1} /> : <ActionSetView key={set.id} matterId={matterId} set={set} stale={!!a?.stale} onReviewed={(s) => { setSet(s); onChanged(); }} />}
         </div>
       )}
     </li>
@@ -137,7 +139,7 @@ function ItemView({ item, children }: { item: OrderActionItem; children?: React.
       <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
         <QuoteBadge item={item} />
         {item.deadline ? (
-          <span className="text-foreground" title={item.deadline.rule}>{t("desk.deadline", { date: i18n.date(item.deadline.date, "medium") })} <span className="text-muted-foreground">· {item.deadline.rule}</span></span>
+          <span className="text-foreground" title={item.deadline.rule}>{t(item.kind === "next_date" ? "desk.nextDateOn" : "desk.deadline", { date: i18n.date(item.deadline.date, "medium") })} <span className="text-muted-foreground">· {item.deadline.rule}</span></span>
         ) : item.deadlineGap && item.kind !== "direction" ? <span className="text-muted-foreground">{t(GAP_KEYS[item.deadlineGap])}</span> : null}
       </div>
       {children}

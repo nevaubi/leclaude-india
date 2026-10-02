@@ -24,7 +24,11 @@ async function handleGET(_req: NextRequest, { params }: Params) {
   }
 }
 
-/** PUT { identifiers: [{ forum, kind, printed }], advocateNames?: string[] } — replaces the set; 400 with the reason when an identifier does not normalize. */
+/**
+ * PUT { identifiers: [{ forum, kind, printed }], expectedUpdatedAt?: string | null } — replaces the set; 400 with the
+ * reason when an identifier does not normalize (an NCLT number must carry its bench code); 409 when expectedUpdatedAt
+ * no longer names the stored version (someone else changed it).
+ */
 async function handlePUT(req: NextRequest, { params }: Params) {
   const { id } = await params;
   try {

@@ -2,9 +2,10 @@
  * Order → action items, the deterministic half (client-safe, pure).
  *
  * The model proposes directions, the next date and compliance tasks, each with a VERBATIM quote and page. This module
- * checks every quote against the order text, computes a deadline only when the order states a period or a date, and
- * flags whatever cannot be verified. It never invents a date: a period that runs from an event whose date is unknown
- * (receipt of a copy, service) stays without a deadline, and a period it cannot parse is reported, not approximated.
+ * checks every quote against the order text, computes a deadline only when the item's own verified quote states the
+ * period (counted from the order date) or the date, and flags whatever cannot be verified. It never invents a date: a
+ * period that runs from an event whose date is unknown (receipt of a copy, service, "thereafter") stays without a
+ * deadline, and a period it cannot parse is reported, not approximated.
  *
  * Period arithmetic (General Clauses Act, 1897): s.9 — "from" excludes the first day, so N days from the order date is
  * order date + N; s.3(35) — a month is a British calendar month (clamped to the target month's last day).
@@ -60,18 +61,10 @@ export function checkQuote(chunks: OrderTextChunk[], quote: string, page: number
   return { quoteFound: true, pageVerified, foundPages: best };
 }
 
-/** Whether a short verbatim phrase (a period, a date) occurs in the order text. */
-export function phraseInText(chunks: OrderTextChunk[], phrase: string): boolean {
-  const p = normalizeForQuote(phrase ?? "");
-  if (p.length < 3) return false;
-  const all = chunks.map((c) => normalizeForQuote(c.text)).join(" ");
-  return all.includes(p);
-}
-
 const NUMBER_WORDS: Record<string, number> = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
   thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
-  "twenty one": 21, "twenty-one": 21, thirty: 30, "thirty one": 31, forty: 40, "forty five": 45, "forty-five": 45, sixty: 60, ninety: 90, a: 1, an: 1,
+  "twenty one": 21, "twenty-one": 21, thirty: 30, "thirty one": 31, "thirty-one": 31, forty: 40, "forty five": 45, "forty-five": 45, sixty: 60, ninety: 90, a: 1, an: 1,
 };
 
 export type ParsedPeriod =
@@ -79,44 +72,80 @@ export type ParsedPeriod =
   | { ok: false; reason: "runs_from_event" | "unparsed_period" };
 
 /**
- * Parse a stated period. Recognised: "within 4 weeks", "within four weeks from today", "within 30 days from the date of
- * this order", "two weeks' time", "15 days". A period anchored on another event (receipt / service / filing / supply
- * of copy / communication) is `runs_from_event`; anything else ambiguous is `unparsed_period`.
+ * Parse a stated period. Only two shapes count from the order date: a bare period ("within 4 weeks", "within a
+ * period of four (4) weeks", "two weeks' time", "15 days") and a period anchored on the order itself ("within four
+ * weeks from today", "within 30 days from the date of this order"). A period that runs from another event (receipt /
+ * service / filing, "thereafter", "after the reply is filed") is `runs_from_event`; one counted back from another date
+ * ("one week before the next date of hearing", "in advance") and anything else is `unparsed_period`.
  */
 const EVENT_ANCHOR = /\b(?:from|after|of|on|upon)\s+(?:the\s+)?(?:date\s+of\s+)?(?:receipt|receiving|service|serving|being\s+served|supply|being\s+supplied|communication|production|filing|intimation|completion|disposal|expiry|uploading|furnishing)\b/;
-const ORDER_ANCHOR = /^\s*(?:today|now|this\s+order|the\s+date\s+hereof|date\s+hereof|(?:the\s+)?date\s+of\s+(?:this|the)\s+order|the\s+date\s+of\s+pronouncement(?:\s+of\s+this\s+order)?|the\s+date\s+of\s+this\s+judgment)\b/;
+/** "thereafter", or "after" anything but the order's own date: the period runs from an event this module cannot date. */
+const RELATIVE_EVENT = /\b(?:thereafter|there\s+after|after(?!\s+(?:the\s+)?date\s+of\s+(?:this|the)\s+order\b))\b/;
+/** Counted back from another date: never computed from the order date. */
+const BACKWARD = /\b(?:before|prior\s+to|in\s+advance|preceding|ahead\s+of|earlier\s+than)\b/;
+const ORDER_ANCHOR = /^(?:today|now|hence|this\s+order|(?:the\s+)?date\s+hereof|(?:the\s+)?date\s+of\s+(?:this|the)\s+order|(?:the\s+)?date\s+of\s+pronouncement(?:\s+of\s+this\s+order)?|(?:the\s+)?date\s+of\s+this\s+judgment)$/;
+const NUM_WORD = "twenty[- ]one|forty[- ]five|thirty[- ]one|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|sixty|ninety";
+const PERIOD_SHAPE = new RegExp(
+  `^(?:(?:within|in|not\\s+later\\s+than|no\\s+later\\s+than)\\s+)?(?:a\\s+period\\s+of\\s+)?(\\d{1,3}|${NUM_WORD}|a|an)\\s*(?:\\(\\s*(\\d{1,3}|${NUM_WORD})\\s*\\)\\s*)?(days?|weeks?|months?|years?)(?:'s?)?(?:\\s+time)?(?:\\s+(?:from|of|after)\\s+(.+?))?(?:,?\\s+(?:positively|strictly))?$`,
+);
+/** Any period expression ("four weeks", "30 (thirty) days"): used to tell when a quote states more than one. */
+const PERIOD_ANY = new RegExp(`\\b(?:\\d{1,3}|${NUM_WORD}|a|an)\\s*(?:\\(\\s*(?:\\d{1,3}|${NUM_WORD})\\s*\\)\\s*)?(?:day|week|month|year)s?\\b`, "g");
+
+function numberOf(word: string): number | undefined {
+  return /^\d+$/.test(word) ? Number(word) : NUMBER_WORDS[word];
+}
 
 export function parsePeriod(text: string): ParsedPeriod {
-  const s = normalizeForQuote(text).replace(/[()]/g, " ").replace(/\s+/g, " ");
-  if (EVENT_ANCHOR.test(s)) return { ok: false, reason: "runs_from_event" };
-  // A "from …" anchor must be the order itself; any other anchor ("from the next date") cannot be counted here.
-  const from = /\bfrom\b(.*)$/.exec(s);
-  if (from && !ORDER_ANCHOR.test(from[1])) return { ok: false, reason: "unparsed_period" };
-  const m = /\b(\d{1,3}|twenty[- ]one|forty[- ]five|thirty one|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|sixty|ninety|a|an)\s*(?:\(\s*\d{1,3}\s*\)\s*)?(day|days|week|weeks|month|months|year|years)\b/.exec(s);
+  const s = normalizeForQuote(text).replace(/[.;]+$/, "").trim();
+  if (EVENT_ANCHOR.test(s) || RELATIVE_EVENT.test(s)) return { ok: false, reason: "runs_from_event" };
+  if (BACKWARD.test(s)) return { ok: false, reason: "unparsed_period" };
+  const m = PERIOD_SHAPE.exec(s);
   if (!m) return { ok: false, reason: "unparsed_period" };
-  const n = /^\d+$/.test(m[1]) ? Number(m[1]) : NUMBER_WORDS[m[1]];
+  // An anchor must be the order itself; any other anchor ("from the next date") cannot be counted here.
+  if (m[4] !== undefined && !ORDER_ANCHOR.test(m[4].trim())) return { ok: false, reason: "unparsed_period" };
+  const n = numberOf(m[1]);
   if (!n || n < 1 || n > 1000) return { ok: false, reason: "unparsed_period" };
-  // Two different numbers in one period phrase ("2 to 4 weeks", "4 weeks + 2 weeks") are ambiguous.
-  const numbers = s.match(/\b\d{1,3}\b/g) ?? [];
-  if (new Set(numbers).size > 1) return { ok: false, reason: "unparsed_period" };
-  const unitWord = m[2].replace(/s$/, "");
+  // "four (5) weeks": the words and the figure disagree.
+  if (m[2] !== undefined && numberOf(m[2]) !== n) return { ok: false, reason: "unparsed_period" };
+  const unitWord = m[3].replace(/s$/, "");
   const unit = (unitWord === "day" ? "days" : unitWord === "week" ? "weeks" : unitWord === "month" ? "months" : "years") as "days" | "weeks" | "months" | "years";
-  // An explicit order anchor ("from today") or none at all ("within four weeks") runs from the order date.
   return { ok: true, n, unit, anchor: "order" };
+}
+
+/** How many period expressions a text states ("Reply in four weeks; rejoinder two weeks thereafter" → 2). */
+export function countPeriods(text: string): number {
+  return (normalizeForQuote(text).match(PERIOD_ANY) ?? []).length;
 }
 
 const MONTHS: Record<string, number> = { jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12 };
 
-/** Parse a printed date ("15.10.2026", "15-10-2026", "15/10/2026", "15th October, 2026", "October 15, 2026"); day-first. */
+/** Printed date forms, day first: "15.10.2026" / "15-10-2026" / "15/10/2026", "15th October, 2026", "October 15, 2026". */
+const DATE_FORMS: { re: RegExp; iso: (m: RegExpExecArray) => string | null }[] = [
+  { re: /\b(\d{1,2})[./-](\d{1,2})[./-]((?:19|20)\d{2})\b/, iso: (m) => isoOrNull(Number(m[3]), Number(m[2]), Number(m[1])) },
+  { re: /\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:day\s+of\s+)?([A-Za-z]{3,9})\.?,?\s+((?:19|20)\d{2})\b/, iso: (m) => (MONTHS[m[2].toLowerCase()] ? isoOrNull(Number(m[3]), MONTHS[m[2].toLowerCase()], Number(m[1])) : null) },
+  { re: /\b([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+((?:19|20)\d{2})\b/, iso: (m) => (MONTHS[m[1].toLowerCase()] ? isoOrNull(Number(m[3]), MONTHS[m[1].toLowerCase()], Number(m[2])) : null) },
+];
+
+/** Parse a printed date (the forms above); null when none parses. */
 export function parseStatedDate(text: string): string | null {
   const s = text.trim();
-  let m = /\b(\d{1,2})[./-](\d{1,2})[./-]((?:19|20)\d{2})\b/.exec(s);
-  if (m) return isoOrNull(Number(m[3]), Number(m[2]), Number(m[1]));
-  m = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:day\s+of\s+)?([A-Za-z]{3,9})\.?,?\s+((?:19|20)\d{2})\b/.exec(s);
-  if (m && MONTHS[m[2].toLowerCase()]) return isoOrNull(Number(m[3]), MONTHS[m[2].toLowerCase()], Number(m[1]));
-  m = /\b([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+((?:19|20)\d{2})\b/.exec(s);
-  if (m && MONTHS[m[1].toLowerCase()]) return isoOrNull(Number(m[3]), MONTHS[m[1].toLowerCase()], Number(m[2]));
+  for (const f of DATE_FORMS) {
+    const m = f.re.exec(s);
+    const iso = m ? f.iso(m) : null;
+    if (iso) return iso;
+  }
   return null;
+}
+
+/** The earliest printed date in a text, with where it starts; null when none parses. */
+function firstDateIn(text: string): { index: number; iso: string } | null {
+  let best: { index: number; iso: string } | null = null;
+  for (const f of DATE_FORMS) {
+    const m = f.re.exec(text);
+    const iso = m ? f.iso(m) : null;
+    if (m && iso && (!best || m.index < best.index)) best = { index: m.index, iso };
+  }
+  return best;
 }
 
 function isoOrNull(y: number, mo: number, d: number): string | null {
@@ -126,18 +155,30 @@ function isoOrNull(y: number, mo: number, d: number): string | null {
 
 const UNIT_WORD = { days: "day", weeks: "week", months: "month", years: "year" } as const;
 
-/** Compute a deadline from what the order states, or say exactly why none was computed. */
-export function computeDeadline(opts: { period: string | null; statedDate: string | null; orderDate: string | null; chunks: OrderTextChunk[] }): { deadline: ComputedDeadline | null; gap: DeadlineGap | null } {
+/** Whether a short verbatim phrase (a period, a date) occurs in a quote (same normalization as the quote check). */
+export function phraseInQuote(quote: string, phrase: string): boolean {
+  const p = normalizeForQuote(phrase ?? "");
+  return p.length >= 3 && normalizeForQuote(quote ?? "").includes(p);
+}
+
+/**
+ * Compute a deadline from what the item's own quote states, or say exactly why none was computed. The quote must be in
+ * the order text, and the period or date must be inside that quote: a period or date printed elsewhere in the order
+ * (another direction, the listing date) is never borrowed. A quote stating more than one period is ambiguous.
+ */
+export function computeDeadline(opts: { quote: string; period: string | null; statedDate: string | null; orderDate: string | null; chunks: OrderTextChunk[] }): { deadline: ComputedDeadline | null; gap: DeadlineGap | null } {
+  if (!checkQuote(opts.chunks, opts.quote, null).quoteFound) return { deadline: null, gap: "quote_not_found" };
   if (opts.statedDate) {
-    if (!phraseInText(opts.chunks, opts.statedDate)) return { deadline: null, gap: "period_not_in_text" };
+    if (!phraseInQuote(opts.quote, opts.statedDate)) return { deadline: null, gap: "period_not_in_text" };
     const date = parseStatedDate(opts.statedDate);
     if (date) return { deadline: { date, basis: "stated_date", text: opts.statedDate, rule: "Date as stated in the order" }, gap: null };
     if (!opts.period) return { deadline: null, gap: "unparsed_period" };
   }
   if (!opts.period) return { deadline: null, gap: "no_period" };
-  if (!phraseInText(opts.chunks, opts.period)) return { deadline: null, gap: "period_not_in_text" };
+  if (!phraseInQuote(opts.quote, opts.period)) return { deadline: null, gap: "period_not_in_text" };
   const p = parsePeriod(opts.period);
   if (!p.ok) return { deadline: null, gap: p.reason };
+  if (countPeriods(opts.quote) > 1) return { deadline: null, gap: "unparsed_period" };
   if (!opts.orderDate || !isValidIsoDate(opts.orderDate)) return { deadline: null, gap: "no_order_date" };
   const date = p.unit === "days" ? addDays(opts.orderDate, p.n) : p.unit === "weeks" ? addDays(opts.orderDate, p.n * 7) : p.unit === "months" ? addMonths(opts.orderDate, p.n) : addYears(opts.orderDate, p.n);
   const unit = `${p.n} ${UNIT_WORD[p.unit]}${p.n === 1 ? "" : "s"}`;
@@ -145,6 +186,33 @@ export function computeDeadline(opts: { period: string | null; statedDate: strin
     ? `Order date + ${unit} (first day excluded, General Clauses Act s.9)`
     : `Order date + ${unit} (British calendar ${p.unit === "months" ? "month" : "year"}, General Clauses Act s.3(35))`;
   return { deadline: { date, basis: "period", from: opts.orderDate, text: opts.period, rule }, gap: null };
+}
+
+/** Verbs a court uses to fix the next date ("List on", "Re-list on", "Put up on", "Adjourned to", "Stand over to"). */
+const LISTING_VERB = /\b(?:re-?list(?:ed)?|list(?:ed)?|put\s+up|posted|post|adjourned|stands?\s+over|come\s+up|renotif(?:y|ied)|next\s+date(?:\s+of\s+hearing)?(?:\s+is)?)\b/gi;
+/** Words allowed between the verb and the date: "the matter again for final hearing before the Bench on". */
+const LISTING_CONNECTOR = /^[\s,:-]*(?:(?:this|the)\s+(?:matter|case|petition|appeal|application|suit)s?\s+)?(?:again\s+)?(?:(?:for|before)\s+[A-Za-z .'()-]{1,60}?\s+)?(?:on|to|for|at)?\s*(?:the\s+)?$/i;
+/** A listing period rather than a date ("List after four weeks", "in the week commencing"): not converted to a date. */
+const LISTING_PERIOD = /^[\s,:-]*(?:(?:this|the)\s+(?:matter|case|petition|appeal|application|suit)s?\s+)?(?:again\s+)?(?:for\s+[A-Za-z ]{1,40}?\s+)?(?:after|in|within)\s+(?:\d{1,3}|[a-z]+(?:[- ][a-z]+)?)\s*(?:\(\s*[a-z0-9 -]+\s*\)\s*)?(?:day|week|month)s?\b/i;
+
+/**
+ * The next date as stated in a quote: the date printed right after a listing verb ("List on 15.10.2026", "Put up for
+ * hearing on 5th November, 2026"), with only connecting words in between. A date elsewhere in the quote (an earlier
+ * order, a cause list "of 01.10.2026", a filing date) is never taken; a listing period ("List after four weeks") is
+ * reported as a period, not converted to a date.
+ */
+export function nextDateFromQuote(quote: string): { date: string; text: string } | { gap: DeadlineGap } {
+  let unreadable = false;
+  for (const m of quote.matchAll(LISTING_VERB)) {
+    // The clause after the verb, up to a sentence end (". " before a capital) or a semicolon.
+    const clause = quote.slice((m.index ?? 0) + m[0].length).split(/\.\s+(?=[A-Z])|;/)[0];
+    if (LISTING_PERIOD.test(clause)) { unreadable = true; continue; }
+    const d = firstDateIn(clause);
+    if (d && LISTING_CONNECTOR.test(clause.slice(0, d.index))) return { date: d.iso, text: `${m[0]}${clause}`.trim() };
+    // A date-shaped token that is not a calendar date ("31.02.2026") is stated but unreadable.
+    if (!d && DATE_FORMS.some((f) => f.re.test(clause))) unreadable = true;
+  }
+  return { gap: unreadable ? "unparsed_period" : "no_period" };
 }
 
 let seq = 0;
@@ -180,10 +248,13 @@ export function buildActionItems(raw: RawOrderExtraction, chunks: OrderTextChunk
   }
   if (raw.nextDate && (clean(raw.nextDate.text, 300) || clean(raw.nextDate.quote, 600))) {
     const nd = base("next_date", clean(raw.nextDate.text, 300) || clean(raw.nextDate.quote, 600), clean(raw.nextDate.quote, 600), page(raw.nextDate.page));
-    // A listing date is shown as stated; a parsed date is offered only when it is printed in the quote itself.
-    const stated = nd.check.quoteFound ? parseStatedDate(nd.quote) : null;
-    if (stated) nd.deadline = { date: stated, basis: "stated_date", text: nd.quote, rule: "Date as stated in the order" };
-    else nd.deadlineGap = nd.check.quoteFound ? "no_period" : "quote_not_found";
+    // The next date is shown only when the quote itself prints it after a listing verb.
+    if (!nd.check.quoteFound) nd.deadlineGap = "quote_not_found";
+    else {
+      const r = nextDateFromQuote(nd.quote);
+      if ("date" in r) nd.deadline = { date: r.date, basis: "stated_date", text: r.text, rule: "Next date as stated in the order" };
+      else nd.deadlineGap = r.gap;
+    }
     out.push(nd);
   }
   for (const c of (raw.complianceTasks ?? []).slice(0, 30)) {
@@ -196,9 +267,11 @@ export function buildActionItems(raw: RawOrderExtraction, chunks: OrderTextChunk
     if (!item.check.quoteFound) {
       item.deadlineGap = "quote_not_found";
     } else {
-      const r = computeDeadline({ period: item.period, statedDate: item.statedDate, orderDate, chunks });
+      const r = computeDeadline({ quote: item.quote, period: item.period, statedDate: item.statedDate, orderDate, chunks });
       item.deadline = r.deadline;
       item.deadlineGap = r.gap;
+      // A period or date the model gave that is not in the item's own quote: the extraction cannot be relied on.
+      if (r.gap === "period_not_in_text") item.flagged = true;
     }
     out.push(item);
   }
@@ -208,7 +281,7 @@ export function buildActionItems(raw: RawOrderExtraction, chunks: OrderTextChunk
 /** Plain-language reason for a missing deadline (English source text; the UI translates by key `matters.desk.gap.<gap>`). */
 export const DEADLINE_GAP_TEXT: Record<DeadlineGap, string> = {
   no_period: "The order states no period or date for this.",
-  period_not_in_text: "The period or date given is not in the order text.",
+  period_not_in_text: "The period or date given is not in the quoted words of the order.",
   runs_from_event: "The period runs from an event whose date is not known (e.g. receipt of a copy). Enter the date yourself.",
   unparsed_period: "A period is stated but could not be read reliably. Work out the date yourself.",
   no_order_date: "The publisher did not print the order date, so the period cannot be counted.",

@@ -37,7 +37,7 @@ const BRIEF_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
-    summary: { type: "string" },
+    summary: { type: "object", additionalProperties: false, properties: { text: { type: "string" }, sources: { type: "array", items: { type: "string" } } }, required: ["text", "sources"] },
     points: { type: "array", maxItems: 12, items: { type: "object", additionalProperties: false, properties: { text: { type: "string" }, sources: { type: "array", items: { type: "string" } } }, required: ["text", "sources"] } },
     authorities: { type: "array", maxItems: 10, items: { type: "object", additionalProperties: false, properties: { text: { type: "string" }, sources: { type: "array", items: { type: "string" } } }, required: ["text", "sources"] } },
     questions: { type: "array", maxItems: 10, items: { type: "object", additionalProperties: false, properties: { text: { type: "string" }, sources: { type: "array", items: { type: "string" } } }, required: ["text", "sources"] } },
@@ -45,12 +45,12 @@ const BRIEF_SCHEMA = {
   required: ["summary", "points", "authorities", "questions"],
 } as const;
 
-type RawBrief = { summary: string; points: RawBriefClaim[]; authorities: RawBriefClaim[]; questions: RawBriefClaim[] };
+type RawBrief = { summary: RawBriefClaim | string | null; points: RawBriefClaim[]; authorities: RawBriefClaim[]; questions: RawBriefClaim[] };
 
 const INSTRUCTIONS = [
   "You prepare a short hearing brief for an Indian litigator from the matter record below and the supplied orders.",
   "Use the research tools to find authorities relevant to what the next hearing will deal with (search, then read or citator-check what you rely on). Prefer binding authority of the forum's High Court and the Supreme Court; note adverse authority you find.",
-  "Output JSON only: summary (3-5 sentences on where the matter stands), points (what to address at the hearing), authorities (one per item: the citation and the proposition it supports), questions (what to prepare or confirm).",
+  "Output JSON only: summary (text: 3-5 sentences on where the matter stands, with its sources), points (what to address at the hearing), authorities (one per item: the citation and the proposition it supports), questions (what to prepare or confirm).",
   "Every item lists in `sources` the exact references it relies on: the src:// refs of the supplied orders, or the `source` / `id` / `ref` values the tools returned. Never invent a reference or a citation; an authority you did not get from a tool must not be listed. If the record does not establish something, say so instead of guessing.",
   "Do not compute deadlines; pending compliance and dates are already listed from the record.",
 ].join("\n");
@@ -78,12 +78,16 @@ function splitBlocks(text: string, size = 1400): string[] {
   return out.filter((s) => s.trim());
 }
 
+/** Time allowed for the research step; the brief route's maxDuration is 300 s and the record reads come first. */
+export const BRIEF_RESEARCH_BUDGET_MS = 200_000;
+
 export interface BriefDeps {
   listings?: typeof listingsForMatters;
   orders?: typeof ordersForIdentifiers;
   read?: typeof readOfficialDocument;
   agent?: BriefAgent;
   now?: Date;
+  researchBudgetMs?: number;
 }
 
 /** Generate, store and return a hearing brief, streaming stage / tool events through `emit`. */
@@ -93,6 +97,8 @@ export async function generateHearingBrief(matterId: string, opts: { listingId?:
   const who = principal ? { id: principal.id, name: principal.name } : { id: "unknown", name: "Unknown" };
   const today = indiaToday(deps.now);
   const notes: string[] = [];
+  // Inputs that could not be checked make the brief partial, whatever the research step does.
+  let degraded = false;
 
   emit({ type: "stage", stage: "context", label: "Reading the matter and its listings" });
   const tracking = getTracking(matterId);
@@ -105,19 +111,20 @@ export async function generateHearingBrief(matterId: string, opts: { listingId?:
   } else {
     listing = listed.listings[0] ?? null;
   }
-  if (listed.state !== "ok") notes.push(`Cause lists could not be checked (${listed.state.replace("_", " ")}).`);
-  else if (listed.untracked) notes.push("No case identifiers are tracked for this matter, so listings and orders were not looked up.");
+  if (listed.state !== "ok") { degraded = true; notes.push(`Cause lists could not be checked (${listed.state.replace("_", " ")}).`); }
+  else if (listed.untracked) notes.push("No case number or diary number the official sources can match is tracked for this matter, so listings and orders were not looked up.");
+  if (listed.unmatchable.length) notes.push(`Not checked against cause lists or orders (kept for reference only): ${listed.unmatchable.map((i) => i.printed).join("; ")}.`);
   const manual = listing ? null : listManualHearings(matterId, { from: today, to: addDays(today, 30) })[0] ?? null;
 
   emit({ type: "stage", stage: "orders", label: "Reading the last orders" });
   const registry = new Map<string, BriefSource>();
   const evidence: SearchResultBlock[] = [];
   const ordersRes = await matterOrders(matterId, { orders: deps.orders }, { limit: 10 });
-  if (ordersRes.state !== "ok") notes.push(`Orders could not be checked (${ordersRes.state.replace("_", " ")}).`);
+  if (ordersRes.state !== "ok") { degraded = true; notes.push(`Orders could not be checked (${ordersRes.state.replace("_", " ")}).`); }
   const lastOrders = ordersRes.orders.slice(0, 3);
   for (const o of lastOrders) {
     const read = await readOrderText(o.document.id, { read: deps.read }, 14_000).catch(() => null);
-    if (!read?.chunks.length) { notes.push(`The text of "${o.document.title}" is not available; it is listed but was not read.`); continue; }
+    if (!read?.chunks.length) { degraded = true; notes.push(`The text of "${o.document.title}" is not available; it is listed but was not read.`); continue; }
     if (!read.complete) notes.push(`Only the first part of "${o.document.title}" was read for this brief.`);
     for (const c of read.chunks) {
       const ref = sourceRef(o.document.id, { page: c.pageStart });
@@ -147,9 +154,12 @@ export async function generateHearingBrief(matterId: string, opts: { listingId?:
   let raw: RawBrief | null = null;
   const sent = evidence.slice(0, 40);
   let toolCalls: { name: string; result?: unknown }[] = [];
+  // The research step gets a budget below the route's limit: running out keeps the record sections (partial brief).
+  const budget = AbortSignal.timeout(deps.researchBudgetMs ?? BRIEF_RESEARCH_BUDGET_MS);
+  const researchSignal = signal ? AbortSignal.any([signal, budget]) : budget;
   try {
     const r = await (deps.agent ?? defaultAgent)({
-      instructions: INSTRUCTIONS, input: context, evidence: sent, signal, matterId,
+      instructions: INSTRUCTIONS, input: context, evidence: sent, signal: researchSignal, matterId,
       onEvent: (e: AgentEvent) => {
         if (e.type === "tool.call") emit({ type: "tool", name: e.name, label: e.label });
         else if (e.type === "tool.result") emit({ type: "tool", name: e.name, label: e.name, ok: e.ok });
@@ -160,14 +170,18 @@ export async function generateHearingBrief(matterId: string, opts: { listingId?:
     if (!raw) notes.push("The research step returned no usable output; only the record sections are included.");
   } catch (e) {
     if (e instanceof AIConfigError) throw e;
-    if ((e as Error)?.name === "AbortError") throw e;
-    notes.push(`The research step failed (${(e as Error)?.message ?? String(e)}); only the record sections are included.`);
+    // Stopped by the user: nothing is saved. Out of time: the record sections are saved as a partial brief.
+    if (signal?.aborted) throw e;
+    if (budget.aborted) notes.push(`The research step ran out of its ${Math.round((deps.researchBudgetMs ?? BRIEF_RESEARCH_BUDGET_MS) / 1000)} s budget; only the record sections are included.`);
+    else notes.push(`The research step failed (${(e as Error)?.message ?? String(e)}); only the record sections are included.`);
   }
 
   emit({ type: "stage", stage: "verify", label: "Checking every reference" });
   for (const [ref, s] of collectToolSources(toolCalls)) if (!registry.has(ref)) registry.set(ref, s);
   const refs = sent.map((e) => e.source);
+  const summary: RawBriefClaim | null = typeof raw?.summary === "string" ? { text: raw.summary, sources: [] } : raw?.summary && typeof raw.summary.text === "string" ? { text: raw.summary.text, sources: Array.isArray(raw.summary.sources) ? raw.summary.sources : [] } : null;
   const resolved = resolveClaims([
+    { section: "summary", claims: expandNumberedRefs(summary?.text.trim() ? [summary] : [], refs) },
     { section: "points", claims: expandNumberedRefs(raw?.points ?? [], refs) },
     { section: "authorities", claims: expandNumberedRefs(raw?.authorities ?? [], refs) },
     { section: "questions", claims: expandNumberedRefs(raw?.questions ?? [], refs) },
@@ -182,12 +196,12 @@ export async function generateHearingBrief(matterId: string, opts: { listingId?:
     manualHearing: manual,
     orders: ordersRes.orders.slice(0, 5).map((o) => ({ title: o.document.title, date: o.document.docDate, url: o.document.fileUrl ?? o.document.url })),
     compliance: compliance.map((t) => ({ title: t.title, dueAt: t.dueAt })), pendingReview,
-    summary: raw?.summary?.trim() || null, claims: resolved.claims, sources: resolved.sources, notes,
+    claims: resolved.claims, sources: resolved.sources, notes,
   });
   const brief: HearingBrief = {
     id: `hb_${nanoid(10)}`, matterId, version, hash: createHash("sha256").update(markdown).digest("hex"),
     listingId: listing?.id ?? null, listingDate: listing?.entry.listDate ?? manual?.date ?? null, markdown,
-    claims: resolved.claims, sources: resolved.sources, status: raw ? "succeeded" : "partial", notes,
+    claims: resolved.claims, sources: resolved.sources, status: raw && !degraded ? "succeeded" : "partial", notes,
     createdAt: new Date().toISOString(), createdBy: who.id,
   };
   briefs().put(brief);

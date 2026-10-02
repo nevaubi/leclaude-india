@@ -4,13 +4,14 @@ import { CalendarPlus, FileText, Loader2, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Chip } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 import { apiJSON, ApiError } from "../api";
 import type { MatterRow } from "../../types";
 import type { ListingsResponse, ManualHearing, MatterTracking, TrackedIdentifier, TrackedIdentifierKind } from "../../desk/types";
-import { forumLabel, type ForumOption } from "../../desk/tracking";
+import { forumLabel, identifierCheckable, type ForumOption } from "../../desk/tracking";
 import { AuthorityNote, ListingDetails, OfficialNotice, PanelError, PanelSkeleton, useDeskFetch, type DeskFetch } from "./shared";
 
 type TrackingResponse = { tracking: MatterTracking | null; suggestions: TrackedIdentifier[]; forums: ForumOption[] };
@@ -55,24 +56,24 @@ function IdentifiersSection({ matterId, res, onSaved }: { matterId: string; res:
   const [forum, setForum] = React.useState("");
   const [kind, setKind] = React.useState<TrackedIdentifierKind>("case_number");
   const [value, setValue] = React.useState("");
-  const [advocate, setAdvocate] = React.useState("");
   const data = res.data;
   const ids = data?.tracking?.identifiers ?? [];
-  const advocates = data?.tracking?.advocateNames ?? [];
   const forums = data?.forums ?? [];
   const forumName = (id: string) => forums.find((f) => f.id === id)?.label ?? id;
 
-  const save = async (identifiers: TrackedIdentifier[], advocateNames: string[]) => {
+  const save = async (identifiers: TrackedIdentifier[]) => {
     setBusy(true);
     setError(null);
     try {
-      const r = await apiJSON<{ tracking: MatterTracking }>(`/api/matters/${encodeURIComponent(matterId)}/tracking`, { method: "PUT", json: { identifiers: identifiers.map(({ forum, kind, printed }) => ({ forum, kind, printed })), advocateNames } });
+      // expectedUpdatedAt: a change made elsewhere since this list was read is a 409, never silently overwritten.
+      const r = await apiJSON<{ tracking: MatterTracking }>(`/api/matters/${encodeURIComponent(matterId)}/tracking`, { method: "PUT", json: { identifiers: identifiers.map(({ forum, kind, printed }) => ({ forum, kind, printed })), expectedUpdatedAt: data?.tracking?.updatedAt ?? null } });
       res.setData((d) => (d ? { ...d, tracking: r.tracking, suggestions: d.suggestions.filter((s) => !r.tracking.identifiers.some((i) => i.forum === s.forum && i.kind === s.kind && i.value === s.value)) } : d));
       toast.success(t("desk.toast.tracked"));
       onSaved();
       return true;
     } catch (e) {
       setError((e as ApiError).message);
+      if ((e as ApiError).status === 409) { res.reload(); onSaved(); }
       return false;
     } finally {
       setBusy(false);
@@ -82,12 +83,7 @@ function IdentifiersSection({ matterId, res, onSaved }: { matterId: string; res:
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forum || !value.trim()) return;
-    if (await save([...ids, { forum, kind, value: value.trim(), printed: value.trim() }], advocates)) setValue("");
-  };
-  const addAdvocate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!advocate.trim()) return;
-    if (await save(ids, [...advocates, advocate.trim()])) setAdvocate("");
+    if (await save([...ids, { forum, kind, value: value.trim(), printed: value.trim() }])) setValue("");
   };
 
   return (
@@ -104,7 +100,8 @@ function IdentifiersSection({ matterId, res, onSaved }: { matterId: string; res:
                     <div className="truncate font-mono text-[12px]" title={i.value}>{i.printed}</div>
                     <div className="truncate text-[11px] text-muted-foreground">{t(KIND_KEYS[i.kind])} · {forumName(i.forum)}</div>
                   </div>
-                  <Button size="icon-xs" variant="ghost" disabled={busy} aria-label={t("common.remove")} onClick={() => void save(ids.filter((_, k) => k !== n), advocates)}><X className="size-3.5" /></Button>
+                  {!identifierCheckable(i) && <Chip tone="quiet">{t("desk.referenceOnly")}</Chip>}
+                  <Button size="icon-xs" variant="ghost" disabled={busy} aria-label={t("common.remove")} onClick={() => void save(ids.filter((_, k) => k !== n))}><X className="size-3.5" /></Button>
                 </li>
               ))}
             </ul>
@@ -113,7 +110,7 @@ function IdentifiersSection({ matterId, res, onSaved }: { matterId: string; res:
             <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
               <span className="text-muted-foreground">{t("desk.suggested")}</span>
               {data.suggestions.map((s) => (
-                <button key={`${s.kind}|${s.value}`} type="button" disabled={busy} onClick={() => void save([...ids, s], advocates)} className="inline-flex h-6 items-center gap-1 rounded border px-1.5 font-mono text-[11px] hover:bg-accent disabled:opacity-50">
+                <button key={`${s.kind}|${s.value}`} type="button" disabled={busy} onClick={() => void save([...ids, s])} className="inline-flex h-6 items-center gap-1 rounded border px-1.5 font-mono text-[11px] hover:bg-accent disabled:opacity-50">
                   <Plus className="size-3" aria-hidden />{s.printed}
                 </button>
               ))}
@@ -136,24 +133,6 @@ function IdentifiersSection({ matterId, res, onSaved }: { matterId: string; res:
             <Button size="sm" type="submit" variant="outline" disabled={busy || !forum || !value.trim()}>{busy ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} {t("desk.track")}</Button>
           </form>
           {error && <p className="text-[11.5px] text-destructive" role="alert">{error}</p>}
-          <div className="pt-1">
-            <div className="text-[11.5px] font-medium text-muted-foreground">{t("desk.advocates")}</div>
-            <p className="mb-1 text-[11px] leading-snug text-muted-foreground">{t("desk.advocatesHint")}</p>
-            {!!advocates.length && (
-              <div className="mb-1.5 flex flex-wrap gap-1">
-                {advocates.map((a, n) => (
-                  <span key={a} className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[11.5px]">
-                    {a}
-                    <button type="button" disabled={busy} aria-label={`${t("common.remove")} ${a}`} className="text-muted-foreground hover:text-foreground" onClick={() => void save(ids, advocates.filter((_, k) => k !== n))}><X className="size-3" /></button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <form onSubmit={addAdvocate} className="flex gap-1.5">
-              <Input value={advocate} onChange={(e) => setAdvocate(e.target.value)} placeholder={t("desk.addAdvocate")} aria-label={t("desk.addAdvocate")} maxLength={80} className="h-8 text-[12px]" />
-              <Button size="sm" type="submit" variant="ghost" disabled={busy || !advocate.trim()}><Plus className="size-3.5" /></Button>
-            </form>
-          </div>
         </div>
       )}
     </section>
@@ -183,12 +162,19 @@ function ListingsSection({ res, tracking, onBrief }: { res: DeskFetch<ListingsRe
               ))}
             </ul>
           ) : <p className="text-[12px] text-muted-foreground">{t("desk.noListings")}</p>}
+          {!!d.unmatchable?.length && <NotCheckable ids={d.unmatchable} />}
           {!!d.uncoveredForums.length && <p className="text-[11px] leading-snug text-muted-foreground">{t("desk.uncovered", { forums: d.uncoveredForums.map(forumLabel).join(", ") })}</p>}
           {d.state === "ok" && !d.untracked && <AuthorityNote />}
         </div>
       )}
     </>
   );
+}
+
+/** Identifiers kept for reference that were not looked up (CNRs; NCLT numbers without a bench code). */
+export function NotCheckable({ ids }: { ids: TrackedIdentifier[] }) {
+  const { t } = useI18n();
+  return <p className="text-[11px] leading-snug text-muted-foreground">{t("desk.notCheckable", { ids: ids.map((i) => i.printed).join(", ") })}</p>;
 }
 
 function ManualSection({ matterId, res }: { matterId: string; res: DeskFetch<{ hearings: ManualHearing[] }> }) {

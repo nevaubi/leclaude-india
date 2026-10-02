@@ -5,11 +5,13 @@ import { getSqlite } from "@/lib/db/sqlite";
 import type { CodingDecision, ReviewReport } from "../review-types";
 import { DOCS_LIMITS, type DocSet } from "../types";
 import {
-  chunkFromRow, DuplicateFileError, EXTRACTOR_VERSION, extractionFromRow, FILE_COLS, fileFromRow, fileToRow, MAX_EXTRACTION_ATTEMPTS, queryTerms,
-  reportFromJson, REVIEW_COLS, reviewFromRow, reviewRowFromRow, reviewRowToRow, reviewToRow, ROW_COLS, SET_COLS, setFromRow, setToRow, type ChunkRow,
-  type DocStore, type ExtractionRow, type FileListFilter, type ReviewRowRecord, type ScoredChunk, type SearchOptions, type SetListFilter, type StoredFile,
-  type StoredReview,
+  chunkFromRow, derivedDecisionCols, derivedRunCols, DuplicateFileError, EXTRACTOR_VERSION, extractionFromRow, FILE_COLS, fileFromRow, fileToRow,
+  MAX_EXTRACTION_ATTEMPTS, queryTerms, reportFromJson, REVIEW_COLS, reviewFromRow, reviewRowFromRow, reviewRowMetaFromRow, reviewRowToRow, reviewToRow,
+  ROW_ADDED_COLUMNS, ROW_COLS, ROW_DERIVED_VERSION, ROW_META_COLS, SET_COLS, setFromRow, setToRow, type ChunkRow, type DocStore, type ExtractionRow,
+  type FileListFilter, type ReviewResult, type ReviewRowRecord, type ScoredChunk, type SearchOptions, type SetListFilter, type StoredFile, type StoredReview,
 } from "./store";
+import { countsFromRows, countsSql, facetsFromRows, facetsSql, rowItems, rowQuerySql, rowResultsSql } from "./review-sql";
+import type { RowQuery } from "../review-types";
 
 /** Development / test backend: the local SQLite file, with an FTS5 index over chunk text (bm25 ranking). */
 const SCHEMA = `
@@ -49,6 +51,8 @@ CREATE TABLE IF NOT EXISTS docs_review_rows (
   review_id TEXT NOT NULL, file_id TEXT NOT NULL, set_id TEXT NOT NULL, state TEXT NOT NULL, review_version INTEGER, text_hash TEXT, file_stamp TEXT,
   windows_done INTEGER NOT NULL DEFAULT 0, result TEXT, partials TEXT NOT NULL DEFAULT '[]', row_hash TEXT, decision TEXT, error TEXT,
   attempts INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
+  cov_partial INTEGER, doc_type TEXT, importance INTEGER, privilege_flag TEXT, issue_ranks TEXT, search_text TEXT,
+  coding TEXT, decision_hash TEXT, coding_note TEXT, derived_v INTEGER,
   PRIMARY KEY (review_id, file_id)
 );
 CREATE INDEX IF NOT EXISTS docs_review_rows_set ON docs_review_rows(set_id);
@@ -70,6 +74,32 @@ function ftsQuery(words: string[], op: "AND" | "OR"): string {
   return words.map((w) => `"${w.replace(/"/g, "")}"`).join(op === "AND" ? " " : " OR ");
 }
 
+/**
+ * Migration for databases created before the derived row columns: guarded ADD COLUMN, then backfill every row whose
+ * derived columns are missing or older (from its stored result and decision).
+ */
+export function migrateReviewRows(db: DatabaseSync) {
+  const have = new Set((db.prepare(`PRAGMA table_info(docs_review_rows)`).all() as { name: string }[]).map((c) => c.name));
+  for (const [name, type] of ROW_ADDED_COLUMNS) if (!have.has(name)) db.exec(`ALTER TABLE docs_review_rows ADD COLUMN ${name} ${type}`);
+  const stale = db.prepare(`SELECT review_id, file_id, result, decision FROM docs_review_rows WHERE derived_v IS NULL OR derived_v < ?`).all(ROW_DERIVED_VERSION) as Rec[];
+  if (!stale.length) return;
+  const upd = db.prepare(`UPDATE docs_review_rows SET cov_partial = ?, doc_type = ?, importance = ?, privilege_flag = ?, issue_ranks = ?, search_text = ?,
+    coding = ?, decision_hash = ?, coding_note = ?, derived_v = ? WHERE review_id = ? AND file_id = ?`);
+  db.exec("BEGIN");
+  try {
+    for (const r of stale) {
+      const rec = reviewRowFromRow({ ...r, state: "done", set_id: "", updated_at: "" });
+      const run = derivedRunCols(rec.result as ReviewResult | null);
+      const dec = derivedDecisionCols(rec.decision);
+      upd.run(run.cov_partial, run.doc_type, run.importance, run.privilege_flag, run.issue_ranks, run.search_text, dec.coding, dec.decision_hash, dec.coding_note, ROW_DERIVED_VERSION, String(r.review_id), String(r.file_id));
+    }
+    db.exec("COMMIT");
+  } catch (e) {
+    try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
+    throw e;
+  }
+}
+
 export class SqliteDocStore implements DocStore {
   readonly backend = "sqlite" as const;
 
@@ -77,6 +107,7 @@ export class SqliteDocStore implements DocStore {
     const db = getSqlite();
     if (!ready.has(db)) {
       db.exec(SCHEMA);
+      migrateReviewRows(db);
       ready.add(db);
     }
     return db;
@@ -364,10 +395,11 @@ export class SqliteDocStore implements DocStore {
     return this.all(`SELECT * FROM docs_reviews WHERE set_id = ? ORDER BY updated_at DESC LIMIT 200`, [setId]).map(reviewFromRow);
   }
 
-  async updateReview(review: StoredReview) {
+  async updateReview(review: StoredReview, expectedVersion: number) {
     const row = reviewToRow(review);
     const cols = REVIEW_COLS.filter((c) => c !== "id" && c !== "set_id");
-    this.run(`UPDATE docs_reviews SET ${cols.map((c) => `${c} = ?`).join(", ")} WHERE id = ? AND set_id = ?`, [...cols.map((c) => row[c]), review.id, review.setId]);
+    const r = this.run(`UPDATE docs_reviews SET ${cols.map((c) => `${c} = ?`).join(", ")} WHERE id = ? AND set_id = ? AND version = ?`, [...cols.map((c) => row[c]), review.id, review.setId, expectedVersion]);
+    return Number(r.changes) > 0;
   }
 
   async deleteReview(setId: string, reviewId: string) {
@@ -378,37 +410,74 @@ export class SqliteDocStore implements DocStore {
   }
 
   async listReviewRows(reviewId: string) {
-    return this.all(`SELECT * FROM docs_review_rows WHERE review_id = ?`, [reviewId]).map(reviewRowFromRow);
+    return this.all(`SELECT ${ROW_META_COLS.join(", ")} FROM docs_review_rows WHERE review_id = ?`, [reviewId]).map(reviewRowMetaFromRow);
   }
 
-  async getReviewRow(reviewId: string, fileId: string) {
-    const r = this.get(`SELECT * FROM docs_review_rows WHERE review_id = ? AND file_id = ?`, [reviewId, fileId]);
+  async getReviewRow(reviewId: string, fileId: string, opts: { partials?: boolean } = {}) {
+    const r = this.get(`SELECT ${ROW_META_COLS.join(", ")}, result${opts.partials ? ", partials" : ""} FROM docs_review_rows WHERE review_id = ? AND file_id = ?`, [reviewId, fileId]);
     return r ? reviewRowFromRow(r) : null;
   }
 
   async putReviewRow(x: ReviewRowRecord) {
-    const row = reviewRowToRow(x);
+    await this.putReviewRows([x]);
+  }
+
+  async putReviewRows(xs: ReviewRowRecord[]) {
+    if (!xs.length) return;
     const upd = ROW_COLS.filter((c) => c !== "review_id" && c !== "file_id");
-    this.run(
+    const stmt = this.db().prepare(
       `INSERT INTO docs_review_rows (${ROW_COLS.join(", ")}) VALUES (${ph(ROW_COLS.length)})
        ON CONFLICT (review_id, file_id) DO UPDATE SET ${upd.map((c) => `${c} = excluded.${c}`).join(", ")}`,
-      ROW_COLS.map((c) => row[c]),
     );
+    this.tx(() => {
+      for (const x of xs) {
+        const row = reviewRowToRow(x);
+        stmt.run(...ROW_COLS.map((c) => row[c]));
+      }
+    });
   }
 
   async setReviewDecision(reviewId: string, setId: string, fileId: string, decision: CodingDecision | null, expectedRowHash: string) {
     const d = decision ? JSON.stringify(decision) : null;
+    const dc = derivedDecisionCols(decision);
     if (expectedRowHash) {
-      const r = this.run(`UPDATE docs_review_rows SET decision = ? WHERE review_id = ? AND file_id = ? AND set_id = ? AND row_hash = ?`, [d, reviewId, fileId, setId, expectedRowHash]);
+      const r = this.run(
+        `UPDATE docs_review_rows SET decision = ?, coding = ?, decision_hash = ?, coding_note = ? WHERE review_id = ? AND file_id = ? AND set_id = ? AND row_hash = ?`,
+        [d, dc.coding, dc.decision_hash, dc.coding_note, reviewId, fileId, setId, expectedRowHash],
+      );
       return Number(r.changes) > 0;
     }
-    // Not reviewed yet: create a placeholder, or update a row that still has no hash.
+    // No hash stored: create a placeholder, or update a row that still has no hash.
     const r = this.run(
-      `INSERT INTO docs_review_rows (review_id, file_id, set_id, state, decision, updated_at) VALUES (?, ?, ?, 'pending', ?, ?)
-       ON CONFLICT (review_id, file_id) DO UPDATE SET decision = excluded.decision WHERE docs_review_rows.row_hash IS NULL OR docs_review_rows.row_hash = ''`,
-      [reviewId, fileId, setId, d, new Date().toISOString()],
+      `INSERT INTO docs_review_rows (review_id, file_id, set_id, state, decision, coding, decision_hash, coding_note, derived_v, updated_at) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (review_id, file_id) DO UPDATE SET decision = excluded.decision, coding = excluded.coding, decision_hash = excluded.decision_hash,
+         coding_note = excluded.coding_note WHERE docs_review_rows.row_hash IS NULL OR docs_review_rows.row_hash = ''`,
+      [reviewId, fileId, setId, d, dc.coding, dc.decision_hash, dc.coding_note, ROW_DERIVED_VERSION, new Date().toISOString()],
     );
     return Number(r.changes) > 0;
+  }
+
+  async reviewCounts(setId: string, reviewId?: string) {
+    const q = countsSql("sqlite", setId, reviewId);
+    return countsFromRows(this.all(q.text, q.params));
+  }
+
+  async reviewFacets(setId: string, reviewId: string, issueIds: string[]) {
+    const q = facetsSql("sqlite", setId, reviewId, issueIds);
+    return facetsFromRows(issueIds, this.all(q.agg.text, q.agg.params)[0], this.all(q.docTypes.text, q.docTypes.params), this.all(q.coding.text, q.coding.params));
+  }
+
+  async queryReviewRows(setId: string, reviewId: string, query: RowQuery, page: { offset: number; limit: number }) {
+    const q = rowQuerySql("sqlite", setId, reviewId, query, page);
+    const total = Number(this.get(q.count.text, q.count.params)?.n ?? 0);
+    const rows = this.all(q.page.text, q.page.params);
+    const shown = rows.filter((r) => r.row_status === "done" || r.row_status === "partial").map((r) => String(r.f_id));
+    const results = new Map<string, unknown>();
+    if (shown.length) {
+      const rq = rowResultsSql("sqlite", reviewId, shown);
+      for (const r of this.all(rq.text, rq.params)) results.set(String(r.file_id), r.result);
+    }
+    return { total, items: rowItems(rows, results) };
   }
 
   async putReviewReport(reviewId: string, report: ReviewReport) {

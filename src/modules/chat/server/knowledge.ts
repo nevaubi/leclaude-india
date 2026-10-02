@@ -147,7 +147,7 @@ export function documentTools(sets: { id: string; name: string }[]): ToolDef<nev
     label: () => "Reading the document review",
     async execute(args, ctx) {
       const principal = principalOf(ctx);
-      const out = await reviewRowsForChat(principal, setIds, { reviewId: args.reviewId || undefined, issue: args.issue || undefined, docType: args.docType || undefined, privilege: args.privilege || undefined, coding: args.coding || undefined, q: args.q || undefined, limit: args.limit ?? undefined });
+      const out = await reviewRowsForChat(principal, setIds, { reviewId: args.reviewId || undefined, issue: args.issue || undefined, docType: args.docType || undefined, privilege: args.privilege || undefined, coding: args.coding || undefined, q: args.q || undefined, limit: Number.isFinite(Number(args.limit)) ? Number(args.limit) : undefined });
       if (out.review && !allowed.has(out.review.setId)) throw new ToolExecutionError("unauthorized", "That review is not in the selected document sets");
       if (args.reviewId && !out.review) throw new ToolExecutionError("not_found", "No such review in the selected document sets");
       return out.review ? out : { ...out, note: "No review has been run on the selected document sets." };

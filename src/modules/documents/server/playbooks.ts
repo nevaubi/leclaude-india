@@ -617,8 +617,8 @@ const MOTOR: ReviewPlaybook = {
   name: "Motor accident claims",
   description: "MACT claim papers: negligence, the vehicle and policy, the victim's age, income and dependants, injuries and disability, and every input for computing compensation under Sarla Verma and Pranay Sethi.",
   statutes: [
-    "Motor Vehicles Act, 1988 (ss.140, 147, 149, 163A, 164, 166, 168)",
-    "Motor Vehicles (Amendment) Act, 2019",
+    "Motor Vehicles Act, 1988 (ss.146, 147, 149, 164, 166, 168); ss.140 and 163A (no-fault and structured-formula claims) were omitted w.e.f. 1.4.2022 by the 2019 Amendment, no-fault liability now being s.164; they still matter for older claims",
+    "Motor Vehicles (Amendment) Act, 2019 (in force for these provisions from 1.4.2022)",
     "Central Motor Vehicles Rules, 1989",
     "Bharatiya Nyaya Sanhita, 2023, ss.106 and 281 (formerly Indian Penal Code, 1860, ss.304A and 279)",
   ],
@@ -626,7 +626,7 @@ const MOTOR: ReviewPlaybook = {
     "FIR", "Detailed accident report", "Site plan", "Mechanical inspection report", "Chargesheet", "Post-mortem report", "Medico-legal certificate (MLC)",
     "Discharge summary", "Medical bills", "Disability certificate", "Driving licence", "Registration certificate (RC)", "Insurance policy / cover note",
     "Permit / fitness certificate", "Salary certificate / slip", "Income tax return", "Age proof (school certificate / Aadhaar)", "Legal heir certificate",
-    "Claim petition (s.166)", "Written statement of insurer", "Award",
+    "Claim petition (s.166 / s.164; ss.140, 163A for pre-1.4.2022 claims)", "Written statement of insurer", "Award",
   ],
   issues: [
     iss("negligence", "Negligence", "The document bears on how the accident happened, rash or negligent driving, or contributory negligence of the victim."),
@@ -665,6 +665,7 @@ const MOTOR: ReviewPlaybook = {
     "What injuries and permanent disability are recorded, and what medical expenses are proved?",
     "Did the driver hold a valid licence, and were the permit, fitness and policy in force on the accident date?",
     "Which non-pecuniary heads (consortium, loss of estate, funeral expenses) are claimed?",
+    "Is the claim made on fault (s.166) or no-fault (s.164, which replaced ss.140 and 163A from 1.4.2022 under the 2019 Amendment), and is the provision invoked the one in force on the accident date?",
   ],
 };
 

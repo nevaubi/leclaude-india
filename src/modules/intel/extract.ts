@@ -1,4 +1,5 @@
 import "server-only";
+import { loadPdfjs } from "@/lib/pdf/pdfjs-server";
 import { htmlToText } from "@/lib/ai/toolkit/http";
 
 /**
@@ -62,7 +63,7 @@ export async function extractIntelText(bytes: Uint8Array, name: string | undefin
 
 async function extractPdf(bytes: Uint8Array): Promise<ExtractedIntelText> {
   try {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const pdfjs = await loadPdfjs();
     const doc = await pdfjs.getDocument({ data: bytes, useSystemFonts: true, disableFontFace: true }).promise;
     const parts: string[] = [];
     let chars = 0;

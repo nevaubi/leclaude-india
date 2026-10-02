@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Heavy document libraries run on the Node runtime and must not be bundled by webpack.
   serverExternalPackages: ["pdfjs-dist", "mammoth", "docx", "pptxgenjs", "jszip", "hyperformula", "xlsx"],
+  // pdf.js loads its worker module by path at runtime; make sure every server function bundle contains it.
+  outputFileTracingIncludes: { "/**": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"] },
   experimental: {
     serverActions: { bodySizeLimit: "25mb" },
   },

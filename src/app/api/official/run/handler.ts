@@ -2,7 +2,7 @@ import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { jsonError } from "@/lib/ai/sse";
 import type { Principal } from "@/lib/auth/types";
-import { runOfficialIngest, type OfficialRunOptions, type OfficialRunResult } from "@/modules/official/run";
+import { officialIngestEnabled, runOfficialIngest, type OfficialRunOptions, type OfficialRunResult } from "@/modules/official/run";
 import { isSourceId, type SourceId } from "@/modules/official/types";
 import { UNIT_STAGES, type UnitStage } from "@/modules/official/units";
 import { officialErrorResponse } from "../errors";
@@ -44,6 +44,8 @@ export interface RunBody {
   deadlineMs: number;
   limitPerSource?: number;
   forceDiscover?: boolean;
+  /** Re-queue documents whose last attempt failed (never those the publisher answered 404/410 for). */
+  retryFailed?: boolean;
 }
 
 /** Validate the JSON body; RangeError with a precise message for anything malformed. */
@@ -74,6 +76,10 @@ export function parseRunBody(raw: unknown): RunBody {
     if (typeof b.forceDiscover !== "boolean") throw new RangeError("forceDiscover must be a boolean");
     out.forceDiscover = b.forceDiscover;
   }
+  if (b.retryFailed !== undefined) {
+    if (typeof b.retryFailed !== "boolean") throw new RangeError("retryFailed must be a boolean");
+    out.retryFailed = b.retryFailed;
+  }
   return out;
 }
 
@@ -95,6 +101,35 @@ export async function handleRunRequest(req: Request, deps: RunRouteDeps): Promis
   }
   try {
     const r = await (deps.run ?? runOfficialIngest)({ ...body });
+    return Response.json(r);
+  } catch (e) {
+    return officialErrorResponse(e, "official.run_failed");
+  }
+}
+
+/** Scheduled runs: work until shortly before the function limit, and redrive old failures a bounded number of times. */
+export const CRON_DEADLINE_MS = 270_000;
+export const CRON_REDRIVE = { cooldownMinutes: 60, maxRedrives: 3 } as const;
+
+/**
+ * GET /api/official/run — the Vercel cron entry (vercel.json). Only the scheduled service principal (CRON_SECRET bearer)
+ * may call it; people use POST with the operator token. Nothing runs, and the database is not touched, unless
+ * OFFICIAL_INGEST is on, so the schedule can stay in vercel.json and the flag decides.
+ */
+export async function handleCronRun(deps: RunRouteDeps): Promise<Response> {
+  const p = deps.principal();
+  if (!p || p.source !== "service" || !p.roles.includes("service")) {
+    return jsonError("Scheduled ingest runs are only started by the cron service principal; use POST with the ingest token.", 403, { code: "service_only" });
+  }
+  const vars = deps.env ?? process.env;
+  if (!officialIngestEnabled(vars)) return Response.json({ stop: "disabled", notes: ["OFFICIAL_INGEST is off"] });
+  const workers = Number(vars.OFFICIAL_CONCURRENCY);
+  try {
+    const r = await (deps.run ?? runOfficialIngest)({
+      deadlineMs: CRON_DEADLINE_MS,
+      concurrency: Number.isInteger(workers) && workers >= 1 ? Math.min(workers, 16) : 6,
+      redrive: { ...CRON_REDRIVE },
+    });
     return Response.json(r);
   } catch (e) {
     return officialErrorResponse(e, "official.run_failed");

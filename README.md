@@ -155,8 +155,8 @@ services are never scraped.
   an external router only). A coded capability registry and a central router choose the provider
   (`src/lib/ai/**`). See [docs/architecture/model-runtime.md](docs/architecture/model-runtime.md).
 - **Authorization:** principal, matter scope and policy at every route boundary (`src/lib/auth/**`). See
-  [docs/architecture/authorization.md](docs/architecture/authorization.md). The auth setup guide,
-  `docs/architecture/auth.md`, is being written separately.
+  [docs/architecture/authorization.md](docs/architecture/authorization.md). Sign-in, sessions and the
+  production rollout order: [docs/architecture/auth.md](docs/architecture/auth.md).
 - **Evidence contract:** exact source identity, separate citation and claim states, and no substitution. See
   [docs/architecture/evidence-contract.md](docs/architecture/evidence-contract.md) and the India design record
   [docs/architecture/india.md](docs/architecture/india.md).

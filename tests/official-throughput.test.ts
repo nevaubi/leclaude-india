@@ -139,3 +139,19 @@ describe("network stages per source", () => {
     expect(peak).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("run watchdog", () => {
+  it("returns shortly after the deadline even when a unit ignores the abort, handing the unit back with its attempt", async () => {
+    const url = "https://www.sci.gov.in/orders/hang.pdf";
+    setOfficialAdaptersForTests({ "sci-orders": adapter([{ sourceId: "sci-orders", kind: "order", url, title: "Hanging order", docDate: "2026-10-01" }]) });
+    const store = new OfficialFakeStore();
+    const h = http(() => new Promise(() => undefined)); // never settles, ignores the signal (stands in for CPU-bound work)
+    const t0 = Date.now();
+    const r = await runOfficialIngest({ store, deadlineMs: 400, minUnitMs: 0, watchdogGraceMs: 100, concurrency: 1, sleep: tick, http: () => h, log: () => undefined });
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    expect(r.stop).toBe("deadline");
+    expect(r.notes.join(" ")).toMatch(/handed back \(fetch\)/);
+    const unit = store.units.get(`fetch:${documentIdFor("sci-orders", url)}`)!;
+    expect(unit).toMatchObject({ status: "pending", attempts: 0 });
+  });
+});

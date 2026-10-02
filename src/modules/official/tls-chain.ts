@@ -21,7 +21,8 @@ import { safeFetch } from "@/lib/net/safe-fetch";
 
 const ISSUER_MAX_BYTES = 64 * 1024;
 const ISSUER_TIMEOUT_MS = 10_000;
-const NEGATIVE_TTL_MS = 30 * 60_000;
+/** A failed completion (e.g. the issuer URL did not answer) is retried after this long. */
+const NEGATIVE_TTL_MS = 5 * 60_000;
 
 export function isIncompleteChainError(e: unknown): boolean {
   const cause = (e as { cause?: { code?: string; message?: string } })?.cause;

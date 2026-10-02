@@ -8,7 +8,7 @@ import { officialSources, sourceEnabled } from "./registry";
 import type { IngestRunReport, SourceDef, SourceId } from "./types";
 import { isSourceId } from "./types";
 import { CAPTION_SCOPED_SOURCES } from "./causelist/query";
-import { claimUnit, dbSize, type ClaimFilter, enqueueUnits, getOfficialState, officialLimitBytes, officialStore, pgArray, setOfficialState, sweepExpiredUnits, unitId, UNIT_STAGES, type OfficialUnit, type UnitStage } from "./units";
+import { claimUnit, dbSize, type ClaimFilter, enqueueUnits, getOfficialState, officialLimitBytes, officialStore, pgArray, releaseUnit, setOfficialState, sweepExpiredUnits, unitId, UNIT_STAGES, type OfficialUnit, type UnitStage } from "./units";
 import { backfillCursor, parseCursor } from "./adapters/regulators/common";
 
 /**
@@ -58,6 +58,12 @@ const OCR_REQUEUE_PER_RUN = 50;
 /** Orders parsed before caption scoping, re-parsed per run (from their stored text; no request to the publisher). */
 const CAPTION_REPARSE_PER_RUN = 200;
 const IDLE_WAIT_MS = 1_500;
+/**
+ * A run stops waiting for its workers this long after its deadline (CPU-bound work such as a large PDF extraction does
+ * not observe the abort signal): units still running are handed back with their attempt and resume in a later run, so
+ * the function returns before the platform's limit instead of being killed with leases held.
+ */
+export const WATCHDOG_GRACE_MS = 20_000;
 const BUDGET_CHECK_TTL_MS = 5_000;
 /** Stages that send requests to the publisher (bounded per source by OFFICIAL_SOURCE_INFLIGHT). */
 export const NETWORK_STAGES: readonly UnitStage[] = ["discover", "fetch"];
@@ -86,6 +92,8 @@ export interface OfficialRunOptions {
   retryFailed?: boolean;
   /** Bounded automatic redrive (scheduled runs): failed units older than the cooldown, at most `maxRedrives` times each. */
   redrive?: RedriveOptions;
+  /** Grace after the deadline before units still running are handed back (default WATCHDOG_GRACE_MS). */
+  watchdogGraceMs?: number;
   /** Backfill passes to start (default: OFFICIAL_BACKFILL / OFFICIAL_BACKFILL_GENERATION). */
   backfill?: BackfillRequest | null;
   store?: RemoteStore | null;
@@ -328,6 +336,8 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
 
     const inflightCap = sourceInflight();
     const netInFlight = new Map<string, number>();
+    /** Units being processed now (handed back by the watchdog if the run has to return without them). */
+    const inflight = new Map<string, OfficialUnit>();
     /** Network stages of sources already at their in-flight cap are not claimed now (their other stages are). */
     const hold = (): ClaimFilter["hold"] => {
       const busy = [...netInFlight.entries()].filter(([, n]) => n >= inflightCap).map(([s]) => s);
@@ -373,6 +383,7 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
           return;
         }
         active++;
+        inflight.set(unit.id, unit);
         const net = NETWORK_STAGES.includes(unit.stage);
         if (net) netInFlight.set(unit.source, (netInFlight.get(unit.source) ?? 0) + 1);
         let out: UnitOutcome;
@@ -380,6 +391,7 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
           out = await processUnit(unit, deps);
         } finally {
           active--;
+          inflight.delete(unit.id);
           if (net) netInFlight.set(unit.source, Math.max(0, (netInFlight.get(unit.source) ?? 1) - 1));
         }
         result.units++;
@@ -392,7 +404,20 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
       }
     };
 
-    await Promise.all(Array.from({ length: concurrency }, (_, w) => worker(w)));
+    const workers = Promise.all(Array.from({ length: concurrency }, (_, w) => worker(w)));
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    const grace = Math.max(0, o.watchdogGraceMs ?? WATCHDOG_GRACE_MS);
+    const late = await Promise.race([
+      workers.then(() => false),
+      new Promise<boolean>((resolve) => { watchdog = setTimeout(() => resolve(true), Math.max(0, deadline + grace - now())); }),
+    ]);
+    clearTimeout(watchdog);
+    if (late) {
+      run.stop ??= "deadline";
+      const held = [...inflight.values()];
+      for (const u of held) await releaseUnit(store, u.id, undefined, "run ended before this unit finished; resumes in a later run").catch(() => undefined);
+      if (held.length) result.notes.push(`${held.length} unit(s) still running ${Math.round(grace / 1000)} s after the deadline were handed back (${[...new Set(held.map((u) => u.stage))].join(", ")})`);
+    }
     if (run.stop === "error") return finish("error");
     if (run.stop === "budget") {
       result.notes.push(`database size ${result.dbBytes ?? "?"} bytes reached the budget of ${limitBytes} bytes (OFFICIAL_MAX_DB_MB)`);

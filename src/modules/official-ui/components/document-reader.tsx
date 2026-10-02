@@ -12,11 +12,11 @@ import { cn } from "@/lib/utils";
 import type { OfficialReadResult } from "@/modules/official/service";
 import { sourceRef, type SourceChunk, type SourceDocument } from "@/modules/official/types";
 import { asOfficialApiError, fetchOfficialJson, type OfficialApiError } from "../fetch";
-import { chunkFromOcr, docStatusLabel, documentApiHref, extractionLabel, formatBytes, formatDocDate, formatFetchedAt, hostOf, isOcrText, kindLabel, pageLabel, positiveInt, safeHttp } from "../shared";
+import { chunkFromOcr, docStatusLabel, documentApiHref, extractionLabel, formatBytes, formatDocDate, formatFetchedAt, hostOf, isOcrText, kindLabel, pageLabel, positiveInt, returnLabel, safeHttp, safeReturnPath, sourceDocHref } from "../shared";
 import { isOfficialUnavailable, OcrBadge, OfficialErrorState, OfficialUnavailable, useOfficialStatus } from "./states";
 
 /**
- * /sources/<id>[?page=n | ?chunk=n] — one official document: its text in page-marked chunks, and its provenance (the
+ * /sources/<id>[?page=n | ?chunk=n][&from=<path>] — one official document: its text in page-marked chunks, and its provenance (the
  * publisher's link, SHA-256 of the bytes read, when it was fetched, how the text was obtained, attribution). The
  * publisher's copy is the text of record; OCR text is always labelled.
  */
@@ -25,6 +25,9 @@ export function SourceDocumentReader({ id }: { id: string }) {
   const router = useRouter();
   const page = positiveInt(sp.get("page"));
   const chunk = page == null ? (sp.get("chunk") && /^\d{1,6}$/.test(sp.get("chunk")!) ? Number(sp.get("chunk")) : null) : null;
+  // Where the reader was opened from (the library with its search and filters, a case record, the tools); kept in the
+  // URL so the back link survives client navigation and reloads.
+  const from = safeReturnPath(sp.get("from"));
   const [data, setData] = React.useState<OfficialReadResult | null>(null);
   const [error, setError] = React.useState<OfficialApiError | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -55,7 +58,7 @@ export function SourceDocumentReader({ id }: { id: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 px-4 pt-3 sm:px-6"><BackLink /></div>
+      <div className="shrink-0 px-4 pt-3 sm:px-6"><BackLink from={from} /></div>
       {loading && !data ? <ReaderSkeleton /> : error ? (
         <div className="flex flex-1 items-center justify-center p-6">
           {isOfficialUnavailable(error) ? <OfficialUnavailable error={error} /> : error.notFound || error.badRequest ? (
@@ -67,7 +70,7 @@ export function SourceDocumentReader({ id }: { id: string }) {
           <main className="min-h-0 min-w-0 overflow-auto scrollbar-thin">
             <article className={cn("mx-auto w-full max-w-[78ch] px-5 pb-12 pt-3 sm:px-8", loading && "opacity-70")} aria-label={data.document.title}>
               <DocHeader d={data.document} publisher={source?.publisher ?? null} />
-              <PageJump pages={data.document.pages} current={page} onGo={(p) => router.replace(`/sources/${encodeURIComponent(id)}${p ? `?page=${p}` : ""}`, { scroll: false })} />
+              <PageJump pages={data.document.pages} current={page} onGo={(p) => router.replace(sourceDocHref(id, p ? { page: p } : undefined, from), { scroll: false })} />
               <div className="mt-4 lg:hidden"><Provenance d={data.document} attribution={data.attribution} terms={source?.terms ?? null} /></div>
               {data.chunks.length ? <ChunkList doc={data.document} chunks={data.chunks} /> : (
                 <p className="mt-6 rounded-md border border-dashed px-3 py-4 text-[12.5px] text-muted-foreground">
@@ -89,14 +92,11 @@ export function SourceDocumentReader({ id }: { id: string }) {
   );
 }
 
-function BackLink() {
+/** Back to where the reader was opened from (?from=, a path on this site), else to the library. */
+function BackLink({ from }: { from: string | null }) {
   return (
-    <Link href="/sources" className="inline-flex items-center gap-1 rounded text-[12px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" onClick={(e) => {
-      if (typeof window !== "undefined" && window.history.length > 1 && document.referrer) {
-        try { if (new URL(document.referrer).pathname === "/sources") { e.preventDefault(); window.history.back(); } } catch { /* follow the link */ }
-      }
-    }}>
-      <ArrowLeft className="size-3.5" aria-hidden />Official sources
+    <Link href={from ?? "/sources"} className="inline-flex items-center gap-1 rounded text-[12px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+      <ArrowLeft className="size-3.5" aria-hidden />{returnLabel(from)}
     </Link>
   );
 }

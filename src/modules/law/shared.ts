@@ -51,13 +51,6 @@ export interface LawInstrument {
   subjects: string[];
   dataset_file: string;
   dataset_version: string;
-  /**
-   * Provisions per dataset status ({"in_force": 412, "repealed": 3}; "not_recorded" for rows without one), when the
-   * loader recorded it (scripts/law-corpus, loader v2). Absent or null on older loads: then only `status` is known.
-   */
-  status_counts?: Record<string, number> | null;
-  /** True only when every provision with a recorded status is in force (loader v2); null/absent when not recorded. */
-  in_force?: boolean | null;
 }
 
 export interface LawInstrumentHit extends LawInstrument {
@@ -389,33 +382,29 @@ export type StatusTone = ReturnType<typeof statusTone>;
 /** What the section badge says about a provision's recorded status. */
 export interface SectionStatusBadge { label: string; tone: StatusTone; title: string }
 
-export const SECTION_STATUS_NOTE = "Status recorded by Open India Law for this provision, taken from the status of its Act or regulation. Repeal, omission or substitution of a single section is not recorded in the dataset; check the official text.";
+/**
+ * The dataset's `status` on a provision is its Act's (or regulation's) status, repeated on every provision; `in_force`
+ * is the dataset's flag for the provision itself.
+ */
+export const SECTION_STATUS_NOTE = "Status from Open India Law: the status of the Act or regulation, and the dataset's in-force flag for this provision. Repeal, omission or substitution of a single section may not be recorded in the dataset; check the official text.";
+export const ACT_IN_FORCE_NOTE = "The dataset records the Act or regulation as in force, but does not record whether this provision itself is in force: a section can be omitted, substituted or not yet brought into force. Check the official text.";
 
 /**
- * The status badge for a section. Green ("ok") only when the recorded status is in force (or, with no status string,
- * when the dataset's in_force flag is true) and the in_force flag does not contradict it; anything else is shown as
- * recorded ("Repealed", "Superseded", "Spent", "Omitted", "Not in force") or "Status not recorded".
+ * The status badge for a section. Green ("ok", "In force") only when the dataset flags the provision itself in force
+ * (`in_force === true`) and its Act's status does not say otherwise. An Act recorded in force with no provision flag
+ * reads "Act in force" (neutral). A code repealed by the 2023 criminal laws (IPC, CrPC, Indian Evidence Act: pass
+ * `repealedOn`) always reads "Repealed (<date>)", whatever the dataset says. Anything else is shown as recorded
+ * ("Repealed", "Superseded", "Not in force", "Status not recorded").
  */
-export function sectionStatusBadge(s: { status: string | null | undefined; in_force: boolean | null | undefined }): SectionStatusBadge {
+export function sectionStatusBadge(s: { status: string | null | undefined; in_force: boolean | null | undefined; repealedOn?: string | null; repealedNote?: string | null }): SectionStatusBadge {
+  if (s.repealedOn) return { label: `Repealed (${s.repealedOn})`, tone: "off", title: s.repealedNote || `Repealed with effect from ${s.repealedOn}. Check the official text and the savings provisions.` };
   const status = s.status?.trim() || null;
-  if ((status === "in_force" || (!status && s.in_force === true)) && s.in_force !== false) return { label: STATUS_LABEL.in_force, tone: "ok", title: SECTION_STATUS_NOTE };
-  if (status === "in_force" && s.in_force === false) return { label: STATUS_LABEL.not_in_force, tone: "off", title: SECTION_STATUS_NOTE };
-  if (!status) return s.in_force === false ? { label: STATUS_LABEL.not_in_force, tone: "off", title: SECTION_STATUS_NOTE } : { label: statusLabel(null), tone: "unknown", title: SECTION_STATUS_NOTE };
+  if (status && statusTone(status) === "off") return { label: statusLabel(status), tone: "off", title: SECTION_STATUS_NOTE };
+  if (s.in_force === false) return { label: STATUS_LABEL.not_in_force, tone: "off", title: SECTION_STATUS_NOTE };
+  if (s.in_force === true && (!status || status === "in_force")) return { label: STATUS_LABEL.in_force, tone: "ok", title: SECTION_STATUS_NOTE };
+  if (status === "in_force") return { label: "Act in force", tone: "unknown", title: ACT_IN_FORCE_NOTE };
+  if (!status) return { label: statusLabel(null), tone: "unknown", title: SECTION_STATUS_NOTE };
   return { label: statusLabel(status), tone: statusTone(status), title: SECTION_STATUS_NOTE };
-}
-
-/** An instrument's status mixture, largest first (empty when the loader did not record one). */
-export function statusBreakdown(counts: Record<string, number> | null | undefined): { status: string; label: string; tone: StatusTone; count: number }[] {
-  if (!counts || typeof counts !== "object") return [];
-  return Object.entries(counts)
-    .filter(([, n]) => typeof n === "number" && Number.isFinite(n) && n > 0)
-    .map(([status, count]) => ({ status, label: statusLabel(status === "not_recorded" ? null : status), tone: status === "not_recorded" ? "unknown" as const : statusTone(status), count }))
-    .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status));
-}
-
-/** True when the provisions of an instrument do not all share one recorded status. */
-export function hasMixedStatus(counts: Record<string, number> | null | undefined): boolean {
-  return statusBreakdown(counts).length > 1;
 }
 
 /** India Code's current host (DSpace 9; handles were renumbered when it moved from indiacode.nic.in). */

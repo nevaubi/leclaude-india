@@ -66,6 +66,37 @@ function inForceText(): string {
   return `${d} ${months[m - 1]} ${y}`;
 }
 
+/** The 2023 code that repealed each old code, and its repeal-and-savings section. */
+const REPEALED_BY: Partial<Record<CodeName, { code: CodeName; section: string }>> = {
+  IPC: { code: "BNS", section: "358" },
+  CrPC: { code: "BNSS", section: "531" },
+  IEA: { code: "BSA", section: "170" },
+};
+
+export interface CodeRepeal {
+  code: CodeName;
+  /** "1 July 2024". */
+  on: string;
+  /** One sentence for the status badge's explanation. */
+  note: string;
+}
+
+/**
+ * For the IPC, CrPC and Indian Evidence Act (by exact Central title), the repeal by the 2023 codes from 1 July 2024;
+ * null for every other instrument. The repeal is coded, so it holds even when the dataset still records the code in force.
+ */
+export function codeRepeal(i: Pick<LawInstrument, "title" | "year" | "jurisdiction">): CodeRepeal | null {
+  const code = criminalCodeOf(i);
+  const by = code ? REPEALED_BY[code] : undefined;
+  if (!code || !by) return null;
+  const on = inForceText();
+  return {
+    code,
+    on,
+    note: `The ${CRIMINAL_CODE_TITLES[code]} was repealed from ${on} by the ${CRIMINAL_CODE_TITLES[by.code]} (s.${by.section}, repeal and savings). It still governs matters that its savings provision preserves; check the official text and which code applies on the dates.`,
+  };
+}
+
 /**
  * The correspondence for one section of an instrument, or null when the instrument is not one of the six codes or the
  * key is the unnumbered text. Unmapped sections are returned (status "unmapped", no targets) so the reader can say so.

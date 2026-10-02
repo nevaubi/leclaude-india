@@ -8,7 +8,7 @@
  * - Coverage is what has been collected so far; it never claims to be everything a publisher has published.
  * - A missing value stays missing ("not recorded"); nothing is filled in from another document.
  */
-import { isSourceId, SOURCE_IDS, type DocumentStatus, type ExtractionMethod, type SourceDocument, type SourceId, type SourceKind } from "@/modules/official/types";
+import { isSourceId, SOURCE_IDS, type DocumentStatus, type ExtractionMethod, type SourceDocument, type SourceId, type SourceKind, type SourceSearchHit } from "@/modules/official/types";
 import type { OfficialStatus } from "@/modules/official/service";
 
 export type SourcesTab = "search" | "browse" | "coverage";
@@ -105,6 +105,14 @@ export const DOC_STATUS_LABEL: Record<DocumentStatus, string> = {
 
 export function docStatusLabel(s: string | null | undefined): string {
   return s && s in DOC_STATUS_LABEL ? DOC_STATUS_LABEL[s as DocumentStatus] : s ?? "Unknown";
+}
+
+/**
+ * A list key for a search hit. `ref` is page-level (src://<doc>#p<page>) and up to three chunks of one document can share
+ * a page, so the key is the document and chunk index, which is unique per passage.
+ */
+export function searchHitKey(h: Pick<SourceSearchHit, "documentId" | "chunkIndex">): string {
+  return `${h.documentId}#${h.chunkIndex}`;
 }
 
 /** "p. 3", "pp. 3–5", or null when the page is not recorded. */
@@ -231,12 +239,44 @@ export function listApiQuery(f: SourcesFilters, cursor: string | null, limit = 5
   return sp.toString();
 }
 
-/** /sources/<id>[?page=n] — the document reader. */
-export function sourceDocHref(id: string, at?: { page?: number | null; chunk?: number | null }): string {
+/**
+ * A return path for the document reader's back link (?from=), or null. Only a path on this site is accepted
+ * ("/sources?tab=browse&q=x", "/cases/sc:1"): never another origin, a protocol-relative URL or control characters.
+ */
+export function safeReturnPath(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const s = v.trim();
+  if (!s || s.length > 800 || !/^\/[A-Za-z]/.test(s) || /[\\\u0000-\u001f]/.test(s)) return null;
+  try {
+    const u = new URL(s, "https://return.invalid");
+    return u.origin === "https://return.invalid" ? `${u.pathname}${u.search}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What the reader's back link says for a return path. */
+export function returnLabel(path: string | null | undefined): string {
+  const p = path ?? "/sources";
+  if (p === "/sources" || p.startsWith("/sources?") || p.startsWith("/sources/")) return "Official sources";
+  if (p.startsWith("/cases/")) return "Case record";
+  if (p.startsWith("/tools")) return "Practice tools";
+  return "Back";
+}
+
+/**
+ * /sources/<id>[?page=n | ?chunk=n][&from=<return path>] — the document reader. `from` is the page to return to (the
+ * library with its query and filters, a case record, the tools); it is dropped unless it is a path on this site.
+ */
+export function sourceDocHref(id: string, at?: { page?: number | null; chunk?: number | null }, from?: string | null): string {
   const base = `/sources/${encodeURIComponent(id)}`;
-  if (at?.page != null) return `${base}?page=${at.page}`;
-  if (at?.chunk != null) return `${base}?chunk=${at.chunk}`;
-  return base;
+  const sp = new URLSearchParams();
+  if (at?.page != null) sp.set("page", String(at.page));
+  else if (at?.chunk != null) sp.set("chunk", String(at.chunk));
+  const back = safeReturnPath(from);
+  if (back) sp.set("from", back);
+  const qs = sp.toString();
+  return qs ? `${base}?${qs}` : base;
 }
 
 /** /api/official/documents/<id> with the reading position. */

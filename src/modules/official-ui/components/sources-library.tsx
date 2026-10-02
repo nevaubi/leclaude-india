@@ -18,7 +18,7 @@ import type { SourceDocument, SourceId, SourceKind, SourceSearchHit } from "@/mo
 import { asOfficialApiError, fetchOfficialJson, OfficialApiError } from "../fetch";
 import {
   COVERAGE_NOTE, coverageRows, docStatusLabel, extractionLabel, forumOptions, formatDocDate, formatFetchedAt, hasSourceFilters, hostOf, isOcrText, kindLabel,
-  lastRunOf, listApiQuery, MATCH_LABEL, MODE_LABEL, pageLabel, parseSourcesFilters, safeHttp, searchApiQuery, sourceDocHref, sourcesFiltersToParams, storageLine,
+  lastRunOf, listApiQuery, MATCH_LABEL, MODE_LABEL, pageLabel, parseSourcesFilters, safeHttp, searchApiQuery, searchHitKey, sourceDocHref, sourcesFiltersToParams, storageLine,
   type SourcesFilters, type SourcesTab,
 } from "../shared";
 import { isOfficialUnavailable, OcrBadge, OfficialErrorState, OfficialUnavailable, useOfficialStatus } from "./states";
@@ -43,6 +43,8 @@ export function SourcesLibrary() {
   }, [filters, pathname, router]);
   const { status, error, loading, retry } = useOfficialStatus();
   const [filtersOpen, setFiltersOpen] = React.useState(false);
+  // The reader's back link returns here with the same tab, query and filters.
+  const here = React.useMemo(() => { const qs = sourcesFiltersToParams(filters).toString(); return `/sources${qs ? `?${qs}` : ""}`; }, [filters]);
   const total = status ? status.sources.reduce((n, s) => n + (s.stats?.documents ?? 0), 0) : 0;
   const notSetUp = status && !status.configured;
 
@@ -66,8 +68,8 @@ export function SourcesLibrary() {
         <main className="min-h-0 min-w-0 overflow-auto scrollbar-thin">
           <div className="mx-auto w-full max-w-[920px] px-4 pb-10 pt-4 sm:px-6">
             {filters.tab === "browse"
-              ? <BrowseTab filters={filters} onChange={update} empty={total === 0} onOpenFilters={() => setFiltersOpen(true)} />
-              : <SearchTab filters={filters} onChange={update} empty={total === 0} onOpenFilters={() => setFiltersOpen(true)} />}
+              ? <BrowseTab filters={filters} onChange={update} empty={total === 0} onOpenFilters={() => setFiltersOpen(true)} from={here} />
+              : <SearchTab filters={filters} onChange={update} empty={total === 0} onOpenFilters={() => setFiltersOpen(true)} from={here} />}
           </div>
         </main>
       </div>
@@ -208,7 +210,7 @@ function CopyRef({ value }: { value: string }) {
 // Search
 // ---------------------------------------------------------------------------
 
-function SearchTab({ filters, onChange, empty, onOpenFilters }: { filters: SourcesFilters; onChange: (p: Partial<SourcesFilters>) => void; empty: boolean; onOpenFilters: () => void }) {
+function SearchTab({ filters, onChange, empty, onOpenFilters, from }: { filters: SourcesFilters; onChange: (p: Partial<SourcesFilters>) => void; empty: boolean; onOpenFilters: () => void; from: string }) {
   const qs = searchApiQuery(filters);
   const [res, setRes] = React.useState<OfficialSearchResult | null>(null);
   const [error, setError] = React.useState<OfficialApiError | null>(null);
@@ -248,7 +250,7 @@ function SearchTab({ filters, onChange, empty, onOpenFilters }: { filters: Sourc
                 {res.hits.length} passage{res.hits.length === 1 ? "" : "s"} · {MODE_LABEL[res.mode]}{res.candidates ? <> · <span className="tabular">{fmt(res.candidates)}</span> keyword candidates considered</> : null}
               </p>
               <ul className={cn("divide-y rounded-lg border", loading && "opacity-60")}>
-                {res.hits.map((h) => <HitRow key={h.ref} h={h} />)}
+                {res.hits.map((h) => <HitRow key={searchHitKey(h)} h={h} from={from} />)}
               </ul>
             </>
           )
@@ -258,12 +260,12 @@ function SearchTab({ filters, onChange, empty, onOpenFilters }: { filters: Sourc
   );
 }
 
-function HitRow({ h }: { h: SourceSearchHit }) {
+function HitRow({ h, from }: { h: SourceSearchHit; from: string }) {
   const official = safeHttp(h.url);
   const page = pageLabel(h.pageStart, h.pageEnd);
   return (
     <li className="px-3.5 py-3">
-      <Link href={sourceDocHref(h.documentId, h.pageStart != null ? { page: h.pageStart } : { chunk: h.chunkIndex })} className="text-[13px] font-medium leading-snug hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{h.title}</Link>
+      <Link href={sourceDocHref(h.documentId, h.pageStart != null ? { page: h.pageStart } : { chunk: h.chunkIndex }, from)} className="text-[13px] font-medium leading-snug hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{h.title}</Link>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-muted-foreground">
         <span className="text-foreground/80">{h.publisher}</span>
         <span aria-hidden>·</span><span>{kindLabel(h.kind)}</span>
@@ -287,7 +289,7 @@ function HitRow({ h }: { h: SourceSearchHit }) {
 // Browse
 // ---------------------------------------------------------------------------
 
-function BrowseTab({ filters, onChange, empty, onOpenFilters }: { filters: SourcesFilters; onChange: (p: Partial<SourcesFilters>) => void; empty: boolean; onOpenFilters: () => void }) {
+function BrowseTab({ filters, onChange, empty, onOpenFilters, from }: { filters: SourcesFilters; onChange: (p: Partial<SourcesFilters>) => void; empty: boolean; onOpenFilters: () => void; from: string }) {
   const qs = listApiQuery(filters, null);
   const [docs, setDocs] = React.useState<SourceDocument[] | null>(null);
   const [cursor, setCursor] = React.useState<string | null>(null);
@@ -316,7 +318,7 @@ function BrowseTab({ filters, onChange, empty, onOpenFilters }: { filters: Sourc
   return (
     <>
       <div className="flex items-center gap-2">
-        <QueryBox value={filters.q} onSubmit={(q) => onChange({ q })} placeholder="Narrow by words in the title or text" label="Narrow the list" />
+        <QueryBox value={filters.q} onSubmit={(q) => onChange({ q })} placeholder="Narrow by title, case or diary number" label="Narrow the list by title, case or diary number" />
         <ActiveFilters filters={filters} onOpenFilters={onOpenFilters} />
       </div>
       <div className="mt-4" aria-live="polite">
@@ -325,11 +327,20 @@ function BrowseTab({ filters, onChange, empty, onOpenFilters }: { filters: Sourc
         ) : error ? (
           isOfficialUnavailable(error) ? <OfficialUnavailable error={error} /> : <OfficialErrorState title="The list could not be loaded" error={error} onRetry={() => setNonce((n) => n + 1)} />
         ) : docs && !docs.length ? (
-          empty && !filters.q && !hasSourceFilters(filters) ? <EmptyCorpus /> : <EmptyState icon={SearchX} title="No documents match" description="No collected document matches these filters." />
+          empty && !filters.q && !hasSourceFilters(filters) ? <EmptyCorpus /> : (
+            <EmptyState
+              icon={SearchX}
+              title="No documents match"
+              description={filters.q
+                ? <>No collected document has &ldquo;{filters.q}&rdquo; in its title, case number or diary number{hasSourceFilters(filters) ? " with these filters" : ""}. The list does not look inside the text: use Search for that.</>
+                : "No collected document matches these filters."}
+              action={filters.q ? <Button size="xs" variant="outline" onClick={() => onChange({ tab: "search" })}><Search className="size-3.5" />Search the text</Button> : undefined}
+            />
+          )
         ) : docs ? (
           <>
             <ul className={cn("divide-y rounded-lg border", loading && "opacity-60")}>
-              {docs.map((d) => <DocRow key={d.id} d={d} />)}
+              {docs.map((d) => <DocRow key={d.id} d={d} from={from} />)}
             </ul>
             <div className="mt-3 flex items-center gap-2 text-[11.5px] text-muted-foreground">
               <span className="tabular">{fmt(docs.length)} shown, newest first</span>
@@ -343,13 +354,13 @@ function BrowseTab({ filters, onChange, empty, onOpenFilters }: { filters: Sourc
   );
 }
 
-function DocRow({ d }: { d: SourceDocument }) {
+function DocRow({ d, from }: { d: SourceDocument; from: string }) {
   const official = safeHttp(d.fileUrl ?? d.url);
   return (
     <li className="grid gap-x-3 gap-y-0.5 px-3.5 py-2.5 sm:grid-cols-[6.5rem_minmax(0,1fr)_auto]">
       <span className="text-[11.5px] text-muted-foreground tabular">{formatDocDate(d.docDate) ?? "undated"}</span>
       <div className="min-w-0">
-        <Link href={sourceDocHref(d.id)} className="line-clamp-2 text-[12.5px] font-medium leading-snug hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{d.title}</Link>
+        <Link href={sourceDocHref(d.id, undefined, from)} className="line-clamp-2 text-[12.5px] font-medium leading-snug hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{d.title}</Link>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-muted-foreground">
           <span>{kindLabel(d.kind)}</span>
           {d.pages ? <span className="tabular">· {d.pages} page{d.pages === 1 ? "" : "s"}</span> : null}
@@ -387,7 +398,7 @@ function CoverageTab({ status }: { status: OfficialStatus }) {
               <th scope="col">Source</th>
               <th scope="col" className="text-right">Documents</th>
               <th scope="col" className="text-right">Indexed</th>
-              <th scope="col" className="text-right">Embedded</th>
+              <th scope="col" className="text-right" title="Text chunks with an embedding, of all stored chunks (chunks, not documents)">Embedded chunks</th>
               <th scope="col" className="text-right">Waiting</th>
               <th scope="col" className="text-right">OCR needed</th>
               <th scope="col" className="text-right">Failed</th>
@@ -410,7 +421,7 @@ function CoverageTab({ status }: { status: OfficialStatus }) {
                   </td>
                   <td className="text-right font-medium tabular">{fmt(r.documents)}</td>
                   <td className="text-right tabular">{fmt(r.indexed)}</td>
-                  <td className="text-right tabular">{fmt(r.embedded)}</td>
+                  <td className="whitespace-nowrap text-right tabular">{fmt(r.embedded)}<span className="text-muted-foreground"> / {fmt(r.chunks)}</span></td>
                   <td className="text-right tabular text-muted-foreground">{fmt(r.waiting)}</td>
                   <td className={cn("text-right tabular", r.ocrNeeded ? "text-warning-foreground dark:text-warning" : "text-muted-foreground")}>{fmt(r.ocrNeeded)}</td>
                   <td className={cn("text-right tabular", r.failed ? "text-destructive" : "text-muted-foreground")}>{fmt(r.failed)}</td>

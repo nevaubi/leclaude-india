@@ -10,7 +10,11 @@ import { Chip, type ChipTone } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
 import { SAMPLE_CALENDAR, isValidIsoDate, type CourtCalendar } from "@/lib/india/holidays";
 import type { LimitationStep } from "@/lib/india/limitation";
-import { CALENDAR_CAVEAT, choiceForum, COURT_CALENDAR_FORUMS, DECISION_SUPPORT_FOOTER, describeCalendarChoice, fetchedDate, formatIsoDate, officialChoice, resolveCalendar, statusText, type CalendarChoice } from "../lib";
+import { safeHttp } from "@/modules/official-ui/shared";
+import {
+  CALENDAR_CAVEAT, calendarOcrNotes, calendarSourceNotes, choiceForum, COURT_CALENDAR_FORUMS, DECISION_SUPPORT_FOOTER, describeCalendarChoice, fetchedDate, formatIsoDate, hostPath, officialChoice, resolveCalendar, statusText, weeklyOffNote,
+  type CalendarChoice, type CalendarSourceRef,
+} from "../lib";
 import type { CourtCalendarsState } from "./use-court-calendars";
 
 /** Copy plain text to the clipboard with a toast either way. */
@@ -65,13 +69,43 @@ export function calendarFor(c: CalendarChoice, cals: Pick<CourtCalendarsState, "
   return resolveCalendar(c, cals.official);
 }
 
-/** Plain-text calendar line for copied results (source, fetched date and the ad-hoc caveat for official calendars). */
+/** Plain-text calendar line for copied results (source, fetched date, weekly offs, notes and the ad-hoc caveat for official calendars). */
 export function calendarLabel(c: CalendarChoice, cals: Pick<CourtCalendarsState, "official">): string {
   return describeCalendarChoice(c, cals.official);
 }
 
-function hostPath(url: string): string {
-  try { const u = new URL(url); return `${u.host}${u.pathname.length > 1 ? u.pathname : ""}`; } catch { return url; }
+/** Caveats that make a result computed with this calendar "requires verification" (official dates read by OCR). */
+export function calendarCaveats(c: CalendarChoice, cals: Pick<CourtCalendarsState, "official">): string[] {
+  const forum = choiceForum(c);
+  return forum ? calendarOcrNotes(cals.official[forum]) : [];
+}
+
+/** The court data's own notes on a calendar (Saturday practice, partial working days), folded by default. Phrasing content only: it sits inside the field hint. */
+function CalendarNotes({ text }: { text: string }) {
+  const [open, setOpen] = React.useState(false);
+  const id = React.useId();
+  return (
+    <span>
+      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)} className="rounded text-foreground/75 underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+        {open ? "Hide calendar notes" : "Calendar notes"}
+      </button>
+      {open ? <span id={id} className="mt-1 block">{text}</span> : null}
+    </span>
+  );
+}
+
+/** One calendar source: an http(s) link (plain text otherwise), its fetch date in India, and an OCR flag when the API gives one. */
+function CalendarSourceLink({ s }: { s: CalendarSourceRef }) {
+  const href = safeHttp(s.url);
+  const fetched = fetchedDate(s.fetchedAt);
+  const ocr = s.ocr === true || [s.note, ...(Array.isArray(s.notes) ? s.notes : [])].some((x) => typeof x === "string" && /\bOCR\b/i.test(x));
+  return (
+    <>
+      {href ? <a href={href} target="_blank" rel="noopener noreferrer" className="break-all text-foreground/80 underline-offset-2 hover:underline">{hostPath(href)}</a> : <span>{s.url ? "a source whose link is not a web address" : "a source with no link recorded"}</span>}
+      {fetched ? <> (fetched {fetched} IST)</> : null}
+      {ocr ? <> <span className="whitespace-nowrap rounded-[var(--radius-chip)] border border-warning/40 bg-warning/5 px-1 text-[10.5px] font-medium text-warning-foreground dark:text-warning">Dates from OCR — check the PDF</span></> : null}
+    </>
+  );
 }
 
 /**
@@ -88,15 +122,20 @@ export function CalendarSelect({ id, value, onChange, cals, label = "Court calen
   if (value === "none") hint = "No court calendar selected. The result will say the court-closed adjustment was not checked.";
   else if (value === "sample") hint = SAMPLE_CALENDAR.source;
   else if (loaded?.calendar) {
+    const serverNotes = [calendarSourceNotes(loaded.calendar), ...loaded.notes.filter((n) => !/\bOCR\b/i.test(n))].filter(Boolean).join(" ");
+    // Per-source OCR is flagged beside its link; response-level OCR notes are shown here.
+    const ocrNotes = loaded.notes.filter((n) => /\bOCR\b/i.test(n));
     hint = (
       <span className="flex flex-col gap-1">
         <span>
           Official calendar for <span className="tabular">{loaded.calendar.years.join(", ")}</span>
           {loaded.sources.length ? <> from {loaded.sources.map((s, k) => (
-            <React.Fragment key={s.documentId || s.url}>{k ? "; " : ""}<a href={s.url} target="_blank" rel="noopener noreferrer" className="break-all text-foreground/80 underline-offset-2 hover:underline">{hostPath(s.url)}</a>{fetchedDate(s.fetchedAt) ? <> (fetched {fetchedDate(s.fetchedAt)})</> : null}</React.Fragment>
+            <React.Fragment key={s.documentId || s.url || k}>{k ? "; " : ""}<CalendarSourceLink s={s} /></React.Fragment>
           ))}</> : null}.
         </span>
-        {loaded.notes.length ? <span>{loaded.notes.join(" ")}</span> : null}
+        <span>{weeklyOffNote(loaded.calendar)}</span>
+        {ocrNotes.map((n, k) => <span key={k} className="text-warning-foreground dark:text-warning">{n}</span>)}
+        {serverNotes ? <CalendarNotes text={serverNotes} /> : null}
       </span>
     );
   } else if (fState?.status === "loading") hint = "Loading the official calendar…";

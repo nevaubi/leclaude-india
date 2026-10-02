@@ -4,7 +4,7 @@ import type { SourceDef, SourceStats } from "@/modules/official/types";
 import { fetchOfficialJson, OfficialApiError } from "@/modules/official-ui/fetch";
 import {
   chunkFromOcr, COVERAGE_NOTE, coverageRows, documentApiHref, EMPTY_SOURCES_FILTERS, formatBytes, formatDocDate, formatFetchedAt, forumOptions, hasSourceFilters, isOcrText, kindLabel, lastRunOf, listApiQuery,
-  pageLabel, parseSourcesFilters, positiveInt, safeHttp, searchApiQuery, sourceDocHref, sourceDocIdFromParam, sourcesFiltersToParams, storageLine,
+  pageLabel, parseSourcesFilters, positiveInt, returnLabel, safeHttp, safeReturnPath, searchApiQuery, searchHitKey, sourceDocHref, sourceDocIdFromParam, sourcesFiltersToParams, storageLine,
 } from "@/modules/official-ui/shared";
 
 const def = (o: Partial<SourceDef>): SourceDef => ({
@@ -49,6 +49,36 @@ describe("official sources: URL state", () => {
     expect(sourceDocHref("od_abc123")).toBe("/sources/od_abc123");
   });
 
+  it("carries a same-site return path to the reader, so its back link keeps the search, filters and tab", () => {
+    const from = "/sources?tab=browse&q=moratorium&source=sebi-orders";
+    const href = sourceDocHref("od_abc123", { page: 2 }, from);
+    expect(href).toBe(`/sources/od_abc123?page=2&from=${encodeURIComponent(from)}`);
+    expect(safeReturnPath(new URL(href, "https://app.example").searchParams.get("from"))).toBe(from);
+    expect(sourceDocHref("od_abc123", undefined, "/cases/sc:1")).toBe("/sources/od_abc123?from=%2Fcases%2Fsc%3A1");
+    // Never another origin, a protocol-relative URL, a script URL or control characters.
+    for (const bad of ["https://evil.example/x", "//evil.example/x", "/\\evil.example", "javascript:alert(1)", "sources", "/sources\nx", "", null]) {
+      expect(safeReturnPath(bad), String(bad)).toBeNull();
+      expect(sourceDocHref("od_abc123", undefined, bad)).toBe("/sources/od_abc123");
+    }
+    expect(returnLabel(from)).toBe("Official sources");
+    expect(returnLabel(null)).toBe("Official sources");
+    expect(returnLabel("/cases/sc:1")).toBe("Case record");
+    expect(returnLabel("/tools?tool=causelist")).toBe("Practice tools");
+    expect(returnLabel("/matters/m1")).toBe("Back");
+  });
+
+  it("keys search hits by document and chunk: several passages can share one page-level ref", () => {
+    const hits = [
+      { ref: "src://od_1#p3", documentId: "od_1", chunkIndex: 7 },
+      { ref: "src://od_1#p3", documentId: "od_1", chunkIndex: 8 },
+      { ref: "src://od_1#p3", documentId: "od_1", chunkIndex: 9 },
+      { ref: "src://od_2#p3", documentId: "od_2", chunkIndex: 7 },
+    ];
+    expect(new Set(hits.map((h) => h.ref)).size).toBe(2);
+    expect(new Set(hits.map(searchHitKey)).size).toBe(hits.length);
+    expect(searchHitKey(hits[0])).toBe("od_1#7");
+  });
+
   it("accepts only well-formed document ids from the route", () => {
     expect(sourceDocIdFromParam("od_abc123")).toBe("od_abc123");
     expect(sourceDocIdFromParam("od%5Fabc123")).toBe("od_abc123");
@@ -63,17 +93,22 @@ describe("official sources: URL state", () => {
 });
 
 describe("official sources: display", () => {
-  it("labels OCR text everywhere it applies", () => {
-    expect(isOcrText("ocr_model")).toBe(true);
-    expect(isOcrText("text_layer", [3])).toBe(true);
+  it("labels OCR text everywhere it applies, conservatively", () => {
+    // The pipeline's real states: a text layer with no OCR; "ocr_model" with the OCR'd pages listed whenever any page
+    // was OCR'd (the rest keep their text layer); a document never stays "text_layer" with OCR pages.
     expect(isOcrText("text_layer", [])).toBe(false);
+    expect(isOcrText("html", [])).toBe(false);
+    expect(isOcrText("ocr_model", [3, 4])).toBe(true);
+    expect(isOcrText("ocr_model", [])).toBe(true);
     expect(isOcrText(null)).toBe(false);
-    const doc = { extraction: "text_layer" as const, ocrPages: [3, 4] };
-    expect(chunkFromOcr(doc, { pageStart: 1, pageEnd: 2 })).toBe(false);
-    expect(chunkFromOcr(doc, { pageStart: 2, pageEnd: 3 })).toBe(true);
-    expect(chunkFromOcr(doc, { pageStart: 4, pageEnd: null })).toBe(true);
-    expect(chunkFromOcr(doc, { pageStart: null, pageEnd: null })).toBe(false);
-    expect(chunkFromOcr({ extraction: "ocr_model", ocrPages: [] }, { pageStart: null, pageEnd: null })).toBe(true);
+    const partial = { extraction: "ocr_model" as const, ocrPages: [3, 4] };
+    // Conservative: once any page of a document came from OCR, every passage of it carries the OCR label.
+    expect(chunkFromOcr(partial, { pageStart: 1, pageEnd: 2 })).toBe(true);
+    expect(chunkFromOcr(partial, { pageStart: 4, pageEnd: null })).toBe(true);
+    expect(chunkFromOcr(partial, { pageStart: null, pageEnd: null })).toBe(true);
+    const clean = { extraction: "text_layer" as const, ocrPages: [] as number[] };
+    expect(chunkFromOcr(clean, { pageStart: 1, pageEnd: 2 })).toBe(false);
+    expect(chunkFromOcr(clean, { pageStart: null, pageEnd: null })).toBe(false);
   });
 
   it("formats pages, dates, sizes and links conservatively", () => {

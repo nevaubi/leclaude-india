@@ -5,9 +5,11 @@ import { arbitrationSetAsideTimeline, chequeDishonourTimeline, computeLimitation
 import { computeAdValoremFee } from "@/lib/india/court-fees";
 import { SAMPLE_CALENDAR, type CourtCalendar } from "@/lib/india/holidays";
 import {
-  CALENDAR_CAVEAT, calendarYears, causeListQuery, choiceForum, condonationDelay, countCourtDays, courtDaysToText, delayNote, delayToText, describeCalendarChoice, addWorkingDays, nextCourtDay,
-  officialChoice, resolveCalendar, COURT_CALENDAR_FORUMS, type OfficialCalendarResponse,
+  CALENDAR_CAVEAT, calendarHasOcr, calendarOcrNotes, calendarSourceNotes, calendarYears, CAUSE_LIST_LIMIT, causeListCapped, causeListEntryText, causeListForumLabel, causeListQuery, causeListSearchText, causeListToText,
+  choiceForum, condonationDelay, countCourtDays, courtDaysToText, delayNote, delayToText, describeCalendarChoice, addWorkingDays, addWorkingDaysToText, fetchedDate, istDate, nextCourtDay, nextCourtDayToText,
+  officialChoice, resolveCalendar, weeklyOffNote, withCalendarCaveats, COURT_CALENDAR_FORUMS, type OfficialCalendarResponse,
 } from "@/modules/tools/lib";
+import type { CauseListEntry } from "@/modules/official/types";
 import { TOOL_IDS, toolFromParam } from "@/modules/tools/ids";
 import { fetchCourtCalendar } from "@/modules/tools/components/use-court-calendars";
 
@@ -202,14 +204,63 @@ describe("court calendar choice", () => {
     expect(calendarYears("2026-10-02")).toEqual([2025, 2026, 2027]);
   });
 
-  it("describes the calendar with its source, fetched date and the ad-hoc caveat", () => {
+  it("describes the calendar with its source, fetched date (India time), weekly offs, notes and the ad-hoc caveat", () => {
     const d = describeCalendarChoice("official:hc-delhi", { "hc-delhi": DHC_RESPONSE });
     expect(d).toContain("High Court of Delhi official calendar for 2026");
-    expect(d).toContain("https://delhihighcourt.nic.in/files/calendar-2026.pdf (fetched 3 Sep 2026)");
+    expect(d).toContain("https://delhihighcourt.nic.in/files/calendar-2026.pdf (fetched 3 Sep 2026 IST)");
     expect(d).toContain(CALENDAR_CAVEAT);
+    // The weekly-off assumption is stated, from the calendar's data.
+    expect(d).toContain("Weekly off in this calendar: Sunday. Saturdays are not marked closed");
+    // The server's notes (here: the Supreme Court's Saturday practice) are carried, without repeating its source line.
+    const sciNote = "Weekly off: Sunday. The Supreme Court's list notifies Saturday holidays individually (e.g. Independence Day 2026, a Saturday), so Saturdays are not treated as closed; benches ordinarily sit Monday to Friday and the Registry's Saturday hours vary by notification.";
+    const sci: OfficialCalendarResponse = {
+      calendar: { ...DHC, id: "official:sci:2026", courtId: "sci", source: `Supreme Court of India: official calendar data for 2026 from https://www.sci.gov.in/calendar-2026.pdf (fetched 2026-09-03). ${sciNote} Ad-hoc holidays may be missing.` },
+      sources: [{ documentId: "od_2", url: "https://www.sci.gov.in/calendar-2026.pdf", fetchedAt: "2026-09-03T20:00:00Z", years: [2026] }], forum: "sci", notes: [],
+    };
+    const ds = describeCalendarChoice("official:sci", { sci });
+    expect(ds).toContain(`Calendar notes: ${sciNote} Ad-hoc holidays may be missing.`);
+    expect(ds).not.toContain("(fetched 2026-09-03)");
+    expect(ds).toContain("(fetched 4 Sep 2026 IST)");
+    expect(calendarSourceNotes(sci.calendar!)).toBe(`${sciNote} Ad-hoc holidays may be missing.`);
+    expect(calendarSourceNotes({ source: "Some other wording entirely.", sample: false })).toBe("Some other wording entirely.");
+    expect(calendarSourceNotes({ source: "High Court of Delhi: official calendar data for 2026.", sample: false })).toBeNull();
+    expect(calendarSourceNotes(SAMPLE_CALENDAR)).toBeNull();
+    expect(weeklyOffNote({ weeklyOff: [0, 6] })).toBe("Weekly off in this calendar: Sunday and Saturday.");
     expect(describeCalendarChoice("official:sci", {})).toMatch(/official calendar not loaded \(court holidays not checked\)/);
     expect(describeCalendarChoice("none", {})).toBe("None selected");
     expect(describeCalendarChoice("sample", {})).toMatch(/illustrative/);
+  });
+
+  it("dates fetches in India time, not by the UTC date", () => {
+    expect(istDate("2026-09-03T20:00:00Z")).toBe("2026-09-04");
+    expect(istDate("2026-09-03T10:15:00Z")).toBe("2026-09-03");
+    expect(istDate("2026-09-03")).toBe("2026-09-03");
+    expect(istDate("not a date")).toBeNull();
+    expect(istDate(null)).toBeNull();
+    expect(fetchedDate("2026-09-03T18:31:00Z")).toBe("4 Sep 2026");
+    expect(fetchedDate("2026-09-03T18:29:00Z")).toBe("3 Sep 2026");
+  });
+
+  it("flags calendar dates read by OCR, from the API's flag or notes, without assuming the field exists", () => {
+    expect(calendarOcrNotes(DHC_RESPONSE)).toEqual([]);
+    expect(calendarHasOcr(undefined)).toBe(false);
+    const ocr: OfficialCalendarResponse = { ...DHC_RESPONSE, sources: [{ ...DHC_RESPONSE.sources[0], ocr: true, note: "scanned list: OCR model x" }] };
+    const notes = calendarOcrNotes(ocr);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatch(/^Dates from delhihighcourt\.nic\.in\/files\/calendar-2026\.pdf were read by OCR .* check them against the PDF\. \(scanned list: OCR model x\)$/);
+    expect(calendarOcrNotes({ ...DHC_RESPONSE, sources: [{ ...DHC_RESPONSE.sources[0], notes: ["Text from OCR"] }] })).toHaveLength(1);
+    expect(calendarOcrNotes({ ...DHC_RESPONSE, notes: ["2027 holidays came from OCR of a scanned notice"] })).toEqual(["2027 holidays came from OCR of a scanned notice"]);
+    expect(describeCalendarChoice("official:hc-delhi", { "hc-delhi": ocr })).toContain(notes[0]);
+    // A source whose link is not http(s) is never printed or named by its raw text.
+    const bad: OfficialCalendarResponse = { ...DHC_RESPONSE, sources: [{ ...DHC_RESPONSE.sources[0], url: "javascript:alert(1)", ocr: true }] };
+    expect(describeCalendarChoice("official:hc-delhi", { "hc-delhi": bad })).not.toContain("javascript:");
+    expect(calendarOcrNotes(bad)[0]).toMatch(/^Dates from a calendar source were read by OCR/);
+    // A computation that uses an OCR-read calendar requires verification.
+    const r = withCalendarCaveats({ status: "computed" as const, uncertain: [] as string[] }, notes);
+    expect(r).toEqual({ status: "requires_verification", uncertain: notes });
+    expect(withCalendarCaveats({ status: "invalid_input" as const, uncertain: [] as string[] }, notes).status).toBe("invalid_input");
+    expect(withCalendarCaveats({ status: "computed" as const, uncertain: [] as string[] }, []).status).toBe("computed");
+    expect(nextCourtDay("2026-10-05", DHC, { caveats: notes })).toMatchObject({ status: "requires_verification", date: "2026-10-05", uncertain: notes });
   });
 
   it("classifies the calendar API's answers without inventing a calendar", async () => {
@@ -236,13 +287,29 @@ describe("court calendar choice", () => {
 });
 
 describe("court days", () => {
-  it("counts sitting days with both ends included and lists the closures", () => {
-    const r = countCourtDays("2026-10-01", "2026-10-05", DHC);
-    expect(r).toMatchObject({ status: "computed", open: 3, days: 5, unknown: null });
-    expect(r.closed).toEqual([{ date: "2026-10-02", reason: "holiday: Gandhi Jayanti" }, { date: "2026-10-04", reason: "weekly off (Sunday)" }]);
-    const text = courtDaysToText({ from: "2026-10-01", to: "2026-10-05" }, r, "Delhi HC");
-    expect(text).toContain("Working days: 3 of 5 calendar days");
+  it("counts court working days with both ends included and lists the closures", () => {
+    // Mon 5 – Fri 9 Oct 2026: no Saturday in the range, so nothing rests on Saturday practice.
+    const r = countCourtDays("2026-10-05", "2026-10-09", DHC);
+    expect(r).toMatchObject({ status: "computed", open: 5, days: 5, unknown: null, uncertain: [] });
+    const r2 = countCourtDays("2026-10-01", "2026-10-05", DHC);
+    expect(r2.closed).toEqual([{ date: "2026-10-02", reason: "holiday: Gandhi Jayanti" }, { date: "2026-10-04", reason: "weekly off (Sunday)" }]);
+    const text = courtDaysToText({ from: "2026-10-01", to: "2026-10-05" }, r2, "Delhi HC");
+    expect(text).toContain("Court working days: 3 of 5 calendar days");
+    expect(text).toContain("Days closed under the calendar:");
     expect(text).toContain("2026-10-02");
+    // The result never claims the court "sits": it counts working days under the notified calendar.
+    expect(text).not.toMatch(/\bsits\b|sitting day|does not sit:/);
+  });
+
+  it("requires verification when the count rests on a Saturday the calendar does not mark closed", () => {
+    // Deliberately changed: Sat 3 Oct 2026 was counted as a sitting day with status "computed". The calendar's weekly off
+    // is Sunday only, which says nothing about whether the court sits that Saturday.
+    const r = countCourtDays("2026-10-01", "2026-10-05", DHC);
+    expect(r).toMatchObject({ status: "requires_verification", open: 3, days: 5 });
+    expect(r.uncertain).toEqual(["1 Saturday is counted as a court working day because the calendar does not mark it closed. If the court does not sit on that Saturday, the count is 2."]);
+    expect(courtDaysToText({ from: "2026-10-01", to: "2026-10-05" }, r, "Delhi HC")).toContain("Requires verification:\n- 1 Saturday is counted");
+    // With Saturdays as a notified weekly off, the same range is computed.
+    expect(countCourtDays("2026-10-01", "2026-10-05", { ...DHC, weeklyOff: [0, 6] })).toMatchObject({ status: "computed", open: 2, uncertain: [] });
   });
 
   it("stops (no number) where the calendar cannot answer, and rejects bad ranges", () => {
@@ -250,17 +317,38 @@ describe("court days", () => {
     expect(r.status).toBe("requires_verification");
     expect(r.open).toBeNull();
     expect(r.unknown?.date).toBe("2027-01-01");
+    expect(r.uncertain[0]).toMatch(/cannot answer for 2027-01-01/);
     expect(countCourtDays("2026-10-05", "2026-10-01", DHC).status).toBe("invalid_input");
     expect(countCourtDays("2026-10", "2026-10-05", DHC).status).toBe("invalid_input");
     expect(countCourtDays("2026-10-01", "2026-10-03", SAMPLE_CALENDAR).status).toBe("requires_verification");
   });
 
-  it("finds the next sitting day and adds working days", () => {
-    expect(nextCourtDay("2026-10-02", DHC)).toMatchObject({ status: "computed", date: "2026-10-03", skipped: [{ date: "2026-10-02" }] });
+  it("finds the next court working day and adds court working days", () => {
+    expect(nextCourtDay("2026-10-04", DHC)).toMatchObject({ status: "computed", date: "2026-10-05", skipped: [{ date: "2026-10-04" }], uncertain: [] });
     expect(nextCourtDay("2026-12-26", DHC)).toMatchObject({ date: null, status: "requires_verification" });
-    expect(addWorkingDays("2026-10-01", 2, DHC)).toMatchObject({ status: "computed", date: "2026-10-05" });
+    expect(addWorkingDays("2026-10-05", 2, DHC)).toMatchObject({ status: "computed", date: "2026-10-07", uncertain: [] });
     expect(addWorkingDays("2026-12-20", 10, DHC)).toMatchObject({ status: "requires_verification", date: null });
     expect(addWorkingDays("2026-10-01", 0, DHC).status).toBe("invalid_input");
+  });
+
+  it("marks a Saturday answer as requiring verification and gives the answer with Saturdays closed", () => {
+    // Deliberately changed: Sat 3 Oct 2026 was returned as the next "sitting day" with status "computed".
+    const next = nextCourtDay("2026-10-02", DHC);
+    expect(next).toMatchObject({ status: "requires_verification", date: "2026-10-03", skipped: [{ date: "2026-10-02" }] });
+    expect(next.uncertain).toEqual(["Sat, 3 Oct 2026 is a Saturday that the calendar does not mark closed. If the court does not sit that day, the next court working day is Mon, 5 Oct 2026 (2026-10-05)."]);
+    const nextText = nextCourtDayToText("2026-10-02", next, "Delhi HC");
+    expect(nextText).toContain("Next court working day: Sat, 3 Oct 2026 (2026-10-03)");
+    expect(nextText).toContain("Status: Requires verification");
+    expect(nextText).toContain("Mon, 5 Oct 2026 (2026-10-05)");
+    expect(nextText).not.toMatch(/\bsits\b|sitting day/);
+    // Deliberately changed: Thu 1 Oct + 2 counted Sat 3 Oct.
+    const added = addWorkingDays("2026-10-01", 2, DHC);
+    expect(added).toMatchObject({ status: "requires_verification", date: "2026-10-05" });
+    expect(added.uncertain[0]).toMatch(/If the court does not sit on them, the result is Tue, 6 Oct 2026 \(2026-10-06\)\.$/);
+    expect(addWorkingDaysToText("2026-10-01", 2, added, "Delhi HC")).toContain("Requires verification:");
+    // A notified Saturday weekly off removes the doubt.
+    expect(nextCourtDay("2026-10-02", { ...DHC, weeklyOff: [0, 6] })).toMatchObject({ status: "computed", date: "2026-10-05" });
+    expect(addWorkingDays("2026-10-01", 2, { ...DHC, weeklyOff: [0, 6] })).toMatchObject({ status: "computed", date: "2026-10-06" });
   });
 });
 
@@ -286,9 +374,27 @@ describe("cause list search query", () => {
   const base = { forum: "sci", date: "2026-10-05", caseNumber: "", diary: "", advocate: "" };
   it("builds exact-match queries", () => {
     expect(causeListQuery(base)).toEqual({ qs: "forum=sci&date=2026-10-05&limit=200", error: null });
+    expect(CAUSE_LIST_LIMIT).toBe(200);
     expect(causeListQuery({ ...base, date: "", caseNumber: "SLP(C) No. 1234/2026" }).qs).toBe("forum=sci&case=SLP%28C%29+No.+1234%2F2026&limit=200");
     expect(causeListQuery({ ...base, diary: "54583/2026" }).qs).toContain("diary=54583%2F2026");
     expect(causeListQuery({ ...base, advocate: "  AJAY   MARWAH " }).qs).toContain("advocate=AJAY+MARWAH");
+  });
+
+  it("sends the diary number normalized, and refuses a case number typed as a diary number", () => {
+    expect(new URLSearchParams(causeListQuery({ ...base, diary: "Diary No. 054583-2026" }).qs!).get("diary")).toBe("54583/2026");
+    expect(new URLSearchParams(causeListQuery({ ...base, diary: "SLP(C) No. 1234/2026 (Diary No. 54583/2026)" }).qs!).get("diary")).toBe("54583/2026");
+    expect(causeListQuery({ ...base, diary: "W.P.(C) 12/2026" })).toMatchObject({ qs: null, error: expect.stringMatching(/not a diary number/) });
+    expect(causeListQuery({ ...base, diary: "Diary No. 1/2026, Diary No. 2/2026" }).qs).toBeNull();
+  });
+
+  it("keeps NCLT searches bench-exact: the bench-qualified key is sent, an unqualified number is refused", () => {
+    const nclt = { ...base, forum: "nclt" };
+    expect(new URLSearchParams(causeListQuery({ ...nclt, caseNumber: "CP(IB)/29(MB)2022" }).qs!).get("case")).toBe("CPIB/29/2022@MB");
+    expect(new URLSearchParams(causeListQuery({ ...nclt, caseNumber: "IA/259(MP)2026" }).qs!).get("case")).toBe("IA/259/2026@MP");
+    expect(causeListQuery({ ...nclt, caseNumber: "CP(IB) No. 29/2022" })).toMatchObject({ qs: null, error: expect.stringMatching(/repeat at every bench/) });
+    expect(causeListQuery({ ...base, caseNumber: "CP(IB)/29(MB)2022" })).toMatchObject({ qs: null, error: expect.stringMatching(/NCLT number .*choose NCLT/) });
+    // A date-only NCLT search is allowed: every entry is labelled with its bench.
+    expect(causeListQuery(nclt).qs).toBe("forum=nclt&date=2026-10-05&limit=200");
   });
   it("refuses what it cannot match exactly", () => {
     expect(causeListQuery({ ...base, forum: "hc-mars" }).error).toMatch(/Choose a court/);
@@ -298,5 +404,45 @@ describe("cause list search query", () => {
     expect(causeListQuery({ ...base, advocate: "AB" }).error).toMatch(/at least 3 letters/);
     expect(causeListQuery({ ...base, date: "" }).error).toMatch(/Give a list date, or a case or diary number/);
     expect(causeListQuery({ ...base, date: "2026-13-01" }).error).toMatch(/list date in full/);
+  });
+});
+
+describe("cause list results", () => {
+  const entry = (o: Partial<CauseListEntry>): CauseListEntry => ({
+    id: "cle_1", documentId: "od_list", forum: "nclt-mumbai", listDate: "2026-10-05", listType: "daily", courtNo: "II", bench: "Hon'ble Member (J)", itemNo: "14",
+    caseNumbers: [{ printed: "CP(IB)/29(MB)2022", normalized: "CPIB/29/2022" }], diaryNo: null, parties: "A Ltd. v. B Ltd.", advocates: ["X Y"], raw: "14 CP(IB)/29(MB)2022 A Ltd. v. B Ltd.",
+    page: 3, publishedAt: null, fetchedAt: "2026-10-04T20:00:00Z", parsed: true, ...o,
+  } as CauseListEntry);
+
+  it("labels each entry with its court or bench", () => {
+    expect(causeListForumLabel("nclt-mumbai")).toBe("NCLT Mumbai Bench");
+    expect(causeListForumLabel("nclt-new-delhi")).toBe("NCLT New Delhi Bench");
+    expect(causeListForumLabel("nclt-principal")).toBe("NCLT Principal Bench, New Delhi");
+    expect(causeListForumLabel("nclt")).toBe("NCLT (bench not printed)");
+    expect(causeListForumLabel("nclat-chennai")).toBe("NCLAT Chennai Bench");
+    expect(causeListForumLabel("sci")).toBe("Supreme Court of India");
+    expect(causeListForumLabel("hc-bombay")).toBe("High Court of Bombay");
+    expect(causeListForumLabel("")).toBe("Forum not recorded");
+    const t = causeListEntryText(entry({}));
+    expect(t.split("\n")[0]).toBe("NCLT Mumbai Bench · Mon, 5 Oct 2026 · Daily list · Court II · Item 14 · p. 3");
+    expect(t).toContain("fetched 5 Oct 2026, 01:30 IST");
+  });
+
+  it("copies an unparsed entry as printed, never as an empty entry", () => {
+    const t = causeListEntryText(entry({ parsed: false, caseNumbers: [], parties: null, advocates: [], raw: "14   CP(IB)/29(MB)2022\nA Ltd. v. B Ltd." }));
+    expect(t).toContain("As printed (not split into fields): 14 CP(IB)/29(MB)2022 A Ltd. v. B Ltd.");
+    expect(t).not.toContain("Case number not printed");
+  });
+
+  it("describes the submitted search (not the form being edited) and says when the list was cut short", () => {
+    const qs = causeListQuery({ forum: "nclt", date: "2026-10-05", caseNumber: "CP(IB)/29(MB)2022", diary: "", advocate: "" }).qs!;
+    expect(causeListSearchText(qs)).toBe("NCLT (all benches), list date Mon, 5 Oct 2026, case number CPIB/29/2022@MB");
+    expect(causeListCapped(199, qs)).toBe(false);
+    expect(causeListCapped(200, qs)).toBe(true);
+    const many = Array.from({ length: 200 }, (_, k) => entry({ id: `e${k}` }));
+    const text = causeListToText(qs, many);
+    expect(text.split("\n")[0]).toBe("Cause list entries — NCLT (all benches), list date Mon, 5 Oct 2026, case number CPIB/29/2022@MB");
+    expect(text).toContain("200 entries (only the first 200 returned; narrow the search to see the rest)");
+    expect(causeListToText(qs, [entry({})])).toContain("1 entry\n");
   });
 });

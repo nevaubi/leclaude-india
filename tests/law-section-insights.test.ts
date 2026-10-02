@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
-  hasMixedStatus, INDIA_CODE_LEGACY_NOTE, legacyIndiaCodeNote, publisherLabel, sectionStatusBadge, statusBreakdown, statusLabel, statusTone, type LawInstrument,
+  ACT_IN_FORCE_NOTE, INDIA_CODE_LEGACY_NOTE, legacyIndiaCodeNote, publisherLabel, sectionStatusBadge, statusLabel, statusTone, type LawInstrument,
 } from "@/modules/law/shared";
-import { criminalCodeOf, sectionCorrespondence } from "@/modules/law/code-correspondence";
-import { badYear, citatorNotBuilt, sectionStatsQuery, sparkPoints, statuteTitleFor, yearSeries, EMPTY_SECTION_FILTERS } from "@/modules/law/most-cited";
+import { codeRepeal, criminalCodeOf, sectionCorrespondence } from "@/modules/law/code-correspondence";
+import { badYear, citatorNotBuilt, linkableSection, sectionStatsQuery, sparkPoints, statuteTitleFor, yearSeries, EMPTY_SECTION_FILTERS } from "@/modules/law/most-cited";
 
 const inst = (o: Partial<LawInstrument>): Pick<LawInstrument, "title" | "year" | "jurisdiction"> => ({ title: "x", year: null, jurisdiction: "central", ...o });
 
 describe("section status badge", () => {
-  it("is green only for a recorded in-force status", () => {
+  it("is green only when the dataset flags the provision itself in force", () => {
     expect(sectionStatusBadge({ status: "in_force", in_force: true })).toMatchObject({ label: "In force", tone: "ok" });
-    expect(sectionStatusBadge({ status: "in_force", in_force: null })).toMatchObject({ tone: "ok" });
     expect(sectionStatusBadge({ status: null, in_force: true })).toMatchObject({ label: "In force", tone: "ok" });
+    // Deliberately changed: `status` is the Act's status repeated on every provision, so an in-force Act with no
+    // provision flag is "Act in force" (neutral), not a green "In force" for the section.
+    expect(sectionStatusBadge({ status: "in_force", in_force: null })).toMatchObject({ label: "Act in force", tone: "unknown", title: ACT_IN_FORCE_NOTE });
+    expect(ACT_IN_FORCE_NOTE).toMatch(/does not record whether this provision itself is in force/);
     for (const s of ["repealed", "superseded", "spent", "omitted", "substituted", "replaced"]) {
       expect(sectionStatusBadge({ status: s, in_force: false }).tone, s).toBe("off");
       expect(sectionStatusBadge({ status: s, in_force: true }).tone, s).toBe("off");
@@ -27,8 +30,23 @@ describe("section status badge", () => {
     expect(sectionStatusBadge({ status: "  ", in_force: null })).toMatchObject({ label: "Status not recorded", tone: "unknown" });
     expect(sectionStatusBadge({ status: "partially_in_force", in_force: null })).toMatchObject({ label: "Partly in force", tone: "unknown" });
     expect(sectionStatusBadge({ status: "weird_value", in_force: null })).toMatchObject({ label: "Weird value", tone: "unknown" });
-    // The badge always explains that section-level repeal is not in the dataset.
-    expect(sectionStatusBadge({ status: "in_force", in_force: true }).title).toMatch(/not recorded in the dataset/);
+    // The badge always explains that section-level repeal may be missing from the dataset.
+    expect(sectionStatusBadge({ status: "in_force", in_force: true }).title).toMatch(/may not be recorded in the dataset/);
+  });
+
+  it("always shows the IPC, CrPC and Evidence Act as repealed from 1 July 2024, whatever the dataset records", () => {
+    const ipc = codeRepeal(inst({ title: "The Indian Penal Code", year: 1860 }))!;
+    expect(ipc).toMatchObject({ code: "IPC", on: "1 July 2024" });
+    expect(ipc.note).toMatch(/Bharatiya Nyaya Sanhita, 2023 \(s\.358, repeal and savings\)/);
+    expect(codeRepeal(inst({ title: "Code of Criminal Procedure, 1973", year: 1974 }))!.note).toMatch(/Bharatiya Nagarik Suraksha Sanhita, 2023 \(s\.531/);
+    expect(codeRepeal(inst({ title: "Indian Evidence Act, 1872", year: 1872 }))!.note).toMatch(/Bharatiya Sakshya Adhiniyam, 2023 \(s\.170/);
+    // The new codes, other Acts and same-titled State instruments are not repealed by this rule.
+    expect(codeRepeal(inst({ title: "Bharatiya Nyaya Sanhita, 2023", year: 2023 }))).toBeNull();
+    expect(codeRepeal(inst({ title: "Indian Contract Act, 1872", year: 1872 }))).toBeNull();
+    expect(codeRepeal(inst({ title: "The Indian Penal Code", year: 1860, jurisdiction: "state" }))).toBeNull();
+    for (const flags of [{ status: "in_force", in_force: true }, { status: "in_force", in_force: null }, { status: null, in_force: null }, { status: "repealed", in_force: false }]) {
+      expect(sectionStatusBadge({ ...flags, repealedOn: ipc.on, repealedNote: ipc.note })).toEqual({ label: "Repealed (1 July 2024)", tone: "off", title: ipc.note });
+    }
   });
 
   it("labels substituted / replaced and keeps their tone off", () => {
@@ -38,18 +56,6 @@ describe("section status badge", () => {
     expect(statusTone("replaced")).toBe("off");
     expect(statusTone("in_force")).toBe("ok");
     expect(statusTone("amended")).toBe("unknown");
-  });
-});
-
-describe("instrument status breakdown", () => {
-  it("orders the mixture largest first and flags mixed instruments", () => {
-    const rows = statusBreakdown({ in_force: 412, repealed: 3, not_recorded: 2, junk: -1 as number });
-    expect(rows.map((r) => [r.status, r.count, r.tone])).toEqual([["in_force", 412, "ok"], ["repealed", 3, "off"], ["not_recorded", 2, "unknown"]]);
-    expect(rows[2].label).toBe("Status not recorded");
-    expect(hasMixedStatus({ in_force: 10 })).toBe(false);
-    expect(hasMixedStatus({ in_force: 10, repealed: 1 })).toBe(true);
-    expect(statusBreakdown(null)).toEqual([]);
-    expect(statusBreakdown(undefined)).toEqual([]);
   });
 });
 
@@ -123,6 +129,12 @@ describe("most-cited sections helpers", () => {
     expect(pts[0]).toBe("1.5,18.5");
     expect(pts[1]).toBe("98.5,1.5");
     expect(sparkPoints([{ judgments: 2 }], 100, 20)).toBe("50,1.5");
+  });
+
+  it("links only plain section numbers into the reader (never an order/rule reference)", () => {
+    for (const s of ["302", "498A", "65B", "10AA"]) expect(linkableSection(s), s).toBe(true);
+    for (const s of ["O.39 R.1", "O.7 R.11", "302(1)", "498-A", "498a", "Art. 21", "", "12ABCD"]) expect(linkableSection(s), s).toBe(false);
+    expect(linkableSection(null)).toBe(false);
   });
 
   it("resolves only central section-numbered Acts to statute titles, and recognises an unbuilt citator", () => {

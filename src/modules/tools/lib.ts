@@ -8,7 +8,10 @@
 import type { ApplicableCode, CodeName, MapResult } from "@/lib/india/criminal-code-map";
 import type { CourtFeeResult, CourtFeeTable, FeeSlab } from "@/lib/india/court-fees";
 import { addCourtDays, addDays, compareIso, daysBetween, isCourtOpen, isValidIsoDate, nextOpenDay, parseIsoDate, SAMPLE_CALENDAR, type CourtCalendar, type IsoDate } from "@/lib/india/holidays";
-import { normalizeCaseNumber, normalizeDiaryNo } from "@/modules/official/case-numbers";
+import { normalizeCaseNumber } from "@/modules/official/case-numbers";
+import type { CauseListEntry } from "@/modules/official/types";
+import { strictDiaryNumber } from "@/modules/caselaw/shared";
+import { formatFetchedAt, safeHttp } from "@/modules/official-ui/shared";
 import type { ChequeDishonourResult, LimitationResult, LimitationRule, LimitationStep } from "@/lib/india/limitation";
 
 export const DECISION_SUPPORT_FOOTER = "Decision support — verify against the Gazette text and the court's notified calendar.";
@@ -404,8 +407,11 @@ export const COURT_CALENDAR_FORUMS: { forum: string; label: string; short: strin
 /** Shown whenever an official court calendar is used, and in every copied result that uses one. */
 export const CALENDAR_CAVEAT = "Ad-hoc holidays and shifted sittings are notified separately — check the court's notices.";
 
-/** A calendar source as returned by /api/official/calendars. */
-export interface CalendarSourceRef { documentId: string; url: string; fetchedAt: string | null; years: number[] }
+/**
+ * A calendar source as returned by /api/official/calendars. `ocr` / `note` / `notes` are optional: the API marks a source
+ * whose dates were read by OCR from a scanned list; older responses carry none of them.
+ */
+export interface CalendarSourceRef { documentId: string; url: string; fetchedAt: string | null; years: number[]; ocr?: boolean | null; note?: string | null; notes?: string[] | null }
 
 /** GET /api/official/calendars response. `calendar` is null when no official calendar is loaded for those years. */
 export interface OfficialCalendarResponse { calendar: CourtCalendar | null; sources: CalendarSourceRef[]; forum: string | null; notes: string[] }
@@ -436,88 +442,237 @@ export function resolveCalendar(c: CalendarChoice, official: Record<string, Offi
   return forum ? official[forum]?.calendar ?? undefined : undefined;
 }
 
-/** "fetched 3 Sep 2026" style date from an ISO timestamp (date part only); null when absent. */
+/** The calendar date in India (IST) of a timestamp ("2026-09-03T20:00:00Z" → "2026-09-04"); a bare date is kept; null when unreadable. */
+export function istDate(ts: string | null | undefined): IsoDate | null {
+  if (!ts) return null;
+  const t = ts.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return isValidIsoDate(t) ? t : null;
+  const ms = Date.parse(t);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms + 330 * 60_000).toISOString().slice(0, 10);
+}
+
+/** "3 Sep 2026" from a fetch timestamp, as the date in India; null when absent. */
 export function fetchedDate(ts: string | null | undefined): string | null {
-  const d = ts && /^\d{4}-\d{2}-\d{2}/.test(ts) ? ts.slice(0, 10) : null;
+  const d = istDate(ts);
   return d ? formatIsoDate(d).replace(/^\w{3}, /, "") : null;
 }
 
-/** Plain-text label of a choice for copied results: what calendar, from where, fetched when, and the caveat. */
+/** "delhihighcourt.nic.in/files/calendar-2026.pdf" for display. */
+export function hostPath(url: string): string {
+  try { const u = new URL(url); return `${u.host}${u.pathname.length > 1 ? u.pathname : ""}`; } catch { return url; }
+}
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const SATURDAY = 6;
+
+/** The calendar's weekly offs, stated from its data (not from prose), with what that means for Saturdays. */
+export function weeklyOffNote(cal: Pick<CourtCalendar, "weeklyOff">): string {
+  const days = [...new Set(cal.weeklyOff)].filter((d) => d >= 0 && d <= 6).sort((a, b) => a - b).map((d) => DAY_NAMES[d]);
+  const base = `Weekly off in this calendar: ${days.length ? days.join(" and ") : "none recorded"}.`;
+  return cal.weeklyOff.includes(SATURDAY)
+    ? base
+    : `${base} Saturdays are not marked closed, so a Saturday counts as a court working day unless it is a listed holiday; whether the court sits on a given Saturday is not established by this calendar.`;
+}
+
+/**
+ * The server's explanatory notes about an official calendar (weekly-off practice, partial and notified working days),
+ * i.e. `calendar.source` without its first sentence, which only repeats the sources and their fetch dates (shown
+ * separately, in India time). If the text does not start with that sentence it is returned whole.
+ */
+export function calendarSourceNotes(cal: Pick<CourtCalendar, "source" | "sample">): string | null {
+  const src = (cal.source ?? "").replace(/\s+/g, " ").trim();
+  if (!src || cal.sample) return null;
+  const m = /^[^:]{1,120}: official calendar data for [^]*?\.(?: |$)/.exec(src);
+  const rest = (m ? src.slice(m[0].length) : src).trim();
+  return rest || null;
+}
+
+/**
+ * OCR warnings for an official calendar: one per source the API marks as read by OCR (`ocr: true`, or a note that
+ * mentions OCR), plus any response note that mentions OCR. Empty when nothing says OCR.
+ */
+export function calendarOcrNotes(r: OfficialCalendarResponse | undefined | null): string[] {
+  if (!r) return [];
+  const out: string[] = [];
+  const mentionsOcr = (x: unknown): x is string => typeof x === "string" && /\bOCR\b/i.test(x);
+  for (const s of r.sources ?? []) {
+    const sourceNotes = [s.note, ...(Array.isArray(s.notes) ? s.notes : [])].filter(mentionsOcr);
+    if (s.ocr !== true && !sourceNotes.length) continue;
+    const url = safeHttp(s.url);
+    const where = url ? hostPath(url) : "a calendar source";
+    out.push(`Dates from ${where} were read by OCR from a scanned list and may be misread: check them against the PDF.${sourceNotes.length ? ` (${sourceNotes.join(" ")})` : ""}`);
+  }
+  for (const n of r.notes ?? []) if (mentionsOcr(n) && !out.includes(n)) out.push(n);
+  return out;
+}
+
+/** True when an official calendar response says some of its dates came from OCR. */
+export function calendarHasOcr(r: OfficialCalendarResponse | undefined | null): boolean {
+  return calendarOcrNotes(r).length > 0;
+}
+
+/** Plain-text label of a choice for copied results: what calendar, from where, fetched when, its weekly offs, notes and the caveat. */
 export function describeCalendarChoice(c: CalendarChoice, official: Record<string, OfficialCalendarResponse | undefined>): string {
   if (c === "none") return "None selected";
-  if (c === "sample") return `Sample calendar "${SAMPLE_CALENDAR.id}" (illustrative; not a court's notified calendar)`;
+  if (c === "sample") return `Sample calendar "${SAMPLE_CALENDAR.id}" (illustrative; not a court's notified calendar). ${weeklyOffNote(SAMPLE_CALENDAR)}`;
   const forum = choiceForum(c);
   const f = COURT_CALENDAR_FORUMS.find((x) => x.forum === forum);
   const r = forum ? official[forum] : undefined;
   if (!forum || !r?.calendar) return `${f?.label ?? forum ?? "Court"}: official calendar not loaded (court holidays not checked)`;
-  const src = r.sources.map((s) => `${s.url}${fetchedDate(s.fetchedAt) ? ` (fetched ${fetchedDate(s.fetchedAt)})` : ""}`).join("; ");
-  return `${f?.label ?? forum} official calendar for ${r.calendar.years.join(", ")}${src ? ` from ${src}` : ""}. ${CALENDAR_CAVEAT}`;
+  const src = r.sources.map((s) => `${safeHttp(s.url) ?? "(source link not a web address)"}${fetchedDate(s.fetchedAt) ? ` (fetched ${fetchedDate(s.fetchedAt)} IST)` : ""}`).join("; ");
+  const notes = calendarSourceNotes(r.calendar);
+  return [
+    `${f?.label ?? forum} official calendar for ${r.calendar.years.join(", ")}${src ? ` from ${src}` : ""}.`,
+    weeklyOffNote(r.calendar),
+    notes ? `Calendar notes: ${notes}` : "",
+    ...calendarOcrNotes(r),
+    CALENDAR_CAVEAT,
+  ].filter(Boolean).join(" ");
+}
+
+/**
+ * Marks a computed result as requiring verification when the calendar behind it carries caveats (dates read by OCR),
+ * adding them to the result's uncertain points. Invalid input and "no fixed period" results are returned unchanged.
+ */
+export function withCalendarCaveats<T extends { status: string; uncertain: string[] }>(r: T, caveats: string[]): T {
+  if (!caveats.length || r.status === "invalid_input" || r.status === "no_fixed_period") return r;
+  const uncertain = [...r.uncertain, ...caveats.filter((c) => !r.uncertain.includes(c))];
+  return { ...r, status: (r.status === "computed" ? "requires_verification" : r.status) as T["status"], uncertain };
 }
 
 /* ───────────────────────────── court working days ───────────────────────────── */
 
+/** Extra caveats a court-days computation carries (e.g. OCR-read calendar dates); any caveat makes the result "requires verification". */
+export interface CourtDaysOptions { caveats?: string[] }
+
 export interface CourtDaysResult {
   status: "computed" | "requires_verification" | "invalid_input";
-  /** Working days counted (null when the calendar could not answer for a day in the range). */
+  /** Court working days counted (null when the calendar could not answer for a day in the range). */
   open: number | null;
   /** Calendar days in the range. */
   days: number;
   closed: { date: IsoDate; reason: string }[];
   /** First day the calendar cannot answer for (outside its years); counting stops there. */
   unknown: { date: IsoDate; reason: string } | null;
+  /** What the result depends on that the calendar does not establish (Saturday sittings, OCR-read dates). */
+  uncertain: string[];
   notes: string[];
 }
 
 const MAX_COUNT_DAYS = 3 * 366;
 
+/** The same calendar with Saturdays closed, to test whether a result depends on Saturday sittings; null when they already are. */
+function saturdaysOff(cal: CourtCalendar): CourtCalendar | null {
+  return cal.weeklyOff.includes(SATURDAY) ? null : { ...cal, weeklyOff: [...cal.weeklyOff, SATURDAY] };
+}
+
+function finish<T extends { status: "computed" | "requires_verification" | "invalid_input"; uncertain: string[] }>(r: T, cal: CourtCalendar, opts?: CourtDaysOptions): T {
+  const caveats = (opts?.caveats ?? []).filter((c) => !r.uncertain.includes(c));
+  const uncertain = [...r.uncertain, ...caveats];
+  const status = r.status === "invalid_input" ? r.status : cal.sample || uncertain.length ? "requires_verification" : r.status;
+  return { ...r, status, uncertain };
+}
+
 /**
  * Court working days from `from` to `to`, both days included, under `cal`. A day the calendar cannot answer for
- * (outside its years) stops the count: the result is "requires verification" with no number, never a guess.
+ * (outside its years) stops the count: the result is "requires verification" with no number, never a guess. When the
+ * count includes Saturdays that the calendar merely does not mark closed, the result requires verification and states
+ * the count with Saturdays closed.
  */
-export function countCourtDays(from: IsoDate, to: IsoDate, cal: CourtCalendar): CourtDaysResult {
-  const notes: string[] = [];
-  if (!isValidIsoDate(from) || !isValidIsoDate(to)) return { status: "invalid_input", open: null, days: 0, closed: [], unknown: null, notes: ["Enter both dates in full."] };
-  if (compareIso(from, to) > 0) return { status: "invalid_input", open: null, days: 0, closed: [], unknown: null, notes: ["The start date is after the end date."] };
+export function countCourtDays(from: IsoDate, to: IsoDate, cal: CourtCalendar, opts?: CourtDaysOptions): CourtDaysResult {
+  const empty = { open: null, closed: [], unknown: null, uncertain: [] };
+  if (!isValidIsoDate(from) || !isValidIsoDate(to)) return { status: "invalid_input", days: 0, ...empty, notes: ["Enter both dates in full."] };
+  if (compareIso(from, to) > 0) return { status: "invalid_input", days: 0, ...empty, notes: ["The start date is after the end date."] };
   const days = daysBetween(from, to) + 1;
-  if (days > MAX_COUNT_DAYS) return { status: "invalid_input", open: null, days, closed: [], unknown: null, notes: [`Ranges are limited to ${MAX_COUNT_DAYS} days.`] };
+  if (days > MAX_COUNT_DAYS) return { status: "invalid_input", days, ...empty, notes: [`Ranges are limited to ${MAX_COUNT_DAYS} days.`] };
   const closed: { date: IsoDate; reason: string }[] = [];
   let open = 0;
+  let saturdays = 0;
   for (let i = 0, d = from; i < days; i++, d = addDays(d, 1)) {
     const st = isCourtOpen(d, cal);
-    if (st.open === "unknown") return { status: "requires_verification", open: null, days, closed, unknown: { date: d, reason: st.reason }, notes: [`The calendar cannot answer for ${d} (${st.reason}); the count stops there.`] };
-    if (st.open) open++;
-    else closed.push({ date: d, reason: st.reason });
+    if (st.open === "unknown") return finish({ status: "requires_verification", open: null, days, closed, unknown: { date: d, reason: st.reason }, uncertain: [`The calendar cannot answer for ${d} (${st.reason}); the count stops there.`], notes: [] }, cal, opts);
+    if (st.open) {
+      open++;
+      if (parseIsoDate(d)!.getUTCDay() === SATURDAY) saturdays++;
+    } else closed.push({ date: d, reason: st.reason });
   }
+  const notes: string[] = [];
+  const uncertain: string[] = [];
   if (cal.sample) notes.push("Sample calendar: Sundays and three national holidays only. It is not the court's notified calendar.");
+  if (saturdays && !cal.weeklyOff.includes(SATURDAY)) {
+    uncertain.push(`${saturdays} Saturday${saturdays === 1 ? " is counted as a court working day" : "s are counted as court working days"} because the calendar does not mark ${saturdays === 1 ? "it" : "them"} closed. If the court does not sit on ${saturdays === 1 ? "that Saturday" : "those Saturdays"}, the count is ${open - saturdays}.`);
+  }
   notes.push("Both the start and the end date are counted.");
-  return { status: cal.sample ? "requires_verification" : "computed", open, days, closed, unknown: null, notes };
+  return finish({ status: "computed", open, days, closed, unknown: null, uncertain, notes }, cal, opts);
 }
 
-export interface NextCourtDayResult { status: "computed" | "requires_verification" | "invalid_input"; date: IsoDate | null; skipped: { date: IsoDate; reason: string }[]; notes: string[] }
+export interface NextCourtDayResult { status: "computed" | "requires_verification" | "invalid_input"; date: IsoDate | null; skipped: { date: IsoDate; reason: string }[]; uncertain: string[]; notes: string[] }
 
-/** The first day on or after `date` on which the court sits, under `cal` (null with the reason when it cannot say). */
-export function nextCourtDay(date: IsoDate, cal: CourtCalendar): NextCourtDayResult {
-  if (!isValidIsoDate(date)) return { status: "invalid_input", date: null, skipped: [], notes: ["Enter the date in full."] };
+/**
+ * The first court working day on or after `date` under the notified calendar `cal` (null with the reason when it cannot
+ * say). A Saturday answer that rests only on the calendar not marking Saturdays closed requires verification, and the
+ * next day with Saturdays closed is given.
+ */
+export function nextCourtDay(date: IsoDate, cal: CourtCalendar, opts?: CourtDaysOptions): NextCourtDayResult {
+  if (!isValidIsoDate(date)) return { status: "invalid_input", date: null, skipped: [], uncertain: [], notes: ["Enter the date in full."] };
   const r = nextOpenDay(date, cal);
-  if (!r.date) return { status: "requires_verification", date: null, skipped: r.skipped, notes: [r.unknown ? `The calendar cannot say: ${r.unknown}.` : "No working day found."] };
-  return { status: cal.sample ? "requires_verification" : "computed", date: r.date, skipped: r.skipped, notes: cal.sample ? ["Sample calendar: not the court's notified calendar."] : [] };
+  if (!r.date) return finish({ status: "requires_verification", date: null, skipped: r.skipped, uncertain: [r.unknown ? `The calendar cannot say: ${r.unknown}.` : "No court working day found."], notes: [] }, cal, opts);
+  const uncertain: string[] = [];
+  const alt = saturdaysOff(cal);
+  if (alt && parseIsoDate(r.date)!.getUTCDay() === SATURDAY) {
+    const a = nextOpenDay(date, alt);
+    uncertain.push(`${formatIsoDate(r.date)} is a Saturday that the calendar does not mark closed. If the court does not sit that day, the next court working day is ${a.date ? `${formatIsoDate(a.date)} (${a.date})` : "not determined by the calendar"}.`);
+  }
+  return finish({ status: "computed", date: r.date, skipped: r.skipped, uncertain, notes: cal.sample ? ["Sample calendar: not the court's notified calendar."] : [] }, cal, opts);
 }
 
-/** `date` plus `n` court working days (the start day is not counted); null with the reason when the calendar cannot say. */
-export function addWorkingDays(date: IsoDate, n: number, cal: CourtCalendar): { status: "computed" | "requires_verification" | "invalid_input"; date: IsoDate | null; notes: string[] } {
-  if (!isValidIsoDate(date)) return { status: "invalid_input", date: null, notes: ["Enter the date in full."] };
-  if (!Number.isInteger(n) || n < 1 || n > 500) return { status: "invalid_input", date: null, notes: ["Give a whole number of working days from 1 to 500."] };
+export interface AddWorkingDaysResult { status: "computed" | "requires_verification" | "invalid_input"; date: IsoDate | null; uncertain: string[]; notes: string[] }
+
+/**
+ * `date` plus `n` court working days (the start day is not counted); null with the reason when the calendar cannot
+ * say. When Saturdays the calendar does not mark closed change the answer, it requires verification and the date with
+ * Saturdays closed is given.
+ */
+export function addWorkingDays(date: IsoDate, n: number, cal: CourtCalendar, opts?: CourtDaysOptions): AddWorkingDaysResult {
+  if (!isValidIsoDate(date)) return { status: "invalid_input", date: null, uncertain: [], notes: ["Enter the date in full."] };
+  if (!Number.isInteger(n) || n < 1 || n > 500) return { status: "invalid_input", date: null, uncertain: [], notes: ["Give a whole number of court working days from 1 to 500."] };
   const r = addCourtDays(date, n, cal);
-  if (!r) return { status: "requires_verification", date: null, notes: ["The calendar does not cover every day needed (check its years)."] };
-  return { status: cal.sample ? "requires_verification" : "computed", date: r, notes: ["The start day is not counted.", ...(cal.sample ? ["Sample calendar: not the court's notified calendar."] : [])] };
+  if (!r) return finish({ status: "requires_verification", date: null, uncertain: ["The calendar does not cover every day needed (check its years)."], notes: [] }, cal, opts);
+  const uncertain: string[] = [];
+  const alt = saturdaysOff(cal);
+  const a = alt ? addCourtDays(date, n, alt) : r;
+  if (a !== r) uncertain.push(`The count treats Saturdays that the calendar does not mark closed as court working days. If the court does not sit on them, the result is ${a ? `${formatIsoDate(a)} (${a})` : "not determined by the calendar"}.`);
+  return finish({ status: "computed", date: r, uncertain, notes: ["The start day is not counted.", ...(cal.sample ? ["Sample calendar: not the court's notified calendar."] : [])] }, cal, opts);
 }
 
 export function courtDaysToText(input: { from: IsoDate; to: IsoDate }, r: CourtDaysResult, calendarLabel: string): string {
-  const lines = [`Court working days: ${formatIsoDate(input.from)} to ${formatIsoDate(input.to)} (both included)`, `Status: ${statusText(r.status)}`, `Calendar: ${calendarLabel}`];
-  if (r.open != null) lines.push(`Working days: ${r.open} of ${r.days} calendar days`);
+  const lines = [`Court working days under the notified calendar: ${formatIsoDate(input.from)} to ${formatIsoDate(input.to)} (both included)`, `Status: ${statusText(r.status)}`, `Calendar: ${calendarLabel}`];
+  if (r.open != null) lines.push(`Court working days: ${r.open} of ${r.days} calendar days`);
   if (r.unknown) lines.push(`Not counted: the calendar cannot answer for ${r.unknown.date} (${r.unknown.reason})`);
-  if (r.closed.length) lines.push("", "Days the court does not sit:", ...r.closed.map((c) => `- ${c.date} ${formatIsoDate(c.date)}: ${c.reason}`));
-  return tail(lines, [], r.notes);
+  if (r.closed.length) lines.push("", "Days closed under the calendar:", ...r.closed.map((c) => `- ${c.date} ${formatIsoDate(c.date)}: ${c.reason}`));
+  return tail(lines, r.uncertain, r.notes);
+}
+
+export function nextCourtDayToText(from: IsoDate, r: NextCourtDayResult, calendarLabel: string): string {
+  const lines = [
+    `Next court working day on or after ${formatIsoDate(from)}, under the notified calendar`,
+    `Status: ${statusText(r.status)}`,
+    `Calendar: ${calendarLabel}`,
+    r.date ? `Next court working day: ${formatIsoDate(r.date)} (${r.date})` : "Next court working day: not determined",
+  ];
+  if (r.skipped.length) lines.push("", "Skipped (closed under the calendar):", ...r.skipped.map((d) => `- ${d.date} ${formatIsoDate(d.date)}: ${d.reason}`));
+  return tail(lines, r.uncertain, r.notes);
+}
+
+export function addWorkingDaysToText(from: IsoDate, n: number | string, r: AddWorkingDaysResult, calendarLabel: string): string {
+  const lines = [
+    `${n} court working day(s) after ${formatIsoDate(from)}, under the notified calendar`,
+    `Status: ${statusText(r.status)}`,
+    `Calendar: ${calendarLabel}`,
+    r.date ? `Result: ${formatIsoDate(r.date)} (${r.date})` : "Result: not determined",
+  ];
+  return tail(lines, r.uncertain, r.notes);
 }
 
 /* ───────────────────────────── condonation of delay ───────────────────────────── */
@@ -570,11 +725,19 @@ export const CAUSE_LIST_FORUMS: { forum: string; label: string; diary: boolean }
   { forum: "nclat", label: "NCLAT (both benches)", diary: false },
 ];
 
+/** Entries asked for per search; when this many come back the list may be cut short and the UI says so. */
+export const CAUSE_LIST_LIMIT = 200;
+
 export interface CauseListSearch { forum: string; date: string; caseNumber: string; diary: string; advocate: string }
 
 /**
  * Query string for /api/official/causelists, or the reason the search cannot be run. Case and diary numbers must read
  * as one exact number (they are matched exactly, never fuzzily); a date or an identifier is required.
+ *
+ * - NCLT numbers repeat at every bench, so an NCLT case number must carry its bench code as printed
+ *   ("CP(IB)/29(MB)2022") and is sent as the bench-qualified key ("CPIB/29/2022@MB").
+ * - The diary field takes one diary number only ("54583/2026", "Diary No. 54583-2026"); it is sent normalized, so a
+ *   case number typed there ("W.P.(C) 12/2026") is refused rather than read as diary 12/2026.
  */
 export function causeListQuery(s: CauseListSearch): { qs: string | null; error: string | null } {
   const sp = new URLSearchParams();
@@ -586,13 +749,20 @@ export function causeListQuery(s: CauseListSearch): { qs: string | null; error: 
   if (date) sp.set("date", date);
   const cn = s.caseNumber.trim();
   if (cn) {
-    if (!normalizeCaseNumber(cn)) return { qs: null, error: `"${cn}" is not one recognisable case number (e.g. SLP(C) No. 1234/2026, W.P.(C) 5812/2016).` };
-    sp.set("case", cn);
+    const n = normalizeCaseNumber(cn);
+    if (!n) return { qs: null, error: `"${cn}" is not one recognisable case number (e.g. SLP(C) No. 1234/2026, W.P.(C) 5812/2016).` };
+    if (n.bench) {
+      if (forum.forum !== "nclt") return { qs: null, error: `"${cn}" is an NCLT number (bench code ${n.bench}): choose NCLT.` };
+      sp.set("case", `${n.key}@${n.bench}`);
+    } else if (forum.forum === "nclt") {
+      return { qs: null, error: "NCLT numbers repeat at every bench: give the number with its bench code as printed, e.g. CP(IB)/29(MB)2022." };
+    } else sp.set("case", cn);
   }
-  const diary = s.diary.trim();
-  if (diary) {
+  const diaryInput = s.diary.trim();
+  if (diaryInput) {
     if (!forum.diary) return { qs: null, error: "Diary numbers are used by the Supreme Court only." };
-    if (!normalizeDiaryNo(diary)) return { qs: null, error: `"${diary}" is not a diary number (e.g. 54583/2026).` };
+    const diary = strictDiaryNumber(diaryInput);
+    if (!diary) return { qs: null, error: `"${diaryInput}" is not a diary number (e.g. 54583/2026). Put a case number in the case number field.` };
     sp.set("diary", diary);
   }
   const adv = s.advocate.replace(/\s+/g, " ").trim();
@@ -600,7 +770,92 @@ export function causeListQuery(s: CauseListSearch): { qs: string | null; error: 
     if (adv.length < 3) return { qs: null, error: "Give the advocate's name as printed (at least 3 letters)." };
     sp.set("advocate", adv.slice(0, 120));
   }
-  if (!date && !cn && !diary) return { qs: null, error: "Give a list date, or a case or diary number." };
-  sp.set("limit", "200");
+  if (!date && !cn && !diaryInput) return { qs: null, error: "Give a list date, or a case or diary number." };
+  sp.set("limit", String(CAUSE_LIST_LIMIT));
   return { qs: sp.toString(), error: null };
+}
+
+const FORUM_LABEL: Record<string, string> = {
+  sci: "Supreme Court of India",
+  "hc-delhi": "High Court of Delhi",
+  "hc-karnataka": "High Court of Karnataka",
+  nclt: "NCLT (bench not printed)",
+  nclat: "NCLAT (bench not printed)",
+  "nclt-principal": "NCLT Principal Bench, New Delhi",
+  "nclat-delhi": "NCLAT Principal Bench, New Delhi",
+  "nclat-chennai": "NCLAT Chennai Bench",
+};
+
+const titleWords = (slug: string) => slug.split("-").filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+/** The court or bench a cause-list entry belongs to, from its forum key ("nclt-mumbai" → "NCLT Mumbai Bench"). */
+export function causeListForumLabel(forum: string | null | undefined): string {
+  const f = (forum ?? "").trim().toLowerCase();
+  if (!f) return "Forum not recorded";
+  if (FORUM_LABEL[f]) return FORUM_LABEL[f];
+  let m = /^(nclt|nclat)-([a-z0-9-]+)$/.exec(f);
+  if (m) return `${m[1].toUpperCase()} ${titleWords(m[2])} Bench`;
+  m = /^hc-([a-z-]+)$/.exec(f);
+  if (m) return `High Court of ${titleWords(m[1])}`;
+  return f;
+}
+
+const LIST_TYPE: Record<string, string> = { main: "Main list", supplementary: "Supplementary list", advance: "Advance list", weekly: "Weekly list", daily: "Daily list", other: "List" };
+
+export function listTypeLabel(t: string | null | undefined): string {
+  return (t && LIST_TYPE[t]) || "List";
+}
+
+/** One cause-list entry as plain text: its forum, list, item and either the parsed fields or the line as printed. */
+export function causeListEntryText(e: CauseListEntry): string {
+  const head = `${causeListForumLabel(e.forum)} · ${formatIsoDate(e.listDate)} · ${listTypeLabel(e.listType)}${e.courtNo ? ` · Court ${e.courtNo}` : ""}${e.itemNo ? ` · Item ${e.itemNo}` : ""}${e.page != null ? ` · p. ${e.page}` : ""}`;
+  const body = e.parsed
+    ? [
+      e.caseNumbers.length ? e.caseNumbers.map((c) => c.printed).join("; ") : "Case number not printed",
+      e.diaryNo ? `Diary No. ${e.diaryNo}` : null,
+      e.parties,
+      e.advocates.length ? `Advocates: ${e.advocates.join(", ")}` : null,
+    ]
+    : [`As printed (not split into fields): ${(e.raw ?? "").replace(/\s+/g, " ").trim() || "(no text)"}`];
+  return [
+    head,
+    ...body,
+    e.bench ? `Bench: ${e.bench}` : null,
+    `As published${e.publishedAt ? ` at ${formatFetchedAt(e.publishedAt)}` : ""}; fetched ${formatFetchedAt(e.fetchedAt) ?? (e.fetchedAt || "time not recorded")}`,
+  ].filter(Boolean).join("\n");
+}
+
+/** The search a result came from, in words, from its query string (the submitted search, not the form being edited). */
+export function causeListSearchText(qs: string): string {
+  const sp = new URLSearchParams(qs);
+  const forum = CAUSE_LIST_FORUMS.find((f) => f.forum === sp.get("forum"));
+  const parts = [forum?.label ?? causeListForumLabel(sp.get("forum"))];
+  const date = sp.get("date");
+  if (date) parts.push(`list date ${formatIsoDate(date)}`);
+  const cs = sp.get("case");
+  if (cs) parts.push(`case number ${cs}`);
+  const diary = sp.get("diary");
+  if (diary) parts.push(`Diary No. ${diary}`);
+  const adv = sp.get("advocate");
+  if (adv) parts.push(`advocate ${adv}`);
+  return parts.join(", ");
+}
+
+/** True when a result has as many entries as were asked for, so more may exist. */
+export function causeListCapped(entries: number, qs: string | null): boolean {
+  const limit = Number(new URLSearchParams(qs ?? "").get("limit") ?? CAUSE_LIST_LIMIT);
+  return entries >= (Number.isFinite(limit) && limit > 0 ? limit : CAUSE_LIST_LIMIT);
+}
+
+/** Plain text of a whole result for the clipboard. */
+export function causeListToText(qs: string, entries: CauseListEntry[]): string {
+  const capped = causeListCapped(entries.length, qs);
+  return [
+    `Cause list entries — ${causeListSearchText(qs)}`,
+    `${entries.length} entr${entries.length === 1 ? "y" : "ies"}${capped ? ` (only the first ${entries.length} returned; narrow the search to see the rest)` : ""}`,
+    "",
+    ...entries.map(causeListEntryText).flatMap((t) => [t, ""]),
+    "Cause lists are not authoritative: confirm against the court's published list.",
+    DECISION_SUPPORT_FOOTER,
+  ].join("\n");
 }

@@ -20,7 +20,7 @@ export const ALL_SOURCES: SearchSource[] = ["caselaw", "statutes", "web", "libra
 export const SOURCE_LABEL: Record<SearchSource, string> = {
   caselaw: "Judgments (SC & High Courts)",
   statutes: "India Code",
-  regulations: "Regulations",
+  regulations: "Official publications",
   federal_register: "Gazette notifications",
   dockets: "Case status",
   web: "Web",
@@ -31,7 +31,7 @@ export const SOURCE_LABEL: Record<SearchSource, string> = {
 export const SOURCE_SHORT: Record<SearchSource, string> = {
   caselaw: "Judgments",
   statutes: "Statutes",
-  regulations: "Rules",
+  regulations: "Official",
   federal_register: "Gazette",
   dockets: "Case status",
   web: "Web",

@@ -209,6 +209,45 @@ export function designationsMarkdown(dep: Pick<Deposition, "witnessName" | "date
   return out.join("\n");
 }
 
+/** One page:line window of a transcript for segmented analysis (whole-transcript coverage, constitution §28). */
+export interface TranscriptSegment {
+  index: number;
+  /** Indexes into `dep.transcript` (contiguous, in order). */
+  indexes: number[];
+  from: { page: number; line: number };
+  to: { page: number; line: number };
+  /** "20:01–58:24" */
+  range: string;
+  chars: number;
+}
+
+/**
+ * Split a transcript into contiguous page:line windows of at most `maxChars` rendered characters (a single Q/A longer
+ * than that is its own window, never cut). Every Q/A belongs to exactly one window, so the union covers the whole
+ * transcript — no prefix truncation.
+ */
+export function segmentTranscript(dep: Pick<Deposition, "witnessName" | "transcript">, maxChars: number): TranscriptSegment[] {
+  const out: TranscriptSegment[] = [];
+  let cur: number[] = [];
+  let chars = 0;
+  const size = (i: number) => transcriptText(dep, { indexes: [i], maxChars: Number.MAX_SAFE_INTEGER }).length + 2;
+  const flush = () => {
+    if (!cur.length) return;
+    const a = dep.transcript[cur[0]], b = dep.transcript[cur[cur.length - 1]];
+    out.push({ index: out.length, indexes: cur, from: { page: a.page, line: a.line }, to: { page: b.page, line: b.line }, range: `${formatPageLine(a.page, a.line)}–${formatPageLine(b.page, b.line)}`, chars });
+    cur = [];
+    chars = 0;
+  };
+  for (let i = 0; i < dep.transcript.length; i++) {
+    const n = size(i);
+    if (cur.length && chars + n > maxChars) flush();
+    cur.push(i);
+    chars += n;
+  }
+  flush();
+  return out;
+}
+
 /** Plain-text transcript excerpt for prompts. */
 export function transcriptText(dep: Pick<Deposition, "witnessName" | "transcript">, opts: { maxChars?: number; indexes?: number[] } = {}) {
   const idx = opts.indexes ? new Set(opts.indexes) : null;

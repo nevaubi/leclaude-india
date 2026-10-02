@@ -120,15 +120,15 @@ const FETCH_URL_TOOL = {
 
 function toolsFor(route: ChatRoute, defs: ToolDef<never, unknown>[]): unknown[] {
   const t: unknown[] = [CREATE_FILE_TOOL, ...defs.map((d) => toOpenAITool(d))];
-  if (route.tools.search) t.push({ type: "web_search", search_context_size: route.tier === "fast" ? "low" : "medium", user_location: { type: "approximate", country: "US" } });
+  if (route.tools.search) t.push({ type: "web_search", search_context_size: route.tier === "fast" ? "low" : "medium", user_location: { type: "approximate", country: "IN" } });
   if (route.tools.browse || route.tools.search) t.push(FETCH_URL_TOOL);
   if (route.tools.code) t.push({ type: "code_interpreter", container: { type: "auto" } });
   if (route.tools.image) t.push({ type: "image_generation", size: "1024x1024", quality: "medium" });
   return t;
 }
 
-function historyInput(history: ChatMessage[]): unknown[] {
-  return history.slice(-HISTORY_TURNS * 2).filter((m) => m.text.trim()).map((m) => ({ role: m.role, content: m.text }));
+function historyInput(history: ChatMessage[], turns = HISTORY_TURNS): unknown[] {
+  return history.slice(-turns * 2).filter((m) => m.text.trim()).map((m) => ({ role: m.role, content: m.text }));
 }
 
 function userInput(message: string, attachments: ChatAttachmentInput[]): unknown {
@@ -165,7 +165,7 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
   const defs = knowledgeTools(knowledge, input.docSets ?? []);
   const defsByName = new Map(defs.map((d) => [d.name, d]));
   const docs = defsByName.has("search_documents");
-  const route = routeMessage(input.message, flags, { attachments: input.attachments.length, historyTurns: input.history.length / 2, law: knowledge.law, docs });
+  const route = routeMessage(input.message, flags, { attachments: input.attachments.length, historyTurns: input.history.length / 2, law: knowledge.law, docs, models });
   const model = route.tier === "fast" ? models.fast : models.standard;
   const tools = toolsFor(route, defs);
   // Indian law knowledge on: routing + corpus coverage (cached server-side; bounded wait, "" when unknown).
@@ -187,7 +187,7 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
   const containerFiles: { containerId: string; fileId: string; filename: string }[] = [];
   let status: ChatMessage["status"] = "complete";
   let error: string | undefined;
-  let conversation: unknown[] = [...historyInput(input.history), userInput(input.message, input.attachments)];
+  let conversation: unknown[] = [...historyInput(input.history, route.historyTurns), userInput(input.message, input.attachments)];
 
   const step = (label: string, state: "running" | "done" | "failed", id = newId("st")) => {
     input.send({ type: "step", id, label, state });
@@ -215,7 +215,8 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
         stream: true,
         store: false,
         parallel_tool_calls: true,
-        max_output_tokens: isReasoningModel(model) ? route.maxOutputTokens + 12_000 : route.maxOutputTokens,
+        // Reasoning headroom on top of the visible budget, never above what the model can produce.
+        max_output_tokens: Math.min(isReasoningModel(model) ? route.maxOutputTokens + 12_000 : route.maxOutputTokens, route.modelMaxOutput),
         include: isReasoningModel(model) ? ["reasoning.encrypted_content"] : [],
       };
       if (isReasoningModel(model)) { params.reasoning = { effort: route.effort }; params.text = { verbosity: route.verbosity }; }
@@ -284,7 +285,7 @@ export async function runChat(input: RunChatInput): Promise<ChatMessage> {
         try {
           const out = await runFunction(c.name ?? "", args, input, deadline.signal, addSource, (f) => { files.push(f); input.send({ type: "file", file: f }); });
           step(c.name === "fetch_url" ? `Read ${hostOf(String(args.url ?? ""))}` : c.name === "create_file" ? `Created ${String(args.filename ?? "a file")}` : "Done", "done", sid);
-          return { type: "function_call_output", call_id: c.call_id, output: JSON.stringify(out).slice(0, 60_000) };
+          return { type: "function_call_output", call_id: c.call_id, output: JSON.stringify(out).slice(0, route.toolResultChars) };
         } catch (e) {
           step(`${c.name === "fetch_url" ? `Could not read ${hostOf(String(args.url ?? ""))}` : `${c.name} failed`}`, "failed", sid);
           return { type: "function_call_output", call_id: c.call_id, output: JSON.stringify({ error: (e as Error).message.slice(0, 300) }) };
@@ -373,6 +374,10 @@ export function knowledgeLabel(def: ToolDef<never, unknown>, a: Record<string, u
     get_library_item: "Reading a library item",
     search_documents: `Searching your documents: ${q}`,
     read_document_passage: "Reading a document passage",
+    search_official_sources: `Searching official publications: ${clip(a.q)}`,
+    read_official_document: "Reading an official document",
+    causelist_lookup: a.case_number ? `Checking cause lists for ${clip(a.case_number, 40)}` : "Checking cause lists",
+    court_calendar: `Court calendar ${clip(a.forum, 20)} ${clip(a.year, 6)}`,
   };
   const base = running[def.name] ?? clip(def.name.replace(/_/g, " "));
   if (phase === "failed") {
@@ -390,6 +395,8 @@ export function knowledgeLabel(def: ToolDef<never, unknown>, a: Record<string, u
   if (def.name === "list_law_instruments") return `Found statutes: ${q}${found}`;
   if (def.name === "search_library") return `Searched the firm library: ${q}${found}`;
   if (def.name === "search_documents") return `Searched your documents: ${q}${found}`;
+  if (def.name === "search_official_sources") return `Searched official publications: ${clip(a.q)}${found}`;
+  if (def.name === "read_official_document" && title) return `Read ${title}`;
   return base;
 }
 

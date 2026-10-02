@@ -124,7 +124,7 @@ describe("system workflows", () => {
     }
     const stats = workflowStats();
     expect(stats.system).toBe(11);
-    expect(stats.templates).toBe(16);
+    expect(stats.templates).toBe(19);
     expect(stats.workflows).toBeGreaterThanOrEqual(4);
     expect(stats.nextScheduled.some((n) => n.system)).toBe(true);
     // Seeded run history exists for system workflows.
@@ -136,12 +136,12 @@ describe("system workflows", () => {
     expect(meta.intelSources!.length).toBeGreaterThanOrEqual(12);
     expect(meta.agents!.map((a) => a.id)).toContain("steward");
   });
-  it("user templates are the sixteen tailored ones and none is a system workflow", () => {
+  it("user templates are the nineteen tailored ones and none is a system workflow", () => {
     const templates = buildTemplates();
-    expect(templates).toHaveLength(16);
+    expect(templates).toHaveLength(19);
     expect(templates.every((t) => !t.system && t.isTemplate)).toBe(true);
     expect(templates.every((t) => t.frontend?.fields.length)).toBe(true);
-    expect(new Set(templates.map((t) => t.id)).size).toBe(16);
+    expect(new Set(templates.map((t) => t.id)).size).toBe(19);
     expect(Object.values(WORKFLOW_TEMPLATE_IDS)).toHaveLength(16);
   });
 });

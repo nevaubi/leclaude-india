@@ -280,6 +280,8 @@ describe("authority treatment and currentness", () => {
     expect(evidenceSourceId(sourceFromHit(BNSS_482, "l"))).toBe("statute://bnss-2023/s/482");
     expect(evidenceSourceId(sourceFromHit({ id: "judgment:u1", source: "caselaw", title: "x", readRef: { kind: "judgment", id: "u1" }, india: { courtId: null, unresolvedCourt: "99_9" } }, "l"))).toBe("judgment://unresolved/u1");
     expect(evidenceSourceId(sourceFromHit({ id: "ik:123", source: "caselaw", title: "x", readRef: { kind: "url", url: "ik://123" } }, "l"))).toBe("authority://indiankanoon/doc/123");
+    // Official publications keep their own stable, server-resolvable reference.
+    expect(evidenceSourceId(sourceFromHit({ id: "official:sebi-orders_9f3a1c2b7e#p3", source: "regulations", title: "SEBI order", readRef: { kind: "url", url: "src://sebi-orders_9f3a1c2b7e#p3" } }, "l"))).toBe("src://sebi-orders_9f3a1c2b7e#p3");
   });
 
   it("parses plain and pinpoint markers", () => {
@@ -305,6 +307,9 @@ describe("research tools", () => {
     await expect(Promise.resolve().then(() => byName.get("fetch_url")!.execute({ url: "https://example.com/blog" }, { emit: () => {}, state: {} }))).rejects.toThrow(/not an allowlisted official legal source/);
     await expect(Promise.resolve().then(() => byName.get("fetch_url")!.execute({ url: "https://www.scconline.com/x" }, { emit: () => {}, state: {} }))).rejects.toThrow(/not an allowlisted/); // subscription services are never read
     expect(isIndianLegalFetchHost("https://www.indiacode.nic.in/handle/1")).toBe(true);
+    // India Code moved to indiacode.gov.in (DSpace 9); both hosts are official and allowlisted.
+    expect(isIndianLegalFetchHost("https://indiacode.gov.in/handle/123456789/496413")).toBe(true);
+    expect(isIndianLegalFetchHost("https://evil-indiacode.gov.in.example.com/")).toBe(false);
     expect(isIndianLegalFetchHost("https://judgments.ecourts.gov.in/x")).toBe(true);
     expect(isIndianLegalFetchHost("https://evil-indiacode.nic.in.example.com/")).toBe(false);
     expect(isIndianLegalFetchHost("ftp://indiacode.nic.in/x")).toBe(false);

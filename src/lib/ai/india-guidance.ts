@@ -14,6 +14,7 @@
 export const ROUTED_INDIA_TOOLS = [
   "search_law", "read_law_section", "list_law_instruments", "search_judgment_text", "read_judgment_text", "search_judgment_index",
   "citing_references", "citator_check", "get_forum_info", "map_criminal_section", "search_judgments", "read_judgment", "search_statutes", "read_section",
+  "search_official_sources", "read_official_document", "causelist_lookup", "court_calendar",
 ] as const;
 
 export const INDIAN_LAW_TOOL_ROUTING = `Indian law tool routing (choose by the job; chain search → read → cite):
@@ -24,7 +25,9 @@ export const INDIAN_LAW_TOOL_ROUTING = `Indian law tool routing (choose by the j
 - Courts, local Acts (rent, stamp, court fees) and filing links for a city or forum: get_forum_info.
 - IPC↔BNS, CrPC↔BNSS, Evidence Act↔BSA: map_criminal_section; report its status (requires_review, split, unmapped) as returned.
 - search_judgments / read_judgment are the local store (ijdg_… ids): judgments ingested into this workspace or linked to a matter.
-- Pass an id only to the tool family that returned it (ijdg_… → read_judgment; sc:/hc:/neutral citation/CNR@date → read_judgment_text; act_id → read_law_section). Never build an id from memory.
+- Tribunal and regulator orders (NCLT, NCLAT, IBBI, SEBI incl. SAT orders, CCI, NGT), circulars and notifications (CBIC, CBDT, e-Gazette), GST Council minutes, Parliament papers and court orders as published: search_official_sources → read_official_document (its src:// source, with the page) → cite the publisher, document and page. Text flagged OCR must be checked against the PDF before it is quoted in a filing.
+- Is a matter listed on a date, which court and item: causelist_lookup with the case number as printed (or the SC diary number) and a date or a range of at most 31 days; only exact matches count, and no match does not prove the matter is not listed. Holidays and vacations before counting a deadline: court_calendar (forum, year); ad-hoc notified closures are not in it.
+- Pass an id only to the tool family that returned it (ijdg_… → read_judgment; sc:/hc:/neutral citation/CNR@date → read_judgment_text; act_id → read_law_section; src://… → read_official_document). Never build an id from memory.
 - Never cite a judgment or provision you did not read with a read tool in this conversation; a search hit, snippet or metadata record supports only what it literally shows. If nothing is found, say the sources searched do not establish it.
 Citation format: judgments "Title, 2024 INSC 735, p. 6" (add the reporter after " : " when the tool gives one); High Court text without a neutral citation "Title, CNR KAHC010219082014, decided 9 September 2014, p. 6"; statutes "Section 303, Bharatiya Nyaya Sanhita, 2023" (the citation read_law_section returns).`;
 

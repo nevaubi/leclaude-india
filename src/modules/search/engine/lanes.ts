@@ -84,6 +84,8 @@ export interface LaneResult {
 
 const SEARCH_TOOL_FOR: Partial<Record<string, SearchSource>> = {
   search_judgments: "caselaw", search_statutes: "statutes", search_library: "library", search_ediscovery: "ediscovery",
+  // LeClaude India: the "regulations" provider is the official-sources corpus (see deps.retrieve).
+  search_official_sources: "regulations",
 };
 
 const SEARCH_TOOL_DESC: Record<string, string> = {
@@ -91,6 +93,7 @@ const SEARCH_TOOL_DESC: Record<string, string> = {
   search_statutes: "Search the statutes: the full corpus of Central, State and UT Acts and regulator instruments (with in force / repealed status) and the curated India Code store (BNS/BNSS/BSA and the old IPC/CrPC/Evidence Act with successor links). Returns source ids usable with read_section and read_source.",
   search_library: "Search the firm's knowledge library: memos, opinions, pleadings, clause bank, templates.",
   search_ediscovery: "Search this matter's documents and deposition transcripts. Limited to the selected matter.",
+  search_official_sources: "Search OFFICIAL publications as published: tribunal and regulator orders (NCLT, NCLAT, IBBI, SEBI incl. SAT orders, CCI, NGT), court orders and cause lists, CBIC / CBDT circulars and notifications, the e-Gazette, GST Council minutes and Parliament papers. Each result carries the publisher, date and page; read it with read_source (same id) before relying on it, and cite the publisher, document and page. Text marked OCR must be checked against the PDF before it is quoted in a filing. Returns nothing when the official corpus is not loaded.",
 };
 
 const CASE_TITLE_RE = /\s(?:v|vs|versus)\.?\s/i;
@@ -376,7 +379,7 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
       name,
       description: SEARCH_TOOL_DESC[name],
       parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", description: "Default 8, max 12" } }, required: ["query"] },
-      examples: [{ query: name === "search_judgments" ? "anticipatory bail section 438 CrPC economic offence parity" : name === "search_statutes" ? "Bharatiya Nagarik Suraksha Sanhita anticipatory bail" : "limitation condonation of delay section 5", limit: 8 }],
+      examples: [{ query: name === "search_judgments" ? "anticipatory bail section 438 CrPC economic offence parity" : name === "search_statutes" ? "Bharatiya Nagarik Suraksha Sanhita anticipatory bail" : name === "search_official_sources" ? "SEBI order insider trading unpublished price sensitive information" : "limitation condonation of delay section 5", limit: 8 }],
       timeoutMs: 30_000,
       label: (a) => `Searching ${SOURCE_LABEL[source].toLowerCase()}: ${a.query}`,
       async execute(args) {
@@ -388,13 +391,17 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
     }) as AnyTool);
   }
 
+  // Reader sizes follow the `research_lane` budget of the configured model (real deps); fakes keep 30k / 32k.
+  const laneBudget = ctx.deps.budget?.("research_lane");
+  const readDefault = laneBudget ? Math.max(30_000, laneBudget.perSourceChars) : 30_000;
+  const readResultMax = laneBudget ? Math.max(32_000, Math.min(laneBudget.toolResultChars, readDefault + 4_000)) : 32_000;
   tools.push(defineTool<{ source_id: string; page?: number; max_chars?: number }>({
     name: "read_source",
     description: `Read the full text of a source by its id, exactly as a search result listed it (e.g. corpus:sc:…, corpus:2024 INSC 735, judgment:…, law:…). Judgment text carries page markers ([p. 6]); pass \`page\` to start at the page of a search passage, and cite the page. Required before quoting or characterizing a holding. Sources marked "metadata only" cannot be read. At most ${lane.maxReads} successful reads in this lane (re-reading a source already read is free).`,
-    parameters: { type: "object", properties: { source_id: { type: "string" }, page: { type: "integer", description: "Start at this page (judgment text with [p. N] markers)" }, max_chars: { type: "integer", description: "Default 30000" } }, required: ["source_id"] },
+    parameters: { type: "object", properties: { source_id: { type: "string" }, page: { type: "integer", description: "Start at this page (judgment text with [p. N] markers)" }, max_chars: { type: "integer", description: `Default ${readDefault}` } }, required: ["source_id"] },
     examples: [{ source_id: "corpus:sc:2024_10_108_125", page: 6 }, { source_id: "judgment:ijdg_8f2a61c0d9e4b7a35c10" }],
     timeoutMs: 45_000,
-    maxResultChars: 32_000,
+    maxResultChars: readResultMax,
     label: (a) => { const s = lookup(a.source_id); return `Reading ${s?.cite ?? s?.title ?? a.source_id}${a.page ? `, p. ${a.page}` : ""}`; },
     async execute(args) {
       const s = adopt(args.source_id);
@@ -402,7 +409,7 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
       const at = args.page != null ? pageOffset(full, args.page) : 0;
       if (at < 0) throw new Error(`No page ${args.page} marker in ${s.cite ?? s.id}; read without \`page\` to see the pages it has.`);
       const text = full.slice(at);
-      const max = args.max_chars ?? 30_000;
+      const max = Math.min(args.max_chars ?? readDefault, readResultMax - 2_000);
       return { id: s.id, cite: formatBluebook(s.hit), url: s.url, length: full.length, ...(at ? { from_char: at } : {}), text: text.length > max ? text.slice(0, max) + "\n…[truncated]" : text };
     },
   }) as AnyTool);
@@ -595,7 +602,7 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
       name: "fetch_url",
       description: openWeb ? "Read a public web page (court site, India Code, gazette, regulator page) by URL. Counts toward the lane's read cap." : "Read an official Indian legal web page by URL (India Code, Supreme Court and High Court sites, eCourts, the e-Gazette, ministries and regulators). Other hosts are refused unless web sources are in scope. Subscription services are never read. Counts toward the lane's read cap.",
       parameters: { type: "object", properties: { url: { type: "string" }, max_chars: { type: "integer" } }, required: ["url"] },
-      examples: [{ url: "https://www.indiacode.nic.in/handle/123456789/20099" }],
+      examples: [{ url: "https://indiacode.gov.in/handle/123456789/496413" }],
       timeoutMs: 30_000,
       maxResultChars: 32_000,
       label: (a) => `Reading ${safeHost(a.url)}`,
@@ -607,7 +614,7 @@ export function buildLaneTools(lane: ResearchLane, ctx: LaneContext, hooks: Lane
         const s = existing ?? sourceFromHit(hit, lane.id);
         if (!existing) hooks.record([s]);
         const text = ctx.texts.get(s.id) ?? (await hooks.readOne(s, { kind: "url", url: args.url }));
-        const max = args.max_chars ?? 30_000;
+        const max = Math.min(args.max_chars ?? readDefault, readResultMax - 2_000);
         return { id: s.id, url: args.url, length: text.length, text: text.length > max ? text.slice(0, max) + "\n…[truncated]" : text };
       },
     }) as AnyTool);

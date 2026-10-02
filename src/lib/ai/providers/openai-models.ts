@@ -1,4 +1,5 @@
 /** Coded knowledge about OpenAI model families (pure, client-safe). */
+import { modelLimits } from "./model-limits";
 
 /** Reasoning-native models reject `temperature` and accept `reasoning.effort`. */
 export function isReasoningModel(model: string): boolean {
@@ -8,9 +9,12 @@ export function isReasoningModel(model: string): boolean {
 /**
  * Reasoning models spend hidden reasoning tokens against max_output_tokens. Callers size caps for the visible
  * answer, so give reasoning models generous headroom; otherwise responses come back `incomplete` with empty JSON.
+ * The result never exceeds the model's maximum output (`maxOutput`, else the coded family limit): asking for more is
+ * a 400 from the API, not a bigger answer.
  */
-export function outputTokenBudget(model: string, requested: number | undefined): number | undefined {
+export function outputTokenBudget(model: string, requested: number | undefined, maxOutput?: number): number | undefined {
   if (requested == null) return undefined;
-  if (!isReasoningModel(model)) return requested;
-  return Math.max(requested * 3, requested + 16_000);
+  const limit = maxOutput && maxOutput > 0 ? maxOutput : modelLimits("openai", model).maxOutput;
+  const wanted = isReasoningModel(model) ? Math.max(requested * 3, requested + 16_000) : requested;
+  return Math.max(1, Math.min(Math.floor(wanted), limit));
 }

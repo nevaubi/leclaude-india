@@ -38,5 +38,6 @@ export {
   indianKanoonSearchTool, indianKanoonDocTool, judgmentSource, statuteSource, isIndianLegalFetchHost, INDIA_FETCH_ALLOWLIST,
 } from "./india";
 export type { IndiaCapabilities } from "./india";
+export { OFFICIAL_TOOLS, OFFICIAL_TOOL_NAMES, searchOfficialSourcesTool, readOfficialDocumentTool, causelistLookupTool, courtCalendarTool } from "./india-official";
 export { runTool, toProviderToolSpec, boundToolResult, shapeToolError, ToolExecutionError, isToolErrorResult, truncationMarker, TOOL_DEFAULT_TIMEOUT_MS, TOOL_DEFAULT_MAX_RESULT_CHARS } from "../tools";
 export type { ToolRunResult, ToolErrorShape, ToolErrorCode, EvidenceProvenance, ToolTrace } from "../tools";

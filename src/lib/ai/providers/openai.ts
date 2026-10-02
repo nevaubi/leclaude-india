@@ -8,14 +8,16 @@ import type { Response, ResponseInput, ResponseInputItem, ResponseStreamEvent, T
 import { getOpenAI } from "../openai";
 import { toStrictSchema } from "../tools";
 import type { OpenAIEnv } from "./env";
-import { abortError, isAbortError } from "./http";
+import { abortError, isAbortError, isContextLengthError } from "./http";
+export { isContextLengthError } from "./http";
 import { isReasoningModel, outputTokenBudget } from "./openai-models";
 import { renderEvidenceAsText } from "./anthropic-wire";
 import { InferenceError, type ContentPart, type EmbedOptions, type ImageOptions, type InferenceEvent, type InferenceMessage, type InferenceRequest, type InferenceResult, type ModelDescriptor, type ModelProvider, type StopReason } from "./types";
 
 type CreateParams = Parameters<ReturnType<typeof getOpenAI>["responses"]["create"]>[0];
 
-const USER_LOCATION = { type: "approximate", country: "US" } as const;
+/** LeClaude India: web search results are localised to India (approximate location, no city). */
+const USER_LOCATION = { type: "approximate", country: "IN" } as const;
 
 // ---------------- Input rendering ----------------
 
@@ -71,7 +73,7 @@ export function renderOpenAIBuiltins(req: InferenceRequest): Tool[] {
   return out;
 }
 
-export function buildOpenAIParams(req: InferenceRequest, model: string, cfg: Pick<OpenAIEnv, "reasoningEffort">): CreateParams {
+export function buildOpenAIParams(req: InferenceRequest, model: string, cfg: Pick<OpenAIEnv, "reasoningEffort">, limits: { maxOutput?: number } = {}): CreateParams {
   const tools: Tool[] = [
     ...(req.tools ?? []).map((t) => ({ type: "function" as const, name: t.name, description: t.description, parameters: t.strict !== false ? toStrictSchema(t.parameters) : t.parameters, strict: t.strict !== false })),
     ...renderOpenAIBuiltins(req),
@@ -85,11 +87,14 @@ export function buildOpenAIParams(req: InferenceRequest, model: string, cfg: Pic
     input: renderOpenAIInput(messages, req.previousResponseId),
     tools: tools.length ? tools : undefined,
     previous_response_id: req.previousResponseId ?? undefined,
-    max_output_tokens: outputTokenBudget(model, req.maxOutputTokens),
+    max_output_tokens: outputTokenBudget(model, req.maxOutputTokens, limits.maxOutput),
     store: req.store ?? false,
     metadata: req.metadata,
     stream: true,
   };
+  // A continued conversation lives server-side, where the local context guard cannot shorten it: let the API drop the
+  // oldest items instead of failing with a context-length error. Fresh requests keep the default (fail, never truncate).
+  if (req.previousResponseId) (params as CreateParams & { truncation?: "auto" | "disabled" }).truncation = "auto";
   if (req.parallelToolCalls != null) params.parallel_tool_calls = req.parallelToolCalls;
   if (req.toolChoice) params.tool_choice = typeof req.toolChoice === "string" ? req.toolChoice : { type: "function", name: req.toolChoice.name };
   if (isReasoningModel(model)) {
@@ -128,7 +133,7 @@ export class OpenAIProvider implements ModelProvider {
   async infer(req: InferenceRequest, onEvent: (e: InferenceEvent) => void = () => {}): Promise<InferenceResult> {
     const model = req.model ?? this.cfg.model;
     const client = getOpenAI();
-    const params = buildOpenAIParams(req, model, this.cfg);
+    const params = buildOpenAIParams(req, model, this.cfg, { maxOutput: this.descriptors.find((d) => d.id === model)?.maxOutput });
     const started = Date.now();
     onEvent({ type: "start", provider: "openai", model });
 
@@ -186,8 +191,10 @@ export class OpenAIProvider implements ModelProvider {
           case "response.completed":
             completed = ev.response;
             break;
-          case "response.failed":
-            throw new InferenceError("provider_unavailable", ev.response.error?.message ?? "Model response failed", { provider: "openai", retryable: false });
+          case "response.failed": {
+            const err = ev.response.error as { code?: string; message?: string } | null | undefined;
+            throw new InferenceError(isContextLengthError(err?.code, err?.message) ? "context_length" : "provider_unavailable", err?.message ?? "Model response failed", { provider: "openai", retryable: false });
+          }
           case "response.incomplete":
             completed = ev.response;
             incompleteReason = ev.response.incomplete_details?.reason ?? "unknown";
@@ -292,6 +299,7 @@ export function mapOpenAIError(e: unknown, signal?: AbortSignal): Error {
   if (err.name === "APIConnectionError") return new InferenceError("provider_unavailable", message, { provider: "openai", retryable: true });
   if (status === 401 || status === 403) return new InferenceError("auth", message, { provider: "openai", status });
   if (status === 429) return new InferenceError("rate_limited", message, { provider: "openai", status });
+  if ((status === 400 || status === 413) && isContextLengthError(err.code, err.message)) return new InferenceError("context_length", message, { provider: "openai", status, retryable: false });
   if (status != null && status >= 500) return new InferenceError("provider_unavailable", message, { provider: "openai", status });
   if (status != null) return new InferenceError("unknown", message, { provider: "openai", status, retryable: false });
   return e instanceof Error ? e : new Error(String(e));

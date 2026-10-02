@@ -87,7 +87,7 @@ export const LANE_METHOD: Record<string, string> = {
   contrary: "Your job is adverse authority: judgments that distinguish, doubt, overrule or decline to follow the proposition, decisions held per incuriam, references to larger benches, and conflicts between High Courts. Use citing_references on the leading judgments.",
   statute: "Your job is the governing provisions: Central, State and regulator instruments. Read the sections (read_section / read_source) and note each instrument's status (in force / repealed) as labelled. For criminal law use map_criminal_section to give both the old and the new section and which code governs on the dates given; report requires_review, split and unmapped results as they are, never renumber from memory.",
   regulatory: "Read the governing provisions and rules and note which version is in force on the relevant date.",
-  record: "Cite the record by document and page (exhibit marks such as Ex.P1 / Ex.D1 and witness numbers PW/DW where the record uses them); separate what the record shows from outside authority. Matter documents are limited to the selected matter.",
+  record: "Cite the record by document and page (exhibit marks such as Ex.P1 / Ex.D1 and witness numbers PW/DW where the record uses them); separate what the record shows from outside authority. Matter documents are limited to the selected matter. The court's published orders and cause lists for the matter's case number are found with search_official_sources (official publications, not the matter record).",
   secondary: "Prefer official sources (court websites, India Code, gazette notifications) and the firm library over commentary; never rely on a snippet for a holding.",
   fast: "Read the most relevant sources and note their holdings.",
 };
@@ -104,7 +104,8 @@ export const LANE_JUDGMENT_ROUTING = `Indian law tool routing in this lane:
 export const LANE_STATUTE_ROUTING = `Indian law tool routing in this lane:
 - search_statutes searches the full statutes corpus (Central, State and UT Acts and regulator instruments, each with its status) and the curated India Code store; read the exact section (read_section or read_source) before relying on it, and cite it as "Section 303, Bharatiya Nyaya Sanhita, 2023".
 - For IPC↔BNS, CrPC↔BNSS and Evidence Act↔BSA use map_criminal_section and report its status as returned; never renumber from memory.
-- State Acts apply only in their State; a repealed or superseded instrument is reported as such. Never cite a provision you did not read.`;
+- State Acts apply only in their State; a repealed or superseded instrument is reported as such. Never cite a provision you did not read.
+- search_official_sources finds official publications as published (regulator and tribunal orders, CBIC / CBDT circulars and notifications, e-Gazette notifications, GST Council minutes): read one with read_source before relying on it, cite the publisher, document and page, and treat text marked OCR as needing a check against the PDF.`;
 
 /** The routing block for a lane kind ("" for lanes without Indian law tools). */
 export function laneRouting(kind: string): string {

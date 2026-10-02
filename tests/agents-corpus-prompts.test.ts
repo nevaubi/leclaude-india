@@ -91,8 +91,11 @@ describe("routing blocks", () => {
     expect(personaInstructions(AGENT_PERSONAS.research)).toContain(INDIAN_LAW_TOOL_ROUTING);
     expect(personaInstructions(AGENT_PERSONAS.research, {}, { coverage: COVERAGE })).toContain(COVERAGE);
     expect(personaInstructions(AGENT_PERSONAS.reviewer)).toContain("Indian law tool routing");
-    expect(personaInstructions(AGENT_PERSONAS.drafter)).not.toContain("Indian law tool routing");
-    expect(personaInstructions(AGENT_PERSONAS.drafter, {}, { coverage: COVERAGE })).not.toContain(COVERAGE);
+    // Personas without Indian law tools carry neither routing nor coverage (the drafter now holds the official-sources
+    // tools, so it gets the routing that says when to use them).
+    expect(personaInstructions(AGENT_PERSONAS.coder)).not.toContain("Indian law tool routing");
+    expect(personaInstructions(AGENT_PERSONAS.coder, {}, { coverage: COVERAGE })).not.toContain(COVERAGE);
+    expect(personaInstructions(AGENT_PERSONAS.drafter)).toMatch(/search_official_sources → read_official_document/);
     expect(AGENT_PERSONAS.research.tools).toEqual(expect.arrayContaining(["search_law", "read_law_section", "list_law_instruments", "search_judgment_text", "read_judgment_text", "search_judgment_index", "get_forum_info"]));
     const without = toolsFor(AGENT_PERSONAS.research.tools, { from: "research", caps: { corpus: false, indianKanoon: false } });
     expect(without.unavailable).toEqual(expect.arrayContaining(["search_law", "read_judgment_text", "search_judgment_index", "indian_kanoon_search"]));

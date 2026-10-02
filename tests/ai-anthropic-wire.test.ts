@@ -195,7 +195,7 @@ describe("Anthropic request builder", () => {
     const modern = buildAnthropicRequest(req, anthropicOpts("claude-opus-4-6", { toolExamples: true }));
     const tools = modern.body.tools as Array<Record<string, unknown>>;
     expect(tools[0]).toMatchObject({ name: "lookup", input_examples: [{ q: "pfas" }] });
-    expect(tools[1]).toEqual({ type: "web_search_20260209", name: "web_search", allowed_domains: ["courtlistener.com"], user_location: { type: "approximate", country: "US" } });
+    expect(tools[1]).toEqual({ type: "web_search_20260209", name: "web_search", allowed_domains: ["courtlistener.com"], user_location: { type: "approximate", country: "IN" } });
     expect(tools[2]).toEqual({ type: "web_fetch_20260209", name: "web_fetch" });
     expect(modern.betas).toEqual(["advanced-tool-use-2025-11-20"]);
     const legacy = buildAnthropicRequest(req, anthropicOpts("claude-haiku-4-5"));

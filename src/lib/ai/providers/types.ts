@@ -77,8 +77,12 @@ export interface ModelDescriptor {
   capabilities: CapabilityProfile;
   privacy: PrivacyBoundary;
   reasoning: boolean;
+  /** Total tokens the model accepts (coded per family in providers/model-limits.ts; env overrides clamp it). */
   contextWindow?: number;
+  /** Largest output the model accepts (reasoning / thinking tokens count against it). */
   maxOutput?: number;
+  /** Largest input the model accepts (publisher-stated, else contextWindow − maxOutput). */
+  maxInput?: number;
   /** 1 = cheapest tier, 3 = most expensive. */
   costTier: 1 | 2 | 3;
 }
@@ -172,6 +176,11 @@ export interface InferenceRequest {
   verbosity?: "low" | "medium" | "high";
   /** Code execution container to reuse (programmatic tool calling continuation). */
   containerId?: string;
+  /**
+   * Set when the runtime elided earlier tool results (context guard). Providers whose thinking blocks are bound to the
+   * conversation prefix then ask the API to drop the invalidated blocks instead of rejecting the request.
+   */
+  historyEdited?: boolean;
 }
 
 // ---------------- Events and results ----------------
@@ -205,6 +214,8 @@ export type InferenceErrorCode =
   | "malformed_output"
   | "incomplete"
   | "refusal"
+  /** The request exceeded the model's context window (retryable only after the history is shortened). */
+  | "context_length"
   | "unknown";
 
 /**

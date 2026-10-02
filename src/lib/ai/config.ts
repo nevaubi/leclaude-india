@@ -9,8 +9,10 @@
 import { OPENAI_DEFAULTS, describeModels, providerStates, readRuntimeEnv, type ReasoningEffortSetting, type RuntimeEnv } from "./providers/env";
 import { InferenceError, type ModelDescriptor, type ModelRole, type PrivacyBoundary, type ProviderId, type RoutingDecision, type TaskType } from "./providers/types";
 import { routeModel } from "./router";
+import { resolveContextBudget, type BudgetProfileId, type ResolvedBudget } from "./context-budget";
 
 export { isReasoningModel } from "./providers/openai-models";
+export type { BudgetProfileId, ResolvedBudget } from "./context-budget";
 
 export interface AIConfig {
   model: string;
@@ -106,6 +108,24 @@ export function aiRuntimeStatus(): AIRuntimeStatus {
     roles,
     missing,
   };
+}
+
+/** Model role a budget profile runs on by default (bounded extraction on the fast role, synthesis and drafting on primary). */
+const PROFILE_ROLE: Record<BudgetProfileId, "primary" | "fast"> = {
+  chat_fast: "fast", chat_standard: "primary", deep_research_synthesis: "primary", research_lane: "fast", verify: "fast",
+  workflow_step: "primary", workflow_agent: "primary", litigation_draft: "primary", ediscovery_doc: "fast", ediscovery_batch: "fast",
+  deposition_segment: "primary", documents_window: "fast", documents_ask: "primary", office_agent: "primary",
+};
+
+/**
+ * The budget for a profile resolved against the model the router would pick for its role (or `opts.fast` / `opts.role`).
+ * Without a configured provider it resolves against conservative default limits (floors still apply).
+ */
+export function aiBudget(profile: BudgetProfileId, opts: { fast?: boolean; role?: ModelRole; env?: Record<string, string | undefined> } = {}): ResolvedBudget {
+  const env = readRuntimeEnv(opts.env as Record<string, string | undefined> | undefined);
+  const role: ModelRole = opts.role ?? (opts.fast != null ? (opts.fast ? "fast" : "primary") : PROFILE_ROLE[profile]);
+  const decision = tryRoute(role, describeModels(env), env);
+  return resolveContextBudget(profile, decision?.descriptor ?? null, opts.env);
 }
 
 export class AIConfigError extends Error {

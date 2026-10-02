@@ -36,6 +36,10 @@ import { caseHref } from "@/modules/caselaw/shared";
 import { courtById } from "@/lib/india/courts";
 import { chunksToText, readJudgmentText, searchJudgmentText, type TextSearchHit } from "@/modules/india/corpus/text";
 import { textKey } from "@/lib/ai/toolkit/india-judgment-text";
+import { readOfficialDocument, searchOfficial } from "@/modules/official/service";
+import { parseSourceRef, SOURCE_REF_PREFIX, type SourceSearchHit } from "@/modules/official/types";
+import { aiBudget } from "@/lib/ai/config";
+import type { BudgetProfileId, ResolvedBudget } from "@/lib/ai/context-budget";
 
 /** Model-derived plan: jurisdiction-aware sub-questions and extra retrieval queries per lane kind. */
 export interface ResearchPlan {
@@ -85,6 +89,11 @@ export interface EngineDeps {
   translateQuery?(input: { question: string; language: string; matterId?: string | null; signal?: AbortSignal }): Promise<{ query: string; model?: string }>;
   /** Indian law corpus coverage block for prompts (cached; "" when unknown). Absent in minimal fakes. */
   coverage?(signal?: AbortSignal): Promise<string>;
+  /**
+   * Context budget for a profile, resolved against the model the router picks for it (evidence sizes, read caps,
+   * reader defaults). Absent in minimal fakes: the engine then keeps its fixed bounds.
+   */
+  budget?(profile: BudgetProfileId): ResolvedBudget;
 }
 
 function toolCtx(signal?: AbortSignal): ToolContext {
@@ -143,6 +152,41 @@ function corpusHit(h: CorpusHit, nctx: { jurisdiction: SearchSettings["jurisdict
 }
 
 export const CORPUS_TEXT_PREFIX = "corpus-text://";
+
+/** Official-sources facade errors that mean "no official corpus on this deployment" (empty result, not a lane failure). */
+export function isOfficialUnavailable(e: unknown): boolean {
+  const err = e as { code?: unknown; name?: unknown } | null;
+  return err?.code === "official_not_configured" || err?.code === "official_not_implemented" || err?.name === "OfficialNotConfiguredError" || err?.name === "OfficialNotImplementedError";
+}
+
+/** One official-sources hit as a research hit: readable through its stable src:// reference (never a guessed id). */
+export function officialHit(h: SourceSearchHit): SearchHit {
+  const pages = h.pageStart != null ? (h.pageEnd != null && h.pageEnd !== h.pageStart ? `pp. ${h.pageStart}–${h.pageEnd}` : `p. ${h.pageStart}`) : "";
+  return {
+    id: `official:${h.documentId}${h.pageStart != null ? `#p${h.pageStart}` : `#c${h.chunkIndex}`}`,
+    source: "regulations",
+    title: h.title,
+    subtitle: [h.publisher, h.kind.replace(/_/g, " "), pages, h.extraction === "ocr_model" ? "OCR text — check against the PDF" : ""].filter(Boolean).join(" · "),
+    court: h.publisher,
+    date: h.docDate ?? undefined,
+    snippet: h.text.slice(0, 600),
+    url: h.url,
+    score: h.score,
+    readRef: { kind: "url", url: h.ref },
+  };
+}
+
+/** Official-document search for a research lane (empty, not an error, when the corpus is not on this deployment). */
+export async function officialHits(query: string, o: { from?: string; to?: string; limit: number }): Promise<SearchHit[]> {
+  if (!query.trim()) return [];
+  try {
+    const r = await searchOfficial({ q: query, from: o.from, to: o.to, limit: Math.min(o.limit, 12) });
+    return r.hits.map(officialHit);
+  } catch (e) {
+    if (isOfficialUnavailable(e)) return [];
+    throw e;
+  }
+}
 
 /**
  * Judgment full-text hits (best passage per judgment, with its page), restricted to the courts in scope; judgments
@@ -422,8 +466,11 @@ export function defaultDeps(): EngineDeps {
           case "ediscovery":
             if (!FEATURES.ediscovery) return matterDocumentHits(query, settings.matterId, limit);
             return normalizeToolResult(source, await Promise.resolve(searchEdiscoveryTool.execute({ query, matter_id: settings.matterId ?? undefined, date_after: range.from, date_before: range.to, limit }, ctx)), nctx);
+          // LeClaude India: "regulations" is the official-sources corpus (tribunal and regulator orders, circulars,
+          // notifications, gazette, cause lists, Parliament papers) — searched by the lanes' search_official_sources tool.
+          case "regulations": { const hits = await officialHits(query, { from: range.from, to: range.to, limit }); return { hits, total: hits.length }; }
           // US providers are not offered in LeClaude India (the US toolkit still compiles for the US fork).
-          case "regulations": case "federal_register": case "dockets": case "web": return { hits: [], total: 0 };
+          case "federal_register": case "dockets": case "web": return { hits: [], total: 0 };
         }
       };
       // The intelligence corpus feeds the same lane in parallel where it adds material (library); its hits are normalized onto the provider kind.
@@ -462,6 +509,28 @@ export function defaultDeps(): EngineDeps {
         const data = await withTimeout(ik.doc(tid, { signal: opts.signal }), 30_000, opts.signal);
         return { text: htmlToText(data.doc ?? "", { maxChars: 1_000_000 }).text, title: htmlToText(data.title ?? "").text || opts.title, url: ik.webUrl(tid), cached: false };
       }
+      if (ref.kind === "url" && ref.url.startsWith(SOURCE_REF_PREFIX)) {
+        // Official document: the stable src:// reference resolves server-side; an unknown id is an error, never another document.
+        const parsed = parseSourceRef(ref.url);
+        if (!parsed) throw new Error(`Not an official source reference: ${ref.url}`);
+        let r: Awaited<ReturnType<typeof readOfficialDocument>>;
+        try {
+          r = await withTimeout(readOfficialDocument(parsed.documentId, { page: parsed.page ?? undefined, fromChunk: parsed.page == null ? parsed.chunk ?? undefined : undefined, maxChars: 400_000 }), 30_000, opts.signal);
+        } catch (e) {
+          if (isOfficialUnavailable(e)) throw new Error("The official-sources corpus is not available on this deployment.");
+          throw e;
+        }
+        if (!r || !r.chunks.length) throw new Error(`No text for official document ${parsed.documentId}; it is not substituted with another document.`);
+        let page: number | null = null;
+        const parts: string[] = [];
+        for (const c of r.chunks) {
+          if (c.pageStart != null && c.pageStart !== page) { parts.push(`[p. ${c.pageStart}]`); page = c.pageStart; }
+          parts.push(c.text);
+        }
+        const d = r.document;
+        const ocr = d.extraction === "ocr_model" || (d.ocrPages?.length ?? 0) > 0;
+        return { text: `${ocr ? "[OCR text: check quotations against the official PDF before filing]\n\n" : ""}${parts.join("\n\n")}`, title: d.title, cite: `${d.title}${d.docDate ? `, dated ${d.docDate}` : ""}`, url: d.url, cached: true };
+      }
       if (ref.kind === "url" && ref.url.startsWith(INTEL_READ_PREFIX)) {
         const id = ref.url.slice(INTEL_READ_PREFIX.length);
         const doc = intelDocuments().get(id);
@@ -485,7 +554,7 @@ export function defaultDeps(): EngineDeps {
         cacheStablePrefix: POLICY.laneAgent.cacheStablePrefix,
         verbosity: "low",
         maxSteps: input.maxSteps,
-        maxOutputTokens: POLICY.laneAgent.maxOutputTokens,
+        budget: POLICY.laneAgent.budget,
         signal: input.signal,
         metadata: { app: "leclaude", surface: "research-lane" },
         onEvent: input.onEvent,
@@ -500,7 +569,7 @@ export function defaultDeps(): EngineDeps {
         evidence: input.evidence?.length ? input.evidence : undefined,
         taskType: POLICY.synthesize.taskType,
         cacheStablePrefix: POLICY.synthesize.cacheStablePrefix,
-        maxOutputTokens: POLICY.synthesize.maxOutputTokens,
+        budget: POLICY.synthesize.budget,
         maxSteps: 1,
         verbosity: "medium",
         signal: input.signal,
@@ -511,11 +580,13 @@ export function defaultDeps(): EngineDeps {
     },
 
     verify(input) {
-      return verifyClaims({ answer: input.answer, sources: input.sources, maxClaims: 25, signal: input.signal, fast: true });
+      // The verifier's reach (sources, characters per source, answer length, output) follows the `verify` budget of the
+      // fast model; what it could not check is reported (coverage / partial), never counted as verified.
+      return verifyClaims({ answer: input.answer, sources: input.sources, maxClaims: 25, signal: input.signal, fast: POLICY.verify.fast, taskType: POLICY.verify.taskType, cacheStablePrefix: POLICY.verify.cacheStablePrefix, budget: aiBudget(POLICY.verify.budget ?? "verify", { fast: POLICY.verify.fast }) });
     },
 
     async correct(input) {
-      const r = await generateText({ fast: POLICY.correct.fast, taskType: POLICY.correct.taskType, reasoningEffort: POLICY.correct.reasoningEffort, cacheStablePrefix: POLICY.correct.cacheStablePrefix, instructions: input.instructions, input: input.input, maxOutputTokens: POLICY.correct.maxOutputTokens, signal: input.signal });
+      const r = await generateText({ fast: POLICY.correct.fast, taskType: POLICY.correct.taskType, reasoningEffort: POLICY.correct.reasoningEffort, cacheStablePrefix: POLICY.correct.cacheStablePrefix, instructions: input.instructions, input: input.input, budget: POLICY.correct.budget, signal: input.signal });
       return r.text;
     },
 
@@ -529,7 +600,7 @@ export function defaultDeps(): EngineDeps {
         input: `Question: ${input.question}\nLanes: ${input.laneKinds.join(", ")}\nUnsupported claims:\n${input.gaps.map((g) => `- ${g}`).join("\n")}`,
         schema: REFINE_SCHEMA,
         name: "lane_refinements",
-        maxOutputTokens: 600,
+        maxOutputTokens: POLICY.refine.maxOutputTokens,
         signal: input.signal,
       });
       const out: Partial<Record<LaneKind, string[]>> = {};
@@ -547,7 +618,7 @@ export function defaultDeps(): EngineDeps {
         input: `${input.matterLine}\n\nQuestion: ${input.question}\n\nAnswer:\n${input.answer.slice(0, 6000)}`,
         schema: FOLLOWUP_SCHEMA,
         name: "follow_ups",
-        maxOutputTokens: 400,
+        maxOutputTokens: POLICY.followUps.maxOutputTokens,
         signal: input.signal,
       });
       return (r.questions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 3);
@@ -600,6 +671,10 @@ export function defaultDeps(): EngineDeps {
       const { corpusCitationsKnown } = await import("@/modules/india/corpus/text");
       const known = await withTimeout(corpusCitationsKnown(rest), 10_000, signal).catch((e) => { if ((e as Error).name === "AbortError") throw e; return new Set<string>(); });
       return [...local, ...rest.filter((c) => known.has(c))];
+    },
+
+    budget(profile) {
+      return aiBudget(profile);
     },
 
     async coverage() {

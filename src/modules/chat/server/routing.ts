@@ -1,6 +1,8 @@
 import "server-only";
 import { getOpenAI } from "@/lib/ai/openai";
 import { OPENAI_DEFAULTS } from "@/lib/ai/providers/env";
+import { modelLimits } from "@/lib/ai/providers/model-limits";
+import { resolveContextBudget } from "@/lib/ai/context-budget";
 import type { ChatToolFlags } from "../types";
 
 /**
@@ -61,7 +63,29 @@ export interface ChatRoute {
   effort: "low" | "medium";
   verbosity: "low" | "medium";
   tools: ChatToolFlags;
+  /** Visible answer size from the chat_fast / chat_standard budget of the chosen model. */
   maxOutputTokens: number;
+  /** Conversation turns replayed (budget). */
+  historyTurns: number;
+  /** Characters of one function-tool result given back to the model (budget). */
+  toolResultChars: number;
+  /** The chosen model's maximum output (reasoning headroom is clamped to it). */
+  modelMaxOutput: number;
+}
+
+type LimitEnv = Readonly<Record<string, string | undefined>>;
+
+/** The only environment values the chat budget reads (limit overrides and the context scale). */
+function budgetEnv(): LimitEnv {
+  const e = typeof process !== "undefined" ? process.env : undefined;
+  return { OPENAI_CONTEXT_WINDOW: e?.OPENAI_CONTEXT_WINDOW, OPENAI_MAX_OUTPUT_TOKENS: e?.OPENAI_MAX_OUTPUT_TOKENS, AI_CONTEXT_SCALE: e?.AI_CONTEXT_SCALE };
+}
+
+/** Budget numbers for a chat tier on the model that serves it (coded OpenAI limits + overrides; pure for a given env). */
+export function chatBudget(tier: "fast" | "standard", model: string | undefined, env: LimitEnv = budgetEnv()) {
+  const limits = modelLimits("openai", model ?? "", env);
+  const b = resolveContextBudget(tier === "fast" ? "chat_fast" : "chat_standard", limits, env);
+  return { maxOutputTokens: b.maxOutputTokens, historyTurns: b.historyTurns, toolResultChars: b.toolResultChars, modelMaxOutput: limits.maxOutput };
 }
 
 const URL_RE = /https?:\/\/[^\s)]+/i;
@@ -79,7 +103,7 @@ const DOCS_ANALYTIC = /\b(timeline|chronolog|contradict|inconsisten|all (the )?(
  * to the standard tier. Tools the user switched on stay on; code, image and
  * browsing are also turned on when the message plainly asks for them.
  */
-export function routeMessage(message: string, flags: ChatToolFlags, o: { attachments?: number; historyTurns?: number; law?: boolean; docs?: boolean } = {}): ChatRoute {
+export function routeMessage(message: string, flags: ChatToolFlags, o: { attachments?: number; historyTurns?: number; law?: boolean; docs?: boolean; models?: Pick<ChatModels, "standard" | "fast"> } = {}): ChatRoute {
   const text = message.trim();
   const tools: ChatToolFlags = {
     search: flags.search,
@@ -90,7 +114,8 @@ export function routeMessage(message: string, flags: ChatToolFlags, o: { attachm
   // With Indian law or document sets selected, a legal/analytic question goes to the standard tier; lookups stay fast.
   const knowledgeHeavy = (o.law === true && LEGAL_ANALYTIC.test(text)) || (o.docs === true && (DOCS_ANALYTIC.test(text) || LEGAL_ANALYTIC.test(text)));
   const heavy = knowledgeHeavy || text.length > 600 || DEPTH_HINT.test(text) || (o.attachments ?? 0) > 0 || tools.code || tools.image || (o.historyTurns ?? 0) > 12;
+  // Sizes come from the chat budget of the model that serves the tier (never below 8,000 / 3,000 output tokens).
   return heavy
-    ? { tier: "standard", effort: text.length > 1500 || /\b(draft|memo|brief|strategy)\b/i.test(text) ? "medium" : "low", verbosity: "medium", tools, maxOutputTokens: 8_000 }
-    : { tier: "fast", effort: "low", verbosity: "low", tools, maxOutputTokens: 3_000 };
+    ? { tier: "standard", effort: text.length > 1500 || /\b(draft|memo|brief|strategy)\b/i.test(text) ? "medium" : "low", verbosity: "medium", tools, ...chatBudget("standard", o.models?.standard) }
+    : { tier: "fast", effort: "low", verbosity: "low", tools, ...chatBudget("fast", o.models?.fast) };
 }

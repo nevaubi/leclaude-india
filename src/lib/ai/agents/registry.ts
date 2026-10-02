@@ -1,11 +1,12 @@
 import "server-only";
 import type { Tool } from "openai/resources/responses/responses";
 import { runAgent, strictJsonSchema, type AgentEvent } from "../agent";
-import { aiConfig } from "../config";
+import { aiBudget, aiConfig } from "../config";
+import type { BudgetProfileId } from "../context-budget";
 import { FIRM_NAME, LEGAL_STYLE_RULES, todayLine } from "../prompts";
 import { defineTool, type ToolDef } from "../tools";
 import { fetchUrlTool, INDIA_TOOLS, INTERNAL_TOOLS, LEGAL_TOOLS, webSearchTool } from "../toolkit";
-import { CORPUS_INDEX_TOOLS, INDIAN_KANOON_TOOLS, indiaCapabilities, LAW_CORPUS_TOOLS, type IndiaCapabilities } from "../toolkit/india";
+import { CORPUS_INDEX_TOOLS, INDIAN_KANOON_TOOLS, indiaCapabilities, LAW_CORPUS_TOOLS, OFFICIAL_TOOLS, type IndiaCapabilities } from "../toolkit/india";
 import { getForumInfoTool } from "../toolkit/india-forums";
 import { indiaRoutingFor } from "../india-guidance";
 import type { VerifySource } from "../verify";
@@ -87,7 +88,7 @@ export function handoffTool(from: AgentId): ToolDef<{ to: string; brief: string;
 const NAMED_TOOLS: Record<string, ToolDef<never, unknown>> = Object.fromEntries([...LEGAL_TOOLS, ...INTERNAL_TOOLS, ...INDIA_TOOLS, getForumInfoTool, fetchUrlTool, searchIntelTool].map((t) => [t.name, t as ToolDef<never, unknown>]));
 
 /** Tools that exist only with a capability (constitution §53.5: coded, fail closed). */
-const CORPUS_TOOL_NAMES = new Set<string>([...CORPUS_INDEX_TOOLS, ...LAW_CORPUS_TOOLS].map((t) => t.name));
+const CORPUS_TOOL_NAMES = new Set<string>([...CORPUS_INDEX_TOOLS, ...LAW_CORPUS_TOOLS, ...OFFICIAL_TOOLS].map((t) => t.name));
 const IK_TOOL_NAMES = new Set<string>(INDIAN_KANOON_TOOLS.map((t) => t.name));
 
 /**
@@ -140,6 +141,36 @@ export interface RunPersonaOptions {
   metadata?: Record<string, string>;
   /** Shared state for tools (handoffs are collected under state.handoffs). */
   state?: Record<string, unknown>;
+  /** Context-budget profile (default by persona: research/analyst → workflow_agent, drafter → litigation_draft, reviewer → verify). */
+  budget?: BudgetProfileId;
+  /** Matter the run acts for (propagated to tools as state.matterId and to telemetry); defaults to context.matter.id. */
+  matterId?: string;
+}
+
+/** Budget profile per persona: tool-using specialists get the agent profile, drafting the drafting profile. */
+export const PERSONA_BUDGET: Record<AgentId, BudgetProfileId> = {
+  coordinator: "chat_fast",
+  research: "workflow_agent",
+  drafter: "litigation_draft",
+  reviewer: "verify",
+  coder: "ediscovery_doc",
+  analyst: "workflow_agent",
+  steward: "chat_fast",
+};
+
+/** Evidence for verification from the run's tool results (full values, not the client previews), bounded by the budget. */
+export function evidenceFromToolCalls(toolCalls: { name: string; result?: unknown; error?: string }[], limits: { maxSources: number; maxChars: number }): VerifySource[] {
+  const out: VerifySource[] = [];
+  for (const c of toolCalls) {
+    if (out.length >= limits.maxSources) break;
+    if (c.error || c.result == null || c.name === "handoff") continue;
+    let text = "";
+    try { text = typeof c.result === "string" ? c.result : JSON.stringify(c.result); } catch { text = ""; }
+    if (text.length <= 40) continue;
+    const r = c.result as { title?: unknown; source?: unknown; citation?: unknown; url?: unknown } | null;
+    out.push({ title: typeof r?.title === "string" ? r.title : `tool ${c.name}`, cite: typeof r?.citation === "string" ? r.citation : typeof r?.source === "string" ? r.source : undefined, url: typeof r?.url === "string" ? r.url : undefined, text: text.length > limits.maxChars ? `${text.slice(0, limits.maxChars)}\n…[truncated]` : text });
+  }
+  return out;
 }
 
 export interface RunPersonaResult {
@@ -194,15 +225,14 @@ export async function runPersona(personaOrId: AgentPersona | AgentId, input: str
   }
   const instructions = personaInstructions(persona, opts.context, { toolNames, coverage });
   const citations: RunPersonaResult["citations"] = [];
-  const evidence: VerifySource[] = [];
   let toolCalls = 0;
   const state: Record<string, unknown> = opts.state ?? {};
+  const profile = opts.budget ?? PERSONA_BUDGET[persona.id];
+  const budget = aiBudget(profile, { fast: tier === "fast" });
+  const matterId = opts.matterId ?? ((opts.context?.matter as { id?: unknown } | null | undefined)?.id as string | undefined);
   const onEvent = (e: AgentEvent) => {
     switch (e.type) {
       case "tool.call": toolCalls++; break;
-      case "tool.result":
-        if (e.ok && e.result != null && e.name !== "handoff" && evidence.length < 24) { const text = typeof e.result === "string" ? e.result : JSON.stringify(e.result); if (text.length > 40) evidence.push({ title: `tool ${e.name}`, text: text.slice(0, 8000) }); }
-        break;
       case "web_search": if (e.status === "completed") toolCalls++; break;
       case "citation": citations.push(e.citation); break;
       default: break;
@@ -222,7 +252,12 @@ export async function runPersona(personaOrId: AgentPersona | AgentId, input: str
     jsonSchema: opts.jsonSchema ? { name: opts.jsonSchema.name, schema: strictJsonSchema(opts.jsonSchema.schema) } : undefined,
     metadata: { agent: persona.id, ...(opts.metadata ?? {}) },
     onEvent,
+    budget: profile,
+    taskType: persona.id === "drafter" ? "draft" : persona.id === "reviewer" ? "review" : persona.id === "research" ? "research" : undefined,
+    matterId: typeof matterId === "string" && matterId ? matterId : undefined,
+    runId: opts.context?.runId,
   });
+  const evidence = evidenceFromToolCalls(res.toolCalls, { maxSources: budget.maxFullSources, maxChars: budget.toolResultChars });
   const handoffs = ((state.handoffs as HandoffRequest[] | undefined) ?? []).filter((h) => !h.brief.startsWith("REFUSED"));
   const seen = new Set<string>();
   const uniqueCitations = citations.filter((c) => { const k = c.url ?? c.cite ?? c.title; if (seen.has(k)) return false; seen.add(k); return true; });

@@ -11,7 +11,8 @@ export function webSearchTool(opts: { contextSize?: "low" | "medium" | "high"; a
     type: "web_search",
     search_context_size: opts.contextSize ?? "medium",
     ...(opts.allowedDomains?.length ? { filters: { allowed_domains: opts.allowedDomains } } : {}),
-    user_location: { type: "approximate", country: "US" },
+    // LeClaude India: results localised to India (approximate location only).
+    user_location: { type: "approximate", country: "IN" },
   };
 }
 

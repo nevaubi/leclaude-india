@@ -9,7 +9,7 @@ import type { ToolDef } from "@/lib/ai/tools";
 import { db } from "@/lib/db";
 import type { Matter, OfficeKind } from "@/lib/types/domain";
 import { LEGAL_STYLE_RULES, FIRM_NAME, todayLine } from "@/lib/ai/prompts";
-import { aiConfig } from "@/lib/ai/config";
+import { aiBudget, aiConfig } from "@/lib/ai/config";
 import { applyCiteCheck, crossCheckCitations } from "@/lib/ai/verify";
 import { audit } from "@/lib/integrity/audit";
 import { gateReview, makeProvenance } from "@/lib/integrity/provenance";
@@ -162,8 +162,11 @@ export function createOfficeAgentHandler<S>(config: OfficeAgentConfig<S>) {
         `CURRENT DOCUMENT SNAPSHOT:\n${config.renderSnapshot(snapshot, ctx.scope)}`,
       ].join("\n\n");
 
+      const routing = config.route?.(ctx, body.message) ?? {};
+      // History replay follows the office_agent budget of the model the turn runs on (never below 12 turns × 12,000 chars).
+      const budget = aiBudget("office_agent", { fast: Boolean(routing.fast) });
       const input: ResponseInput = [];
-      for (const h of (body.history ?? []).slice(-12)) input.push({ role: h.role, content: h.content.slice(0, 12_000) } as ResponseInputItem);
+      for (const h of (body.history ?? []).slice(-Math.max(12, budget.historyTurns))) input.push({ role: h.role, content: h.content.slice(0, Math.max(12_000, budget.historyChars)) } as ResponseInputItem);
       const userContent: Array<{ type: "input_text"; text: string } | { type: "input_image"; image_url: string; detail: "high" | "low" | "auto" }> = [
         { type: "input_text", text: volatile },
         { type: "input_text", text: `REQUEST:\n${body.message}` },
@@ -171,7 +174,6 @@ export function createOfficeAgentHandler<S>(config: OfficeAgentConfig<S>) {
       for (const a of body.attachments ?? []) if (a?.dataUrl?.startsWith("data:image/")) userContent.push({ type: "input_image", image_url: a.dataUrl, detail: "high" });
       input.push({ role: "user", content: userContent } as ResponseInputItem);
 
-      const routing = config.route?.(ctx, body.message) ?? {};
       try {
         await runAgent({
           instructions,
@@ -182,6 +184,7 @@ export function createOfficeAgentHandler<S>(config: OfficeAgentConfig<S>) {
           maxSteps: routing.maxSteps ?? config.maxSteps ?? 16,
           reasoningEffort: routing.reasoningEffort ?? config.reasoningEffort,
           matterId: matter?.id,
+          budget: "office_agent",
           cacheStablePrefix: true,
           verbosity: "low",
           signal,

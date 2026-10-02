@@ -2,7 +2,8 @@ import "server-only";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { generateJSON, generateText } from "@/lib/ai/agent";
-import { aiConfig, AIConfigError } from "@/lib/ai/config";
+import { aiBudget, aiConfig, AIConfigError } from "@/lib/ai/config";
+import { mapPool, mapPoolSettled } from "@/lib/ai/pool";
 import { hybridSearch } from "@/lib/ai/vector-store";
 import { VECTOR_COLLECTIONS } from "@/lib/ai/toolkit/internal";
 import { FIRM_NAME, LEGAL_STYLE_RULES, todayLine } from "@/lib/ai/prompts";
@@ -16,7 +17,7 @@ import type { Provenance, ProvenanceSource } from "@/lib/integrity/types";
 import type { Conflict, Deposition, EDocument, TimelineEvent } from "@/lib/types/domain";
 import type { FactMatrix, KnowledgeMap } from "./types";
 import { formatPageLine } from "./types";
-import { transcriptText } from "./transcript";
+import { segmentTranscript, transcriptText, type TranscriptSegment } from "./transcript";
 import { createConflict, crossAnalysis, exhibitDocuments, getDeposition, listEvents, listKnowledgeMaps, matterPeople, mergeEvents, saveFactMatrix, saveKnowledgeMap, setDigest } from "./service";
 import { resolvePersonName } from "./graph";
 import { getStory, storySources, updateStory } from "./service-stories";
@@ -96,29 +97,146 @@ export function digestWithProvenance(dep: Deposition): DigestRecord | null {
   return { ...dep.aiDigest, provenance: getProvenance("deposition.digest", dep.id) ?? undefined };
 }
 
-export async function digestDeposition(depositionId: string, opts: { force?: boolean; signal?: AbortSignal } & VerifyOpt = {}): Promise<DigestRecord> {
+/** Per-segment findings (one page:line window of the transcript). */
+const SEGMENT_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string", description: "3–6 sentences on what the witness said in this window, with page:line cites." },
+    admissions: ADMISSION_SCHEMA,
+    qualifications: { type: "array", items: { type: "object", properties: { cite: { type: "string", description: "page:line in this window" }, text: { type: "string", description: "The qualification, correction, retraction or errata, quoting where possible." }, qualifies: { type: "string", description: "What earlier testimony it qualifies (topic, and its page:line when known), or empty." } }, required: ["cite", "text", "qualifies"] } },
+    themes: { type: "array", items: { type: "string" } },
+    credibilityNotes: { type: "array", items: { type: "string" } },
+    followUps: { type: "array", items: { type: "string" } },
+  },
+  required: ["summary", "admissions", "qualifications", "themes", "credibilityNotes", "followUps"],
+};
+
+interface SegmentFindings { summary: string; admissions: { cite: string; text: string }[]; qualifications: { cite: string; text: string; qualifies: string }[]; themes: string[]; credibilityNotes: string[]; followUps: string[] }
+
+/** Which windows of the transcript the digest actually analysed (constitution §28: never "comprehensive" on a prefix). */
+export interface DigestCoverage {
+  segments: { index: number; range: string; status: "analyzed" | "failed"; error?: string }[];
+  analyzed: number;
+  failed: number;
+  /** True only when every window of the transcript was analysed. */
+  complete: boolean;
+  qaTotal: number;
+  qaAnalyzed: number;
+}
+
+const cleanList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && Boolean(x.trim())) : []);
+const cleanCites = (v: unknown): { cite: string; text: string }[] => (Array.isArray(v) ? (v as { cite?: unknown; text?: unknown }[]).filter((x) => x && typeof x.cite === "string" && typeof x.text === "string").map((x) => ({ cite: String(x.cite), text: String(x.text) })) : []);
+
+function normalizeFindings(raw: Partial<SegmentFindings> | null | undefined): SegmentFindings {
+  const q = Array.isArray(raw?.qualifications) ? (raw!.qualifications as { cite?: unknown; text?: unknown; qualifies?: unknown }[]).filter((x) => x && typeof x.cite === "string" && typeof x.text === "string").map((x) => ({ cite: String(x.cite), text: String(x.text), qualifies: typeof x.qualifies === "string" ? x.qualifies : "" })) : [];
+  return { summary: typeof raw?.summary === "string" ? raw.summary : "", admissions: cleanCites(raw?.admissions), qualifications: q, themes: cleanList(raw?.themes), credibilityNotes: cleanList(raw?.credibilityNotes), followUps: cleanList(raw?.followUps) };
+}
+
+/** "20:5", "20:05", "p. 20 l. 5" → "20:5" (comparison key). */
+function citeKey(cite: string): string | null {
+  const m = /(\d{1,4})\s*:\s*(\d{1,2})/.exec(cite);
+  return m ? `${Number(m[1])}:${Number(m[2])}` : null;
+}
+
+/**
+ * Counterevidence scan (deterministic): every qualification, correction or retraction a segment found is kept in the
+ * digest — when the synthesis did not carry it (no admission or credibility note at its page:line), it is appended to
+ * the key admissions as a QUALIFICATION line. An early admission is never reported without its later qualification.
+ */
+export function preserveQualifications(keyAdmissions: { cite: string; text: string }[], credibilityNotes: string[], qualifications: { cite: string; text: string; qualifies: string }[]): { cite: string; text: string }[] {
+  const present = new Set<string>();
+  for (const k of keyAdmissions) { const c = citeKey(k.cite); if (c) present.add(c); }
+  for (const n of credibilityNotes) for (const m of n.matchAll(/(\d{1,4})\s*:\s*(\d{1,2})/g)) present.add(`${Number(m[1])}:${Number(m[2])}`);
+  const out = [...keyAdmissions];
+  for (const q of qualifications) {
+    const c = citeKey(q.cite);
+    if (c && present.has(c)) continue;
+    out.push({ cite: q.cite, text: `QUALIFICATION${q.qualifies ? ` (of ${q.qualifies})` : ""}: ${q.text}` });
+    if (c) present.add(c);
+  }
+  return out;
+}
+
+/** Transcript windows for the verifier, those containing cited pages first (a long deposition exceeds the verifier's reach). */
+function focusedTranscriptSources(dep: Deposition, citedPages: Set<number>): VerifySource[] {
+  const all = transcriptSources(dep);
+  const hit = (s: VerifySource) => { const m = /^(\d+):\d+–(\d+):\d+$/.exec(s.cite ?? ""); if (!m) return false; const a = Number(m[1]), b = Number(m[2]); for (const p of citedPages) if (p >= a && p <= b) return true; return false; };
+  return [...all.filter(hit), ...all.filter((s) => !hit(s))];
+}
+
+export async function digestDeposition(depositionId: string, opts: { force?: boolean; signal?: AbortSignal } & VerifyOpt = {}): Promise<DigestRecord & { coverage?: DigestCoverage }> {
   const dep = getDeposition(depositionId);
   if (!dep) throw Object.assign(new Error(`No deposition ${depositionId}`), { status: 404 });
   if (dep.aiDigest && !opts.force) return digestWithProvenance(dep)!;
   if (!dep.transcript.length) throw Object.assign(new Error("No transcript to digest"), { status: 400 });
   requireKey();
+  const budget = aiBudget("deposition_segment");
   const instructions = `You are a senior litigation associate at ${FIRM_NAME} preparing a deposition digest in ${matterLine(dep.matterId)}
 ${todayLine()}
 ${LEGAL_STYLE_RULES}
-The digest is for the defending team. Be precise about what the witness actually said; do not overstate admissions. Every key admission, credibility note and follow-up must carry a page:line cite from the transcript.`;
-  const transcript = transcriptText(dep, { maxChars: 60_000 });
-  const input = `Deposition of ${dep.witnessName}${dep.witnessTitle ? `, ${dep.witnessTitle}` : ""}, taken ${dep.date} by ${dep.takenBy}${dep.defendingBy ? `, defended by ${dep.defendingBy}` : ""}. ${dep.pages} pages; excerpted Q/A below.\n\nExhibits:\n${(dep.exhibits ?? []).map((e) => `- ${e.id}: ${e.description}${e.bates ? ` (${e.bates})` : ""}`).join("\n")}\n\nTranscript:\n${transcript}`;
-  const raw = await generateJSON<RawDigest>({ instructions, input, schema: DIGEST_SCHEMA, name: "deposition_digest", maxOutputTokens: 3000, signal: opts.signal });
+The digest is for the defending team. Be precise about what the witness actually said; do not overstate admissions. Every key admission, credibility note and follow-up must carry a page:line cite from the transcript. When a later answer qualifies, corrects or retracts an earlier admission (including errata), keep BOTH and say so, each with its own cite.`;
+  const header = `Deposition of ${dep.witnessName}${dep.witnessTitle ? `, ${dep.witnessTitle}` : ""}, taken ${dep.date} by ${dep.takenBy}${dep.defendingBy ? `, defended by ${dep.defendingBy}` : ""}. ${dep.pages} pages.\n\nExhibits:\n${(dep.exhibits ?? []).map((e) => `- ${e.id}: ${e.description}${e.bates ? ` (${e.bates})` : ""}`).join("\n")}`;
+  // 1. Segment the WHOLE transcript into page:line windows sized by the budget (no prefix truncation).
+  const segments: TranscriptSegment[] = segmentTranscript(dep, budget.perSourceChars);
+  let raw: RawDigest;
+  let input: string;
+  let coverage: DigestCoverage;
+  let qualifications: SegmentFindings["qualifications"] = [];
+  let structuredEvidence: string;
+  if (segments.length <= 1) {
+    // The whole transcript fits one window: one call sees all of it.
+    const transcript = transcriptText(dep, { maxChars: Number.MAX_SAFE_INTEGER });
+    input = `${header}\n\nFull transcript (all ${dep.transcript.length} Q/A):\n${transcript}`;
+    raw = await generateJSON<RawDigest>({ instructions, input, schema: DIGEST_SCHEMA, name: "deposition_digest", maxOutputTokens: Math.max(3_000, budget.maxOutputTokens), signal: opts.signal });
+    coverage = { segments: segments.map((g) => ({ index: g.index, range: g.range, status: "analyzed" })), analyzed: segments.length, failed: 0, complete: true, qaTotal: dep.transcript.length, qaAnalyzed: dep.transcript.length };
+    structuredEvidence = transcript;
+  } else {
+    // 2. Analyse every window in parallel (bounded pool); a failed window is recorded, never silently skipped.
+    const settled = await mapPoolSettled(segments, budget.concurrency, async (g) => {
+      const text = transcriptText(dep, { indexes: g.indexes, maxChars: Number.MAX_SAFE_INTEGER });
+      const r = await generateJSON<SegmentFindings>({ instructions: `${instructions}\nYou are reading window ${g.index + 1} of ${segments.length} (${g.range}). Report what is in this window only, with page:line cites from it; list every qualification, correction, retraction or errata separately under qualifications.`, input: `${header}\n\nTranscript window ${g.range}:\n${text}`, schema: SEGMENT_SCHEMA, name: "deposition_segment", maxOutputTokens: budget.maxOutputTokens, signal: opts.signal });
+      return normalizeFindings(r);
+    }, opts.signal);
+    const findings = settled.map((x, i) => ({ segment: segments[i], result: x }));
+    const ok = findings.filter((f) => f.result.ok) as { segment: TranscriptSegment; result: { ok: true; value: SegmentFindings } }[];
+    // 3. Coverage map.
+    coverage = {
+      segments: findings.map((f) => (f.result.ok ? { index: f.segment.index, range: f.segment.range, status: "analyzed" as const } : { index: f.segment.index, range: f.segment.range, status: "failed" as const, error: String((f.result.error as Error)?.message ?? f.result.error).slice(0, 200) })),
+      analyzed: ok.length,
+      failed: findings.length - ok.length,
+      complete: ok.length === findings.length,
+      qaTotal: dep.transcript.length,
+      qaAnalyzed: ok.reduce((a, f) => a + f.segment.indexes.length, 0),
+    };
+    if (!ok.length) throw Object.assign(new Error(`Deposition digest failed: none of the ${segments.length} transcript windows could be analysed (${coverage.segments[0]?.error ?? "unknown error"}).`), { status: 502 });
+    qualifications = ok.flatMap((f) => f.result.value.qualifications);
+    // 4. Synthesis over the window findings (in transcript order), with the coverage stated.
+    const gaps = coverage.segments.filter((x) => x.status === "failed").map((x) => x.range);
+    input = `${header}\n\nCoverage: ${coverage.analyzed} of ${segments.length} transcript windows analysed${gaps.length ? `; NOT analysed: ${gaps.join(", ")} — say so in the summary and do not describe that testimony` : " (the whole transcript)"}.\n\nWindow findings in transcript order:\n${ok.map((f) => `### ${f.segment.range}\n${JSON.stringify(f.result.value)}`).join("\n\n")}`;
+    raw = await generateJSON<RawDigest>({ instructions: `${instructions}\nYou are synthesising the findings of every analysed window into one digest. Keep each admission together with any later qualification of it (both cites).`, input, schema: DIGEST_SCHEMA, name: "deposition_digest", maxOutputTokens: Math.max(3_000, budget.maxOutputTokens), signal: opts.signal });
+    structuredEvidence = "";
+  }
+  raw = { ...raw, keyAdmissions: cleanCites(raw.keyAdmissions), themes: cleanList(raw.themes), credibilityNotes: cleanList(raw.credibilityNotes), followUps: cleanList(raw.followUps), summary: typeof raw.summary === "string" ? raw.summary : "" };
+  // 5. Counterevidence scan: no qualification found in any window is lost.
+  raw.keyAdmissions = preserveQualifications(raw.keyAdmissions, raw.credibilityNotes, qualifications);
+  if (!coverage.complete) raw.summary = `${raw.summary}\n\nCoverage: ${coverage.analyzed} of ${coverage.segments.length} transcript windows were analysed; not analysed: ${coverage.segments.filter((x) => x.status === "failed").map((x) => x.range).join(", ")}. This digest is not comprehensive.`;
   const target = { kind: "deposition", id: dep.id, label: `${dep.witnessName} digest`, matterId: dep.matterId };
-  let provenance = recordGeneration({ surface: "ediscovery.digest", instructions, input, sources: [depositionSource(dep), ...(dep.exhibits ?? []).filter((e) => e.bates).map((e) => ({ kind: "document" as const, cite: e.bates, title: e.description }))], confidence: raw.confidence, target, meta: { admissions: raw.keyAdmissions.length } });
-  // (a) structured items are self-corrected against the transcript
-  const checked = await verifyStructured(provenance, { label: "deposition digest (admissions, credibility notes, follow-ups)", output: { keyAdmissions: raw.keyAdmissions, credibilityNotes: raw.credibilityNotes, followUps: raw.followUps }, evidence: transcript, schema: DIGEST_CHECK_SCHEMA, verify: opts.verify, signal: opts.signal, count: (v) => v.keyAdmissions.length + v.credibilityNotes.length + v.followUps.length, instructions: "Every cite must match a page:line that appears in the evidence and the quoted words must be the witness's." }, target);
+  let provenance = recordGeneration({ surface: "ediscovery.digest", instructions, input, sources: [depositionSource(dep), ...(dep.exhibits ?? []).filter((e) => e.bates).map((e) => ({ kind: "document" as const, cite: e.bates, title: e.description }))], confidence: raw.confidence, target, meta: { admissions: raw.keyAdmissions.length, segments: coverage.segments.length, segmentsAnalyzed: coverage.analyzed, coverageComplete: coverage.complete } });
+  // (a) structured items are self-corrected against the transcript windows they cite (a long transcript is not cut to a prefix)
+  const citedPages = new Set<number>();
+  for (const line of [...raw.keyAdmissions.map((k) => k.cite), ...raw.credibilityNotes, ...raw.followUps]) for (const m of String(line).matchAll(/(\d{1,4})\s*:\s*\d{1,2}/g)) citedPages.add(Number(m[1]));
+  if (!structuredEvidence) {
+    const idx = dep.transcript.map((q, i) => ({ q, i })).filter(({ q }) => citedPages.has(q.page) || citedPages.has(q.page - 1) || citedPages.has(q.page + 1)).map(({ i }) => i);
+    structuredEvidence = transcriptText(dep, { indexes: idx, maxChars: Number.MAX_SAFE_INTEGER });
+  }
+  const checked = await verifyStructured(provenance, { label: "deposition digest (admissions, credibility notes, follow-ups)", output: { keyAdmissions: raw.keyAdmissions, credibilityNotes: raw.credibilityNotes, followUps: raw.followUps }, evidence: structuredEvidence, schema: DIGEST_CHECK_SCHEMA, verify: opts.verify, signal: opts.signal, count: (v) => v.keyAdmissions.length + v.credibilityNotes.length + v.followUps.length, instructions: "Every cite must match a page:line that appears in the evidence and the quoted words must be the witness's. A QUALIFICATION line is kept whenever its page:line supports it, even if it narrows an earlier admission." }, target);
   provenance = checked.provenance;
   const structuredVerification = provenance.verification;
-  // (b) the narrative summary is claim-verified against the transcript; (c) cites are cross-checked
+  // (b) the narrative summary is claim-verified against the transcript (windows with cited pages first); (c) cites are cross-checked
   const pages = dep.transcript.map((q) => q.page);
   const cites = { bates: [...matterBates(dep.matterId), ...(dep.exhibits ?? []).map((e) => e.bates ?? "").filter(Boolean)], pages };
-  const narrative = await verifyNarrative({ ...provenance, verification: undefined }, { answer: raw.summary, sources: transcriptSources(dep), cites, verify: opts.verify, signal: opts.signal, maxClaims: 20 }, target);
+  for (const m of raw.summary.matchAll(/(\d{1,4})\s*:\s*\d{1,2}/g)) citedPages.add(Number(m[1]));
+  const narrative = await verifyNarrative({ ...provenance, verification: undefined }, { answer: raw.summary, sources: focusedTranscriptSources(dep, citedPages), cites, verify: opts.verify, signal: opts.signal, maxClaims: 20 }, target);
   const items = checked.output;
   const admissionLines = items.keyAdmissions.map((k) => crossCheckCitations(`${k.cite} — ${k.text}`, cites).text);
   const credibility = items.credibilityNotes.map((n) => crossCheckCitations(n, cites).text);
@@ -128,11 +246,16 @@ The digest is for the defending team. Be precise about what the witness actually
   let merged = applyCiteCheck(narrative.provenance, lineCheck);
   const v = merged.verification;
   if (v && structuredVerification) merged = { ...merged, verification: { ...v, status: structuredVerification.status === "contradicted" || v.status === "contradicted" ? "contradicted" : v.status, changes: structuredVerification.changes, notes: [structuredVerification.notes, v.notes].filter(Boolean).join("; ") || undefined } };
+  if (!coverage.complete && merged.verification) {
+    // Incomplete coverage can never read as verified.
+    const st = merged.verification.status === "verified" ? "partially-verified" : merged.verification.status;
+    merged = { ...merged, verification: { ...merged.verification, status: st, notes: [merged.verification.notes, `coverage incomplete: ${coverage.failed} of ${coverage.segments.length} transcript windows not analysed`].filter(Boolean).join("; ") } };
+  }
   provenance = gateReview(merged);
   const digest: NonNullable<Deposition["aiDigest"]> = { summary: narrative.text, keyAdmissions: admissionLines, themes: raw.themes, credibilityNotes: credibility, followUps };
   setDigest(depositionId, digest);
   attachProvenance({ kind: "deposition.digest", recordId: dep.id, matterId: dep.matterId, title: `Digest — ${dep.witnessName} (${dep.date})`, href: `${tabHref(dep.matterId, "depositions")}&deposition=${dep.id}`, provenance });
-  return { ...digest, provenance };
+  return { ...digest, provenance, coverage };
 }
 
 // ---------------------------------------------------------------------------
@@ -424,16 +547,28 @@ Extract dated events from the documents: things that happened (a study delivered
   const duplicates: ExtractResult["duplicates"] = [];
   const unresolved: ExtractResult["unresolved"] = [];
   let extracted = 0, dropped = 0, needsReview = 0;
-  const batchSize = 6;
   const known = matterBates(matterId);
-  for (let i = 0; i < docs.length; i += batchSize) {
-    const batch = docs.slice(i, i + batchSize);
-    const evidence = batch.map((x) => docBlock(x, 4000)).join("\n\n---\n\n");
-    const raw = await generateJSON<{ events: RawEvent[] }>({ fast: true, instructions, input: evidence, schema: EVENTS_SCHEMA, name: "timeline_events", maxOutputTokens: 4000, signal: opts.signal });
-    extracted += raw.events.length;
+  // Batch size and per-document text follow the e-discovery batch budget (never below 6 documents × 4,000 chars).
+  const budget = aiBudget("ediscovery_batch");
+  const batchSize = 6;
+  const docChars = Math.max(4_000, Math.min(budget.perSourceChars, Math.floor(budget.totalEvidenceChars / batchSize)));
+  const batches: EDocument[][] = [];
+  for (let i = 0; i < docs.length; i += batchSize) batches.push(docs.slice(i, i + batchSize));
+  // Model work (extraction + self-correction) runs in parallel across batches (bounded); merging and dedupe then run
+  // in document order so the result does not depend on which batch finished first.
+  let finished = 0;
+  const modelResults = await mapPool(batches, budget.concurrency, async (batch) => {
+    const evidence = batch.map((x) => docBlock(x, docChars)).join("\n\n---\n\n");
+    const raw = await generateJSON<{ events: RawEvent[] }>({ fast: true, instructions, input: evidence, schema: EVENTS_SCHEMA, name: "timeline_events", maxOutputTokens: Math.max(4_000, budget.maxOutputTokens), signal: opts.signal });
     const target = { kind: "timeline", label: `event extraction (${batch.map((x) => x.bates).join(", ")})`, matterId };
     const base = recordGeneration({ surface: "ediscovery.timeline", instructions, input: evidence, sources: documentSources(batch), model: aiConfig().fastModel, target, meta: { events: raw.events.length } });
     const checked = await verifyStructured(base, { label: "chronology events", output: raw.events, evidence, schema: { type: "array", items: EVENT_ITEM }, verify: opts.verify, signal: opts.signal, instructions: "A date must appear in, or be the date of, the cited document. Drop events whose Bates number is not in the evidence." }, target);
+    finished += batch.length;
+    opts.onProgress?.(Math.min(docs.length, finished), docs.length);
+    return { raw, checked };
+  }, opts.signal);
+  for (const { raw, checked } of modelResults) {
+    extracted += raw.events.length;
     dropped += Math.max(0, raw.events.length - checked.output.length);
     const existingEvents = [...d.timeline.find((e) => e.matterId === matterId), ...all];
     for (const e of checked.output) {
@@ -459,7 +594,6 @@ Extract dated events from the documents: things that happened (a study delivered
       all.push(ev);
       existingEvents.push(ev);
     }
-    opts.onProgress?.(Math.min(docs.length, i + batchSize), docs.length);
   }
   const res = mergeEvents(matterId, all);
   for (const ev of res.added) {

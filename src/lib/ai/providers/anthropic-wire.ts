@@ -17,6 +17,7 @@
  */
 import { toStrictSchema, type JSONSchema } from "../tools";
 import { CODE_EXECUTION_TOOL_VERSION, TOOL_EXAMPLES_BETA, claudeFamily, effortLevelsFor, normalizeClaudeModelId, supportsForcedToolChoice, supportsNativeStructuredOutput, webToolVersions } from "./claude-models";
+import { modelLimits } from "./model-limits";
 import { InferenceError, type CapabilityProfile, type ContentPart, type InferenceCitation, type InferenceEvent, type InferenceMessage, type InferenceRequest, type InferenceUsage, type ProviderId, type ReasoningEffort, type SearchResultBlock, type StopReason } from "./types";
 
 export type AnthropicPlatform = "anthropic" | "bedrock";
@@ -32,7 +33,12 @@ export interface AnthropicWireOptions {
   /** Send `input_examples` (feature flag ANTHROPIC_TOOL_EXAMPLES). */
   toolExamples: boolean;
   structuredOutput: "auto" | "native" | "tool";
+  /** The model's maximum output (descriptor.maxOutput); defaults to the coded family limit. `max_tokens` never exceeds it. */
+  maxOutputLimit?: number;
 }
+
+/** Beta that lets a request ask the API to drop thinking blocks invalidated by an edited history (preserved thinking). */
+export const THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01";
 
 export interface AnthropicWireRequest {
   body: Record<string, unknown>;
@@ -259,7 +265,7 @@ export function buildAnthropicRequest(req: InferenceRequest, opts: AnthropicWire
   for (const b of req.builtins ?? []) {
     if (b.type === "web_search") {
       if (!caps.serverWebSearch) throw new InferenceError("capability_unavailable", `${opts.platform} has no server web search; route this request to a provider with serverWebSearch.`, { provider: opts.platform });
-      tools.push({ type: web.search, name: "web_search", ...(b.allowedDomains?.length ? { allowed_domains: b.allowedDomains } : {}), user_location: { type: "approximate", country: "US" } });
+      tools.push({ type: web.search, name: "web_search", ...(b.allowedDomains?.length ? { allowed_domains: b.allowedDomains } : {}), user_location: { type: "approximate", country: "IN" } });
       for (const beta of web.betas) betas.add(beta);
     } else if (b.type === "web_fetch") {
       if (!caps.serverWebFetch) throw new InferenceError("capability_unavailable", `${opts.platform} has no server web fetch.`, { provider: opts.platform });
@@ -303,19 +309,43 @@ export function buildAnthropicRequest(req: InferenceRequest, opts: AnthropicWire
   if (Object.keys(outputConfig).length) body.output_config = outputConfig;
   if (req.temperature != null && plan.allowsTemperature) body.temperature = req.temperature;
 
-  // max_tokens: thinking tokens count against it, so give reasoning requests the same headroom the OpenAI path has.
-  const requested = req.maxOutputTokens ?? opts.defaultMaxTokens;
+  // max_tokens: thinking tokens count against it, so give reasoning requests the same headroom the OpenAI path has,
+  // and never ask for more than the model can produce (a 400, not a longer answer).
+  const limit = opts.maxOutputLimit && opts.maxOutputLimit > 0 ? opts.maxOutputLimit : modelLimits(opts.platform, opts.model).maxOutput;
+  const requested = Math.max(1, Math.min(req.maxOutputTokens ?? opts.defaultMaxTokens, limit));
   let maxTokens = requested;
-  if (plan.thinking && (plan.thinking as { type?: string }).type === "enabled") maxTokens = Math.max(requested, opts.thinkingBudget + Math.max(1024, requested));
-  else if (plan.thinking) maxTokens = Math.min(64_000, Math.max(requested * 3, requested + 16_000));
-  body.max_tokens = Math.max(1, Math.floor(maxTokens));
+  const budgetThinking = plan.thinking && (plan.thinking as { type?: string }).type === "enabled";
+  if (budgetThinking) maxTokens = Math.max(requested, opts.thinkingBudget + Math.max(1024, requested));
+  else if (plan.thinking) maxTokens = Math.max(requested * 3, requested + 16_000);
+  maxTokens = Math.max(1, Math.floor(Math.min(maxTokens, limit)));
+  if (budgetThinking) {
+    // budget_tokens must stay below max_tokens (and at least 1024): shrink it under a small limit, or drop thinking.
+    const budget = Number((plan.thinking as { budget_tokens?: number }).budget_tokens ?? 0);
+    if (budget >= maxTokens) {
+      const fitted = Math.min(budget, maxTokens - 1024);
+      if (fitted >= 1024) body.thinking = { ...(plan.thinking as Record<string, unknown>), budget_tokens: fitted };
+      else delete body.thinking;
+    }
+  }
+  body.max_tokens = maxTokens;
+
+  // Preserved thinking: after the runtime elided earlier tool results, thinking blocks produced over the old prefix no
+  // longer match. Ask the API to drop them (this request only; the runtime keeps sending it for the rest of the run).
+  if (req.historyEdited && body.thinking && (body.thinking as { type?: string }).type !== "disabled") {
+    body.thinking = { ...(body.thinking as Record<string, unknown>), block_binding: { prefix_mismatch_behavior: "drop_block" } };
+    betas.add(THINKING_BINDING_BETA);
+  } else if (req.historyEdited && !body.thinking && claudeFamily(opts.model) === "adaptive-always") {
+    // Thinking is always on for this family; `{type: "adaptive"}` is equivalent to omitting it and carries the binding.
+    body.thinking = { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } };
+    betas.add(THINKING_BINDING_BETA);
+  }
 
   if (opts.platform === "anthropic") {
     if (req.cacheStablePrefix) body.cache_control = ttl;
     if (req.containerId && ptc) body.container = req.containerId;
   }
 
-  return { body, betas: Array.from(betas), structuredToolName, thinkingEnabled: Boolean(plan.thinking && (plan.thinking as { type?: string }).type !== "disabled") };
+  return { body, betas: Array.from(betas), structuredToolName, thinkingEnabled: Boolean(body.thinking && (body.thinking as { type?: string }).type !== "disabled") };
 }
 
 // ---------------- Stream parser ----------------
@@ -358,7 +388,7 @@ export function mapAnthropicErrorType(type: string | undefined): { code: Inferen
     case "rate_limit_error": return { code: "rate_limited", retryable: true, status: 429 };
     case "authentication_error": case "permission_error": return { code: "auth", retryable: false, status: 401 };
     case "not_found_error": return { code: "unknown", retryable: false, status: 404 };
-    case "request_too_large": return { code: "unknown", retryable: false, status: 413 };
+    case "request_too_large": return { code: "context_length", retryable: false, status: 413 };
     case "billing_error": return { code: "auth", retryable: false, status: 402 };
     case "timeout_error": return { code: "timeout", retryable: true, status: 504 };
     default: return { code: "unknown", retryable: false, status: 400 };

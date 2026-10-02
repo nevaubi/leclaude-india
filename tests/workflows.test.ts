@@ -174,9 +174,9 @@ describe("graph utilities", () => {
     expect(sourceHandles("logic.loop", {}).map((h) => h.id)).toEqual(["each", "done"]);
     expect(sourceHandles("ai.prompt", {}).map((h) => h.id)).toEqual(["out"]);
   });
-  it("ships 16 valid templates with every node type known", () => {
+  it("ships 19 valid templates with every node type known", () => {
     const templates = buildTemplates();
-    expect(templates).toHaveLength(16);
+    expect(templates).toHaveLength(19);
     for (const t of templates) {
       const v = validateWorkflow(t.nodes, t.edges);
       expect(v.ok, `${t.id}: ${v.issues.map((i) => i.message).join("; ")}`).toBe(true);
@@ -456,7 +456,7 @@ describe("engine", () => {
 describe("service and seeds", () => {
   it("seeds templates, user workflows and runs", () => {
     const templates = listWorkflows({ template: true });
-    expect(templates).toHaveLength(16);
+    expect(templates).toHaveLength(19);
     expect(templates.every((t) => t.status === "active" && t.nodeCount >= 5)).toBe(true);
     const mine = listWorkflows({ template: false, system: false }).filter((w) => w.id.startsWith("wf_") && !w.id.startsWith("wf_test"));
     expect(mine.length).toBeGreaterThanOrEqual(4);
@@ -483,7 +483,7 @@ describe("service and seeds", () => {
     const created = createWorkflow({ name: "Blank", category: "operations", nodes: [{ id: "start", type: "trigger.manual", label: "Start", position: { x: 0, y: 0 }, config: {} }], edges: [] });
     expect(created.workflow.nodes[0].config).toHaveProperty("note");
     const stats = workflowStats();
-    expect(stats.templates).toBe(16);
+    expect(stats.templates).toBe(19);
     expect(stats.runs).toBeGreaterThanOrEqual(10);
     expect(stats.byCategory.discovery).toBeGreaterThan(0);
     const meta = workflowMeta();

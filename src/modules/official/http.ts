@@ -181,7 +181,16 @@ function directProvenance(r: SourceResponse): FetchProvenance {
 }
 
 /** True for failures where another transport may succeed (network, timeout, 403/429/5xx); never for 404 or a policy denial. */
+/**
+ * Our own per-host token bucket refused the request (no HTTP status: the publisher was not asked). Not a failure of the
+ * document or the publisher: the unit waits briefly and keeps its attempts, and no other route (Firecrawl) is tried.
+ */
+export function isLocalRateLimit(e: unknown): boolean {
+  return isProviderError(e) && e.code === "rate_limited" && e.status == null && /local rate limit/i.test(e.message);
+}
+
 export function fallbackWorthy(e: unknown): boolean {
+  if (isLocalRateLimit(e)) return false;
   if (isProviderError(e)) {
     if (e.status === 404 || e.status === 410) return false;
     if (e.code === "not_configured" && e.status !== 401 && e.status !== 403) return false; // egress policy denial / offline

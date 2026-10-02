@@ -77,7 +77,7 @@ export class OfficialFakeStore implements RemoteStore {
       const age = /finished_at < now\(\) - interval '(\d+) minutes'/.exec(sql);
       return this.enqueue(String(p[0]), sql.includes("DO UPDATE"), age ? Number(age[1]) : null);
     }
-    if (sql.startsWith("UPDATE official_units SET status = 'running'")) return this.claim(arr(p[0]), arr(p[1]));
+    if (sql.startsWith("UPDATE official_units SET status = 'running'")) return this.claim(arr(p[0]), arr(p[1]), p[2] == null ? [] : arr(p[2]), p[3] == null ? [] : arr(p[3]));
     if (sql.startsWith("UPDATE official_units SET status = 'done'")) { this.patchUnit(String(p[0]), { status: "done", error: null, note: s(p[1]), lease_until: null, finished_at: this.now() }); return []; }
     if (sql.startsWith("UPDATE official_units SET status = 'skipped'")) { this.patchUnit(String(p[0]), { status: "skipped", note: s(p[1]), lease_until: null, finished_at: this.now() }); return []; }
     if (sql.startsWith("UPDATE official_units SET status = $2, error = $3")) {
@@ -336,9 +336,10 @@ export class OfficialFakeStore implements RemoteStore {
     return [{ n: String(n) }];
   }
 
-  private claim(sources: string[], stages: string[]): Row[] {
+  private claim(sources: string[], stages: string[], holdSources: string[] = [], holdStages: string[] = []): Row[] {
     const u = [...this.units.values()]
       .filter((x) => x.status === "pending" && x.attempts < 5 && (x.run_after == null || x.run_after <= this.now()) && sources.includes(x.source) && stages.includes(x.stage))
+      .filter((x) => !(holdSources.includes(x.source) && holdStages.includes(x.stage)))
       .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id))[0];
     if (!u) return [];
     u.status = "running"; u.attempts++; u.lease_until = this.now() + 6 * 60_000;

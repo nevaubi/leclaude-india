@@ -5,7 +5,7 @@ import type { ParseInput, SourceAdapter } from "./adapter";
 import { addCounts, chunkMarkdown, scrubPersonalData, sha256Hex, SCRUB_VERSION, type ChunkDraft, type ScrubCounts } from "./chunk";
 import { embedPendingChunks, type EmbedFn } from "./embed";
 import { EXTRACTOR_VERSION, extractDocument, extractFirecrawlMarkdown, extractHtml, extractPdf, extractProvidedText, pageMarkdown, sniffBytes, type ExtractedDocument, type PageText } from "./extract";
-import { fallbackWorthy, isDeadlineError, isNotPublished, isTooLarge, makeAdapterContext, maxFileBytes, type OfficialHttp } from "./http";
+import { fallbackWorthy, isDeadlineError, isLocalRateLimit, isNotPublished, isTooLarge, makeAdapterContext, maxFileBytes, type OfficialHttp } from "./http";
 import { ocrDocument, ocrMaxPages, type OcrModel } from "./ocr";
 import { allowHostsFor, officialAdapter, sourceDef } from "./registry";
 import type { DiscoveredDoc, FetchProvenance, SourceDef, SourceId } from "./types";
@@ -197,6 +197,19 @@ function interrupted(deps: PipelineDeps, e?: unknown): boolean {
 async function releaseInterrupted(store: RemoteStore, unit: OfficialUnit, payload?: Record<string, unknown> | null): Promise<UnitOutcome> {
   await releaseUnit(store, unit.id, payload, "run deadline reached; resumes in a later run");
   return { status: "released", counts: {}, note: "deadline" };
+}
+
+/** Seconds a unit waits after our own host rate limit refused its request (spread so waiting units do not return together). */
+export const LOCAL_LIMIT_DEFER_SECONDS = 20;
+
+/**
+ * Our own host rate limit refused a request (the publisher was not asked): the unit waits a short, spread interval and
+ * keeps its attempt, so a busy host never fails documents or pushes them into exponential backoff.
+ */
+async function deferThrottled(store: RemoteStore, unit: OfficialUnit): Promise<UnitOutcome> {
+  const spread = Number.parseInt(unit.id.replace(/[^0-9a-f]/gi, "").slice(-2) || "0", 16) % LOCAL_LIMIT_DEFER_SECONDS;
+  await deferUnit(store, unit.id, LOCAL_LIMIT_DEFER_SECONDS + spread, "host request rate (local limit) reached; resumes shortly");
+  return { status: "released", counts: {}, note: "throttled" };
 }
 
 /**
@@ -586,6 +599,7 @@ async function processFetch(unit: OfficialUnit, deps: PipelineDeps): Promise<Uni
     extracted = await extractDocument({ bytes: f.bytes, mime: f.mime, url: target, finalUrl: f.finalUrl });
   } catch (e) {
     if (interrupted(deps, e)) return releaseInterrupted(store, unit);
+    if (isLocalRateLimit(e)) return deferThrottled(store, unit);
     const msg = (e as Error).message.slice(0, 500);
     if (isNotPublished(e)) return notPublished(unit, deps, doc, target, msg, (e as { status?: number }).status ?? 404);
     if (isTooLarge(e)) {
@@ -885,6 +899,7 @@ async function processOcr(unit: OfficialUnit, deps: PipelineDeps): Promise<UnitO
     return out;
   } catch (e) {
     if (interrupted(deps, e)) return releaseInterrupted(store, unit);
+    if (isLocalRateLimit(e)) return deferThrottled(store, unit);
     const msg = (e as Error).message.slice(0, 500);
     const final = (await failUnit(store, unit, msg, { permanent: isNotPublished(e) })) === "failed";
     if (final) { await setDocStatus(store, doc.id, "ocr_needed", `OCR could not complete: ${msg}`); await dropChunks(store, doc.id); }
@@ -974,6 +989,7 @@ export async function processUnit(unit: OfficialUnit, deps: PipelineDeps): Promi
     }
   } catch (e) {
     if (interrupted(deps, e)) return releaseInterrupted(deps.store, unit);
+    if (isLocalRateLimit(e)) return deferThrottled(deps.store, unit);
     const msg = (e as Error).message.slice(0, 500);
     const final = (await failUnit(deps.store, unit, msg)) === "failed";
     if (final && unit.documentId && unit.stage !== "index" && unit.stage !== "parse" && unit.stage !== "discover") {

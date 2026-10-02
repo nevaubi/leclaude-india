@@ -7,7 +7,7 @@ import { BytesCache, PRIORITY, processUnit, scrubIndexedDocuments, type StageCou
 import { officialSources, sourceEnabled } from "./registry";
 import type { IngestRunReport, SourceDef, SourceId } from "./types";
 import { isSourceId } from "./types";
-import { claimUnit, dbSize, enqueueUnits, getOfficialState, officialLimitBytes, officialStore, pgArray, setOfficialState, sweepExpiredUnits, unitId, UNIT_STAGES, type OfficialUnit, type UnitStage } from "./units";
+import { claimUnit, dbSize, type ClaimFilter, enqueueUnits, getOfficialState, officialLimitBytes, officialStore, pgArray, setOfficialState, sweepExpiredUnits, unitId, UNIT_STAGES, type OfficialUnit, type UnitStage } from "./units";
 import { backfillCursor, parseCursor } from "./adapters/regulators/common";
 
 /**
@@ -56,6 +56,18 @@ const EMBED_QUEUE_PER_RUN = 200;
 const OCR_REQUEUE_PER_RUN = 50;
 const IDLE_WAIT_MS = 1_500;
 const BUDGET_CHECK_TTL_MS = 5_000;
+/** Stages that send requests to the publisher (bounded per source by OFFICIAL_SOURCE_INFLIGHT). */
+export const NETWORK_STAGES: readonly UnitStage[] = ["discover", "fetch"];
+/**
+ * Network-stage units of one source running at once in a run (OFFICIAL_SOURCE_INFLIGHT, 1–16, default 3): with the
+ * per-host request rate (OFFICIAL_HOST_RPS) this keeps workers spread over sources instead of queueing behind one host.
+ */
+export const DEFAULT_SOURCE_INFLIGHT = 3;
+
+export function sourceInflight(env: Readonly<Record<string, string | undefined>> = process.env): number {
+  const n = Number(env.OFFICIAL_SOURCE_INFLIGHT);
+  return Number.isInteger(n) && n >= 1 ? Math.min(n, 16) : DEFAULT_SOURCE_INFLIGHT;
+}
 
 export interface OfficialRunOptions {
   sources?: SourceId[];
@@ -303,6 +315,14 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
     /** Stages a worker may claim now: no OCR without enough time left, no index once the embedding budget is used. */
     const stagesNow = (): UnitStage[] => stages.filter((s) => (s !== "ocr" || deadline - now() >= OCR_MIN_MS) && (s !== "index" || deps.embedBudget.left > 0));
 
+    const inflightCap = sourceInflight();
+    const netInFlight = new Map<string, number>();
+    /** Network stages of sources already at their in-flight cap are not claimed now (their other stages are). */
+    const hold = (): ClaimFilter["hold"] => {
+      const busy = [...netInFlight.entries()].filter(([, n]) => n >= inflightCap).map(([s]) => s);
+      return busy.length ? { sources: busy, stages: [...NETWORK_STAGES] } : undefined;
+    };
+
     async function claimNext(w: number, sources: string[], allowed: UnitStage[]): Promise<OfficialUnit | null> {
       const lane = LATER_STAGES.filter((s) => allowed.includes(s));
       const prefer = lane.length > 0 && lane.length < allowed.length && now() >= laneIdleUntil && (w < reserved || (concurrency === 1 && claims % 4 === 3));
@@ -315,7 +335,7 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
         }
         laneIdleUntil = now() + 5_000; // nothing in the later stages: do not ask again for a few seconds
       }
-      return claimUnit(store, { sources, stages: allowed });
+      return claimUnit(store, { sources, stages: allowed, hold: hold() });
     }
 
     const worker = async (w: number) => {
@@ -342,11 +362,14 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
           return;
         }
         active++;
+        const net = NETWORK_STAGES.includes(unit.stage);
+        if (net) netInFlight.set(unit.source, (netInFlight.get(unit.source) ?? 0) + 1);
         let out: UnitOutcome;
         try {
           out = await processUnit(unit, deps);
         } finally {
           active--;
+          if (net) netInFlight.set(unit.source, Math.max(0, (netInFlight.get(unit.source) ?? 1) - 1));
         }
         result.units++;
         if (unit.stage !== "discover" && unit.stage !== "index" && unit.stage !== "parse") perSourceUnits.set(unit.source, (perSourceUnits.get(unit.source) ?? 0) + 1);

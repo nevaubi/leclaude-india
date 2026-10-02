@@ -24,9 +24,12 @@ describe("official_units queue SQL", () => {
     expect(sql).toContain("WHERE id = ( SELECT id FROM official_units WHERE (status = 'pending' OR (status = 'running' AND lease_until < now())) AND attempts < 5");
     expect(sql).toContain("AND (run_after IS NULL OR run_after <= now())");
     expect(sql).toContain("ORDER BY priority, id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *");
-    expect(store.calls[0].params).toEqual(['{"nclt","sci-orders"}', '{"fetch","ocr"}']);
+    expect(sql).toContain("AND NOT (source = ANY($3::text[]) AND stage = ANY($4::text[]))");
+    expect(store.calls[0].params).toEqual(['{"nclt","sci-orders"}', '{"fetch","ocr"}', "{}", "{}"]); // nothing held
+    await claimUnit(store, { sources: ["nclt", "sci-orders"], stages: ["fetch", "ocr"], hold: { sources: ["nclt"], stages: ["discover", "fetch"] } });
+    expect(store.calls[1].params).toEqual(['{"nclt","sci-orders"}', '{"fetch","ocr"}', '{"nclt"}', '{"discover","fetch"}']);
     expect(await claimUnit(store, { sources: [], stages: ["fetch"] })).toBeNull();
-    expect(store.calls).toHaveLength(1); // an empty filter claims nothing (and asks nothing)
+    expect(store.calls).toHaveLength(2); // an empty filter claims nothing (and asks nothing)
   });
 
   it("enqueues with one INSERT … SELECT FROM jsonb_to_recordset; existing units are left alone unless re-queued", async () => {

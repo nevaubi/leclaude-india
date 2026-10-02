@@ -117,6 +117,8 @@ export async function enqueueUnits(store: RemoteStore, units: UnitInput[], opts:
 export interface ClaimFilter {
   sources: string[];
   stages: UnitStage[];
+  /** Pairs not to claim now: a unit of one of these sources in one of these stages (e.g. network stages of a source whose host is busy). */
+  hold?: { sources: string[]; stages: UnitStage[] };
 }
 
 /** Atomically claim the next unit (priority, id) for these sources/stages; null when nothing is claimable. */
@@ -131,9 +133,10 @@ export async function claimUnit(store: RemoteStore, filter: ClaimFilter, leaseMi
         WHERE (status = 'pending' OR (status = 'running' AND lease_until < now())) AND attempts < ${MAX_ATTEMPTS}
           AND (run_after IS NULL OR run_after <= now())
           AND source = ANY($1::text[]) AND stage = ANY($2::text[])
+          AND NOT (source = ANY($3::text[]) AND stage = ANY($4::text[]))
         ORDER BY priority, id LIMIT 1 FOR UPDATE SKIP LOCKED)
       RETURNING *`,
-    params: [pgArray(filter.sources), pgArray(filter.stages)],
+    params: [pgArray(filter.sources), pgArray(filter.stages), pgArray(filter.hold?.sources ?? []), pgArray(filter.hold?.stages ?? [])],
   });
   return r[0] ? toUnit(r[0]) : null;
 }

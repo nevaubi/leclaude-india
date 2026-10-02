@@ -177,7 +177,7 @@ const FACETS_TTL_MS = 10 * 60 * 1000;
 let facetsCache: { value: CaseFacets; at: number } | null = null;
 let facetsPending: Promise<CaseFacets> | null = null;
 
-export function resetFacetsCacheForTests() { facetsCache = null; facetsPending = null; }
+export function resetFacetsCacheForTests() { facetsCache = null; facetsPending = null; durableReady = false; }
 
 /** Postgres text timestamp ("2026-09-30 12:00:00.123+00") → ISO, or null. */
 export function isoTimestamp(v: string | null | undefined): string | null {
@@ -256,16 +256,66 @@ async function computeFacets(store: RemoteStore, now: () => number): Promise<Cas
  * last ingest time. Cached in memory per instance for ten minutes; concurrent callers share one computation; if a
  * recompute fails and an older copy exists, that copy is returned marked `stale`.
  */
-export async function corpusFacets(storeArg?: RemoteStore | null, now: () => number = Date.now): Promise<CaseFacets> {
+export interface FacetsOptions {
+  /**
+   * Keep a copy in Postgres so a cold instance answers from it (one small read) instead of recomputing over every
+   * record (seconds). A stale copy is served at once and refreshed through `defer` (the route passes Next's `after`).
+   */
+  durable?: boolean;
+  defer?: (task: Promise<unknown>) => void;
+}
+
+const DURABLE_FACETS_KEY = "case_facets_v1";
+let durableReady = false;
+
+async function readDurableFacets(store: RemoteStore): Promise<{ value: CaseFacets; at: number } | null> {
+  try {
+    if (!durableReady) {
+      await store.query({ query: `CREATE TABLE IF NOT EXISTS corpus_cache (key text PRIMARY KEY, value text NOT NULL, computed_at timestamptz NOT NULL DEFAULT now())` });
+      durableReady = true;
+    }
+    const rows = await store.query({ query: `SELECT value, computed_at::text AS computed_at FROM corpus_cache WHERE key = $1`, params: [DURABLE_FACETS_KEY] });
+    const r = rows[0];
+    if (!r?.value) return null;
+    const at = Date.parse(String(r.computed_at).replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
+    return { value: JSON.parse(String(r.value)) as CaseFacets, at: Number.isFinite(at) ? at : 0 };
+  } catch {
+    return null; // the durable copy is an optimisation; any failure falls back to computing
+  }
+}
+
+async function writeDurableFacets(store: RemoteStore, value: CaseFacets): Promise<void> {
+  try {
+    await store.query({ query: `INSERT INTO corpus_cache (key, value, computed_at) VALUES ($1, $2, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, computed_at = EXCLUDED.computed_at`, params: [DURABLE_FACETS_KEY, JSON.stringify(value)] });
+  } catch { /* best effort */ }
+}
+
+export async function corpusFacets(storeArg?: RemoteStore | null, now: () => number = Date.now, opts: FacetsOptions = {}): Promise<CaseFacets> {
   const store = requireStore(storeArg);
   if (facetsCache && now() - facetsCache.at < FACETS_TTL_MS) return facetsCache.value;
-  if (!facetsPending) {
-    facetsPending = computeFacets(store, now)
-      .then((value) => { facetsCache = { value, at: now() }; return value; })
-      .finally(() => { facetsPending = null; });
+  const recompute = (): Promise<CaseFacets> => {
+    if (!facetsPending) {
+      facetsPending = computeFacets(store, now)
+        .then(async (value) => { facetsCache = { value, at: now() }; if (opts.durable) await writeDurableFacets(store, value); return value; })
+        .finally(() => { facetsPending = null; });
+    }
+    return facetsPending as Promise<CaseFacets>;
+  };
+  if (opts.durable && !facetsCache) {
+    const saved = await readDurableFacets(store);
+    if (saved) {
+      const fresh = Date.now() - saved.at < FACETS_TTL_MS;
+      // Remember it for this instance; a stale copy is kept just long enough to cover the refresh.
+      facetsCache = { value: saved.value, at: fresh ? now() - (Date.now() - saved.at) : now() - FACETS_TTL_MS + 60_000 };
+      if (!fresh) {
+        const task = recompute().catch(() => undefined);
+        if (opts.defer) opts.defer(task);
+      }
+      return saved.value;
+    }
   }
   try {
-    return await facetsPending;
+    return await recompute();
   } catch (e) {
     if (facetsCache) return { ...facetsCache.value, stale: true };
     throw e;

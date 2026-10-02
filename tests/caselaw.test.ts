@@ -194,6 +194,47 @@ describe("corpusFacets", () => {
     expect(b.stale).toBe(true);
     expect(b.total).toBe(a.total);
   });
+
+  it("durable mode serves the stored copy, refreshes a stale one in the background, and falls back to computing", async () => {
+    let saved: { value: string; computed_at: string } | null = null;
+    const store = new FakeStore((q) => {
+      if (q.query.startsWith("INSERT INTO corpus_cache")) { saved = { value: String(q.params?.[1]), computed_at: new Date().toISOString() }; return []; }
+      if (q.query.includes("FROM corpus_cache")) return saved ? [saved] : [];
+      if (q.query.includes("GROUP BY 1, 2, 3")) return groups;
+      if (q.query.includes("max(ingested_at)")) return [{ last_ingested: null }];
+      if (q.query.includes("FROM corpus_units")) return units;
+      return [];
+    });
+    // Nothing stored: compute and store.
+    const a = await corpusFacets(store, Date.now, { durable: true });
+    expect(saved).not.toBeNull();
+    // A cold instance reads the stored copy without recomputing.
+    resetFacetsCacheForTests();
+    const before = store.calls.filter((q) => q.query.includes("GROUP BY 1, 2, 3")).length;
+    const b = await corpusFacets(store, Date.now, { durable: true });
+    expect(b.total).toBe(a.total);
+    expect(store.calls.filter((q) => q.query.includes("GROUP BY 1, 2, 3")).length).toBe(before);
+    // A stale stored copy is returned at once and recomputed through defer.
+    resetFacetsCacheForTests();
+    saved = { value: saved!.value, computed_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
+    const deferred: Promise<unknown>[] = [];
+    const c = await corpusFacets(store, Date.now, { durable: true, defer: (t) => deferred.push(t) });
+    expect(c.total).toBe(a.total);
+    expect(deferred).toHaveLength(1);
+    await deferred[0];
+    expect(store.calls.filter((q) => q.query.includes("GROUP BY 1, 2, 3")).length).toBe(before + 1);
+    expect(Date.now() - Date.parse(saved!.computed_at)).toBeLessThan(60_000);
+    // A broken cache table never blocks the answer.
+    resetFacetsCacheForTests();
+    const broken = new FakeStore((q) => {
+      if (q.query.includes("corpus_cache")) throw new Error("permission denied");
+      if (q.query.includes("GROUP BY 1, 2, 3")) return groups;
+      if (q.query.includes("max(ingested_at)")) return [{ last_ingested: null }];
+      if (q.query.includes("FROM corpus_units")) return units;
+      return [];
+    });
+    expect((await corpusFacets(broken, Date.now, { durable: true })).total).toBe(a.total);
+  });
 });
 
 describe("judgmentRecord", () => {

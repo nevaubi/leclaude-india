@@ -158,8 +158,11 @@ export async function causeListEntries(q: CauseListQuery, storeArg?: RemoteStore
   }
   const limit = Math.min(Math.max(1, Math.trunc(q.limit ?? DEFAULT_LIMIT)), MAX_LIMIT);
   params.push(limit);
+  // An identifier lookup without a date window lists the latest listings first: under the limit, a frequently listed
+  // number keeps its upcoming / recent listings rather than its oldest history. A window is read in date order.
+  const dateOrder = from ? "ASC" : "DESC";
   const sql = `SELECT ${ENTRY_COLS} FROM causelist_entries WHERE ${where.join(" AND ")}
-    ORDER BY list_date ASC, forum ASC, court_no ASC NULLS LAST, page ASC NULLS LAST, (substring(item_no from '^[0-9]+'))::int ASC NULLS LAST, item_no ASC, id ASC
+    ORDER BY list_date ${dateOrder}, forum ASC, court_no ASC NULLS LAST, page ASC NULLS LAST, (substring(item_no from '^[0-9]+'))::int ASC NULLS LAST, item_no ASC, id ASC
     LIMIT $${params.length}`;
   const rows = await bounded(store, sql, params);
   const out: CauseListEntry[] = [];
@@ -177,7 +180,63 @@ export async function causeListEntries(q: CauseListQuery, storeArg?: RemoteStore
   return out;
 }
 
-/** Exact matches of matters' identifiers against parsed cause-list entries in [from, to]. */
+/** Distinct identifiers per call of listingsForMatters (each batch of MAX_IDENTIFIERS is one query). */
+export const MAX_LISTING_IDENTIFIERS = 5000;
+/** Rows per page of the listing query (keyset-paged until exhausted). */
+export const LISTING_PAGE_ROWS = 1000;
+/** Bound on the rows one call reads; reaching it is an error (never a silently shortened answer). */
+export const MAX_LISTING_ROWS = 20_000;
+
+interface ListingGroup {
+  forum: string;
+  qualified: Set<string>;
+  unqualified: Set<string>;
+  diaries: Set<string>;
+}
+
+/**
+ * SQL for one batch of identifiers: per identifier forum, `(<forum filter> AND (<keys / diaries>))`, with the bench
+ * rules of caseKeyBindable (an unqualified key never matches an entry printed with a bench code, nor NCLT entries
+ * unless the forum is exactly one bench). Only rows that may bind are read, so paging never fills with other benches'
+ * or other courts' rows.
+ */
+function listingIdentifierSql(groups: ListingGroup[], params: SqlValue[]): string[] {
+  const ors: string[] = [];
+  for (const g of groups) {
+    const forumSql = forumFilterSql(g.forum, "forum", params);
+    if (!forumSql) continue;
+    const parts: string[] = [];
+    if (g.qualified.size) { params.push(pgTextArray([...g.qualified])); parts.push(`case_keys && $${params.length}::text[]`); }
+    if (g.unqualified.size) {
+      params.push(pgTextArray([...g.unqualified]));
+      const p = `$${params.length}`;
+      const u = [`case_keys && ${p}::text[]`, unqualifiedKeySql(p)];
+      if (!unqualifiedNcltListable(g.forum)) u.push(NOT_NCLT_FORUM("forum"));
+      parts.push(`(${u.join(" AND ")})`);
+    }
+    if (g.diaries.size) { params.push(pgTextArray([...g.diaries])); parts.push(`diary_no = ANY($${params.length}::text[])`); }
+    if (parts.length) ors.push(`(${forumSql} AND (${parts.join(" OR ")}))`);
+  }
+  return ors;
+}
+
+function compareListingRows(a: Row, b: Row): number {
+  const s = (v: string | null | undefined) => (v == null ? null : String(v));
+  const cmp = (x: string | null, y: string | null, numeric = false) =>
+    x === y ? 0 : x == null ? 1 : y == null ? -1 : numeric ? Number(x) - Number(y) || x.localeCompare(y) : x < y ? -1 : 1;
+  return (
+    cmp(s(a.list_date), s(b.list_date)) || cmp(s(a.forum), s(b.forum)) || cmp(s(a.court_no), s(b.court_no)) ||
+    cmp(s(a.page), s(b.page), true) || cmp(s(a.id), s(b.id))
+  );
+}
+
+/**
+ * Exact matches of matters' identifiers against parsed cause-list entries in [from, to].
+ *
+ * The forum and bench rules are part of the SQL (per identifier forum), rows are keyset-paged by (list_date, id) until
+ * exhausted, and identifiers are queried in batches: no match is dropped by a row cap or an identifier cap. A call
+ * beyond MAX_LISTING_IDENTIFIERS distinct identifiers or MAX_LISTING_ROWS rows fails loudly (CauseListQueryError).
+ */
 export async function listingsForMatters(
   matters: { matterId: string; identifiers: MatterCaseIdentifier[] }[],
   opts: { from: string; to: string },
@@ -186,30 +245,65 @@ export async function listingsForMatters(
   if (!isIso(opts.from) || !isIso(opts.to) || opts.to < opts.from || spanDays(opts.from, opts.to) > MAX_LISTING_WINDOW_DAYS) {
     throw new CauseListQueryError(`from/to must be YYYY-MM-DD, ascending, at most ${MAX_LISTING_WINDOW_DAYS} days apart`);
   }
-  const keys = new Set<string>();
-  const diaries = new Set<string>();
-  let n = 0;
+  // Distinct bindable identifiers. Identifiers that can never bind (ambiguous forum, unqualified NCLT key without one
+  // bench, a value that is not a key) are not queried.
+  const idents = new Map<string, { forum: string; kind: "case_number" | "diary_no"; value: string }>();
   for (const m of matters) {
     for (const id of m.identifiers ?? []) {
-      if (++n > MAX_IDENTIFIERS) break;
-      // Identifiers that can never bind (ambiguous forum, unqualified NCLT key without one bench) are not queried.
-      if (!expandForum(String(id.forum ?? "")).length || !identifierCanBind(id.forum, id.kind, String(id.value ?? ""))) continue;
-      if (id.kind === "case_number" && isCaseKey(id.value)) keys.add(id.value);
-      else if (id.kind === "diary_no" && isDiaryKey(id.value)) diaries.add(id.value);
+      const forum = String(id.forum ?? "").trim().toLowerCase();
+      const value = String(id.value ?? "");
+      if (!expandForum(forum).length || !identifierCanBind(forum, id.kind, value)) continue;
+      const kind = id.kind === "case_number" && isCaseKey(value) ? "case_number" : id.kind === "diary_no" && isDiaryKey(value) ? "diary_no" : null;
+      if (!kind) continue;
+      idents.set(`${forum}\u0000${kind}\u0000${value}`, { forum, kind, value });
     }
   }
-  if (!keys.size && !diaries.size) return [];
+  if (!idents.size) return [];
+  if (idents.size > MAX_LISTING_IDENTIFIERS) {
+    throw new CauseListQueryError(`at most ${MAX_LISTING_IDENTIFIERS} distinct case / diary numbers per listing lookup (${idents.size} given)`);
+  }
   const store = await officialStore(storeArg);
-  const params: SqlValue[] = [opts.from, opts.to];
-  const ident: string[] = [];
-  if (keys.size) { params.push(pgTextArray([...keys])); ident.push(`case_keys && $${params.length}::text[]`); }
-  if (diaries.size) { params.push(pgTextArray([...diaries])); ident.push(`diary_no = ANY($${params.length}::text[])`); }
-  const rows = await bounded(
-    store,
-    `SELECT ${ENTRY_COLS} FROM causelist_entries WHERE parsed AND list_date BETWEEN $1::date AND $2::date AND (${ident.join(" OR ")})
-     ORDER BY list_date ASC, forum ASC, court_no ASC NULLS LAST, page ASC NULLS LAST, id ASC LIMIT 2000`,
-    params,
-  );
+  const all = [...idents.values()];
+  const byId = new Map<string, Row>();
+  const maxPages = Math.ceil(MAX_LISTING_ROWS / LISTING_PAGE_ROWS);
+  let read = 0;
+  for (let i = 0; i < all.length; i += MAX_IDENTIFIERS) {
+    const groups = new Map<string, ListingGroup>();
+    for (const id of all.slice(i, i + MAX_IDENTIFIERS)) {
+      let g = groups.get(id.forum);
+      if (!g) groups.set(id.forum, (g = { forum: id.forum, qualified: new Set(), unqualified: new Set(), diaries: new Set() }));
+      if (id.kind === "diary_no") g.diaries.add(id.value);
+      else (id.value.includes("@") ? g.qualified : g.unqualified).add(id.value);
+    }
+    const base: SqlValue[] = [opts.from, opts.to];
+    const ors = listingIdentifierSql([...groups.values()], base);
+    if (!ors.length) continue;
+    let after: { date: string; id: string } | null = null;
+    for (let page = 0; ; page++) {
+      if (page >= maxPages || read >= MAX_LISTING_ROWS) {
+        throw new CauseListQueryError(`more than ${MAX_LISTING_ROWS} cause-list rows match these identifiers in ${opts.from}..${opts.to}; narrow the window`);
+      }
+      const params = [...base];
+      let keyset = "";
+      if (after) {
+        params.push(after.date, after.id);
+        keyset = ` AND (list_date, id) > ($${params.length - 1}::date, $${params.length})`;
+      }
+      params.push(LISTING_PAGE_ROWS);
+      const rows = await bounded(
+        store,
+        `SELECT ${ENTRY_COLS} FROM causelist_entries WHERE parsed AND list_date BETWEEN $1::date AND $2::date AND (${ors.join(" OR ")})${keyset}
+         ORDER BY list_date ASC, id ASC LIMIT $${params.length}`,
+        params,
+      );
+      read += rows.length;
+      for (const r of rows) byId.set(String(r.id), r);
+      if (rows.length < LISTING_PAGE_ROWS) break;
+      const last = rows[rows.length - 1];
+      after = { date: String(last.list_date), id: String(last.id) };
+    }
+  }
+  const rows = [...byId.values()].sort(compareListingRows);
   const out: ListingMatch[] = [];
   const seen = new Set<string>();
   for (const r of rows) {

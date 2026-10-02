@@ -5,8 +5,9 @@ import type { HolidayRecord } from "./parse";
 
 /**
  * Store a calendar document's holidays in court_holidays (replaces that document's previous rows) and record on the
- * document which years it covers completely (`meta.coversYears`), in one transaction. Only covered years are ever
- * answered by courtCalendar(); other years stay "unknown".
+ * document which years it covers completely (`meta.coversYears`) and which it speaks for only partially because rows
+ * were rejected (`meta.partialYears`), in one transaction. Only covered years are ever answered by courtCalendar();
+ * other years stay "unknown" (partial ones say so in its notes).
  */
 
 export function holidayId(documentId: string, r: HolidayRecord): string {
@@ -18,7 +19,9 @@ export async function persistHolidays(
   doc: { id: string; url: string; fetchedAt: string },
   records: HolidayRecord[],
   coversYears: number[],
+  partialYears: number[] = [],
 ): Promise<{ stored: number }> {
+  const partial = partialYears.filter((y) => !coversYears.includes(y));
   const seen = new Set<string>();
   const rows = [];
   for (const r of records) {
@@ -44,8 +47,8 @@ export async function persistHolidays(
         }]
       : []),
     {
-      query: `UPDATE official_documents SET meta = meta || jsonb_build_object('coversYears', $2::jsonb, 'holidaysParsed', $3::int) WHERE id = $1`,
-      params: [doc.id, JSON.stringify(coversYears), rows.length],
+      query: `UPDATE official_documents SET meta = meta || jsonb_build_object('coversYears', $2::jsonb, 'holidaysParsed', $3::int, 'partialYears', $4::jsonb) WHERE id = $1`,
+      params: [doc.id, JSON.stringify(coversYears), rows.length, JSON.stringify(partial)],
     },
   ]);
   return { stored: rows.length };

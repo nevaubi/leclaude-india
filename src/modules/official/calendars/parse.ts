@@ -38,6 +38,16 @@ export interface CalendarParseResult {
   notes: string[];
   /** Year the table was read for (given or resolved by weekday agreement); null when unresolved. */
   year: number | null;
+  /** Calendar years of rows that were read but rejected (weekday mismatch, unknown type, impossible date). */
+  rejectedYears: number[];
+  /** Rejected rows whose year is not known: every year the document speaks for is then incomplete. */
+  rejectedUndated: number;
+}
+
+/** Years a date range touches (from / to years). */
+function yearsOf(from: string | null, to: string | null): number[] {
+  const ys = [from, to].filter((d): d is string => !!d).map((d) => Number(d.slice(0, 4)));
+  return [...new Set(ys)].filter((y) => Number.isInteger(y));
 }
 
 const MONTH = "(January|February|March|April|May|June|July|August|September|October|November|December)";
@@ -133,7 +143,7 @@ function kindOf(name: string, dates: { from: string; to: string }): HolidayKind 
 export function parseHolidayTable(text: string, opts: { forum: string; year?: number | null; fetchedYear: number }): CalendarParseResult {
   const { rows, candidates } = rowsOf(text);
   const notes: string[] = [];
-  if (!rows.length) return { records: [], unparsed: candidates, notes: ["no holiday table rows found"], year: null };
+  if (!rows.length) return { records: [], unparsed: candidates, notes: ["no holiday table rows found"], year: null, rejectedYears: [], rejectedUndated: candidates };
   let year = opts.year ?? null;
   if (year == null) {
     const ok: number[] = [];
@@ -149,24 +159,28 @@ export function parseHolidayTable(text: string, opts: { forum: string; year?: nu
       }
       if (checked >= 3 && bad === 0) ok.push(y);
     }
-    if (ok.length !== 1) return { records: [], unparsed: rows.length, notes: [`table year could not be resolved from the printed weekdays (${ok.length} candidate years)`], year: null };
+    if (ok.length !== 1) return { records: [], unparsed: rows.length, notes: [`table year could not be resolved from the printed weekdays (${ok.length} candidate years)`], year: null, rejectedYears: [], rejectedUndated: rows.length };
     year = ok[0];
   }
   const records: HolidayRecord[] = [];
+  const rejected = new Set<number>();
+  // Rows with a date but no readable name belong to the table's year.
   let unparsed = candidates - rows.length;
+  if (unparsed > 0) rejected.add(year);
   for (const r of rows) {
     const d = rowDates(r, year);
-    if (!d) { unparsed++; continue; }
+    if (!d) { unparsed++; rejected.add(year); continue; }
     const agree = weekdaysAgree(r, d);
     if (agree === false) {
       unparsed++;
+      for (const y of [year, ...yearsOf(d.from, d.to)]) rejected.add(y);
       notes.push(`weekday mismatch: "${r.name}" ${d.from}`);
       continue;
     }
     const name = squash(r.name);
     records.push({ forum: opts.forum, dateFrom: d.from, dateTo: d.to, name, kind: kindOf(name, d), registryOpen: null, year, note: agree === null ? "weekday not printed; date not cross-checked" : null });
   }
-  return { records, unparsed, notes, year };
+  return { records, unparsed, notes, year, rejectedYears: [...rejected].sort((a, b) => a - b), rejectedUndated: 0 };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -189,19 +203,42 @@ function dmyIso(s: string | undefined): string | null {
   return m ? isoFrom(+m[3], +m[2], +m[1]) : null;
 }
 
+/**
+ * The JSON text of a calendar document: raw JSON, or the fenced block the core extractor renders a JSON object as
+ * ("```json\n{...}\n```", extract.ts jsonToMarkdown; the chunk store may rejoin it with blank lines, which JSON
+ * allows). Null when the text is neither.
+ */
+export function calendarJsonText(text: string): string | null {
+  // An object, or an array of objects ("[Page 1]" markers of page text are not JSON).
+  const json = (s: string) => /^(?:\{|\[\s*[{\]])/.test(s);
+  const t = text.trim();
+  if (json(t)) return t;
+  const m = /^```[ \t]*(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```$/i.exec(t);
+  return m && json(m[1].trim()) ? m[1].trim() : null;
+}
+
 /** Supreme Court holiday JSON → records (forum "sci"). Unknown types and weekday mismatches stay unparsed. */
 export function parseSciHolidayJson(text: string, opts: { forum?: string } = {}): CalendarParseResult {
   const forum = opts.forum ?? "sci";
   let data: { data?: { holidays?: SciHoliday[] } };
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(calendarJsonText(text) ?? text);
   } catch {
-    return { records: [], unparsed: 1, notes: ["holiday data is not valid JSON"], year: null };
+    return { records: [], unparsed: 1, notes: ["holiday data is not valid JSON"], year: null, rejectedYears: [], rejectedUndated: 1 };
   }
   const list = Array.isArray(data?.data?.holidays) ? data.data!.holidays! : [];
   const records: HolidayRecord[] = [];
   const notes: string[] = [];
+  const rejected = new Set<number>();
+  let undated = 0;
   let unparsed = 0;
+  const reject = (h: SciHoliday, from: string | null, to: string | null) => {
+    unparsed++;
+    const y = Number(h.start_year);
+    const ys = [...(Number.isInteger(y) && y >= 1900 && y <= 2200 ? [y] : []), ...yearsOf(from, to)];
+    if (ys.length) for (const x of ys) rejected.add(x);
+    else undated++;
+  };
   for (const h of list) {
     const from = dmyIso(h.start_date);
     const to = dmyIso(h.end_date);
@@ -209,14 +246,14 @@ export function parseSciHolidayJson(text: string, opts: { forum?: string } = {})
     const year = Number(h.start_year);
     const name = squash(plain(String(h.title ?? "")));
     if (!from || !to || to < from || !kind || !name || !(year >= 1900 && year <= 2200)) {
-      unparsed++;
+      reject(h, from, to);
       if (h.type && !kind) notes.push(`unknown holiday type "${h.type}"`);
       continue;
     }
     const ws = h.days_of_the_week?.start ? weekdayNumber(h.days_of_the_week.start) : null;
     const we = h.days_of_the_week?.end ? weekdayNumber(h.days_of_the_week.end) : null;
     if ((ws != null && ws !== weekdayOf(from)) || (we != null && we !== weekdayOf(to))) {
-      unparsed++;
+      reject(h, from, to);
       notes.push(`weekday mismatch: "${name}" ${from}`);
       continue;
     }
@@ -225,7 +262,7 @@ export function parseSciHolidayJson(text: string, opts: { forum?: string } = {})
       note: kind === "partial_working" ? "Partial court working days (not a closure)" : kind === "working_day" ? "Notified working day" : null,
     });
   }
-  return { records, unparsed, notes, year: null };
+  return { records, unparsed, notes, year: null, rejectedYears: [...rejected].sort((a, b) => a - b), rejectedUndated: undated };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -274,12 +311,16 @@ function datePhrase(weekday: string | undefined, day: string, month: string, yea
   return iso;
 }
 
-/** Calendar footnotes → records (partial working days, vacations, second Saturdays, local holidays). */
-export function parseCalendarNotes(rawText: string, opts: { forum: string; year: number; ocr?: boolean }): { records: HolidayRecord[]; notes: string[] } {
+/**
+ * Calendar footnotes → records (partial working days, vacations, second Saturdays, local holidays). `unparsed` counts
+ * footnotes that were found but could not be validated (their closures are missing: the year is incomplete).
+ */
+export function parseCalendarNotes(rawText: string, opts: { forum: string; year: number; ocr?: boolean }): { records: HolidayRecord[]; notes: string[]; unparsed: number } {
   const text = squash(normalizeOcrMath(rawText).replace(/\*\*/g, ""));
   const { forum, year } = opts;
   const records: HolidayRecord[] = [];
   const notes: string[] = [];
+  let unparsed = 0;
   const ocrNote = opts.ocr ? "read from the OCR text of the official calendar; verify against the PDF" : null;
 
   // Supreme Court: "The partial Court working days will commence on Monday, the 31st May, 2027 and the Full Court
@@ -294,7 +335,10 @@ export function parseCalendarNotes(rawText: string, opts: { forum: string; year:
     if (from && resume && resume > from) {
       const registry = /Registry of the Court will be functioning throughout the partial Court working days except on Saturdays, Sundays and Holidays/i.test(text);
       records.push({ forum, dateFrom: from, dateTo: addDaysIso(resume, -1), name: "Partial Court Working Days", kind: "partial_working", registryOpen: registry ? true : null, year: Number(pcwd[4]), note: registry ? "Registry functions except on Saturdays, Sundays and holidays (per the calendar note)" : null });
-    } else notes.push("partial court working days note could not be read");
+    } else {
+      unparsed++;
+      notes.push("partial court working days note could not be read");
+    }
   }
 
   // Delhi High Court: "The High Court will remain closed for Summer Vacation from Monday, 1st June to Tuesday, 30th June
@@ -309,7 +353,10 @@ export function parseCalendarNotes(rawText: string, opts: { forum: string; year:
       const fromMonth = monthNumber(v[4]);
       const to = toMonth && fromMonth ? datePhrase(v[5], v[6], v[7], toMonth < fromMonth ? year + 1 : year) : null;
       if (from && to && to >= from) records.push({ forum, dateFrom: from, dateTo: to, name: `${v[1]} Vacation`, kind: "vacation", registryOpen: null, year, note: ocrNote });
-      else notes.push(`vacation note could not be validated: "${squash(v[0])}"`);
+      else {
+        unparsed++;
+        notes.push(`vacation note could not be validated: "${squash(v[0])}"`);
+      }
     }
   }
 
@@ -338,7 +385,7 @@ export function parseCalendarNotes(rawText: string, opts: { forum: string; year:
       }
     }
   }
-  return { records, notes };
+  return { records, notes, unparsed };
 }
 
 /** Distinct records (same kind, dates and name collapse; names compared without spacing / case). */
@@ -367,4 +414,32 @@ export function calendarCoverage(records: HolidayRecord[], opts: { year?: number
   let best: number | null = null;
   for (const [y, n] of counts) if (n >= 5 && (best == null || n > (counts.get(best) ?? 0))) best = y;
   return best == null ? [] : [best];
+}
+
+export interface CoverageVerdict {
+  /** Years the document covers completely: answered by courtCalendar(). */
+  covers: number[];
+  /** Years the document speaks for but with rejected rows: never answered, reported as partial. */
+  partialYears: number[];
+}
+
+/**
+ * Truthful coverage: `calendarCoverage` minus every year in which a row was read but rejected (weekday mismatch from an
+ * OCR / transcription error, an unknown entry type, an impossible date, a footnote that could not be validated). A
+ * closure may be missing from such a year, so answering it would report the court open on a notified holiday. A
+ * rejection whose year is unknown makes every year of the document partial. Without year attribution (`rejectedYears`
+ * absent) any rejection does.
+ */
+export function truthfulCoverage(
+  records: HolidayRecord[],
+  opts: { year?: number | null; format?: string | null },
+  rejections: { unparsed: number; rejectedYears?: number[] | null; rejectedUndated?: number | null },
+): CoverageVerdict {
+  const full = calendarCoverage(records, opts);
+  if (!(rejections.unparsed > 0)) return { covers: full, partialYears: [] };
+  const years = Array.isArray(rejections.rejectedYears) ? rejections.rejectedYears.filter((y) => Number.isInteger(y)) : null;
+  const attributed = years != null && typeof rejections.rejectedUndated === "number" && rejections.rejectedUndated === 0 && years.length > 0;
+  const docYears = new Set<number>([...full, ...records.map((r) => r.year), ...(opts.year != null ? [opts.year] : [])]);
+  const bad = attributed ? new Set(years) : docYears;
+  return { covers: full.filter((y) => !bad.has(y)), partialYears: [...bad].filter((y) => Number.isInteger(y)).sort((a, b) => a - b) };
 }

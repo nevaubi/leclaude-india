@@ -14,6 +14,8 @@
  *   parties, counsel columns); bench-specific column orders are tolerated because columns are found by name.
  *
  * Every entry keeps its verbatim row text (`raw`, contact data removed), page, court number and bench as printed.
+ * Contact data (phone numbers, e-mails, links) is removed from every stored text field here, whichever input the
+ * record was read from: markdown pages arrive scrubbed, positional PDF items do not.
  * An entry whose identifiers cannot be read, or whose text could not be bound to one row unambiguously, is stored
  * with `parsed: false` and is never matched to a matter.
  */
@@ -130,6 +132,8 @@ function buildEntry(rec: RawRecord, doc: CauseListDoc, opts: CauseListParseOptio
     parties = rec.cells.parties?.length ? normalizeParties(rec.cells.parties.join(" ")) : null;
     advocates = tribunalAdvocates([...(rec.cells.advPet ?? []), ...(rec.cells.advRes ?? []), ...(rec.cells.advocates ?? [])].join("\n"));
   }
+  // Positional PDF items reach the parser unscrubbed (only page text is scrubbed upstream): every stored text field is
+  // scrubbed here (advocates by the splitters above, which also drop contact residue).
   const raw = scrubContact(rec.raw.join("\n"));
   if (!raw) return null;
   const identified = cases.some((c) => c.keys.length > 0) || !!diaryNo;
@@ -140,7 +144,7 @@ function buildEntry(rec: RawRecord, doc: CauseListDoc, opts: CauseListParseOptio
     listDate: opts.listDate,
     listType: opts.listType,
     courtNo: rec.ctx.courtNo,
-    bench: rec.ctx.bench,
+    bench: rec.ctx.bench ? scrubContact(rec.ctx.bench) || null : null,
     itemNo: rec.item,
     caseNumbers: cases.map((c) => ({ printed: c.printed, normalized: c.normalized })),
     diaryNo,

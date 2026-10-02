@@ -20,8 +20,20 @@ async function handlePOST(req: NextRequest) {
 export const POST = withAuth(handlePOST, { action: "run", resource: () => refs.intel() });
 
 /** Vercel cron (GET, CRON_SECRET bearer → service principal); runs only when OFFICIAL_INGEST is on. */
-async function handleGET() {
-  return handleCronRun({ principal: currentPrincipal });
+async function handleGET(req: NextRequest) {
+  const res = await handleCronRun({ principal: currentPrincipal });
+  if (res.status === 403) {
+    // Booleans only (never the header or the secret): why a scheduled call did not resolve to the service principal.
+    const auth = req.headers.get("authorization") ?? "";
+    console.warn(JSON.stringify({
+      event: "official.cron_denied",
+      hasAuthorization: auth.length > 0,
+      bearerScheme: /^Bearer\s+\S/i.test(auth),
+      cronSecretConfigured: Boolean(process.env.CRON_SECRET?.trim()),
+      vercelCron: (req.headers.get("user-agent") ?? "").startsWith("vercel-cron"),
+    }));
+  }
+  return res;
 }
 
 export const GET = withAuth(handleGET, { action: "run", resource: () => refs.intel() });

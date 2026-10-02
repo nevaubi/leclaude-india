@@ -20,7 +20,7 @@ import { setWorkspaceUser } from "@/lib/current-user";
 import { AUTH_HEADER_USER } from "@/lib/auth/types";
 import { setupWorkspace } from "@/modules/workspace/service";
 import { createMatter } from "@/modules/matters/service";
-import { registerOfficialImpl, OfficialNotConfiguredError } from "@/modules/official/service";
+import { registerOfficialImpl, OfficialNotConfiguredError, OfficialNotImplementedError } from "@/modules/official/service";
 import type { CauseListEntry, ListingMatch, MatterCaseIdentifier, SourceDocument } from "@/modules/official/types";
 import { advocateMatches, normalizeIdentifier, suggestIdentifiers, validateTrackingInput, forumHasParsedLists } from "@/modules/matters/desk/tracking";
 import { buildActionItems, checkQuote, computeDeadline, parsePeriod, parseStatedDate, type OrderTextChunk } from "@/modules/matters/desk/order-actions";
@@ -271,6 +271,8 @@ describe("tracking API", () => {
 
 describe("listings", () => {
   it("reports not available when the facade is not wired, and not configured without Postgres", async () => {
+    // The facade wires the real implementation lazily; simulate an implementation that is not wired on this deployment.
+    registerOfficialImpl({ listingsForMatters: async () => { throw new OfficialNotImplementedError("listingsForMatters"); } });
     const r = await json(await call(listingsRoute.GET, nreq(`/api/matters/${matterA}/listings?from=2026-10-01&to=2026-10-14`), p({ id: matterA })));
     expect(r.body).toMatchObject({ state: "not_available", listings: [] });
     registerOfficialImpl({ listingsForMatters: async () => { throw new OfficialNotConfiguredError(); } });

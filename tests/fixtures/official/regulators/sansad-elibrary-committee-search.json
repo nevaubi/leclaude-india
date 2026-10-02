@@ -1,0 +1,263 @@
+{
+ "_comment": "Captured 2026-10-02 from https://elibrary.sansad.in/server/api/discover/search/objects?scope=571cd23f-4973-410f-a639-dabb4cbd805b&sort=dc.date.accessioned,DESC&page=0&size=2 (Firecrawl, IN, 200). Verbatim values; item _links trimmed to bundles/self, facets dropped.",
+ "id": null,
+ "scope": "571cd23f-4973-410f-a639-dabb4cbd805b",
+ "query": null,
+ "appliedFilters": null,
+ "sort": {
+  "by": "dc.date.accessioned",
+  "order": "DESC"
+ },
+ "type": "discover",
+ "_embedded": {
+  "searchResult": {
+   "_embedded": {
+    "objects": [
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_links": {
+       "indexableObject": {
+        "href": "https://elibrary.sansad.in/server/api/core/items/693be825-568c-4285-9c90-6580f88285da"
+       }
+      },
+      "_embedded": {
+       "indexableObject": {
+        "id": "693be825-568c-4285-9c90-6580f88285da",
+        "uuid": "693be825-568c-4285-9c90-6580f88285da",
+        "name": "Tenth Report of the Standing Committee on Housing and Urban Affairs (2025-26) on the subject, 'Review of Sewerage and Septage Coverage in Cities with special reference to interventions under Atal Mission for Rejuvenation and Urban Transformation (AMRUT & AMRUT 2.0)'",
+        "handle": "123456789/1541625",
+        "metadata": {
+         "dc.contributor.committeename": [
+          {
+           "value": "Committee on Housing and Urban Affairs",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.accessioned": [
+          {
+           "value": "2026-09-22T10:58:54Z",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.available": [
+          {
+           "value": "2026-09-22T10:58:54Z",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.issued": [
+          {
+           "value": "2026-08-04",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.loksabhanumber": [
+          {
+           "value": "18",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.reportnumber": [
+          {
+           "value": "10",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "https://elibrary.sansad.in/handle/123456789/1541625",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.language.iso": [
+          {
+           "value": "English",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "Tenth Report of the Standing Committee on Housing and Urban Affairs (2025-26) on the subject, 'Review of Sewerage and Septage Coverage in Cities with special reference to interventions under Atal Mission for Rejuvenation and Urban Transformation (AMRUT & AMRUT 2.0)'",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.type": [
+          {
+           "value": "Departmentally Related Standing Committees",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-09-22T10:58:54.598+00:00",
+        "entityType": null,
+        "type": "item",
+        "_links": {
+         "bundles": {
+          "href": "https://elibrary.sansad.in/server/api/core/items/693be825-568c-4285-9c90-6580f88285da/bundles"
+         },
+         "self": {
+          "href": "https://elibrary.sansad.in/server/api/core/items/693be825-568c-4285-9c90-6580f88285da"
+         }
+        }
+       }
+      }
+     },
+     {
+      "hitHighlights": null,
+      "type": "discover",
+      "_links": {
+       "indexableObject": {
+        "href": "https://elibrary.sansad.in/server/api/core/items/ad28d383-840b-4007-9127-8001ff933c8a"
+       }
+      },
+      "_embedded": {
+       "indexableObject": {
+        "id": "ad28d383-840b-4007-9127-8001ff933c8a",
+        "uuid": "ad28d383-840b-4007-9127-8001ff933c8a",
+        "name": "Eleventh Action Taken Report on Action Taken by the Government on the recommendations contained in the Seventh Report (Eighteenth Lok Sabha) of the Standing Committee on Housing and Urban Affairs (2025-26) on the subject, 'Review of Atal Mission for Rejuvenation and Urban Transformation (AMRUT) with special emphasis on Urban Drinking Water'",
+        "handle": "123456789/1541624",
+        "metadata": {
+         "dc.contributor.committeename": [
+          {
+           "value": "Committee on Housing and Urban Affairs",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.accessioned": [
+          {
+           "value": "2026-09-22T10:58:52Z",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.date.issued": [
+          {
+           "value": "2026-08-10",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.loksabhanumber": [
+          {
+           "value": "18",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.reportnumber": [
+          {
+           "value": "11",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.identifier.uri": [
+          {
+           "value": "https://elibrary.sansad.in/handle/123456789/1541624",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.language.iso": [
+          {
+           "value": "English",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.title": [
+          {
+           "value": "Eleventh Action Taken Report on Action Taken by the Government on the recommendations contained in the Seventh Report (Eighteenth Lok Sabha) of the Standing Committee on Housing and Urban Affairs (2025-26) on the subject, 'Review of Atal Mission for Rejuvenation and Urban Transformation (AMRUT) with special emphasis on Urban Drinking Water'",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ],
+         "dc.type": [
+          {
+           "value": "Departmentally Related Standing Committees",
+           "language": null,
+           "authority": null,
+           "confidence": -1,
+           "place": 0
+          }
+         ]
+        },
+        "inArchive": true,
+        "discoverable": true,
+        "withdrawn": false,
+        "lastModified": "2026-09-22T10:58:52.901+00:00",
+        "entityType": null,
+        "type": "item",
+        "_links": {
+         "bundles": {
+          "href": "https://elibrary.sansad.in/server/api/core/items/ad28d383-840b-4007-9127-8001ff933c8a/bundles"
+         },
+         "self": {
+          "href": "https://elibrary.sansad.in/server/api/core/items/ad28d383-840b-4007-9127-8001ff933c8a"
+         }
+        }
+       }
+      }
+     }
+    ]
+   },
+   "page": {
+    "number": 0,
+    "size": 2,
+    "totalPages": 6701,
+    "totalElements": 13402
+   }
+  }
+ }
+}

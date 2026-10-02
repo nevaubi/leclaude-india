@@ -1,0 +1,169 @@
+{
+ "_comment": "Captured 2026-10-02 from https://elibrary.sansad.in/server/api/core/items/693be825-568c-4285-9c90-6580f88285da/bundles?embed=bitstreams (Firecrawl, IN, 200). Verbatim names/uuids/sizes; checksums and secondary links trimmed.",
+ "_embedded": {
+  "bundles": [
+   {
+    "uuid": "b9c77cdc-ee21-4c6a-8484-c1ffc3e32b59",
+    "name": "ORIGINAL",
+    "type": "bundle",
+    "_embedded": {
+     "bitstreams": {
+      "_embedded": {
+       "bitstreams": [
+        {
+         "id": "9b8c083b-397f-4c27-853e-0c57d4d39538",
+         "uuid": "9b8c083b-397f-4c27-853e-0c57d4d39538",
+         "name": "18_Housing_and_Urban_Affairs_10.pdf",
+         "handle": null,
+         "metadata": {
+          "dc.source": [
+           {
+            "value": "18_Housing_and_Urban_Affairs_10.pdf",
+            "language": null,
+            "authority": null,
+            "confidence": -1,
+            "place": 0
+           }
+          ],
+          "dc.title": [
+           {
+            "value": "18_Housing_and_Urban_Affairs_10.pdf",
+            "language": null,
+            "authority": null,
+            "confidence": -1,
+            "place": 0
+           }
+          ]
+         },
+         "bundleName": "ORIGINAL",
+         "sizeBytes": 3859503,
+         "checkSum": {
+          "checkSumAlgorithm": "MD5",
+          "value": "x"
+         },
+         "sequenceId": 1,
+         "type": "bitstream",
+         "_links": {
+          "content": {
+           "href": "https://elibrary.sansad.in/server/api/core/bitstreams/9b8c083b-397f-4c27-853e-0c57d4d39538/content"
+          }
+         }
+        }
+       ]
+      }
+     }
+    }
+   },
+   {
+    "uuid": "11b5689b-643b-411c-8940-f31ad3d8750f",
+    "name": "TEXT",
+    "type": "bundle",
+    "_embedded": {
+     "bitstreams": {
+      "_embedded": {
+       "bitstreams": [
+        {
+         "id": "7dc8f230-44bd-41b1-a524-3e2da178b1e8",
+         "uuid": "7dc8f230-44bd-41b1-a524-3e2da178b1e8",
+         "name": "18_Housing_and_Urban_Affairs_10.txt",
+         "handle": null,
+         "metadata": {
+          "dc.source": [
+           {
+            "value": "Extracted by Apache Tika",
+            "language": null,
+            "authority": null,
+            "confidence": -1,
+            "place": 0
+           }
+          ],
+          "dc.title": [
+           {
+            "value": "18_Housing_and_Urban_Affairs_10.txt",
+            "language": null,
+            "authority": null,
+            "confidence": -1,
+            "place": 0
+           }
+          ]
+         },
+         "bundleName": "TEXT",
+         "sizeBytes": 216446,
+         "checkSum": {
+          "checkSumAlgorithm": "MD5",
+          "value": "x"
+         },
+         "sequenceId": 2,
+         "type": "bitstream",
+         "_links": {
+          "content": {
+           "href": "https://elibrary.sansad.in/server/api/core/bitstreams/7dc8f230-44bd-41b1-a524-3e2da178b1e8/content"
+          }
+         }
+        }
+       ]
+      }
+     }
+    }
+   },
+   {
+    "uuid": "208cf2f1-51f6-4688-9d75-85db005ff85a",
+    "name": "THUMBNAIL",
+    "type": "bundle",
+    "_embedded": {
+     "bitstreams": {
+      "_embedded": {
+       "bitstreams": [
+        {
+         "id": "8b890e8a-b59a-468e-834a-3e172621fb7b",
+         "uuid": "8b890e8a-b59a-468e-834a-3e172621fb7b",
+         "name": "18_Housing_and_Urban_Affairs_10.pdf.jpg",
+         "handle": null,
+         "metadata": {
+          "dc.source": [
+           {
+            "value": "Generated Thumbnail",
+            "language": null,
+            "authority": null,
+            "confidence": -1,
+            "place": 0
+           }
+          ],
+          "dc.title": [
+           {
+            "value": "18_Housing_and_Urban_Affairs_10.pdf.jpg",
+            "language": null,
+            "authority": null,
+            "confidence": -1,
+            "place": 0
+           }
+          ]
+         },
+         "bundleName": "THUMBNAIL",
+         "sizeBytes": 101760,
+         "checkSum": {
+          "checkSumAlgorithm": "MD5",
+          "value": "x"
+         },
+         "sequenceId": 3,
+         "type": "bitstream",
+         "_links": {
+          "content": {
+           "href": "https://elibrary.sansad.in/server/api/core/bitstreams/8b890e8a-b59a-468e-834a-3e172621fb7b/content"
+          }
+         }
+        }
+       ]
+      }
+     }
+    }
+   }
+  ]
+ },
+ "page": {
+  "number": 0,
+  "size": 20,
+  "totalPages": 1,
+  "totalElements": 3
+ }
+}

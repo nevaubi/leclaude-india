@@ -1,5 +1,5 @@
 import { FEATURES, type FeatureFlags } from "@/lib/features";
-import { BookOpen, Home, MessageCircle, Briefcase, Files, Gavel, Landmark, Newspaper, Search, Radar, FileSearch, Workflow, LayoutGrid, Library, Settings, UserRound, FileText, FileSpreadsheet, Presentation, FileType, PenLine, Scale, Calculator, type LucideIcon } from "lucide-react";
+import { BookOpen, Home, MessageCircle, Briefcase, Files, Gavel, Landmark, Newspaper, Search, Radar, FileSearch, Workflow, LayoutGrid, Library, Settings, UserRound, FileText, FileSpreadsheet, Presentation, FileType, PenLine, Scale, Calculator, CalendarClock, FileStack, type LucideIcon } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/catalog";
 
 /**
@@ -36,6 +36,7 @@ export const navGroupChildren = (item: Pick<NavItem, "children">): NavChild[] =>
 const LAW_CHILDREN: NavChild[] = [
   { label: "Case law", labelKey: "nav.caselaw", href: "/cases", icon: Gavel, shortcut: "G J", description: "Supreme Court and High Court judgments: browse, search and trace each record to its source", descriptionKey: "nav.desc.caselaw" },
   { label: "Statutes", labelKey: "nav.statutes", href: "/law", icon: BookOpen, shortcut: "G A", description: "Central and State Acts and regulator regulations: browse, search and read section by section", descriptionKey: "nav.desc.statutes" },
+  { label: "Sources", labelKey: "nav.sources", href: "/sources", icon: FileStack, shortcut: "G F", description: "Official cause lists, orders, circulars, notifications and gazettes, as the publisher issued them", descriptionKey: "nav.desc.sources" },
   { label: "Courts", labelKey: "nav.courts", href: "/courts", icon: Landmark, shortcut: "G K", description: "Courts, tribunals and local law by city: official websites, e-filing, cause lists and case status", descriptionKey: "nav.desc.courts" },
   { label: "Judges", labelKey: "nav.judges", href: "/judges", icon: UserRound, shortcut: "G U", description: "Supreme Court and High Court judges from official rosters, with their judgments in the case law index", descriptionKey: "nav.desc.judges" },
   { label: "Tools", labelKey: "nav.tools", href: "/tools", icon: Calculator, shortcut: "G T", description: "Limitation, cheque-dishonour and arbitration deadlines, IPC to BNS section converter and court-fee calculator", descriptionKey: "nav.desc.tools" },
@@ -47,6 +48,7 @@ export function buildNav(f: FeatureFlags): NavItem[] {
     { label: "Home", labelKey: "nav.home", href: "/", icon: Home, shortcut: "G H", description: "Today, matters, tasks, calendar and the team's updates", descriptionKey: "nav.desc.home" },
     { label: "Chat", labelKey: "nav.chat", href: "/chat", icon: MessageCircle, shortcut: "G C", description: "Quick answers, web search, calculations and files", descriptionKey: "nav.desc.chat" },
     { label: "Matters", labelKey: "nav.matters", href: "/matters", icon: Briefcase, shortcut: "G M", description: "Matters, parties, hearing dates and the workspace each one scopes", descriptionKey: "nav.desc.matters" },
+    { label: "Diary", labelKey: "nav.diary", href: "/diary", icon: CalendarClock, shortcut: "G Y", description: "Hearings across your matters from the courts' cause lists, hand-entered hearings and advocate-wise lists", descriptionKey: "nav.desc.diary" },
     { label: "Research", labelKey: "nav.search", href: "/search", icon: Search, shortcut: "G S", description: "Judgments, statutes, rules, cause lists and internal knowledge", descriptionKey: "nav.desc.search" },
     ...(f.intel ? [{ label: "Intelligence", labelKey: "nav.intel", href: "/intel", icon: Radar, shortcut: "G I", description: "Courts, benches, authorities and notifications, watched and cross-analysed", descriptionKey: "nav.desc.intel" } satisfies NavItem] : []),
     { label: "Law", labelKey: "nav.law", href: LAW_CHILDREN[0].href, icon: Scale, description: "Indian law: judgments, statutes, courts and judges", descriptionKey: "nav.desc.law", children: LAW_CHILDREN },
@@ -131,7 +133,7 @@ export function isHrefActive(href: string, pathname: string): boolean {
   return pathname === path || pathname.startsWith(`${path}/`);
 }
 
-/** A nav item is active on its own route and on any of its children's routes (Law: /cases, /law, /courts, /judges, /tools). */
+/** A nav item is active on its own route and on any of its children's routes (Law: /cases, /law, /sources, /courts, /judges, /tools). */
 export function isNavItemActive(item: Pick<NavItem, "href" | "children">, pathname: string): boolean {
   return isHrefActive(item.href, pathname) || (item.children ?? []).some((c) => isHrefActive(c.href, pathname));
 }

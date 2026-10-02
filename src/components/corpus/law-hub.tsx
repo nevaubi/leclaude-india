@@ -24,10 +24,11 @@ import { loadVisuals } from "@/modules/media/use-visuals";
 const TABS = [
   { area: "cases", labelKey: "nav.caselaw", href: "/cases" },
   { area: "law", labelKey: "nav.statutes", href: "/law" },
+  { area: "sources", labelKey: "nav.sources", href: "/sources" },
   { area: "courts", labelKey: "nav.courts", href: "/courts" },
   { area: "judges", labelKey: "nav.judges", href: "/judges" },
   { area: "tools", labelKey: "nav.tools", href: "/tools" },
-] as const satisfies readonly { area: LawArea | "tools"; labelKey: string; href: string }[];
+] as const satisfies readonly { area: LawArea | "tools" | "sources"; labelKey: string; href: string }[];
 
 const SCOPES: { value: LawScope; label: string }[] = [
   { value: "auto", label: "All" },
@@ -72,7 +73,7 @@ export function LawHub({ children }: { children: React.ReactNode }) {
   const t = useT();
   const area = areaOfPath(pathname);
   // Practice tools have a tab but no search area of their own: the hub search there behaves as on Case law.
-  const tabArea: LawArea | "tools" = pathname === "/tools" || pathname?.startsWith("/tools/") ? "tools" : area;
+  const tabArea: LawArea | "tools" | "sources" = pathname === "/tools" || pathname?.startsWith("/tools/") ? "tools" : pathname === "/sources" || pathname?.startsWith("/sources/") ? "sources" : area;
   const landing = LANDINGS.has(pathname ?? "");
   const [meta, setMeta] = React.useState<HTMLElement | null>(null);
 

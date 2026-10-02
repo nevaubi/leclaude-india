@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import type { AdapterContext, SourceAdapter } from "../../adapter";
 import type { DiscoveredDoc, SourceDef } from "../../types";
 import { GOV_TERMS, attr, clean, decodeHtml, htmlText, printedDate, safeUrl, walkStreams, type ListingPage, type ListingStream } from "./common";
@@ -11,7 +12,8 @@ import { GOV_TERMS, attr, clean, decodeHtml, htmlText, printedDate, safeUrl, wal
  * - Cards are <button role="link" title="Circular No. 7/2026 : …"> with "Published On: September 28th, 2026"; they carry
  *   no href to the circular PDF. A PDF link is used only when a card actually carries one (/documents/d/guest/…);
  *   slugs are never guessed. Without a link the document is a metadata record: the card's title and date as `text`,
- *   identified by the listing URL plus a fragment (meta.pdfLinkFound = false).
+ *   identified by the listing URL plus a fragment of the printed number and a hash of the card (cbdtCardUrl;
+ *   meta.pdfLinkFound = false).
  * - One combined list covers the Income-tax Act, 1961 and the Income-tax Act, 2025; the Act is recorded from the title
  *   only when the title names it.
  */
@@ -50,10 +52,22 @@ export function parseCbdtCards(html: string, pageUrl: string): CbdtCard[] {
   return cards;
 }
 
-/** "Circular No. 7/2026", "Circular No.15/2025", "Notification No.  130/2026-CBDT" → "7/2026" etc. */
+const NUMBER_RE = /^(?:Circular|Notification)\s*No\.?\s*(\d{1,4})\s*\/\s*((?:19|20)\d{2})(?:\s*-\s*([A-Za-z][A-Za-z0-9.()]{0,20}))?/i;
+
+/** "Circular No. 7/2026", "Circular No.15/2025", "Notification No.  130/2026-CBDT" → "7/2026" etc. (display only). */
 export function cbdtNumber(title: string): string | null {
-  const m = /^(?:Circular|Notification)\s*No\.?\s*(\d{1,4})\s*\/\s*((?:19|20)\d{2})/i.exec(clean(title));
+  const m = NUMBER_RE.exec(clean(title));
   return m ? `${Number(m[1])}/${m[2]}` : null;
+}
+
+/**
+ * The number exactly as printed, with leading zeros and any series suffix: "132/2026-CBDT", "08/2026", "13/2025".
+ * CBDT prints more than one series in a year ("132/2026-CBDT" and "08/2026 : Order under section 45(3)(b)"), so the
+ * bare number does not identify an instrument.
+ */
+export function cbdtPrintedNumber(title: string): string | null {
+  const m = NUMBER_RE.exec(clean(title));
+  return m ? `${m[1]}/${m[2]}${m[3] ? `-${m[3]}` : ""}` : null;
 }
 
 /** "SO 5368(E)" / "S.O. 5368(E)" printed in a notification title. */
@@ -72,11 +86,22 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
 }
 
+/**
+ * Identity of a card without a document link: the listing URL plus a fragment of the printed number (series suffix
+ * and leading zeros kept) and a short hash of the card's full title and published date, so two different cards never
+ * share a URL (and so never one document id). A card whose title or date is later edited becomes a new record; the
+ * earlier record stays as it was published.
+ */
+export function cbdtCardUrl(card: Pick<CbdtCard, "title" | "published">, listing: (typeof CBDT_LISTINGS)[number]): string {
+  const printed = cbdtPrintedNumber(card.title);
+  const hash = createHash("sha256").update(`${clean(card.title)}\n${card.published ?? ""}`).digest("hex").slice(0, 12);
+  return `${listing.url}#${slug(`${listing.label} ${printed ?? "untitled"}`)}-${hash}`;
+}
+
 export function cbdtDocs(cards: CbdtCard[], listing: (typeof CBDT_LISTINGS)[number]): DiscoveredDoc[] {
   return cards.map((c) => {
     const number = cbdtNumber(c.title);
-    const fragment = slug(number ? `${listing.label} ${number}` : c.title);
-    const url = c.href ?? `${listing.url}#${fragment}`;
+    const url = c.href ?? cbdtCardUrl(c, listing);
     return {
       sourceId: "cbdt",
       kind: listing.kind,
@@ -89,6 +114,7 @@ export function cbdtDocs(cards: CbdtCard[], listing: (typeof CBDT_LISTINGS)[numb
       meta: {
         forum: "cbdt",
         number,
+        printedNumber: cbdtPrintedNumber(c.title),
         soNumber: listing.kind === "notification" ? cbdtSoNumber(c.title) : null,
         act: cbdtAct(c.title),
         published: c.published,
@@ -108,6 +134,8 @@ function listingStream(listing: (typeof CBDT_LISTINGS)[number]): ListingStream {
     backfill: false,
     firstPage: 1,
     incrementalPages: 1,
+    // Ten cards: every pass lists them all (a card inserted below the newest one is still found).
+    markerless: true,
     async fetch(_page: number, ctx: AdapterContext): Promise<ListingPage> {
       const res = await ctx.fetchPage(listing.url, { firecrawl: true, waitForMs: 4000 });
       const cards = parseCbdtCards(res.html ?? "", res.finalUrl || listing.url);

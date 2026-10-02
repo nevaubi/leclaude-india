@@ -3,7 +3,7 @@ import { normalizeCaseNumber } from "../../case-numbers";
 import type { AdapterContext, SourceAdapter } from "../../adapter";
 import type { DiscoveredDoc, SourceDef } from "../../types";
 import {
-  GOV_TERMS, attr, clean, errorStatus, hrefs, htmlText, isNotFound, printedDate, rowCells, safeUrl, tableRows, walkStreams,
+  GOV_TERMS, attr, clean, errorStatus, hrefs, htmlText, isNotFound, isNotJsonError, isStopError, printedDate, rowCells, safeUrl, tableRows, walkStreams,
   type ListingPage, type ListingStream, type SequenceStream, type StreamSpec,
 } from "./common";
 
@@ -193,7 +193,17 @@ const combinations: ListingStream = {
     try {
       ans = await ctx.fetchJson(url, { headers: { "X-Requested-With": "XMLHttpRequest", Accept: "application/json" } });
     } catch (e) {
-      return { items: [], last: true, notes: [`combination listing did not answer with JSON (${e instanceof Error ? e.message : String(e)}); skipped (endpoint unverified).`] };
+      // The endpoint is unverified: an answer that is not JSON or a refusal (4xx, 500: e.g. a session / CSRF
+      // requirement) ends the stream with a note — a refusal does not go away by retrying, and it must not hold a
+      // backfill (and with it the source's incremental passes) on this page for good. Transient failures (network,
+      // timeout, 408, 429, 501-504) are thrown so the walker's rules apply: an incremental pass skips the stream and
+      // keeps its marker; a backfill stops and resumes on the same page.
+      const st = errorStatus(e);
+      const refused = isNotJsonError(e) || (st != null && st >= 400 && st <= 500 && st !== 408 && st !== 429);
+      if (refused && !isStopError(e, ctx)) {
+        return { items: [], last: true, notes: [`combination listing page ${page} did not answer with JSON (${e instanceof Error ? e.message : String(e)}); skipped (endpoint unverified).`] };
+      }
+      throw e;
     }
     const parsed = parseCciCombinations(ans, `${BASE}/combination/orders-section31`);
     if (!parsed) return { items: [], last: true, notes: ["combination listing answer was not DataTables JSON; skipped (endpoint unverified)."] };

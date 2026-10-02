@@ -7,7 +7,7 @@ import {
   CBIC_TAXES, adapter as cbic, cbicContentUrl, cbicItems, cbicPlan, cbicStreamId, decodeCbicPdf, type CbicRecord,
 } from "@/modules/official/adapters/regulators/cbic";
 import { decodeCbicPdf as decodeFromIndex } from "@/modules/official/adapters/regulators";
-import { CBDT_LISTINGS, adapter as cbdt, cbdtAct, cbdtDocs, cbdtNumber, cbdtSoNumber, parseCbdtCards } from "@/modules/official/adapters/regulators/cbdt";
+import { CBDT_LISTINGS, adapter as cbdt, cbdtAct, cbdtCardUrl, cbdtDocs, cbdtNumber, cbdtPrintedNumber, cbdtSoNumber, parseCbdtCards } from "@/modules/official/adapters/regulators/cbdt";
 import {
   ELIB_COLLECTIONS, adapter as sansad, elibFiles, elibSearchUrl, lsQuestionsUrl, lsSessionPairs, parseElibSearch, parseLsQuestions, parseRsQuestion, rsQuestionUrl, rsWhereClause,
 } from "@/modules/official/adapters/regulators/sansad";
@@ -123,6 +123,42 @@ describe("CBIC (live JSON fixtures)", () => {
     const r2 = await cbic.discover(makeCtx({ cursor: r1.nextCursor, json: (u) => (u.endsWith("/Circulars%20CGST") ? fresh : json(u)) }).ctx);
     expect(r2.items.map((d) => d.meta?.number)).toEqual(["257/03/2026-GST"]);
   });
+
+  const cbicJson = (circulars: () => CbicRecord[]) => (u: string): unknown => {
+    if (u.endsWith("/api/cbic-tax-msts")) return [{ id: 1000001, taxName: "GST", isActive: "Y" }];
+    if (u.includes("/fetchUpdatesByTaxId/")) return [];
+    if (u.endsWith("/fetchCategoryRelatedCirculars/1000001/Circulars%20CGST")) return circulars();
+    if (u.includes("/api/cbic-")) return [];
+    return undefined;
+  };
+  const CGST = cbicStreamId("c", 1000001, "Circulars CGST");
+
+  it("finds a backdated or late-uploaded record on the next pass (lists are walked in upload order, marker = highest id)", async () => {
+    // Review finding: lists were sorted by printed date and the walk stopped at the previous pass's first item, so a
+    // record uploaded later with an earlier date sorted below the marker and was never discovered.
+    const base = fxJson<CbicRecord[]>("cbic-circulars-gst-cgst.json");
+    let list = base;
+    const r1 = await cbic.discover(makeCtx({ json: cbicJson(() => list) }).ctx);
+    expect(r1.items.map((d) => d.meta?.number)).toEqual(["256/02/2026-GST", "255/01/2026-GST"]);
+    expect(parseCursor(r1.nextCursor)!.lastSeen[CGST]).toBe("c:1003335");
+    const late = { ...base[1], id: 1003340, circularNo: "254A/2026-GST", circularDt: "2026-05-01T05:30:00+05:30", docFilePath: "tax_repository\\gst\\circulars\\Circular-No-254A-2026.pdf" };
+    list = [...base, late];
+    const r2 = await cbic.discover(makeCtx({ cursor: r1.nextCursor, json: cbicJson(() => list) }).ctx);
+    expect(r2.items.map((d) => d.meta?.number)).toEqual(["254A/2026-GST"]);
+    expect(r2.items[0].docDate).toBe("2026-05-01");
+    expect(parseCursor(r2.nextCursor)!.lastSeen[CGST]).toBe("c:1003340");
+    // The marker record (1003340) withdrawn from the list: the walk still stops at the first id at or below the marker.
+    const r3 = await cbic.discover(makeCtx({ cursor: r2.nextCursor, json: cbicJson(() => base) }).ctx);
+    expect(r3.items).toEqual([]);
+  });
+
+  it("walks a list in full once when its stored marker predates id ordering (a file URL)", async () => {
+    const base = fxJson<CbicRecord[]>("cbic-circulars-gst-cgst.json");
+    const legacy = JSON.stringify({ v: 1, mode: "incremental", plan: [], i: 0, page: null, skip: 0, misses: 0, walked: 0, lastSeen: { [CGST]: "https://taxinformation.cbic.gov.in/content/pdf/tax_repository/gst/circulars/Circular-No-256-02-2026.pdf" }, newest: {}, only: null });
+    const r = await cbic.discover(makeCtx({ cursor: legacy, json: cbicJson(() => base) }).ctx);
+    expect(r.items.map((d) => d.meta?.number)).toEqual(["256/02/2026-GST", "255/01/2026-GST"]);
+    expect(parseCursor(r.nextCursor)!.lastSeen[CGST]).toBe("c:1003335");
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -145,10 +181,37 @@ describe("CBDT circulars and notifications (rendered fixtures)", () => {
     expect(cbdtSoNumber(cards[2].title)).toBeNull();
     expect(cbdtAct(cards[1].title)).toBe("2025");
     const docs = cbdtDocs(cards, CBDT_LISTINGS[1]);
-    expect(docs[1]).toMatchObject({ kind: "notification", url: "https://www.incometaxindia.gov.in/notifications#notification-132-2026", fileUrl: null, mime: "text/plain", docDate: "2026-09-29" });
-    expect(docs[1].meta).toMatchObject({ number: "132/2026", soNumber: "S.O. 5353(E)", act: "2025", pdfLinkFound: false, urlIsListing: true });
+    expect(docs[1]).toMatchObject({ kind: "notification", fileUrl: null, mime: "text/plain", docDate: "2026-09-29" });
+    expect(docs[1].url).toMatch(/^https:\/\/www\.incometaxindia\.gov\.in\/notifications#notification-132-2026-cbdt-[0-9a-f]{12}$/);
+    expect(docs[1].meta).toMatchObject({ number: "132/2026", printedNumber: "132/2026-CBDT", soNumber: "S.O. 5353(E)", act: "2025", pdfLinkFound: false, urlIsListing: true });
+    expect(docs.map((d) => d.meta?.printedNumber)).toEqual(["133/2026", "132/2026-CBDT", "08/2026", "130/2026-CBDT"]);
     expect(docs[1].text).toContain("Notification No. 132/2026-CBDT [F. No. 203/25/2025/ITA-II] / SO 5353(E)");
     expect(docs[1].text).toContain("Published On: 2026-09-29");
+  });
+
+  it("never gives two different cards the same record identity (series suffix, leading zeros, card hash)", () => {
+    // Review finding: "Notification No. 8/2026-CBDT" and "Notification No. 08/2026 : Order under section 45(3)(b)" (two
+    // series) both became …/notifications#notification-8-2026, so one instrument's record replaced the other's.
+    const listing = CBDT_LISTINGS[1];
+    const a = { title: "Notification No. 8/2026-CBDT [F. No. 370142/1/2026-TPL] / SO 120(E) : Income-tax (First Amendment) Rules, 2026", published: "2026-01-14", tags: [], href: null };
+    const b = { title: "Notification No. 08/2026 : Order under section 45(3)(b) of the Income Tax Act, 2025 read with Rule 35 of the Income Tax Rules, 2026", published: "2026-09-26", tags: [], href: null };
+    const c = { ...a, title: "Notification No. 8/2026 : Another instrument printed without its series", published: "2026-03-02" };
+    const urls = cbdtDocs([a, b, c], listing).map((d) => d.url);
+    expect(new Set(urls).size).toBe(3);
+    expect(urls[0]).toMatch(/#notification-8-2026-cbdt-[0-9a-f]{12}$/);
+    expect(urls[1]).toMatch(/#notification-08-2026-[0-9a-f]{12}$/);
+    expect(cbdtDocs([a, b, c], listing).map((d) => d.meta?.number)).toEqual(["8/2026", "8/2026", "8/2026"]);
+    // Stable: the same card always gets the same URL, so a re-listing upserts the same record.
+    expect(cbdtCardUrl(a, listing)).toBe(urls[0]);
+    expect(cbdtCardUrl({ ...a }, listing)).toBe(cbdtCardUrl(a, listing));
+    expect(cbdtPrintedNumber("Circular No. 13 /2025 : Order under section 119")).toBe("13/2025");
+  });
+
+  it("lists every card on every pass (no stop marker on a ten-card page)", async () => {
+    const pages = (u: string) => (u === CBDT_LISTINGS[0].url ? fx("cbdt-circulars-rendered.html") : undefined);
+    const r1 = await cbdt.discover(makeCtx({ pages }).ctx);
+    const r2 = await cbdt.discover(makeCtx({ pages, cursor: r1.nextCursor }).ctx);
+    expect(r2.items.map((d) => d.url)).toEqual(r1.items.map((d) => d.url));
   });
 
   it("uses a card's own document link when it has one, and never guesses a slug", () => {
@@ -255,5 +318,49 @@ describe("Sansad (live JSON fixtures)", () => {
     const c = parseCursor(r.nextCursor)!;
     expect(c.lastSeen["rs:271:STARRED"]).toBe("1");
     expect(c.lastSeen["ls:18:8"]).toBe("https://sansad.in/getFile/lsapps/loksabhaquestions/annex/188/AS360_7GaY3g.pdf?source=lsapps");
+  });
+
+  /** A Lok Sabha session of `total` questions, newest first, 50 per page; `hasFile(q)` decides whether a file is up. */
+  const lsSession = (total: number, hasFile: (q: number) => boolean = () => true) => (u: string): unknown => {
+    if (u.endsWith("/api_ls/business/AllLoksabhaAndSessionDates")) return [{ loksabha: 18, sessions: [{ sessionNo: 8 }] }];
+    if (u.endsWith("/api_rs/business/getSessionsList?docType=SQ")) return [];
+    const m = /qetFilteredQuestionsAns\?loksabhaNo=18&sessionNumber=8&pageNo=(\d+)&pageSize=50/.exec(u);
+    if (m) {
+      const page = Number(m[1]);
+      const list = Array.from({ length: 50 }, (_, i) => total - (page - 1) * 50 - i).filter((q) => q >= 1).map((q) => ({
+        quesNo: q, subjects: `Subject ${q}`, lokNo: "18", member: ["A Member"], ministry: "FINANCE", type: "UNSTARRED", date: "12.08.2026", sessionNo: "8",
+        questionsFilePath: hasFile(q) ? `https://sansad.in/getFile/loksabhaquestions/annex/188/AU${q}.pdf?source=pqals` : null,
+      }));
+      return [{ listOfQuestions: list, totalRecordSize: total }];
+    }
+    if (u.startsWith("https://elibrary.sansad.in/server/api/discover/")) return { _embedded: { searchResult: { _embedded: { objects: [] }, page: { totalPages: 0 } } } };
+    return undefined;
+  };
+  const lsUrl = (q: number) => `https://sansad.in/getFile/loksabhaquestions/annex/188/AU${q}.pdf?source=pqals`;
+
+  it("walks a Lok Sabha session down to the previous pass's newest question even when more than 200 are new", async () => {
+    // Review finding: an incremental pass read at most 4 pages (200 questions) per session while a sitting day publishes ~240.
+    const cursor = JSON.stringify({ v: 1, mode: "incremental", plan: [], i: 0, page: null, skip: 0, misses: 0, walked: 0, lastSeen: { "ls:18:8": lsUrl(150) }, newest: {}, only: null });
+    const { ctx, calls } = makeCtx({ cursor, json: lsSession(500), limit: 1000 });
+    const r = await sansad.discover(ctx);
+    expect(r.done).toBe(true);
+    const qs = r.items.filter((d) => d.meta?.house === "lok_sabha").map((d) => d.meta?.questionNo);
+    expect(qs).toHaveLength(350);
+    expect(qs[0]).toBe(500);
+    expect(qs[qs.length - 1]).toBe(151);
+    expect(calls.json.filter((u) => u.includes("qetFilteredQuestionsAns"))).toHaveLength(8);
+    expect(r.notes?.join(" ") ?? "").not.toMatch(/not met/);
+    expect(parseCursor(r.nextCursor)!.lastSeen["ls:18:8"]).toBe(lsUrl(500));
+  });
+
+  it("keeps walking past a Lok Sabha page whose questions have no file yet", async () => {
+    // Review finding: a page with no usable rows was taken as the last page.
+    const { ctx, calls } = makeCtx({ json: lsSession(100, (q) => q <= 50) });
+    const r = await sansad.discover(ctx);
+    const qs = r.items.filter((d) => d.meta?.house === "lok_sabha").map((d) => d.meta?.questionNo);
+    expect(qs).toHaveLength(50);
+    expect(qs[0]).toBe(50);
+    expect(calls.json.filter((u) => u.includes("qetFilteredQuestionsAns"))).toHaveLength(2);
+    expect(parseCursor(r.nextCursor)!.lastSeen["ls:18:8"]).toBe(lsUrl(50));
   });
 });

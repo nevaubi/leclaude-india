@@ -3,7 +3,7 @@ import type { AdapterContext, FetchedFile, FetchedPage } from "@/modules/officia
 import type { DiscoveredDoc } from "@/modules/official/types";
 import { SOURCE_IDS } from "@/modules/official/types";
 import {
-  backfillCursor, caseNumbersFromTitle, parseCursor, printedDate, safeUrl, walkStreams,
+  FAIL_RUN, RETRY_ATTEMPTS, backfillCursor, caseNumbersFromTitle, isStopError, parseCursor, printedDate, safeUrl, walkStreams,
   type ListingStream, type SequenceStream, type StreamSpec,
 } from "@/modules/official/adapters/regulators/common";
 import { REGULATOR_ADAPTERS } from "@/modules/official/adapters/regulators";
@@ -254,6 +254,190 @@ describe("stream walker", () => {
     expect(probed.slice(0, 5)).toEqual([1, 2, 3, 4, 5]);
     expect(r3.items.map((d) => d.title)).toEqual(["Doc 5", "Doc 6", "Doc 8", "Doc 9", "Doc 10"]);
     expect(parseCursor(r3.nextCursor)!.lastSeen.ids).toBe("10");
+  });
+
+  it("keeps a sequence's marker at the highest number found when the per-pass cap is reached during misses", async () => {
+    // Review finding: the cap set the marker to the last number probed, so trailing misses were never probed again.
+    const published = new Set([1, 2, 3]);
+    const probed: number[] = [];
+    const seq: SequenceStream = {
+      kind: "sequence", id: "ids", backfill: true, start: 1, maxMisses: 3, incrementalMax: 5,
+      async fetch(n) { probed.push(n); return published.has(n) ? doc(n, "ids") : null; },
+    };
+    const r1 = await walkStreams(makeCtx().ctx, cfgFor([seq]));
+    expect(probed).toEqual([1, 2, 3, 4, 5]);
+    expect(r1.notes?.join(" ")).toMatch(/probed 5 numbers this pass/);
+    expect(parseCursor(r1.nextCursor)!.lastSeen.ids).toBe("3");
+    published.add(4).add(5);
+    probed.length = 0;
+    const r2 = await walkStreams(makeCtx({ cursor: r1.nextCursor }).ctx, cfgFor([seq]));
+    expect(probed[0]).toBe(4);
+    expect(r2.items.map((d) => d.title)).toEqual(["Doc 4", "Doc 5"]);
+    expect(parseCursor(r2.nextCursor)!.lastSeen.ids).toBe("5");
+  });
+
+  it("steps over one number that keeps failing, records it for retry and never treats it as published", async () => {
+    // Review finding: a persistent non-404 error on one number blocked the stream at that number on every pass.
+    const published = new Set([1, 2, 4, 5]);
+    let broken = true;
+    const probed: number[] = [];
+    const seq: SequenceStream = {
+      kind: "sequence", id: "ids", backfill: true, start: 1, maxMisses: 3,
+      async fetch(n) {
+        probed.push(n);
+        if (n === 3 && broken) throw Object.assign(new Error("HTTP 500 for #3"), { status: 500 });
+        return published.has(n) || n === 3 ? doc(n, "ids") : null;
+      },
+    };
+    const r1 = await walkStreams(makeCtx().ctx, cfgFor([seq]));
+    expect(r1.done).toBe(true);
+    expect(r1.items.map((d) => d.title)).toEqual(["Doc 1", "Doc 2", "Doc 4", "Doc 5"]);
+    expect(r1.notes?.join(" ")).toMatch(/ids #3: fetch failed while later numbers answered; skipped for now and recorded for retry/);
+    const c1 = parseCursor(r1.nextCursor)!;
+    expect(c1.lastSeen.ids).toBe("5");
+    expect(c1.lastSeen["#retry:ids"]).toBe("3:0");
+    // Next passes probe it first; each failure counts, and after RETRY_ATTEMPTS it is recorded as unverified.
+    let cursor = r1.nextCursor;
+    for (let i = 1; i <= RETRY_ATTEMPTS; i++) {
+      probed.length = 0;
+      const r = await walkStreams(makeCtx({ cursor }).ctx, cfgFor([seq]));
+      expect(probed[0]).toBe(3);
+      expect(r.items).toEqual([]);
+      cursor = r.nextCursor;
+      const ls = parseCursor(cursor)!.lastSeen;
+      if (i < RETRY_ATTEMPTS) expect(ls["#retry:ids"]).toBe(`3:${i}`);
+      else {
+        expect(ls["#retry:ids"]).toBeUndefined();
+        expect(ls["#unverified:ids"]).toBe("3");
+        expect(r.notes?.join(" ")).toMatch(/ids #3: still failing after 8 retries; recorded as unverified/);
+      }
+    }
+    // A number that answers on retry is ingested and leaves the list.
+    const again = await walkStreams(makeCtx({ cursor: r1.nextCursor }).ctx, cfgFor([{ ...seq, async fetch(n) { broken = false; return seq.fetch(n, makeCtx().ctx); } }]));
+    expect(again.items.map((d) => d.title)).toEqual(["Doc 3"]);
+    expect(again.notes?.join(" ")).toMatch(/ids #3: found on retry/);
+    expect(parseCursor(again.nextCursor)!.lastSeen["#retry:ids"]).toBeUndefined();
+  });
+
+  it("stops at the first of FAIL_RUN consecutive failures when the publisher fails for the number before them too", async () => {
+    // An outage: from the first failure on, every request fails (also the check of the number before the run).
+    let outage = false;
+    const seq: SequenceStream = {
+      kind: "sequence", id: "ids", backfill: true, start: 1, maxMisses: 3,
+      async fetch(n) {
+        if (n >= 3) outage = true;
+        if (outage) throw Object.assign(new Error(`HTTP 503 for #${n}`), { status: 503 });
+        return n < 8 ? doc(n, "ids") : null;
+      },
+    };
+    expect(FAIL_RUN).toBe(3);
+    // Incremental: the stream is skipped for this pass; its marker stays below the failing numbers (retried next pass).
+    const r = await walkStreams(makeCtx().ctx, cfgFor([seq]));
+    expect(r.items.map((d) => d.title)).toEqual(["Doc 1", "Doc 2"]);
+    expect(r.notes?.join(" ")).toMatch(/ids: HTTP 503 for #5; skipped for this pass/);
+    const c = parseCursor(r.nextCursor)!;
+    expect(c.lastSeen.ids).toBe("2");
+    expect(c.lastSeen["#retry:ids"]).toBeUndefined();
+    // Backfill: stops and resumes at the first failing number.
+    outage = false;
+    const rb = await walkStreams(makeCtx({ cursor: backfillCursor() }).ctx, cfgFor([seq]));
+    expect(rb.done).toBe(false);
+    expect(parseCursor(rb.nextCursor)!.page).toBe(3);
+  });
+
+  it("records and steps over failing numbers while the publisher keeps answering (one, or a run of FAIL_RUN or more)", async () => {
+    let bad = new Set([4]);
+    const seq: SequenceStream = {
+      kind: "sequence", id: "ids", backfill: true, start: 1, maxMisses: 3,
+      async fetch(n) { if (bad.has(n)) throw Object.assign(new Error(`HTTP 500 for #${n}`), { status: 500 }); return n < 12 ? doc(n, "ids") : null; },
+    };
+    // A single failing number does not block a backfill.
+    const rb = await walkStreams(makeCtx({ cursor: backfillCursor() }).ctx, cfgFor([seq]));
+    expect(rb.done).toBe(true);
+    expect(rb.items.map((d) => d.title)).not.toContain("Doc 4");
+    expect(rb.items).toHaveLength(10);
+    expect(parseCursor(rb.nextCursor)!.lastSeen["#retry:ids"]).toBe("4:0");
+    // Four broken documents in a row: #3 still answers, so they are recorded and the walk goes on (no permanent stop).
+    bad = new Set([4, 5, 6, 7]);
+    const ri = await walkStreams(makeCtx().ctx, cfgFor([seq]));
+    expect(ri.done).toBe(true);
+    expect(ri.items.map((d) => d.title)).toEqual(["Doc 1", "Doc 2", "Doc 3", "Doc 8", "Doc 9", "Doc 10", "Doc 11"]);
+    expect(ri.notes?.join(" ")).toMatch(/ids #4\.\.6: fetch failed while #3 answered; skipped for now and recorded for retry/);
+    expect(parseCursor(ri.nextCursor)!.lastSeen).toMatchObject({ ids: "11", "#retry:ids": "4:0,5:0,6:0,7:0" });
+  });
+
+  it("keeps its place when the run's deadline cuts a request (nothing skipped, nothing recorded)", async () => {
+    const deadline = () => Object.assign(new Error("the run's deadline was reached before the request finished"), { name: "OfficialDeadlineError", code: "official_deadline" });
+    expect(isStopError(deadline())).toBe(true);
+    const seq: SequenceStream = {
+      kind: "sequence", id: "ids", backfill: true, start: 1, maxMisses: 3,
+      async fetch(n) { if (n === 3) throw deadline(); return doc(n, "ids"); },
+    };
+    const r = await walkStreams(makeCtx().ctx, cfgFor([seq]));
+    expect(r.done).toBe(false);
+    expect(r.items).toHaveLength(2);
+    const c = parseCursor(r.nextCursor)!;
+    expect(c.page).toBe(3);
+    expect(c.fails).toBe(0);
+    expect(c.lastSeen["#retry:ids"]).toBeUndefined();
+  });
+
+  it("walks a markerless list in full on every pass", async () => {
+    const a = listing("a", [[3, 1]], { markerless: true });
+    const r1 = await walkStreams(makeCtx().ctx, cfgFor([a]));
+    expect(r1.items.map((d) => d.title)).toEqual(["Doc 3", "Doc 1"]);
+    // A document added below the newest one (e.g. minutes for an older meeting) is still listed.
+    const a2 = listing("a", [[3, 2, 1]], { markerless: true });
+    const r2 = await walkStreams(makeCtx({ cursor: r1.nextCursor }).ctx, cfgFor([a2]));
+    expect(r2.items.map((d) => d.title)).toEqual(["Doc 3", "Doc 2", "Doc 1"]);
+  });
+
+  it("stops a list ordered by id at the first item at or below the marker, even when the marker item is gone", async () => {
+    const byId: Partial<ListingStream> = { atMarker: (d, _k, marker) => Number(d.title.slice(4)) <= Number(marker) };
+    const cfg = (pages: number[][]) => ({ ...cfgFor([listing("a", pages, byId)]), key: (d: DiscoveredDoc) => d.title.slice(4) });
+    const r1 = await walkStreams(makeCtx().ctx, cfg([[10, 8, 7]]));
+    expect(parseCursor(r1.nextCursor)!.lastSeen.a).toBe("10");
+    const r2 = await walkStreams(makeCtx({ cursor: r1.nextCursor }).ctx, cfg([[12, 11, 8, 7]])); // 10 was withdrawn
+    expect(r2.items.map((d) => d.title)).toEqual(["Doc 12", "Doc 11"]);
+  });
+
+  it("does not end a list on a page whose rows were all filtered out while the publisher still returned rows", async () => {
+    const fetched: number[] = [];
+    const s: ListingStream = {
+      kind: "listing", id: "a", backfill: true, firstPage: 1, incrementalPages: 10,
+      async fetch(page) {
+        fetched.push(page);
+        if (page === 1) return { items: [], rawCount: 50, last: false };
+        if (page === 2) return { items: [doc(5, "a"), doc(4, "a")], rawCount: 50, last: true };
+        return { items: [], rawCount: 0, last: true };
+      },
+    };
+    const r = await walkStreams(makeCtx().ctx, cfgFor([s]));
+    expect(fetched).toEqual([1, 2]);
+    expect(r.items.map((d) => d.title)).toEqual(["Doc 5", "Doc 4"]);
+    expect(parseCursor(r.nextCursor)!.lastSeen.a).toBe("https://ibbi.gov.in/a/5.pdf");
+  });
+
+  it("records a stream whose marker was not met within its page bound until a backfill completes it", async () => {
+    const a = listing("a", [[9], [8], [7]], { incrementalPages: 2 });
+    const cursor = JSON.stringify({ v: 1, mode: "incremental", plan: [], i: 0, page: null, skip: 0, misses: 0, walked: 0, lastSeen: { a: "https://ibbi.gov.in/a/1.pdf" }, newest: {}, only: null });
+    const r = await walkStreams(makeCtx({ cursor }).ctx, cfgFor([a]));
+    expect(parseCursor(r.nextCursor)!.lastSeen["#unmet:a"]).toBe("2026-10-02");
+    const rb = await walkStreams(makeCtx({ cursor: backfillCursor({ lastSeen: parseCursor(r.nextCursor)!.lastSeen }) }).ctx, cfgFor([a]));
+    expect(rb.done).toBe(true);
+    expect(parseCursor(rb.nextCursor)!.lastSeen["#unmet:a"]).toBeUndefined();
+  });
+
+  it("reads cursors stored before these fields existed (production compatibility)", async () => {
+    // Shape written by the previous walker: no `fails`, markers only.
+    const old = JSON.stringify({ v: 1, mode: "incremental", plan: ["ids"], i: 0, page: 6, skip: 0, misses: 1, walked: 4, lastSeen: { ids: "3" }, newest: { ids: "4" }, only: null });
+    const c = parseCursor(old)!;
+    expect(c).toMatchObject({ mode: "incremental", page: 6, misses: 1, fails: 0, lastSeen: { ids: "3" }, newest: { ids: "4" } });
+    expect(parseCursor(JSON.stringify({ ...JSON.parse(old), fails: 99 }))!.fails).toBe(0);
+    const seq: SequenceStream = { kind: "sequence", id: "ids", backfill: true, start: 1, maxMisses: 3, async fetch(n) { return n === 7 ? doc(7, "ids") : null; } };
+    const r = await walkStreams(makeCtx({ cursor: old }).ctx, cfgFor([seq]));
+    expect(r.items.map((d) => d.title)).toEqual(["Doc 7"]);
+    expect(parseCursor(r.nextCursor)!.lastSeen.ids).toBe("7");
   });
 });
 

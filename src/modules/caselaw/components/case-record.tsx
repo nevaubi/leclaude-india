@@ -14,6 +14,7 @@ import { CaseApiError, fetchCaseJson } from "./fetch";
 import { JudgmentTextSection } from "./judgment-text";
 import { CitationsSection, NegativeSignalNotice, useCitator } from "./case-citations";
 import { ScOrdersCard } from "./sc-orders";
+import { safeHttp } from "@/modules/official-ui/shared";
 import { CoramJudges } from "@/modules/judges/components/coram-judges";
 import { CoramAvatars } from "@/modules/judges/components/coram-avatars";
 import { PhotoBackdrop } from "@/components/corpus/visual-image";
@@ -157,7 +158,8 @@ function researchQuery(r: CaseRecord): string {
 function RecordBody({ data }: { data: CaseRecordResponse }) {
   const r = data.record;
   const date = formatCaseDate(r.decision_date);
-  const pdfHost = urlHost(r.pdf_url);
+  const pdf = safeHttp(r.pdf_url);
+  const pdfHost = urlHost(pdf);
   const bench = r.bench ?? benchLabel(r);
   const visuals = useVisuals();
   const photo = courtVisual(visuals, r.court_id);
@@ -189,9 +191,9 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
             </span>
           ) : null}
           <span className="flex flex-wrap items-center gap-1.5">
-            {r.pdf_url ? (
+            {pdf ? (
               <Button asChild size="xs" variant="outline" className="max-w-full bg-background/80">
-                <a href={r.pdf_url} target="_blank" rel="noopener noreferrer">
+                <a href={pdf} target="_blank" rel="noopener noreferrer">
                   <FileText className="size-3.5" />Official PDF<span className="min-w-0 truncate text-muted-foreground">{pdfHost ? `· ${pdfHost}` : ""}</span><ExternalLink className="size-3 opacity-60" />
                 </a>
               </Button>
@@ -217,7 +219,7 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
             <section aria-label="Judgment text" className="flex flex-col items-start gap-2 rounded-lg border border-dashed px-4 py-5">
               <h2 className="text-[13px] font-medium">The judgment text is not available here</h2>
               <p className="max-w-[62ch] text-[12.5px] text-muted-foreground">Read the judgment in the official PDF published by the court. It is the text of record.</p>
-              {r.pdf_url ? <Button asChild size="xs" variant="outline"><a href={r.pdf_url} target="_blank" rel="noopener noreferrer"><FileText className="size-3.5" />Open the official PDF<ExternalLink className="size-3 opacity-60" /></a></Button> : null}
+              {pdf ? <Button asChild size="xs" variant="outline"><a href={pdf} target="_blank" rel="noopener noreferrer"><FileText className="size-3.5" />Open the official PDF<ExternalLink className="size-3 opacity-60" /></a></Button> : null}
             </section>
           )}
 
@@ -226,13 +228,16 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
           {r.translations.length ? (
             <Section title="Translations">
               <ul className="space-y-1 text-[12.5px]">
-                {r.translations.map((t, i) => (
-                  <li key={`${t.language}-${i}`} className="flex flex-wrap items-center gap-2">
-                    <span className="min-w-[120px]">{languageName(t.language)}</span>
-                    <span className="text-[11.5px] text-muted-foreground">{t.origin === "court_published" ? "published by the court" : t.origin ?? "origin not recorded"}</span>
-                    {t.url ? <a href={t.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">PDF · {urlHost(t.url)}<ExternalLink className="size-3" /></a> : <span className="text-muted-foreground">no link</span>}
-                  </li>
-                ))}
+                {r.translations.map((t, i) => {
+                  const href = safeHttp(t.url);
+                  return (
+                    <li key={`${t.language}-${i}`} className="flex flex-wrap items-center gap-2">
+                      <span className="min-w-[120px]">{languageName(t.language)}</span>
+                      <span className="text-[11.5px] text-muted-foreground">{t.origin === "court_published" ? "published by the court" : t.origin ?? "origin not recorded"}</span>
+                      {href ? <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">PDF · {urlHost(href)}<ExternalLink className="size-3" /></a> : <span className="text-muted-foreground">no link</span>}
+                    </li>
+                  );
+                })}
               </ul>
             </Section>
           ) : null}
@@ -282,16 +287,19 @@ function plainPublisher(s: CaseRecord["sourceInfo"], r: CaseRecord): string {
 
 function SourceCard({ r }: { r: CaseRecord }) {
   const s = r.sourceInfo;
+  const pdf = safeHttp(r.pdf_url);
+  const registry = safeHttp(s.registryUrl);
+  const licence = safeHttp(s.licenceUrl);
   const date = formatCaseDate(r.decision_date);
   return (
     <Section title="Source">
       <dl>
         <Field label="Published by">{plainPublisher(s, r)}</Field>
-        <Field label="Official PDF">{r.pdf_url ? <a href={r.pdf_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 break-all text-primary hover:underline">{urlHost(r.pdf_url) ?? "Open PDF"}<ExternalLink className="size-3" /></a> : <span className="text-muted-foreground">Not available</span>}</Field>
+        <Field label="Official PDF">{pdf ? <a href={pdf} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 break-all text-primary hover:underline">{urlHost(pdf) ?? "Open PDF"}<ExternalLink className="size-3" /></a> : <span className="text-muted-foreground">Not available</span>}</Field>
         <Field label="Decided">{show(date)}</Field>
       </dl>
       <p className="mt-2 border-t pt-2 text-[11px] leading-snug text-muted-foreground">
-        {s.registered ? <>Collected from {s.registryUrl ? <a href={s.registryUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">{s.name.replace(/\s*\(open data\)\s*$/i, "")}</a> : s.name}{s.licenceUrl ? <> (<a href={s.licenceUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">terms</a>)</> : null}. </> : null}
+        {s.registered ? <>Collected from {registry ? <a href={registry} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">{s.name.replace(/\s*\(open data\)\s*$/i, "")}</a> : s.name}{licence ? <> (<a href={licence} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">terms</a>)</> : null}. </> : null}
         The official PDF is the text of record.
       </p>
     </Section>

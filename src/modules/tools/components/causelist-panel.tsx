@@ -10,24 +10,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { CauseListEntry } from "@/modules/official/types";
 import { asOfficialApiError, fetchOfficialJson, type OfficialApiError } from "@/modules/official-ui/fetch";
 import { formatFetchedAt, pageLabel, sourceDocHref } from "@/modules/official-ui/shared";
-import { CAUSE_LIST_FORUMS, causeListQuery, DECISION_SUPPORT_FOOTER, formatIsoDate, type CauseListSearch } from "../lib";
+import { CAUSE_LIST_FORUMS, causeListCapped, causeListForumLabel, causeListQuery, causeListSearchText, causeListToText, formatIsoDate, listTypeLabel, type CauseListSearch } from "../lib";
 import { CopyButton, DateField, Field, ToolHeader } from "./shared";
 import { indiaToday } from "./use-court-calendars";
-
-const LIST_TYPE: Record<string, string> = { main: "Main list", supplementary: "Supplementary list", advance: "Advance list", weekly: "Weekly list", daily: "Daily list", other: "List" };
-
-function entryText(e: CauseListEntry): string {
-  const parts = [
-    `${formatIsoDate(e.listDate)} · ${LIST_TYPE[e.listType] ?? "List"}${e.courtNo ? ` · Court ${e.courtNo}` : ""}${e.itemNo ? ` · Item ${e.itemNo}` : ""}`,
-    e.caseNumbers.length ? e.caseNumbers.map((c) => c.printed).join("; ") : null,
-    e.diaryNo ? `Diary No. ${e.diaryNo}` : null,
-    e.parties,
-    e.advocates.length ? `Advocates: ${e.advocates.join(", ")}` : null,
-    e.bench ? `Bench: ${e.bench}` : null,
-    `As published${e.publishedAt ? ` at ${formatFetchedAt(e.publishedAt)}` : ""}; fetched ${formatFetchedAt(e.fetchedAt) ?? e.fetchedAt}`,
-  ];
-  return parts.filter(Boolean).join("\n");
-}
 
 /** Search published cause lists by forum, date, exact case or diary number, or an advocate's name as printed. */
 export function CauseListPanel() {
@@ -68,11 +53,13 @@ export function CauseListPanel() {
     }
     return [...m.values()];
   }, [entries]);
-  const copyAll = entries?.length ? [`Cause list entries (${forum.label})`, "", ...entries.map(entryText).flatMap((t) => [t, ""]), "Cause lists are not authoritative: confirm against the court's published list.", DECISION_SUPPORT_FOOTER].join("\n") : null;
+  // Copied text and labels describe the search that produced the results, not the form as it is being edited.
+  const copyAll = entries?.length && submitted ? causeListToText(submitted, entries) : null;
+  const capped = entries ? causeListCapped(entries.length, submitted) : false;
 
   return (
     <div>
-      <ToolHeader title="Cause list search" description="Entries from cause lists as the court published them. Case and diary numbers match exactly; an advocate's name matches the whole name as printed. A list can change after publication — confirm against the court's list." />
+      <ToolHeader title="Cause list search" description="Entries from cause lists as the court published them. Case and diary numbers match exactly; NCLT numbers also match the bench code printed in them, and every entry shows its court or bench. An advocate's name matches the whole name as printed. A list can change after publication — confirm against the court's list." />
       <form onSubmit={onSubmit} className="grid gap-4 lg:grid-cols-2" aria-label="Cause list search">
         <Field id="cl-forum" label="Court or tribunal">
           <Select value={form.forum} onValueChange={(v) => set({ forum: v, diary: CAUSE_LIST_FORUMS.find((f) => f.forum === v)?.diary ? form.diary : "" })}>
@@ -81,11 +68,11 @@ export function CauseListPanel() {
           </Select>
         </Field>
         <DateField id="cl-date" label="List date" optional value={form.date} onChange={(v) => set({ date: v })} hint="Leave empty to search every loaded list for a case or diary number." />
-        <Field id="cl-case" label={<>Case number<span className="ml-1 font-normal text-muted-foreground">(optional)</span></>} hint="As printed, e.g. SLP(C) No. 1234/2026 or W.P.(C) 5812/2016.">
+        <Field id="cl-case" label={<>Case number<span className="ml-1 font-normal text-muted-foreground">(optional)</span></>} hint={form.forum === "nclt" ? "As printed, with the bench code: e.g. CP(IB)/29(MB)2022. NCLT numbers repeat at every bench." : "As printed, e.g. SLP(C) No. 1234/2026 or W.P.(C) 5812/2016."}>
           <Input id="cl-case" size="sm" value={form.caseNumber} onChange={(e) => set({ caseNumber: e.target.value })} maxLength={160} className="w-full sm:w-[320px]" />
         </Field>
         {forum.diary ? (
-          <Field id="cl-diary" label={<>Diary number<span className="ml-1 font-normal text-muted-foreground">(optional)</span></>} hint="e.g. 54583/2026.">
+          <Field id="cl-diary" label={<>Diary number<span className="ml-1 font-normal text-muted-foreground">(optional)</span></>} hint="One diary number only, e.g. 54583/2026.">
             <Input id="cl-diary" size="sm" value={form.diary} onChange={(e) => set({ diary: e.target.value })} maxLength={40} className="w-full tabular sm:w-[200px]" />
           </Field>
         ) : <div className="hidden lg:block" />}
@@ -114,20 +101,27 @@ export function CauseListPanel() {
         ) : entries ? (
           <section aria-label="Cause list entries" className="rounded-lg border bg-card">
             <header className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
-              <h3 className="text-[13px] font-medium">{entries.length} entr{entries.length === 1 ? "y" : "ies"}</h3>
+              <h3 className="text-[13px] font-medium">{capped ? "First " : ""}{entries.length} entr{entries.length === 1 ? "y" : "ies"}</h3>
               {loading ? <Spinner size={12} /> : null}
-              <span className="text-[11.5px] text-muted-foreground">as published; not authoritative</span>
+              <span className="min-w-0 truncate text-[11.5px] text-muted-foreground" title={submitted ? causeListSearchText(submitted) : undefined}>{submitted ? causeListSearchText(submitted) : null} · as published; not authoritative</span>
               <span className="flex-1" />
               <CopyButton text={copyAll} />
             </header>
+            {capped ? (
+              <p role="note" className="flex items-start gap-1.5 border-b border-warning/40 bg-warning/5 px-4 py-1.5 text-[11.5px] leading-snug text-foreground/85">
+                <TriangleAlert className="mt-px size-3.5 shrink-0 text-warning-foreground dark:text-warning" aria-hidden />Only the first {entries.length} entries are shown; more may match. Narrow the search with a date, a case or diary number, or an advocate.
+              </p>
+            ) : null}
             <div className="divide-y">
               {groups.map((g) => {
                 const h = g[0];
                 return (
                   <div key={`${h.forum}|${h.listDate}|${h.listType}|${h.courtNo ?? ""}`}>
                     <div className="flex flex-wrap items-center gap-x-2 bg-[var(--surface-quiet)] px-4 py-1.5 text-[11.5px] text-muted-foreground">
+                      <span className="font-medium text-foreground/85">{causeListForumLabel(h.forum)}</span>
+                      <span aria-hidden>·</span>
                       <span className="font-medium text-foreground/85 tabular">{formatIsoDate(h.listDate)}</span>
-                      <span>{LIST_TYPE[h.listType] ?? "List"}</span>
+                      <span>{listTypeLabel(h.listType)}</span>
                       {h.courtNo ? <span>· Court {h.courtNo}</span> : null}
                       {h.bench ? <span className="min-w-0 truncate" title={h.bench}>· {h.bench}</span> : null}
                     </div>
@@ -171,7 +165,7 @@ function EntryRow({ e }: { e: CauseListEntry }) {
           {e.publishedAt ? <>As published at {formatFetchedAt(e.publishedAt)}</> : <>Publication time not printed</>} · fetched {formatFetchedAt(e.fetchedAt) ?? e.fetchedAt}
         </div>
       </div>
-      <Link href={sourceDocHref(e.documentId, { page: e.page })} className="inline-flex h-6 items-center gap-1 self-start rounded px-1.5 text-[11.5px] text-primary hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+      <Link href={sourceDocHref(e.documentId, { page: e.page }, "/tools?tool=causelist")} className="inline-flex h-6 items-center gap-1 self-start rounded px-1.5 text-[11.5px] text-primary hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
         <FileText className="size-3.5" aria-hidden />Source list{page ? ` · ${page}` : ""}
       </Link>
     </li>

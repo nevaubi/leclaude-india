@@ -65,6 +65,15 @@ export function statuteTitleFor(actId: string): string | null {
   return `${a.name}, ${a.year}`;
 }
 
+/**
+ * True when a citator section can be opened in the statutes reader: a plain section number with an optional letter
+ * suffix ("302", "498A"). Order and rule references ("O.39 R.1"), sub-sections and anything else are shown unlinked,
+ * so a link never lands on a "no such provision" page.
+ */
+export function linkableSection(section: string | null | undefined): boolean {
+  return typeof section === "string" && /^\d+[A-Z]{0,3}$/.test(section);
+}
+
 /** True when the response says the citator tables do not exist yet. */
 export function citatorNotBuilt(r: { sections: unknown[]; scannedJudgments: number; note: string }): boolean {
   return !r.sections.length && (r.scannedJudgments === 0 || /not been built/i.test(r.note));

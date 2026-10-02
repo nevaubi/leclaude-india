@@ -70,12 +70,25 @@ const CITY_PHRASE = /^(?:courts?|forums?|tribunals?)\s+(?:in|at|of)\s+(.+)$|^(.+
 
 const enc = encodeURIComponent;
 
+/** The search area of a Law page (Official sources and Practice tools search as Case law does). */
 export function areaOfPath(pathname: string | null | undefined): LawArea {
   const p = pathname ?? "";
   if (p.startsWith("/law")) return "law";
   if (p.startsWith("/courts")) return "courts";
   if (p.startsWith("/judges")) return "judges";
   return "cases";
+}
+
+/** The Law header tab a page belongs to: /sources and /sources/* → Sources, /tools and /tools/* → Practice tools, else its area. */
+export type LawTab = LawArea | "sources" | "tools";
+
+const under = (p: string, root: string) => p === root || p.startsWith(`${root}/`) || p.startsWith(`${root}?`);
+
+export function lawTabOfPath(pathname: string | null | undefined): LawTab {
+  const p = pathname ?? "";
+  if (under(p, "/sources")) return "sources";
+  if (under(p, "/tools")) return "tools";
+  return areaOfPath(p);
 }
 
 function casesHref(q: string) { return `/cases?q=${enc(q)}`; }

@@ -10,7 +10,7 @@ import { Kbd, Spinner } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/client";
-import { areaOfPath, routeLawQuery, type LawArea, type LawScope } from "./law-intent";
+import { areaOfPath, lawTabOfPath, routeLawQuery, type LawScope, type LawTab } from "./law-intent";
 import { loadVisuals } from "@/modules/media/use-visuals";
 
 /**
@@ -28,7 +28,7 @@ const TABS = [
   { area: "courts", labelKey: "nav.courts", href: "/courts" },
   { area: "judges", labelKey: "nav.judges", href: "/judges" },
   { area: "tools", labelKey: "nav.tools", href: "/tools" },
-] as const satisfies readonly { area: LawArea | "tools" | "sources"; labelKey: string; href: string }[];
+] as const satisfies readonly { area: LawTab; labelKey: string; href: string }[];
 
 const SCOPES: { value: LawScope; label: string }[] = [
   { value: "auto", label: "All" },
@@ -72,8 +72,9 @@ export function LawHub({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const t = useT();
   const area = areaOfPath(pathname);
-  // Practice tools have a tab but no search area of their own: the hub search there behaves as on Case law.
-  const tabArea: LawArea | "tools" | "sources" = pathname === "/tools" || pathname?.startsWith("/tools/") ? "tools" : pathname === "/sources" || pathname?.startsWith("/sources/") ? "sources" : area;
+  // Official sources and Practice tools have a tab but no search area of their own: the hub search there behaves as on
+  // Case law, while the header marks their own tab current.
+  const tabArea: LawTab = lawTabOfPath(pathname);
   const landing = LANDINGS.has(pathname ?? "");
   const [meta, setMeta] = React.useState<HTMLElement | null>(null);
 

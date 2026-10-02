@@ -16,12 +16,12 @@ import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { displayChapterTitle, displayHeading, groupToc, lawBlocks, type LawBlock } from "../reader";
 import {
-  citationTitle, displayLawCitation, jurisdictionLabel, legacyIndiaCodeNote, statusTone, LAW_ATTRIBUTION_LINE, LAW_DATASET, lawApiHref, lawHref, repeatedProvisionLabel, NO_SECTION, normSectionKey, normVariant, provisionUnit, publisherLabel, safeHttpUrl, snippetParts,
+  citationTitle, displayLawCitation, jurisdictionLabel, legacyIndiaCodeNote, LAW_ATTRIBUTION_LINE, LAW_DATASET, lawApiHref, lawHref, repeatedProvisionLabel, NO_SECTION, normSectionKey, normVariant, provisionUnit, publisherLabel, safeHttpUrl, snippetParts,
   type LawInstrument, type LawInstrumentResponse, type LawProvisionHit, type LawSearchResponse, type LawSectionRef, type LawSectionResponse, type LawTocEntry,
 } from "../shared";
 import { asLawApiError, fetchLawJson, type LawApiError } from "./fetch";
-import { isUnavailable, LawErrorState, LawUnavailable, StatusText } from "./law-states";
-import { CodeCorrespondence, LegacyLinkNote, SectionStatusChip, StatusBreakdownLine } from "./section-insights";
+import { isUnavailable, LawErrorState, LawUnavailable } from "./law-states";
+import { CodeCorrespondence, InstrumentStatus, LegacyLinkNote, SectionStatusChip } from "./section-insights";
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 const unitOf = (i: Pick<LawInstrument, "kind" | "title">) => provisionUnit(i).toLowerCase();
@@ -204,15 +204,12 @@ function InstrumentHeader({ i, total }: { i: LawInstrument; total: number }) {
         <div className="min-w-0">
           <h1 className="max-w-[880px] font-serif text-[23px] leading-tight tracking-[-0.01em]">{citationTitle(i)}</h1>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
-            <span className={cn("inline-flex items-center rounded-full border px-2 py-px", i.status === "in_force" ? "border-success/30 bg-success/5" : statusTone(i.status) === "off" ? "border-warning/40 bg-warning/5" : "")}>
-              <StatusText status={i.status} className={cn("text-[11.5px]", i.status === "in_force" && "text-foreground/85")} />
-            </span>
+            <InstrumentStatus i={i} />
             <span>{jurisdictionLabel(i)}</span>
             <span aria-hidden className="text-muted-foreground/50">·</span>
             <span>{kindLabel(i.kind)}{i.year ? <span className="tabular">, {i.year}</span> : null}</span>
             <span aria-hidden className="text-muted-foreground/50">·</span>
             <span className="tabular">{fmt(total || i.sections)} sections</span>
-            <StatusBreakdownLine i={i} className="basis-full sm:basis-auto" />
           </div>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1">
@@ -510,7 +507,7 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
           </>}
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <SectionStatusChip status={s.status} inForce={s.in_force} />
+          <SectionStatusChip instrument={instrument} status={s.status} inForce={s.in_force} />
           {s.has_proviso ? <Chip tone="muted">Proviso</Chip> : null}
           {s.has_non_obstante ? <Chip tone="muted">Non obstante clause</Chip> : null}
           {s.provision_type ? <Chip tone="muted">{s.provision_type.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())}</Chip> : null}

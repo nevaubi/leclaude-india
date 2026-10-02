@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areaOfPath, expandActAbbreviation, parseSectionQuery, routeLawQuery } from "@/components/corpus/law-intent";
+import { areaOfPath, expandActAbbreviation, lawTabOfPath, parseSectionQuery, routeLawQuery } from "@/components/corpus/law-intent";
 import { creditLabel, placeholderColor, safeLink } from "@/components/corpus/visual-credit";
 import { groupKeyActs, KEY_ACT_GROUPS, NEW_CRIMINAL_LAWS } from "@/modules/law/components/law-subjects";
 import type { Visual } from "@/modules/media/visuals-types";
@@ -56,6 +56,19 @@ describe("law hub search intent", () => {
     expect(areaOfPath("/judges")).toBe("judges");
     expect(areaOfPath("/courts")).toBe("courts");
     expect(areaOfPath("/cases/sc:1")).toBe("cases");
+  });
+
+  it("marks the Sources and Practice tools tabs current on their own pages, never Case law", () => {
+    expect(lawTabOfPath("/sources")).toBe("sources");
+    expect(lawTabOfPath("/sources/od_abc123")).toBe("sources");
+    expect(lawTabOfPath("/tools")).toBe("tools");
+    expect(lawTabOfPath("/tools/x")).toBe("tools");
+    expect(lawTabOfPath("/cases")).toBe("cases");
+    expect(lawTabOfPath("/law/IND_1")).toBe("law");
+    expect(lawTabOfPath("/sourcesx")).toBe("cases");
+    expect(lawTabOfPath(null)).toBe("cases");
+    // The hub search on /sources still routes as on Case law.
+    expect(areaOfPath("/sources")).toBe("cases");
   });
 });
 

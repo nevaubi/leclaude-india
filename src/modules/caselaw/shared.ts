@@ -7,8 +7,6 @@
  * record count is not inflated by them. Records from other datasets that describe the same case (same CNR or neutral
  * citation) are shown as separate, labelled records, never merged.
  */
-import { normalizeDiaryNo } from "@/modules/official/case-numbers";
-
 export type CaseSort = "newest" | "oldest" | "relevance";
 
 /** exact: identifier (CNR, neutral citation, case number) match; text: all words matched; partial: some words; browse: no query. */
@@ -207,8 +205,6 @@ export interface CaseRecord extends Omit<CaseHit, "match"> {
   bench: string | null;
   unit: CaseUnit | null;
   sourceInfo: SourceRegistryEntry;
-  /** Supreme Court diary number as printed in the source metadata, when the record carries one (not all do). */
-  diary_no?: string | null;
 }
 
 export interface SameCaseRecord extends CaseHit {
@@ -349,21 +345,57 @@ export const MATCH_LABEL: Record<CaseMatch, string> = {
 // Supreme Court orders feed (official sources) for a case record
 // ---------------------------------------------------------------------------
 
-/**
- * The diary number of a Supreme Court record, normalized "<number>/<year>", only when the metadata prints one: the
- * record's `diary_no`, or a case number that explicitly reads "Diary No. …". A plain case number ("Civil Appeal No.
- * 1234/2020") is never read as a diary number, and other courts' records return null.
- */
-export function scDiaryNumberOf(r: Pick<CaseRecord, "court_id" | "case_number"> & { diary_no?: string | null }): string | null {
-  if (r.court_id !== "sci") return null;
-  if (r.diary_no) return normalizeDiaryNo(r.diary_no);
-  const cn = r.case_number ?? "";
-  return /\bdiary\s*(?:no\.?|number)/i.test(cn) ? normalizeDiaryNo(cn) : null;
+// Diary numbers are parsed here, strictly, instead of with the official-sources normalizer: that one is unanchored and
+// would read the case number in "SLP(C) No. 1234/2026 (Diary No. 54583/2026)" as diary 1234/2026.
+const DIARY_LABELLED = /\bdiary\s*(?:no\.?|number)\s*[-:.]?\s*(\d{1,7})\s*[-/]\s*((?:19|20)\d{2})(?!\d)/gi;
+const DIARY_WHOLE = /^(?:diary\s*(?:no\.?|number)\s*[-:.]?\s*)?(\d{1,7})\s*[-/]\s*((?:19|20)\d{2})\.?$/i;
+
+function diaryKey(num: string, year: string): string | null {
+  const n = Number(num);
+  return Number.isInteger(n) && n >= 1 ? `${n}/${year}` : null;
 }
 
-/** Orders / judgments from the Supreme Court feed whose published diary number equals `diary` exactly, newest first. */
+/** Every distinct diary number explicitly labelled "Diary No." / "Diary Number" in free text, normalized "<number>/<year>", in order. */
+export function labelledDiaryNumbers(text: string | null | undefined): string[] {
+  if (!text) return [];
+  const out: string[] = [];
+  for (const m of text.replace(/\s+/g, " ").matchAll(DIARY_LABELLED)) {
+    const k = diaryKey(m[1], m[2]);
+    if (k && !out.includes(k)) out.push(k);
+  }
+  return out;
+}
+
+/**
+ * A value given as a diary number, read strictly → "<number>/<year>", or null. Accepted: the whole value is one diary
+ * number ("54583/2026", "54583-2026", "Diary No. 54583/2026"), or the text labels exactly one distinct diary number
+ * ("SLP(C) No. 1234/2026 (Diary No. 54583/2026)" → "54583/2026"). Anything else is null: a case number is never read
+ * as a diary number, and two different labelled diary numbers are ambiguous.
+ */
+export function strictDiaryNumber(text: string | null | undefined): string | null {
+  const s = (text ?? "").replace(/\s+/g, " ").trim();
+  if (!s || s.length > 200) return null;
+  const whole = DIARY_WHOLE.exec(s);
+  if (whole) return diaryKey(whole[1], whole[2]);
+  const labelled = labelledDiaryNumbers(s);
+  return labelled.length === 1 ? labelled[0] : null;
+}
+
+/**
+ * The diary number of a Supreme Court record, normalized "<number>/<year>", only when its case number explicitly labels
+ * exactly one ("… (Diary No. 54583/2026)"). A plain case number ("Civil Appeal No. 1234/2020") is never read as a diary
+ * number, a string with two different diary numbers gives none, and other courts' records return null. (The case-law
+ * API carries no separate diary field.)
+ */
+export function scDiaryNumberOf(r: Pick<CaseRecord, "court_id" | "case_number">): string | null {
+  if (r.court_id !== "sci") return null;
+  const found = labelledDiaryNumbers(r.case_number);
+  return found.length === 1 ? found[0] : null;
+}
+
+/** Orders / judgments from the Supreme Court feed whose published diary number reads, strictly, as exactly `diary`; newest first. */
 export function exactDiaryOrders<T extends { sourceId: string; docDate: string | null; meta: Record<string, unknown> }>(docs: T[], diary: string): T[] {
   return docs
-    .filter((d) => d.sourceId === "sci-orders" && typeof d.meta?.diaryNo === "string" && normalizeDiaryNo(d.meta.diaryNo) === diary)
+    .filter((d) => d.sourceId === "sci-orders" && typeof d.meta?.diaryNo === "string" && strictDiaryNumber(d.meta.diaryNo) === diary)
     .sort((a, b) => (b.docDate ?? "").localeCompare(a.docDate ?? ""));
 }

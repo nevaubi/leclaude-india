@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ExternalLink, FileText } from "lucide-react";
 import type { OfficialListResult } from "@/modules/official/service";
 import type { SourceDocument } from "@/modules/official/types";
@@ -10,12 +11,13 @@ import { exactDiaryOrders, scDiaryNumberOf, type CaseRecord } from "../shared";
 
 /**
  * "Orders from the Supreme Court feed": orders and judgments published on sci.gov.in for this record's diary number,
- * from the official-sources corpus. Shown only for Supreme Court records whose metadata prints a diary number, and only
- * with documents whose published diary number is exactly that one. Otherwise (no diary number, feed not configured or
+ * from the official-sources corpus. Shown only for Supreme Court records whose case number labels exactly one diary
+ * number ("… (Diary No. 54583/2026)"), and only with documents whose published diary number is exactly that one. Otherwise (no diary number, feed not configured or
  * not available, nothing exact) the card is omitted: nothing related-looking is shown in its place.
  */
 export function ScOrdersCard({ r }: { r: CaseRecord }) {
   const diary = scDiaryNumberOf(r);
+  const pathname = usePathname();
   const [docs, setDocs] = React.useState<SourceDocument[] | null>(null);
   React.useEffect(() => {
     if (!diary) return;
@@ -42,7 +44,7 @@ export function ScOrdersCard({ r }: { r: CaseRecord }) {
             const official = safeHttp(d.fileUrl ?? d.url);
             return (
               <li key={d.id} className="py-1.5 text-[12.5px]">
-                <Link href={sourceDocHref(d.id)} className="line-clamp-2 font-medium hover:underline">{d.title}</Link>
+                <Link href={sourceDocHref(d.id, undefined, pathname)} className="line-clamp-2 font-medium hover:underline">{d.title}</Link>
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted-foreground">
                   <span>{kindLabel(d.kind)}</span>
                   <span className="tabular">{formatDocDate(d.docDate) ?? "undated"}</span>

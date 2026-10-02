@@ -12,7 +12,7 @@ import { COURTS } from "@/lib/india/courts";
 import { ACTS } from "@/lib/india/statutes";
 import type { SectionStat, SectionStatsResponse } from "@/modules/india/citator/types";
 import { CaseApiError, fetchCaseJson } from "@/modules/caselaw/components/fetch";
-import { badYear, citatorNotBuilt, EMPTY_SECTION_FILTERS, sectionStatsQuery, sparkPoints, statuteTitleFor, yearSeries, type SectionStatsFilters } from "../most-cited";
+import { badYear, citatorNotBuilt, EMPTY_SECTION_FILTERS, linkableSection, sectionStatsQuery, sparkPoints, statuteTitleFor, yearSeries, type SectionStatsFilters } from "../most-cited";
 import { lawHref } from "../shared";
 import { useExactCentralActs } from "./use-exact-acts";
 
@@ -122,7 +122,7 @@ function SectionRow({ rank, s, max, actId }: { rank: number; s: SectionStat; max
     <li className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-1.5 text-[12.5px] sm:grid-cols-[1.75rem_minmax(0,1fr)_120px_4.5rem]">
       <span className="text-right text-[11px] text-muted-foreground tabular">{rank}</span>
       <span className="min-w-0 truncate">
-        {actId ? <Link href={lawHref(actId, s.section)} className="underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{label}</Link> : label}
+        {actId && linkableSection(s.section) ? <Link href={lawHref(actId, s.section)} className="underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{label}</Link> : label}
         {s.act ? <span className="text-muted-foreground"> · {s.act}</span> : null}
       </span>
       <span className="hidden sm:block">

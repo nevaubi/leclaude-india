@@ -4,11 +4,9 @@ import Link from "next/link";
 import { ArrowRightLeft, Info } from "lucide-react";
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { sectionCorrespondence } from "../code-correspondence";
-import { hasMixedStatus, legacyIndiaCodeNote, lawHref, sectionStatusBadge, statusBreakdown, type LawInstrument, type StatusTone } from "../shared";
+import { codeRepeal, sectionCorrespondence } from "../code-correspondence";
+import { legacyIndiaCodeNote, lawHref, sectionStatusBadge, statusLabel, statusTone, type LawInstrument, type StatusTone } from "../shared";
 import { useExactCentralActs } from "./use-exact-acts";
-
-const fmt = (n: number) => n.toLocaleString("en-IN");
 
 function toneClasses(tone: StatusTone) {
   return tone === "ok"
@@ -18,9 +16,13 @@ function toneClasses(tone: StatusTone) {
       : { box: "border-border bg-muted/40 text-muted-foreground", dot: "bg-muted-foreground/45" };
 }
 
-/** The section's recorded status ("In force", "Repealed", "Status not recorded" …). Green only for in force. */
-export function SectionStatusChip({ status, inForce }: { status: string | null; inForce: boolean | null }) {
-  const b = sectionStatusBadge({ status, in_force: inForce });
+/**
+ * The section's status ("In force", "Act in force", "Repealed (1 July 2024)", "Status not recorded" …). Green only when
+ * the dataset flags the provision itself in force; the IPC, CrPC and Evidence Act always read as repealed.
+ */
+export function SectionStatusChip({ instrument, status, inForce }: { instrument: Pick<LawInstrument, "title" | "year" | "jurisdiction">; status: string | null; inForce: boolean | null }) {
+  const repeal = codeRepeal(instrument);
+  const b = sectionStatusBadge({ status, in_force: inForce, repealedOn: repeal?.on ?? null, repealedNote: repeal?.note ?? null });
   const c = toneClasses(b.tone);
   return (
     <Tip label={b.title}>
@@ -46,23 +48,22 @@ export function LegacyLinkNote({ url, compact, className }: { url: string | null
   return <p className={cn("text-[11.5px] leading-snug text-muted-foreground", className)}>{note}.</p>;
 }
 
-/** "Mixed: 412 in force · 3 repealed" for an instrument whose provisions do not share one status (loader v2 data). */
-export function StatusBreakdownLine({ i, className }: { i: Pick<LawInstrument, "status_counts">; className?: string }) {
-  const rows = statusBreakdown(i.status_counts);
-  if (!hasMixedStatus(i.status_counts)) return null;
-  return (
-    <Tip label="Provisions of this instrument by the status the dataset records for them. The headline status is the most common one.">
-      <span tabIndex={0} className={cn("inline-flex flex-wrap items-center gap-x-1.5 rounded text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50", className)} aria-label="Provision status breakdown">
-        <span className="text-muted-foreground">Provisions:</span>
-        {rows.map((r, k) => (
-          <React.Fragment key={r.status}>
-            {k ? <span aria-hidden className="text-muted-foreground/50">·</span> : null}
-            <span className={cn("tabular", r.tone === "off" ? "text-warning-foreground dark:text-warning" : r.tone === "ok" ? "text-foreground/85" : "text-muted-foreground")}>{fmt(r.count)} {r.label.toLowerCase()}</span>
-          </React.Fragment>
-        ))}
-      </span>
-    </Tip>
+/**
+ * The instrument's status in its header: as the dataset records it, except that the IPC, CrPC and Evidence Act always
+ * read "Repealed (1 July 2024)" (coded, with the savings note).
+ */
+export function InstrumentStatus({ i }: { i: Pick<LawInstrument, "title" | "year" | "jurisdiction" | "status"> }) {
+  const repeal = codeRepeal(i);
+  const tone: StatusTone = repeal ? "off" : statusTone(i.status);
+  const label = repeal ? `Repealed (${repeal.on})` : statusLabel(i.status);
+  const c = toneClasses(tone);
+  const chip = (
+    <span tabIndex={repeal ? 0 : undefined} data-tone={tone} className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-px text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50", c.box)}>
+      <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", c.dot)} />
+      {label}
+    </span>
   );
+  return repeal ? <Tip label={repeal.note}>{chip}</Tip> : chip;
 }
 
 /**

@@ -4,8 +4,8 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Chip } from "@/components/ui/misc";
 import { isValidIsoDate } from "@/lib/india/holidays";
 import { arbitrationSetAsideTimeline, chequeDishonourTimeline, computeLimitation, LIMITATION_RULES, limitationRule, type LimitationRule } from "@/lib/india/limitation";
-import { arbitrationToText, chequeToText, condonableText, formatIsoDate, limitationToText, s4Text } from "../lib";
-import { CalendarSelect, calendarFor, calendarLabel, Caveats, DateField, Field, KeyDate, Placeholder, ResultCard, StepsList, ToolHeader, type CalendarChoice } from "./shared";
+import { arbitrationToText, chequeToText, condonableText, formatIsoDate, limitationToText, s4Text, withCalendarCaveats } from "../lib";
+import { CalendarSelect, calendarCaveats, calendarFor, calendarLabel, Caveats, DateField, Field, KeyDate, Placeholder, ResultCard, StepsList, ToolHeader, type CalendarChoice } from "./shared";
 import { useCourtCalendars } from "./use-court-calendars";
 
 const GROUPS: { proceeding: LimitationRule["proceeding"]; label: string }[] = [
@@ -33,6 +33,7 @@ export function LimitationPanel() {
   const [cal, setCal] = React.useState<CalendarChoice>("none");
   const cals = useCourtCalendars();
   const calendar = calendarFor(cal, cals);
+  const caveats = calendarCaveats(cal, cals).join("\n");
   const rule = limitationRule(ruleId)!;
 
   // Copy dates count only for rules with the s.12(2) exclusion; one date without the other is incomplete, not ignored.
@@ -40,8 +41,10 @@ export function LimitationPanel() {
   const result = React.useMemo(() => {
     if (!isValidIsoDate(from) || copyIncomplete) return null;
     const certifiedCopy = rule.copyExclusion && applied && ready ? { appliedOn: applied, readyOn: ready } : undefined;
-    return computeLimitation({ ruleId, from, calendar, certifiedCopy });
-  }, [ruleId, rule.copyExclusion, from, applied, ready, calendar, copyIncomplete]);
+    const r = computeLimitation({ ruleId, from, calendar, certifiedCopy });
+    // A calendar whose dates were read by OCR can only support a "requires verification" s.4 answer.
+    return r.s4 === "not_checked" ? r : withCalendarCaveats(r, caveats ? caveats.split("\n") : []);
+  }, [ruleId, rule.copyExclusion, from, applied, ready, calendar, copyIncomplete, caveats]);
   const last = result?.adjustedLastDay ?? result?.lastDay;
 
   return (
@@ -120,11 +123,13 @@ export function ChequePanel() {
   const [cal, setCal] = React.useState<CalendarChoice>("none");
   const cals = useCourtCalendars();
   const calendar = calendarFor(cal, cals);
+  const caveats = calendarCaveats(cal, cals).join("\n");
   const result = React.useMemo(() => {
     const okInfo = isValidIsoDate(info), okRec = isValidIsoDate(received);
     if (!okInfo && !okRec) return null;
-    return chequeDishonourTimeline({ dishonourInformationOn: okInfo ? info : undefined, noticeReceivedOn: okRec ? received : undefined, calendar });
-  }, [info, received, calendar]);
+    const r = chequeDishonourTimeline({ dishonourInformationOn: okInfo ? info : undefined, noticeReceivedOn: okRec ? received : undefined, calendar });
+    return r.complaintLastDay && calendar ? withCalendarCaveats(r, caveats ? caveats.split("\n") : []) : r;
+  }, [info, received, calendar, caveats]);
   const last = result?.adjustedComplaintLastDay ?? result?.complaintLastDay;
 
   return (
@@ -166,7 +171,12 @@ export function ArbitrationPanel() {
   const [cal, setCal] = React.useState<CalendarChoice>("none");
   const cals = useCourtCalendars();
   const calendar = calendarFor(cal, cals);
-  const result = React.useMemo(() => (isValidIsoDate(received) ? arbitrationSetAsideTimeline(received, calendar) : null), [received, calendar]);
+  const caveats = calendarCaveats(cal, cals).join("\n");
+  const result = React.useMemo(() => {
+    if (!isValidIsoDate(received)) return null;
+    const r = arbitrationSetAsideTimeline(received, calendar);
+    return r.s4 === "not_checked" ? r : withCalendarCaveats(r, caveats ? caveats.split("\n") : []);
+  }, [received, calendar, caveats]);
   const last = result?.adjustedLastDay ?? result?.lastDay;
   return (
     <div>

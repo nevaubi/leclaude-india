@@ -35,16 +35,17 @@ function libSource(i: number): ResearchSource {
 const longText = (i: number) => Array.from({ length: 120 }, (_, p) => (p % 4 === 0 ? `Paragraph ${p + 1} of memo ${i}: anticipatory bail parity and the triple test apply here; the court weighed the role of the co-accused.` : `Paragraph ${p + 1} of memo ${i}: background facts about the transaction, the parties and the procedural history before the trial court.`).repeat(3)).join("\n\n");
 
 describe("buildEvidenceBlocks under the deep_research_synthesis budget", () => {
-  it("gives the top 12 read sources in full (≤ perSourceChars, ≤2k blocks) and later read sources as labelled snippets", () => {
+  it("gives the top 16 read sources in full (≤ perSourceChars, ≤2k blocks) and later read sources as labelled snippets", () => {
     const b = resolveContextBudget("deep_research_synthesis", BIG, {});
-    const sources = Array.from({ length: 15 }, (_, i) => libSource(i + 1));
+    expect(b.maxFullSources).toBe(16);
+    const sources = Array.from({ length: 19 }, (_, i) => libSource(i + 1));
     const blocks = buildEvidenceBlocks(sources, (s) => longText(s.n!), { terms: ["anticipatory", "bail", "parity"], maxCharsPerSource: b.perSourceChars, maxTotalChars: b.totalEvidenceChars, maxBlockChars: b.blockChars, maxFullSources: b.maxFullSources, maxTotalTokens: Math.floor(b.inputTokens * 0.8) });
-    expect(blocks).toHaveLength(15);
+    expect(blocks).toHaveLength(19);
     let total = 0;
     blocks.forEach((blk, i) => {
       const chars = blk.content.reduce((a, c) => a + c.length, 0);
       for (const c of blk.content) expect(c.length, `block of source ${i + 1}`).toBeLessThanOrEqual(2_000);
-      if (i < 12) {
+      if (i < 16) {
         expect(blk.content.length, `source ${i + 1}`).toBeGreaterThan(5);
         expect(chars).toBeLessThanOrEqual(b.perSourceChars + 2_000);
         expect(blk.content[0]).toMatch(/^¶\d+ /);
@@ -56,7 +57,8 @@ describe("buildEvidenceBlocks under the deep_research_synthesis budget", () => {
       expect(blk.citationsEnabled).toBe(true);
     });
     expect(total).toBeGreaterThan(12 * 20_000); // far more than the old 80k total
-    expect(total).toBeLessThanOrEqual(b.totalEvidenceChars);
+    // The total bounds paragraph text; the "¶k " markers come on top (run.ts keeps a 10% margin for them).
+    expect(total).toBeLessThanOrEqual(b.totalEvidenceChars + 16 * 20);
   });
 
   it("keeps the old bounds when no budget is passed, and holds a script-aware token cap for Indic text", () => {
@@ -124,8 +126,8 @@ describe("verification is never weaker than synthesis", () => {
 });
 
 describe("lane read boost follows the lane model's context", () => {
-  it("no extra reads on a 400K mini or 128K model, +3 on a 1.05M fast model; boosted lanes get time for them", () => {
-    expect(laneReadBoost(resolveContextBudget("research_lane", MINI, {}))).toBe(0);
+  it("+2 reads on a 400K mini model, none on a 128K model, +3 on a 1.05M fast model; boosted lanes get time for them", () => {
+    expect(laneReadBoost(resolveContextBudget("research_lane", MINI, {}))).toBe(2);
     expect(laneReadBoost(resolveContextBudget("research_lane", null, {}))).toBe(0);
     expect(laneReadBoost(resolveContextBudget("research_lane", BIG, {}))).toBe(3);
     expect(laneReadBoost(null)).toBe(0);

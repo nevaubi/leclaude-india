@@ -1,0 +1,165 @@
+{
+ "suite": "transition",
+ "version": 1,
+ "cases": [
+  {
+   "id": "bench-tr-benchmark",
+   "category": "transition",
+   "question": "anticipatory bail under s.482 BNSS for an offence committed before 1 July 2024",
+   "forum": "hc-allahabad",
+   "expected": [
+    {
+     "key": "chowgule",
+     "title": "Chowgule & Co. v. State of Goa",
+     "citation": null,
+     "court": "hc-bombay",
+     "year": 2024,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "docs/product/roadmap-india.md P3.3 (product owner benchmark; Bombay High Court at Goa, 2024) — verify identity against the official copy",
+     "fixture": {
+      "keywords": [
+       "Section 531 BNSS",
+       "Section 482",
+       "BNSS",
+       "CrPC",
+       "transition",
+       "proceedings instituted after 1 July 2024"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "tatheer",
+     "title": "Tatheer Jafri v. State of U.P.",
+     "citation": "2025:AHC-LKO:18131",
+     "court": "hc-allahabad",
+     "year": 2025,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "docs/product/roadmap-india.md P3.3 (product owner benchmark; Allahabad High Court, Lucknow Bench, neutral citation) — verify against the official copy",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 482 BNSS",
+       "Section 438 CrPC",
+       "offence before 1 July 2024",
+       "Section 531 BNSS",
+       "transition"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "expectTransition": {
+    "substantive": "IPC",
+    "procedure": "requires_review"
+   },
+   "benchmark": true,
+   "notes": "Roadmap P3.3 benchmark. Both judgments must appear in the top 10 of the case-law lane (live run); offline this checks that the s.482 BNSS ↔ s.438 CrPC expansion reaches them.",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-tr-pending-trial",
+   "category": "transition",
+   "question": "Trial pending before 1 July 2024 for an offence committed on 15.03.2023 under section 420 IPC: which procedure governs?",
+   "forum": "all-india",
+   "expected": [],
+   "expectTransition": {
+    "substantive": "IPC",
+    "procedure": "CrPC"
+   },
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-tr-new-application",
+   "category": "transition",
+   "question": "Offence committed on 30.06.2024; bail application filed on 10 August 2024 — IPC or BNS, CrPC or BNSS?",
+   "forum": "all-india",
+   "expected": [],
+   "expectTransition": {
+    "substantive": "IPC",
+    "procedure": "BNSS"
+   },
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-tr-new-offence",
+   "category": "transition",
+   "question": "Cheating offence committed on 2 August 2024 and FIR registered on 5 August 2024 — which codes apply?",
+   "forum": "all-india",
+   "expected": [],
+   "expectTransition": {
+    "substantive": "BNS",
+    "procedure": "BNSS"
+   },
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-tr-no-date",
+   "category": "transition",
+   "question": "Does section 318(4) BNS or section 420 IPC apply to my client's cheating case?",
+   "forum": "all-india",
+   "expected": [],
+   "expectTransition": {
+    "substantive": "requires_review",
+    "procedure": "requires_review"
+   },
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-tr-quash-pending",
+   "category": "transition",
+   "question": "Petition under section 482 CrPC pending before 1 July 2024 for an offence committed on 10.01.2024 — does it continue under the CrPC?",
+   "forum": "all-india",
+   "expected": [],
+   "expectTransition": {
+    "substantive": "IPC",
+    "procedure": "CrPC"
+   },
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-tr-after-offence",
+   "category": "transition",
+   "question": "For an offence committed after 1 July 2024, is anticipatory bail under section 482 BNSS?",
+   "forum": "all-india",
+   "expected": [],
+   "expectTransition": {
+    "substantive": "BNS",
+    "procedure": "requires_review"
+   },
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-tr-528-filed",
+   "category": "transition",
+   "question": "Quashing petition under section 528 BNSS filed on 1 October 2024 for an offence committed on 5 May 2024",
+   "forum": "all-india",
+   "expected": [],
+   "expectTransition": {
+    "substantive": "IPC",
+    "procedure": "BNSS"
+   },
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  }
+ ]
+}

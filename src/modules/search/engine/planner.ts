@@ -6,6 +6,7 @@
 import type { SearchSettings, SearchSource } from "../types";
 import { bindingCourtIds, forumCourt, jurisdictionByKey, persuasiveCourtIds, resolveCourts } from "../jurisdictions";
 import { toCourtListenerSyntax } from "../query-builder";
+import { expandIndianQuery } from "@/lib/india/query-expansion";
 import type { LaneKind, ResearchLane, ResearchMode, ResearchSource } from "./types";
 
 export interface PlanInput {
@@ -104,8 +105,22 @@ export function laneReadBoost(b: { inputTokens: number; perSourceChars: number; 
   return Math.max(0, Math.min(3, fit - BASE_DEEP_READS));
 }
 
-/** Per-lane wall-clock budgets (ms). Deep lanes run a bounded agent; later rounds are narrower. */
-const LANE_TIMEOUT: Record<LaneKind, number> = { controlling: 110_000, persuasive: 90_000, contrary: 90_000, statute: 75_000, regulatory: 75_000, record: 90_000, secondary: 90_000, fast: 40_000 };
+/**
+ * Per-lane wall-clock budgets (ms). Deep lanes run a bounded agent; later rounds are narrower. The run still caps every
+ * lane at the time it has left before synthesis (run.ts), so these are ceilings, not promises.
+ * Before (2026-10): controlling 110s, persuasive 90s, contrary 90s, statute 75s, record 90s, secondary 90s, fast 40s.
+ */
+export const LANE_TIMEOUT: Record<LaneKind, number> = { controlling: 150_000, persuasive: 120_000, contrary: 130_000, statute: 100_000, regulatory: 100_000, record: 110_000, secondary: 110_000, fast: 70_000 };
+/** Later rounds (refined queries only) run narrower lanes. Before: 75s. */
+export const LATER_ROUND_LANE_MS = 100_000;
+/** The fast-mode adverse lane: one targeted search wave and at most one read. */
+export const FAST_CONTRARY_MS = 50_000;
+
+/** Retrieval queries for a lane: the base query, then its Indian-law expansions (old/new code, Act names, citation forms). */
+export function expandedQueries(base: string, max = 3): string[] {
+  const x = expandIndianQuery(base, { max });
+  return x.queries.length ? x.queries : [base];
+}
 
 export function planLanes(input: PlanInput): ResearchLane[] {
   const round = input.round ?? 1;
@@ -129,14 +144,24 @@ export function planLanes(input: PlanInput): ResearchLane[] {
     round,
     intel: intelFeeds(kind, sources),
     note: intelFeeds(kind, sources) || kind === "record" ? INTEL_LANE_NOTE[kind] : undefined,
-    timeoutMs: (round > 1 ? Math.min(LANE_TIMEOUT[kind], 75_000) : LANE_TIMEOUT[kind]) + boost * READ_BOOST_MS,
+    timeoutMs: (round > 1 ? Math.min(LANE_TIMEOUT[kind], LATER_ROUND_LANE_MS) : LANE_TIMEOUT[kind]) + boost * READ_BOOST_MS,
     ...(courtFilter?.length ? { courtFilter } : {}),
     };
   };
 
+  const expanded = expandedQueries(base);
   if (input.mode === "fast") {
     const sources = s.sources.filter((x) => x !== "web");
-    return [mk("fast", sources.length ? sources : ["caselaw"], [base], 1, 2)];
+    const fast = mk("fast", sources.length ? sources : ["caselaw"], expanded, 1, 2);
+    const out = [fast];
+    // Adverse authority is searched in fast mode too (one targeted wave, one deterministic read, no agent): a fast answer
+    // must still surface the strongest judgment against it (constitution §25, §44).
+    if (has("caselaw")) {
+      const override = resolveCourts(s.jurisdiction, s.courts).split(" ").filter(Boolean);
+      const contrary = { ...mk("contrary", ["caselaw"], expanded.slice(0, 2).map(contraryQuery), 1, 1, override.length ? override : undefined), agent: false, timeoutMs: FAST_CONTRARY_MS, after: [fast.id] };
+      out.push(contrary);
+    }
+    return out;
   }
 
   // Court filters are deterministic from the forum (never from the model). A free-text court override narrows every judgment lane.
@@ -147,11 +172,11 @@ export function planLanes(input: PlanInput): ResearchLane[] {
   // Read caps: full judgment text now exists for the Supreme Court and three High Courts, and a failed read no longer
   // counts, so judgment and statute lanes read one more source each (still bounded by maxSteps and the lane timeout).
   if (has("caselaw")) {
-    lanes.push(mk("controlling", ["caselaw"], [base], 7, 5, binding.length ? binding : undefined));
-    if (persuasive.length || !override.length) lanes.push(mk("persuasive", ["caselaw"], [base], 6, 4, persuasive.length ? persuasive : undefined));
-    lanes.push(mk("contrary", ["caselaw"], [contraryQuery(base)], 6, 4, override.length ? override : undefined));
+    lanes.push(mk("controlling", ["caselaw"], expanded, 7, 5, binding.length ? binding : undefined));
+    if (persuasive.length || !override.length) lanes.push(mk("persuasive", ["caselaw"], expanded, 6, 4, persuasive.length ? persuasive : undefined));
+    lanes.push(mk("contrary", ["caselaw"], expanded.slice(0, 2).map(contraryQuery), 6, 4, override.length ? override : undefined));
   }
-  if (has("statutes")) lanes.push(mk("statute", ["statutes"], [base], 6, 4));
+  if (has("statutes")) lanes.push(mk("statute", ["statutes"], expanded, 6, 4));
   if (input.hasMatter && has("ediscovery")) lanes.push(mk("record", ["ediscovery"], [base], 6, 4));
   if (has("web") || has("library")) lanes.push(mk("secondary", (["web", "library"] as SearchSource[]).filter(has), [base], 5, 3));
 
@@ -226,14 +251,15 @@ export function forumPhrase(settings: Pick<SearchSettings, "jurisdiction">): str
 
 /**
  * Deterministic, forum-aware sub-questions (the fast-model plan refines them when available).
- * Always includes the adverse-authority question in deep mode.
+ * Always includes the adverse-authority question (deep and fast) when judgments are in scope.
  */
 export function planSubQuestions(input: { question: string; settings: SearchSettings; mode: ResearchMode; hasMatter: boolean; matterName?: string; topic?: string }): string[] {
   const where = forumPhrase(input.settings);
   const topic = input.topic ?? questionTopic(input.question);
   const has = (s: SearchSource) => input.settings.sources.includes(s);
   const out = [`What do the Supreme Court and the decisions binding on ${where} hold on ${topic}, and what was the bench strength (larger benches first)?`];
-  if (input.mode === "fast") return out;
+  // The adverse-authority question is asked in fast mode too (a fast answer is not exempt from contrary authority).
+  if (input.mode === "fast") return has("caselaw") ? [...out, `What authority ${ADVERSE_SUBQUESTION_MARK} that position (overruled, doubted, per incuriam, referred to a larger bench)?`] : out;
   if (has("caselaw")) out.push(`What authority ${ADVERSE_SUBQUESTION_MARK} that position (overruled, doubted, per incuriam, referred to a larger bench), and do other High Courts take a different view?`);
   if (has("statutes")) out.push(`Which provisions of India Code govern ${topic}, and which version applies on the relevant date (including the IPC/CrPC/Evidence Act → BNS/BNSS/BSA transition of 1 July 2024)?`);
   if (input.hasMatter && has("ediscovery")) out.push(`What does the record in ${input.matterName ?? "the matter"} show on ${topic}?`);

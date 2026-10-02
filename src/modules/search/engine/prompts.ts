@@ -124,3 +124,8 @@ export function laneInstructions(kind: string, laneName: string, brief: string, 
     "OUTPUT: a lane note in markdown, in English. One bullet per source you READ, in the form: `- <source id> — <citation> — court, bench strength, date, binding/persuasive — ratio or relevance in one or two sentences, with the page or ¶ of the key passage`. Then one line `Gaps:` naming what you could not find. Do not include sources you did not read. Keep it under 250 words.",
   ].filter(Boolean).join("\n\n");
 }
+
+/** Issue-level reranker (fast role; byte-stable, cacheable). Scores only; never writes law. */
+export const RERANK_INSTRUCTIONS = `You grade search results for an Indian legal research question. For each candidate judgment, score how directly it decides the legal ISSUES listed (not mere word overlap):
+3 = decides the issue (holding on the point), 2 = discusses the issue substantially, 1 = mentions it in passing or decides a neighbouring point, 0 = not about the issue.
+Use only the title, court, date and snippet given; do not use outside knowledge of what a judgment held. Return every candidate id exactly as given, once, with its score.`;

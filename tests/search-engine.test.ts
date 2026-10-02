@@ -118,11 +118,13 @@ describe("lane planner", () => {
     const telangana = planLanes({ question: "q", settings: settings({ jurisdiction: "hc-telangana" }), mode: "deep", hasMatter: false });
     expect(telangana[0].courtFilter).toEqual(["sci", "hc-telangana"]);
   });
-  it("fast mode is a single lane with one deterministic read pass", () => {
+  it("fast mode is one deterministic read pass plus a light adverse lane (no agents)", () => {
     const lanes = planLanes({ question: "q", settings: settings({ fast: true, sources: ["caselaw", "web"] }), mode: "fast", hasMatter: false });
-    expect(lanes.length).toBe(1);
-    expect(lanes[0].kind).toBe("fast");
+    expect(lanes.map((l) => l.kind)).toEqual(["fast", "contrary"]);
     expect(lanes[0].sources).toEqual(["caselaw"]);
+    expect(lanes[1]).toMatchObject({ agent: false, maxReads: 1, sources: ["caselaw"], after: [lanes[0].id] });
+    // Without judgments in scope there is no adverse lane.
+    expect(planLanes({ question: "q", settings: settings({ fast: true, sources: ["statutes"] }), mode: "fast", hasMatter: false }).map((l) => l.kind)).toEqual(["fast"]);
   });
   it("round 2 re-runs only lanes with refinements and uses the refined queries", () => {
     const lanes = planLanes({ question: "q", settings: settings(), mode: "deep", hasMatter: false, round: 2, refinements: { statute: ["Section 482 BNSS conditions"] } });

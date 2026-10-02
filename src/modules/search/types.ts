@@ -145,6 +145,17 @@ export interface SearchSettings {
   answerLanguage?: string;
   /** Date of the offence (YYYY-MM-DD) for the IPC/BNS transition; also read from the question when stated there. */
   offenceDate?: string;
+  /** Date the proceeding (application, investigation, trial, appeal) was instituted (YYYY-MM-DD), for CrPC/BNSS (s.531 BNSS). */
+  proceedingDate?: string;
+  // --- judgment filters (applied to the case-law retrieval where the corpus has the column) ---
+  /** Minimum bench strength (2 = Division Bench and larger). */
+  benchMin?: number;
+  /** Judge name (substring of the bench). */
+  judge?: string;
+  /** Disposal (substring: "Allowed", "Dismissed"). */
+  disposal?: string;
+  /** Statute section ("s.482 BNSS", "Section 438 CrPC"); old/new code counterparts are included. */
+  section?: string;
 }
 
 export const DEFAULT_SETTINGS: SearchSettings = {

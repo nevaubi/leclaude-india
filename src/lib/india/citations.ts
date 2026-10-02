@@ -142,6 +142,30 @@ const RULES: Rule[] = [
       return { kind: "reporter", reporter, series, year, volume, page, normalized: `(${year}) ${volume} ${reporter} ${page}`, courtToken: "SCC", courtId: valid ? "sci" : undefined, valid, issues };
     },
   },
+  // SCC with the volume in brackets after the year: "2014 (8) SCC 273" (a common way of writing "(2014) 8 SCC 273").
+  {
+    kind: "reporter",
+    re: new RegExp(`(?<![\\d(])${Y}\\s*\\(\\s*(\\d{1,2})\\s*\\)\\s*S\\.?\\s?C\\.?\\s?C\\.?\\s*(?:\\(\\s*(Cri|Crl|L\\s*&\\s*S|Civ|Tax)\\.?\\s*\\)\\s*)?(\\d{1,5})(?!\\d)`, "g"),
+    build(m, now) {
+      const year = Number(m[1]), volume = Number(m[2]), page = Number(m[4]);
+      const series = m[3] ? ({ cri: "Cri", crl: "Cri", civ: "Civ", tax: "Tax" } as Record<string, string>)[m[3].toLowerCase()] ?? "L&S" : undefined;
+      const issues = [...yearIssues(year, now, 1969), ...(volume === 0 || page === 0 ? ["volume and page must be positive"] : [])];
+      const reporter = series ? `SCC (${series})` : "SCC";
+      const valid = !issues.length;
+      return { kind: "reporter", reporter, series, year, volume, page, normalized: `(${year}) ${volume} ${reporter} ${page}`, courtToken: "SCC", courtId: valid ? "sci" : undefined, valid, issues };
+    },
+  },
+  // SCC supplementary volumes: "1992 Supp (1) SCC 335", "1992 Supp. (3) S.C.C. 217", "1975 Supp SCC 1".
+  {
+    kind: "reporter",
+    re: new RegExp(`(?<![\\d(])${Y}\\s+Supp\\.?\\s*(?:\\(\\s*(\\d)\\s*\\)\\s*)?S\\.?\\s?C\\.?\\s?C\\.?\\s+(\\d{1,5})(?!\\d)`, "g"),
+    build(m, now) {
+      const year = Number(m[1]), vol = m[2] ? Number(m[2]) : undefined, page = Number(m[3]);
+      const issues = [...yearIssues(year, now, 1969), ...(page === 0 || vol === 0 ? ["volume and page must be positive"] : [])];
+      const valid = !issues.length;
+      return { kind: "reporter", reporter: "SCC", series: "Supp.", year, volume: vol, page, normalized: `${year} Supp ${vol ? `(${vol}) ` : ""}SCC ${page}`, courtToken: "SCC", courtId: valid ? "sci" : undefined, valid, issues };
+    },
+  },
   // SCC OnLine: "2023 SCC OnLine SC 123", "2022 SCC OnLine Kar 456".
   {
     kind: "reporter",
@@ -159,9 +183,10 @@ const RULES: Rule[] = [
   // AIR: "AIR 1973 SC 1461", "AIR 2005 Kant 12".
   {
     kind: "reporter",
-    re: new RegExp(`\\bA\\.?\\s?I\\.?\\s?R\\.?\\s+${Y}\\s+([A-Z][A-Za-z&]{1,4})\\.?\\s+(\\d{1,5})(?!\\d)`, "g"),
+    re: new RegExp(`\\bA\\.?\\s?I\\.?\\s?R\\.?\\s+${Y}\\s+([A-Z](?:\\.?[A-Za-z&]){1,4})\\.?\\s+(\\d{1,5})(?!\\d)`, "g"),
     build(m, now) {
-      const year = Number(m[1]), token = m[2], page = Number(m[3]);
+      // "S.C." / "Kant." → "SC" / "Kant" (dotted court tokens are the same token).
+      const year = Number(m[1]), token = m[2].replace(/\./g, ""), page = Number(m[3]);
       const issues = [...yearIssues(year, now, 1914), ...(page === 0 ? ["page must be positive"] : [])];
       let courtId = AIR_COURTS[token];
       if (!courtId) issues.push(`court token "${token}" is not in the coded AIR table`);

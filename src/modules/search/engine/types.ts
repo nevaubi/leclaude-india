@@ -7,6 +7,7 @@ import type { CitationCheck as EvidenceCitationCheck, CitationState, TrustState 
 import type { Provenance } from "@/lib/integrity/types";
 import type { VerificationCoverage } from "@/lib/ai/verify";
 import type { Authority, SearchHit, SearchSettings, SearchSource } from "../types";
+import type { AuthorityStatusTable } from "./authority-status";
 
 // ---------------------------------------------------------------------------
 // Lanes
@@ -54,6 +55,8 @@ export interface ResearchLane {
   dependsOn?: string[];
   /** Wall-clock budget for the lane; the scheduler aborts it past this. */
   timeoutMs?: number;
+  /** false: read deterministically (best hits, no lane agent), as fast lanes do. Default: deep lanes run an agent. */
+  agent?: boolean;
   /**
    * Soft dependencies: the lane starts immediately and, after its own first retrieval wave, waits (bounded)
    * for these lanes' retrieval results to build targeted queries (e.g. the contrary lane targets the cases the
@@ -248,6 +251,10 @@ export interface ResearchMessage {
   searchQuery?: string | null;
   /** Date of offence used for the IPC/BNS rule (settings or the question) and the code the shared rule chose ("requires_review" shown as is). */
   offence?: { date: string | null; substantive: string };
+  /** Deterministic transition-law note (BNS s.358 / BNSS s.531) when the question concerns the 1 July 2024 change. */
+  transition?: { substantive: string; procedure: string; lines: string[]; source: string };
+  /** Authority status table (found / read / supported / unresolved / text not available) bound to `artifactHash`. */
+  authorities?: AuthorityStatusTable;
 }
 
 export interface ResearchPin {

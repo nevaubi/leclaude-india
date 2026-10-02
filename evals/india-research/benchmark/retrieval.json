@@ -1,0 +1,3362 @@
+{
+ "suite": "retrieval",
+ "version": 1,
+ "cases": [
+  {
+   "id": "bench-ab-principles",
+   "category": "retrieval",
+   "question": "What principles govern the grant of anticipatory bail under section 482 BNSS?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "sibbia",
+     "title": "Gurbaksh Singh Sibbia v. State of Punjab",
+     "citation": "(1980) 2 SCC 565",
+     "court": "sci",
+     "year": 1980,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 438 CrPC",
+       "conditions",
+       "Constitution Bench",
+       "apprehension of arrest"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "mhetre",
+     "title": "Siddharam Satlingappa Mhetre v. State of Maharashtra",
+     "citation": "(2011) 1 SCC 694",
+     "court": "sci",
+     "year": 2011,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 438 CrPC",
+       "personal liberty",
+       "factors",
+       "Article 21"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-ab-duration",
+   "category": "retrieval",
+   "question": "Must anticipatory bail under s.482 BNSS be limited to a fixed period or does it last till the end of trial?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "sushila",
+     "title": "Sushila Aggarwal v. State (NCT of Delhi)",
+     "citation": "(2020) 5 SCC 1",
+     "court": "sci",
+     "year": 2020,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 438 CrPC",
+       "duration",
+       "limited period",
+       "till end of trial",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "sibbia",
+     "title": "Gurbaksh Singh Sibbia v. State of Punjab",
+     "citation": "(1980) 2 SCC 565",
+     "court": "sci",
+     "year": 1980,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 438 CrPC",
+       "conditions",
+       "Constitution Bench",
+       "apprehension of arrest"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-ab-liberty-factors",
+   "category": "retrieval",
+   "question": "Factors and personal liberty considerations for anticipatory bail under Section 438 CrPC",
+   "forum": "hc-karnataka",
+   "expected": [
+    {
+     "key": "mhetre",
+     "title": "Siddharam Satlingappa Mhetre v. State of Maharashtra",
+     "citation": "(2011) 1 SCC 694",
+     "court": "sci",
+     "year": 2011,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 438 CrPC",
+       "personal liberty",
+       "factors",
+       "Article 21"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "sibbia",
+     "title": "Gurbaksh Singh Sibbia v. State of Punjab",
+     "citation": "(1980) 2 SCC 565",
+     "court": "sci",
+     "year": 1980,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 438 CrPC",
+       "conditions",
+       "Constitution Bench",
+       "apprehension of arrest"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-arrest-seven-years",
+   "category": "retrieval",
+   "question": "Arrest guidelines for offences punishable with imprisonment up to seven years and notice of appearance under section 35 BNSS",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "arnesh",
+     "title": "Arnesh Kumar v. State of Bihar",
+     "citation": "(2014) 8 SCC 273",
+     "court": "sci",
+     "year": 2014,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "arrest",
+       "Section 41 CrPC",
+       "Section 41A CrPC",
+       "Section 498A IPC",
+       "seven years",
+       "checklist",
+       "magistrate detention"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "antil",
+     "title": "Satender Kumar Antil v. Central Bureau of Investigation",
+     "citation": "(2022) 10 SCC 51",
+     "court": "sci",
+     "year": 2022,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "bail",
+       "categories of offences",
+       "Section 41A CrPC",
+       "Section 88 CrPC",
+       "Section 170 CrPC",
+       "bail law",
+       "undertrial"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-arrest-498a",
+   "category": "retrieval",
+   "question": "Can police arrest automatically in a cruelty case under section 85 BNS without satisfying arrest checklist?",
+   "forum": "ka-subordinate",
+   "expected": [
+    {
+     "key": "arnesh",
+     "title": "Arnesh Kumar v. State of Bihar",
+     "citation": "(2014) 8 SCC 273",
+     "court": "sci",
+     "year": 2014,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "arrest",
+       "Section 41 CrPC",
+       "Section 41A CrPC",
+       "Section 498A IPC",
+       "seven years",
+       "checklist",
+       "magistrate detention"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-bail-categories",
+   "category": "retrieval",
+   "question": "Supreme Court guidelines classifying offences into categories for bail and undertrial release",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "antil",
+     "title": "Satender Kumar Antil v. Central Bureau of Investigation",
+     "citation": "(2022) 10 SCC 51",
+     "court": "sci",
+     "year": 2022,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "bail",
+       "categories of offences",
+       "Section 41A CrPC",
+       "Section 88 CrPC",
+       "Section 170 CrPC",
+       "bail law",
+       "undertrial"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-fir-mandatory",
+   "category": "retrieval",
+   "question": "Is registration of FIR mandatory under section 173 BNSS when information discloses a cognizable offence, and when is a preliminary inquiry allowed?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "lalita",
+     "title": "Lalita Kumari v. Government of Uttar Pradesh",
+     "citation": "(2014) 2 SCC 1",
+     "court": "sci",
+     "year": 2014,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "FIR",
+       "Section 154 CrPC",
+       "registration mandatory",
+       "preliminary inquiry",
+       "cognizable offence",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-quash-categories",
+   "category": "retrieval",
+   "question": "When can the High Court quash an FIR in exercise of inherent powers under section 528 BNSS?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "bhajanlal",
+     "title": "State of Haryana v. Bhajan Lal",
+     "citation": "1992 Supp (1) SCC 335",
+     "court": "sci",
+     "year": 1990,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "quashing",
+       "Section 482 CrPC",
+       "inherent powers",
+       "categories",
+       "FIR",
+       "abuse of process"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-quash-no-coercive",
+   "category": "retrieval",
+   "question": "Can a High Court direct no coercive steps while declining to quash an FIR under Section 482 CrPC?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "neeharika",
+     "title": "Neeharika Infrastructure Pvt. Ltd. v. State of Maharashtra",
+     "citation": "(2021) 19 SCC 401",
+     "court": "sci",
+     "year": 2021,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "quashing",
+       "Section 482 CrPC",
+       "no coercive steps",
+       "interim order",
+       "investigation",
+       "stay"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "bhajanlal",
+     "title": "State of Haryana v. Bhajan Lal",
+     "citation": "1992 Supp (1) SCC 335",
+     "court": "sci",
+     "year": 1990,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "quashing",
+       "Section 482 CrPC",
+       "inherent powers",
+       "categories",
+       "FIR",
+       "abuse of process"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-quash-compromise",
+   "category": "retrieval",
+   "question": "Quashing of non-compoundable criminal proceedings on settlement between the parties under inherent powers",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "giansingh",
+     "title": "Gian Singh v. State of Punjab",
+     "citation": "(2012) 10 SCC 303",
+     "court": "sci",
+     "year": 2012,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "quashing",
+       "compromise",
+       "settlement",
+       "Section 482 CrPC",
+       "Section 320 CrPC",
+       "non-compoundable"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "narinder",
+     "title": "Narinder Singh v. State of Punjab",
+     "citation": "(2014) 6 SCC 466",
+     "court": "sci",
+     "year": 2014,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "quashing",
+       "compromise",
+       "settlement",
+       "Section 307 IPC",
+       "attempt to murder",
+       "Section 482 CrPC"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "parbatbhai",
+     "title": "Parbatbhai Aahir v. State of Gujarat",
+     "citation": "(2017) 9 SCC 641",
+     "court": "sci",
+     "year": 2017,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "quashing",
+       "compromise",
+       "settlement",
+       "Section 482 CrPC",
+       "principles",
+       "economic offences"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-quash-307-compromise",
+   "category": "retrieval",
+   "question": "Can proceedings for attempt to murder under s.109 BNS be quashed on compromise?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "narinder",
+     "title": "Narinder Singh v. State of Punjab",
+     "citation": "(2014) 6 SCC 466",
+     "court": "sci",
+     "year": 2014,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "quashing",
+       "compromise",
+       "settlement",
+       "Section 307 IPC",
+       "attempt to murder",
+       "Section 482 CrPC"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "giansingh",
+     "title": "Gian Singh v. State of Punjab",
+     "citation": "(2012) 10 SCC 303",
+     "court": "sci",
+     "year": 2012,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "quashing",
+       "compromise",
+       "settlement",
+       "Section 482 CrPC",
+       "Section 320 CrPC",
+       "non-compoundable"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-summon-additional",
+   "category": "retrieval",
+   "question": "Power to summon additional accused under section 358 BNSS on the basis of evidence at trial",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "hardeep",
+     "title": "Hardeep Singh v. State of Punjab",
+     "citation": "(2014) 3 SCC 92",
+     "court": "sci",
+     "year": 2014,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 319 CrPC",
+       "summoning additional accused",
+       "evidence",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "khaira",
+     "title": "Sukhpal Singh Khaira v. State of Punjab",
+     "citation": "(2023) 1 SCC 289",
+     "court": "sci",
+     "year": 2023,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 319 CrPC",
+       "summoning additional accused",
+       "before pronouncement",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-summoning-complaint",
+   "category": "retrieval",
+   "question": "What must a magistrate consider before issuing summons on a private criminal complaint?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "pepsi",
+     "title": "Pepsi Foods Ltd. v. Special Judicial Magistrate",
+     "citation": "(1998) 5 SCC 749",
+     "court": "sci",
+     "year": 1998,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "summoning order",
+       "private complaint",
+       "magistrate",
+       "application of mind",
+       "criminal complaint"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-magistrate-investigation",
+   "category": "retrieval",
+   "question": "Remedy when the police refuse to register an FIR: magistrate's power to order investigation under section 175(3) BNSS and the affidavit requirement",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "sakiri",
+     "title": "Sakiri Vasu v. State of Uttar Pradesh",
+     "citation": "(2008) 2 SCC 409",
+     "court": "sci",
+     "year": 2008,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 156(3) CrPC",
+       "magistrate",
+       "investigation",
+       "FIR not registered",
+       "remedy"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "priyanka",
+     "title": "Priyanka Srivastava v. State of Uttar Pradesh",
+     "citation": "(2015) 6 SCC 287",
+     "court": "sci",
+     "year": 2015,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 156(3) CrPC",
+       "affidavit",
+       "application",
+       "magistrate",
+       "investigation"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-second-fir",
+   "category": "retrieval",
+   "question": "Is a second FIR permissible for the same occurrence or a counter case?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "ttantony",
+     "title": "T.T. Antony v. State of Kerala",
+     "citation": "(2001) 6 SCC 181",
+     "court": "sci",
+     "year": 2001,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "second FIR",
+       "same occurrence",
+       "Section 154 CrPC",
+       "Section 173 CrPC",
+       "fresh investigation"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "babubhai",
+     "title": "Babubhai v. State of Gujarat",
+     "citation": "(2010) 12 SCC 254",
+     "court": "sci",
+     "year": 2010,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "second FIR",
+       "test of sameness",
+       "counter case",
+       "same occurrence"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-clubbing-firs",
+   "category": "retrieval",
+   "question": "Clubbing and transfer of multiple FIRs registered across States over the same speech",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "amish",
+     "title": "Amish Devgan v. Union of India",
+     "citation": "(2021) 1 SCC 1",
+     "court": "sci",
+     "year": 2021,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "multiple FIRs",
+       "clubbing",
+       "hate speech",
+       "Section 153A IPC",
+       "Section 295A IPC",
+       "transfer of FIRs"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "ttantony",
+     "title": "T.T. Antony v. State of Kerala",
+     "citation": "(2001) 6 SCC 181",
+     "court": "sci",
+     "year": 2001,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "second FIR",
+       "same occurrence",
+       "Section 154 CrPC",
+       "Section 173 CrPC",
+       "fresh investigation"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-further-investigation",
+   "category": "retrieval",
+   "question": "Can a magistrate order further investigation after taking cognizance and after the charge-sheet?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "vinubhai",
+     "title": "Vinubhai Haribhai Malaviya v. State of Gujarat",
+     "citation": "(2019) 17 SCC 1",
+     "court": "sci",
+     "year": 2019,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "further investigation",
+       "magistrate",
+       "Section 173(8) CrPC",
+       "after cognizance"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-default-bail",
+   "category": "retrieval",
+   "question": "Default bail under section 187 BNSS when the charge-sheet is not filed within the statutory period",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "bikramjit",
+     "title": "Bikramjit Singh v. State of Punjab",
+     "citation": "(2020) 10 SCC 616",
+     "court": "sci",
+     "year": 2020,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "default bail",
+       "Section 167(2) CrPC",
+       "indefeasible right",
+       "UAPA",
+       "charge-sheet not filed"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "ravindran",
+     "title": "M. Ravindran v. Intelligence Officer, Directorate of Revenue Intelligence",
+     "citation": "(2021) 2 SCC 485",
+     "court": "sci",
+     "year": 2021,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "default bail",
+       "Section 167(2) CrPC",
+       "application",
+       "charge-sheet",
+       "indefeasible right"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "udaymohan",
+     "title": "Uday Mohanlal Acharya v. State of Maharashtra",
+     "citation": "(2001) 5 SCC 453",
+     "court": "sci",
+     "year": 2001,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "default bail",
+       "Section 167(2) CrPC",
+       "availed",
+       "charge-sheet"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-default-bail-uapa",
+   "category": "retrieval",
+   "question": "Default bail in UAPA cases when the extension of time is sought without a public prosecutor's report",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "bikramjit",
+     "title": "Bikramjit Singh v. State of Punjab",
+     "citation": "(2020) 10 SCC 616",
+     "court": "sci",
+     "year": 2020,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "default bail",
+       "Section 167(2) CrPC",
+       "indefeasible right",
+       "UAPA",
+       "charge-sheet not filed"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "hitendra",
+     "title": "Hitendra Vishnu Thakur v. State of Maharashtra",
+     "citation": "(1994) 4 SCC 602",
+     "court": "sci",
+     "year": 1994,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "TADA",
+       "default bail",
+       "extension of time",
+       "Public Prosecutor report",
+       "Section 167(2) CrPC"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-speedy-trial",
+   "category": "retrieval",
+   "question": "Right of undertrial prisoners to speedy trial under Article 21",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "hussainara",
+     "title": "Hussainara Khatoon v. Home Secretary, State of Bihar",
+     "citation": "(1980) 1 SCC 81",
+     "court": "sci",
+     "year": 1980,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "speedy trial",
+       "undertrial prisoners",
+       "Article 21",
+       "bail",
+       "detention"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "najeeb",
+     "title": "Union of India v. K.A. Najeeb",
+     "citation": "(2021) 3 SCC 713",
+     "court": "sci",
+     "year": 2021,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "UAPA",
+       "bail",
+       "Section 43D(5)",
+       "delay in trial",
+       "Article 21",
+       "long incarceration"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-uapa-bail",
+   "category": "retrieval",
+   "question": "Bail under UAPA despite the section 43D(5) bar where the trial is long delayed",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "najeeb",
+     "title": "Union of India v. K.A. Najeeb",
+     "citation": "(2021) 3 SCC 713",
+     "court": "sci",
+     "year": 2021,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "UAPA",
+       "bail",
+       "Section 43D(5)",
+       "delay in trial",
+       "Article 21",
+       "long incarceration"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "watali",
+     "title": "National Investigation Agency v. Zahoor Ahmad Shah Watali",
+     "citation": "(2019) 5 SCC 1",
+     "court": "sci",
+     "year": 2019,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "UAPA",
+       "bail",
+       "Section 43D(5)",
+       "prima facie true",
+       "accusation"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-economic-bail",
+   "category": "retrieval",
+   "question": "Is the gravity of an economic offence alone a ground to refuse bail?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "sanjaychandra",
+     "title": "Sanjay Chandra v. Central Bureau of Investigation",
+     "citation": "(2012) 1 SCC 40",
+     "court": "sci",
+     "year": 2012,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "bail",
+       "economic offences",
+       "object of bail",
+       "gravity",
+       "punishment before trial"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "chidambaram_ed",
+     "title": "P. Chidambaram v. Directorate of Enforcement",
+     "citation": "(2020) 13 SCC 791",
+     "court": "sci",
+     "year": 2020,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "bail",
+       "economic offences",
+       "money laundering",
+       "gravity",
+       "Enforcement Directorate"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-pmla-twin",
+   "category": "retrieval",
+   "question": "Validity of the twin conditions for bail under section 45 of the PMLA",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "nikesh",
+     "title": "Nikesh Tarachand Shah v. Union of India",
+     "citation": "(2018) 11 SCC 1",
+     "court": "sci",
+     "year": 2018,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "PMLA",
+       "Section 45",
+       "twin conditions",
+       "bail",
+       "Article 14",
+       "money laundering"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "vijaymadanlal",
+     "title": "Vijay Madanlal Choudhary v. Union of India",
+     "citation": "(2023) 12 SCC 1",
+     "court": "sci",
+     "year": 2022,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "PMLA",
+       "Section 45",
+       "twin conditions",
+       "ECIR",
+       "Enforcement Directorate",
+       "money laundering"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-ndps-67",
+   "category": "retrieval",
+   "question": "Are statements recorded under section 67 NDPS admissible as confessions against the accused?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "tofan",
+     "title": "Tofan Singh v. State of Tamil Nadu",
+     "citation": "(2021) 4 SCC 1",
+     "court": "sci",
+     "year": 2020,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "NDPS",
+       "Section 67",
+       "confessional statement",
+       "police officer",
+       "Section 25 Evidence Act"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-ndps-50",
+   "category": "retrieval",
+   "question": "Consequences of non-compliance with section 50 NDPS safeguards in a personal search",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "baldev",
+     "title": "State of Punjab v. Baldev Singh",
+     "citation": "(1999) 6 SCC 172",
+     "court": "sci",
+     "year": 1999,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "NDPS",
+       "Section 50",
+       "personal search",
+       "gazetted officer",
+       "Magistrate",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "jadeja",
+     "title": "Vijaysinh Chandubha Jadeja v. State of Gujarat",
+     "citation": "(2011) 1 SCC 609",
+     "court": "sci",
+     "year": 2010,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "NDPS",
+       "Section 50",
+       "informed of right",
+       "personal search",
+       "strict compliance",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-circumstantial",
+   "category": "retrieval",
+   "question": "Standard for conviction on circumstantial evidence in a murder case under s.103 BNS",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "sharad",
+     "title": "Sharad Birdhichand Sarda v. State of Maharashtra",
+     "citation": "(1984) 4 SCC 116",
+     "court": "sci",
+     "year": 1984,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "circumstantial evidence",
+       "five golden principles",
+       "Section 302 IPC",
+       "murder",
+       "conviction"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-death-penalty",
+   "category": "retrieval",
+   "question": "When may the death penalty be imposed for murder under section 103 BNS: the rarest of rare test",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "bachan",
+     "title": "Bachan Singh v. State of Punjab",
+     "citation": "(1980) 2 SCC 684",
+     "court": "sci",
+     "year": 1980,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "death penalty",
+       "rarest of rare",
+       "Section 302 IPC",
+       "sentencing",
+       "Section 354(3) CrPC",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "machhi",
+     "title": "Machhi Singh v. State of Punjab",
+     "citation": "(1983) 3 SCC 470",
+     "court": "sci",
+     "year": 1983,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "death penalty",
+       "rarest of rare",
+       "categories",
+       "Section 302 IPC",
+       "sentencing"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-dying-declaration",
+   "category": "retrieval",
+   "question": "Can a conviction rest solely on a dying declaration under section 26 BSA?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "khushalrao",
+     "title": "Khushal Rao v. State of Bombay",
+     "citation": "AIR 1958 SC 22",
+     "court": "sci",
+     "year": 1957,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "All India Reporter (AIR) citation",
+     "fixture": {
+      "keywords": [
+       "dying declaration",
+       "corroboration",
+       "Section 32 Evidence Act",
+       "sole basis of conviction"
+      ],
+      "fullText": false
+     }
+    },
+    {
+     "key": "laxman_dd",
+     "title": "Laxman v. State of Maharashtra",
+     "citation": "(2002) 6 SCC 710",
+     "court": "sci",
+     "year": 2002,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "dying declaration",
+       "medical certificate",
+       "fitness",
+       "Section 32 Evidence Act",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-dd-fitness",
+   "category": "retrieval",
+   "question": "Is a doctor's certificate of fitness essential before recording a dying declaration?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "laxman_dd",
+     "title": "Laxman v. State of Maharashtra",
+     "citation": "(2002) 6 SCC 710",
+     "court": "sci",
+     "year": 2002,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "dying declaration",
+       "medical certificate",
+       "fitness",
+       "Section 32 Evidence Act",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-65b-certificate",
+   "category": "retrieval",
+   "question": "Is a certificate under section 63 BSA mandatory for admissibility of electronic records?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "arjun",
+     "title": "Arjun Panditrao Khotkar v. Kailash Kushanrao Gorantyal",
+     "citation": "(2020) 7 SCC 1",
+     "court": "sci",
+     "year": 2020,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "electronic evidence",
+       "Section 65B Evidence Act",
+       "certificate mandatory",
+       "electronic record"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "anvar",
+     "title": "Anvar P.V. v. P.K. Basheer",
+     "citation": "(2014) 10 SCC 473",
+     "court": "sci",
+     "year": 2014,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "electronic evidence",
+       "Section 65B Evidence Act",
+       "certificate",
+       "secondary evidence",
+       "electronic record"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-narco",
+   "category": "retrieval",
+   "question": "Are involuntary narco-analysis, polygraph and brain-mapping tests permissible?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "selvi",
+     "title": "Selvi v. State of Karnataka",
+     "citation": "(2010) 7 SCC 263",
+     "court": "sci",
+     "year": 2010,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "narco-analysis",
+       "polygraph",
+       "brain mapping",
+       "Article 20(3)",
+       "self-incrimination",
+       "involuntary tests"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-silence",
+   "category": "retrieval",
+   "question": "Right against self-incrimination and right to silence during police questioning under section 180 BNSS",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "nandini",
+     "title": "Nandini Satpathy v. P.L. Dani",
+     "citation": "(1978) 2 SCC 424",
+     "court": "sci",
+     "year": 1978,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Article 20(3)",
+       "right to silence",
+       "police interrogation",
+       "Section 161 CrPC",
+       "self-incrimination"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "selvi",
+     "title": "Selvi v. State of Karnataka",
+     "citation": "(2010) 7 SCC 263",
+     "court": "sci",
+     "year": 2010,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "narco-analysis",
+       "polygraph",
+       "brain mapping",
+       "Article 20(3)",
+       "self-incrimination",
+       "involuntary tests"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-handwriting",
+   "category": "retrieval",
+   "question": "Does compelling specimen handwriting or fingerprints violate Article 20(3)?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "kathikalu",
+     "title": "State of Bombay v. Kathi Kalu Oghad",
+     "citation": "AIR 1961 SC 1808",
+     "court": "sci",
+     "year": 1961,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "All India Reporter (AIR) citation",
+     "fixture": {
+      "keywords": [
+       "Article 20(3)",
+       "specimen handwriting",
+       "fingerprints",
+       "witness against himself",
+       "self-incrimination"
+      ],
+      "fullText": false
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-voice-sample",
+   "category": "retrieval",
+   "question": "Can a magistrate direct an accused to give a voice sample during investigation?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "ritesh",
+     "title": "Ritesh Sinha v. State of Uttar Pradesh",
+     "citation": "(2019) 8 SCC 1",
+     "court": "sci",
+     "year": 2019,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "voice sample",
+       "magistrate",
+       "investigation",
+       "Article 20(3)",
+       "specimen"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-custodial",
+   "category": "retrieval",
+   "question": "Safeguards on arrest and detention against custodial violence and compensation",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "dkbasu",
+     "title": "D.K. Basu v. State of West Bengal",
+     "citation": "(1997) 1 SCC 416",
+     "court": "sci",
+     "year": 1996,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "custodial violence",
+       "arrest guidelines",
+       "Article 21",
+       "compensation",
+       "custodial death"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "joginder",
+     "title": "Joginder Kumar v. State of Uttar Pradesh",
+     "citation": "(1994) 4 SCC 260",
+     "court": "sci",
+     "year": 1994,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "arrest",
+       "justification for arrest",
+       "Article 21",
+       "police powers",
+       "information to friend"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-fair-trial-retrial",
+   "category": "retrieval",
+   "question": "Retrial where witnesses turned hostile under intimidation and the right to a fair trial",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "zahira",
+     "title": "Zahira Habibulla H. Sheikh v. State of Gujarat",
+     "citation": "(2004) 4 SCC 158",
+     "court": "sci",
+     "year": 2004,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "fair trial",
+       "retrial",
+       "witness protection",
+       "hostile witnesses",
+       "Best Bakery"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-498a-relatives",
+   "category": "retrieval",
+   "question": "Prosecution of the husband's relatives on general and omnibus allegations of cruelty under section 85 BNS",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "kahkashan",
+     "title": "Kahkashan Kausar v. State of Bihar",
+     "citation": "(2022) 6 SCC 599",
+     "court": "sci",
+     "year": 2022,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 498A IPC",
+       "general allegations",
+       "in-laws",
+       "quashing",
+       "cruelty"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "preetigupta",
+     "title": "Preeti Gupta v. State of Jharkhand",
+     "citation": "(2010) 7 SCC 667",
+     "court": "sci",
+     "year": 2010,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 498A IPC",
+       "matrimonial disputes",
+       "exaggerated allegations",
+       "relatives of husband",
+       "cruelty"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-false-promise",
+   "category": "retrieval",
+   "question": "When does a false promise of marriage vitiate consent for rape under section 63 BNS?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "pramod",
+     "title": "Pramod Suryabhan Pawar v. State of Maharashtra",
+     "citation": "(2019) 9 SCC 608",
+     "court": "sci",
+     "year": 2019,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "false promise of marriage",
+       "consent",
+       "Section 375 IPC",
+       "Section 90 IPC",
+       "rape",
+       "misconception of fact"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "uday_consent",
+     "title": "Uday v. State of Karnataka",
+     "citation": "(2003) 4 SCC 46",
+     "court": "sci",
+     "year": 2003,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "false promise of marriage",
+       "consent",
+       "Section 375 IPC",
+       "Section 90 IPC",
+       "misconception of fact"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "deepakgulati",
+     "title": "Deepak Gulati v. State of Haryana",
+     "citation": "(2013) 7 SCC 675",
+     "court": "sci",
+     "year": 2013,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "false promise of marriage",
+       "consent",
+       "Section 375 IPC",
+       "breach of promise",
+       "rape"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-minor-wife",
+   "category": "retrieval",
+   "question": "Is sexual intercourse with a wife aged between 15 and 18 years rape notwithstanding the marital exception?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "independentthought",
+     "title": "Independent Thought v. Union of India",
+     "citation": "(2017) 10 SCC 800",
+     "court": "sci",
+     "year": 2017,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "marital rape",
+       "minor wife",
+       "Exception 2 Section 375 IPC",
+       "POCSO",
+       "age of consent"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-victim-identity",
+   "category": "retrieval",
+   "question": "Disclosure of identity of victims of sexual offences in media and court records",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "nipun",
+     "title": "Nipun Saxena v. Union of India",
+     "citation": "(2019) 2 SCC 703",
+     "court": "sci",
+     "year": 2018,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "victim identity",
+       "Section 228A IPC",
+       "sexual offences",
+       "media",
+       "disclosure"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-195-forgery",
+   "category": "retrieval",
+   "question": "Does the bar under section 195 CrPC apply to forgery committed before the document was produced in court?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "iqbalsingh",
+     "title": "Iqbal Singh Marwah v. Meenakshi Marwah",
+     "citation": "(2005) 4 SCC 370",
+     "court": "sci",
+     "year": 2005,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 195 CrPC",
+       "forgery",
+       "document produced in court",
+       "custodia legis",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-tada-confession",
+   "category": "retrieval",
+   "question": "Constitutional validity of TADA provisions making confessions to police admissible",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "kartar",
+     "title": "Kartar Singh v. State of Punjab",
+     "citation": "(1994) 3 SCC 569",
+     "court": "sci",
+     "year": 1994,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "TADA",
+       "constitutional validity",
+       "confession to police officer",
+       "designated courts",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-maintenance-muslim",
+   "category": "retrieval",
+   "question": "Maintenance of a divorced Muslim wife under section 144 BNSS",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "shahbano",
+     "title": "Mohd. Ahmed Khan v. Shah Bano Begum",
+     "citation": "(1985) 2 SCC 556",
+     "court": "sci",
+     "year": 1985,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "maintenance",
+       "Section 125 CrPC",
+       "divorced Muslim wife",
+       "iddat",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "daniallatifi",
+     "title": "Danial Latifi v. Union of India",
+     "citation": "(2001) 7 SCC 740",
+     "court": "sci",
+     "year": 2001,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "maintenance",
+       "divorced Muslim wife",
+       "Muslim Women Act 1986",
+       "reasonable and fair provision",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-maintenance-guidelines",
+   "category": "retrieval",
+   "question": "Guidelines on interim maintenance, affidavits of assets and overlapping maintenance proceedings",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "rajnesh",
+     "title": "Rajnesh v. Neha",
+     "citation": "(2021) 2 SCC 324",
+     "court": "sci",
+     "year": 2020,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "maintenance",
+       "guidelines",
+       "affidavit of assets",
+       "Section 125 CrPC",
+       "overlapping proceedings"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-bigamy-conversion",
+   "category": "retrieval",
+   "question": "Does conversion to Islam to contract a second marriage avoid bigamy under section 494 IPC?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "sarlamudgal",
+     "title": "Sarla Mudgal v. Union of India",
+     "citation": "(1995) 3 SCC 635",
+     "court": "sci",
+     "year": 1995,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "bigamy",
+       "conversion to Islam",
+       "Section 494 IPC",
+       "Hindu marriage",
+       "second marriage"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "lilythomas",
+     "title": "Lily Thomas v. Union of India",
+     "citation": "(2000) 6 SCC 224",
+     "court": "sci",
+     "year": 2000,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "bigamy",
+       "conversion",
+       "Section 494 IPC",
+       "second marriage",
+       "Hindu marriage"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-basic-structure",
+   "category": "retrieval",
+   "question": "Limits on Parliament's power to amend the Constitution under Article 368: the basic structure doctrine",
+   "forum": "sci",
+   "expected": [
+    {
+     "key": "kesavananda",
+     "title": "Kesavananda Bharati v. State of Kerala",
+     "citation": "(1973) 4 SCC 225",
+     "court": "sci",
+     "year": 1973,
+     "bench": 13,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "basic structure",
+       "Article 368",
+       "constitutional amendment",
+       "amending power",
+       "thirteen judges"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "minerva",
+     "title": "Minerva Mills Ltd. v. Union of India",
+     "citation": "(1980) 3 SCC 625",
+     "court": "sci",
+     "year": 1980,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "basic structure",
+       "Article 368",
+       "42nd Amendment",
+       "judicial review",
+       "Directive Principles"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-ninth-schedule",
+   "category": "retrieval",
+   "question": "Are laws placed in the Ninth Schedule immune from basic structure review?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "coelho",
+     "title": "I.R. Coelho v. State of Tamil Nadu",
+     "citation": "(2007) 2 SCC 1",
+     "court": "sci",
+     "year": 2007,
+     "bench": 9,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Ninth Schedule",
+       "basic structure",
+       "judicial review",
+       "Article 31B"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-art21-procedure",
+   "category": "retrieval",
+   "question": "Must the procedure depriving personal liberty under Article 21 be fair, just and reasonable?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "maneka",
+     "title": "Maneka Gandhi v. Union of India",
+     "citation": "(1978) 1 SCC 248",
+     "court": "sci",
+     "year": 1978,
+     "bench": 7,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Article 21",
+       "procedure established by law",
+       "passport",
+       "fair just and reasonable",
+       "Article 14",
+       "Article 19"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-privacy",
+   "category": "retrieval",
+   "question": "Is the right to privacy a fundamental right under Article 21?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "puttaswamy",
+     "title": "K.S. Puttaswamy v. Union of India",
+     "citation": "(2017) 10 SCC 1",
+     "court": "sci",
+     "year": 2017,
+     "bench": 9,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "privacy",
+       "Article 21",
+       "fundamental right",
+       "nine judges",
+       "informational privacy"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-posh-guidelines",
+   "category": "retrieval",
+   "question": "Guidelines on sexual harassment at the workplace before the POSH Act",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "vishaka",
+     "title": "Vishaka v. State of Rajasthan",
+     "citation": "(1997) 6 SCC 241",
+     "court": "sci",
+     "year": 1997,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "sexual harassment",
+       "workplace",
+       "guidelines",
+       "Article 21",
+       "CEDAW",
+       "gender equality"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-adultery",
+   "category": "retrieval",
+   "question": "Is the offence of adultery under section 497 IPC constitutional?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "josephshine",
+     "title": "Joseph Shine v. Union of India",
+     "citation": "(2019) 3 SCC 39",
+     "court": "sci",
+     "year": 2018,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "adultery",
+       "Section 497 IPC",
+       "unconstitutional",
+       "Article 14",
+       "Article 21",
+       "gender"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-triple-talaq",
+   "category": "retrieval",
+   "question": "Validity of instant triple talaq (talaq-e-biddat)",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "shayara",
+     "title": "Shayara Bano v. Union of India",
+     "citation": "(2017) 9 SCC 1",
+     "court": "sci",
+     "year": 2017,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "triple talaq",
+       "talaq-e-biddat",
+       "Article 14",
+       "Muslim personal law",
+       "instant divorce"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-reservation-cap",
+   "category": "retrieval",
+   "question": "Fifty per cent ceiling and creamy layer in reservations for backward classes under Article 16(4)",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "indrasawhney",
+     "title": "Indra Sawhney v. Union of India",
+     "citation": "1992 Supp (3) SCC 217",
+     "court": "sci",
+     "year": 1992,
+     "bench": 9,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "reservation",
+       "backward classes",
+       "fifty per cent ceiling",
+       "creamy layer",
+       "Article 16(4)",
+       "Mandal"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-art356",
+   "category": "retrieval",
+   "question": "Judicial review of President's Rule under Article 356 and the floor test",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "bommai",
+     "title": "S.R. Bommai v. Union of India",
+     "citation": "(1994) 3 SCC 1",
+     "court": "sci",
+     "year": 1994,
+     "bench": 9,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Article 356",
+       "President's Rule",
+       "floor test",
+       "secularism",
+       "dismissal of State government"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-66a",
+   "category": "retrieval",
+   "question": "Constitutional validity of section 66A of the IT Act and online speech",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "shreya",
+     "title": "Shreya Singhal v. Union of India",
+     "citation": "(2015) 5 SCC 1",
+     "court": "sci",
+     "year": 2015,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 66A IT Act",
+       "free speech",
+       "Article 19(1)(a)",
+       "vagueness",
+       "online speech"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-internet-shutdown",
+   "category": "retrieval",
+   "question": "Internet shutdowns and prohibitory orders under section 163 BNSS: proportionality",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "anuradha",
+     "title": "Anuradha Bhasin v. Union of India",
+     "citation": "(2020) 3 SCC 637",
+     "court": "sci",
+     "year": 2020,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "internet shutdown",
+       "Section 144 CrPC",
+       "proportionality",
+       "Article 19",
+       "Jammu and Kashmir"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-euthanasia",
+   "category": "retrieval",
+   "question": "Passive euthanasia and advance directives (living wills) under Article 21",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "commoncause",
+     "title": "Common Cause v. Union of India",
+     "citation": "(2018) 5 SCC 1",
+     "court": "sci",
+     "year": 2018,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "passive euthanasia",
+       "living will",
+       "advance directive",
+       "Article 21",
+       "right to die with dignity"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "aruna",
+     "title": "Aruna Ramchandra Shanbaug v. Union of India",
+     "citation": "(2011) 4 SCC 454",
+     "court": "sci",
+     "year": 2011,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "passive euthanasia",
+       "persistent vegetative state",
+       "Article 21",
+       "High Court approval"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-livelihood",
+   "category": "retrieval",
+   "question": "Eviction of pavement dwellers and the right to livelihood under Article 21",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "olga",
+     "title": "Olga Tellis v. Bombay Municipal Corporation",
+     "citation": "(1985) 3 SCC 545",
+     "court": "sci",
+     "year": 1985,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "right to livelihood",
+       "pavement dwellers",
+       "eviction",
+       "Article 21"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-njac",
+   "category": "retrieval",
+   "question": "Constitutional validity of the NJAC and the collegium system of judicial appointments",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "njac",
+     "title": "Supreme Court Advocates-on-Record Association v. Union of India",
+     "citation": "(2016) 5 SCC 1",
+     "court": "sci",
+     "year": 2015,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "NJAC",
+       "judicial appointments",
+       "collegium",
+       "independence of judiciary",
+       "99th Amendment"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-sabarimala",
+   "category": "retrieval",
+   "question": "Exclusion of women from the Sabarimala temple and essential religious practices under Article 25",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "sabarimala",
+     "title": "Indian Young Lawyers Association v. State of Kerala",
+     "citation": "(2019) 11 SCC 1",
+     "court": "sci",
+     "year": 2018,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Sabarimala",
+       "entry of women",
+       "essential religious practice",
+       "Article 25",
+       "temple"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-press-freedom",
+   "category": "retrieval",
+   "question": "Ban on circulation of a journal and freedom of the press under Article 19(1)(a)",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "romesh",
+     "title": "Romesh Thappar v. State of Madras",
+     "citation": "AIR 1950 SC 124",
+     "court": "sci",
+     "year": 1950,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "All India Reporter (AIR) citation",
+     "fixture": {
+      "keywords": [
+       "freedom of press",
+       "Article 19(1)(a)",
+       "public order",
+       "circulation ban"
+      ],
+      "fullText": false
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-communal-go",
+   "category": "retrieval",
+   "question": "Validity of the communal G.O. reserving college admissions under Article 29(2)",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "champakam",
+     "title": "State of Madras v. Champakam Dorairajan",
+     "citation": "AIR 1951 SC 226",
+     "court": "sci",
+     "year": 1951,
+     "bench": 7,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "All India Reporter (AIR) citation",
+     "fixture": {
+      "keywords": [
+       "communal G.O.",
+       "college admission",
+       "reservation",
+       "Article 29(2)",
+       "Article 46"
+      ],
+      "fullText": false
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-election-amendment",
+   "category": "retrieval",
+   "question": "Validity of the 39th Amendment shielding an election dispute and free and fair elections as basic structure",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "rajnarain",
+     "title": "Indira Nehru Gandhi v. Raj Narain",
+     "citation": "1975 Supp SCC 1",
+     "court": "sci",
+     "year": 1975,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "39th Amendment",
+       "election dispute",
+       "basic structure",
+       "free and fair elections",
+       "Article 329A"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-patent-illegality",
+   "category": "retrieval",
+   "question": "Patent illegality and public policy as grounds to set aside an arbitral award under section 34 of the Arbitration and Conciliation Act",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "sawpipes",
+     "title": "Oil & Natural Gas Corporation Ltd. v. Saw Pipes Ltd.",
+     "citation": "(2003) 5 SCC 705",
+     "court": "sci",
+     "year": 2003,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "public policy",
+       "patent illegality",
+       "Section 34 Arbitration Act",
+       "setting aside arbitral award"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "associatebuilders",
+     "title": "Associate Builders v. Delhi Development Authority",
+     "citation": "(2015) 3 SCC 49",
+     "court": "sci",
+     "year": 2014,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "public policy",
+       "patent illegality",
+       "Section 34 Arbitration Act",
+       "fundamental policy of Indian law",
+       "arbitral award"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "ssangyong",
+     "title": "Ssangyong Engineering & Construction Co. Ltd. v. National Highways Authority of India",
+     "citation": "(2019) 15 SCC 131",
+     "court": "sci",
+     "year": 2019,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "public policy",
+       "patent illegality",
+       "Section 34 Arbitration Act",
+       "2015 amendment",
+       "arbitral award"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-arbitrability",
+   "category": "retrieval",
+   "question": "Are landlord-tenant disputes and fraud allegations arbitrable at the section 8 / section 11 stage?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "vidyadrolia",
+     "title": "Vidya Drolia v. Durga Trading Corporation",
+     "citation": "(2021) 2 SCC 1",
+     "court": "sci",
+     "year": 2020,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "arbitrability",
+       "landlord-tenant disputes",
+       "Section 8 Arbitration Act",
+       "Section 11 Arbitration Act",
+       "fraud"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-ibc-validity",
+   "category": "retrieval",
+   "question": "Constitutional validity of the Insolvency and Bankruptcy Code and section 29A",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "swissribbons",
+     "title": "Swiss Ribbons Pvt. Ltd. v. Union of India",
+     "citation": "(2019) 4 SCC 17",
+     "court": "sci",
+     "year": 2019,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "IBC",
+       "constitutional validity",
+       "operational creditors",
+       "financial creditors",
+       "Section 29A"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-ibc-s7",
+   "category": "retrieval",
+   "question": "Admission of a financial creditor's application under section 7 IBC on proof of default",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "innoventive",
+     "title": "Innoventive Industries Ltd. v. ICICI Bank",
+     "citation": "(2018) 1 SCC 407",
+     "court": "sci",
+     "year": 2017,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "IBC",
+       "Section 7",
+       "default",
+       "financial creditor",
+       "admission of application"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-ibc-s9",
+   "category": "retrieval",
+   "question": "Pre-existing dispute as a bar to an operational creditor's application under section 9 IBC",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "mobilox",
+     "title": "Mobilox Innovations Pvt. Ltd. v. Kirusa Software Pvt. Ltd.",
+     "citation": "(2018) 1 SCC 353",
+     "court": "sci",
+     "year": 2017,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "IBC",
+       "Section 9",
+       "pre-existing dispute",
+       "operational creditor",
+       "demand notice"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-ibc-coc",
+   "category": "retrieval",
+   "question": "Commercial wisdom of the committee of creditors and distribution under a resolution plan",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "essar",
+     "title": "Committee of Creditors of Essar Steel India Ltd. v. Satish Kumar Gupta",
+     "citation": "(2020) 8 SCC 531",
+     "court": "sci",
+     "year": 2019,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "IBC",
+       "resolution plan",
+       "commercial wisdom",
+       "committee of creditors",
+       "distribution among creditors"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-cheque-jurisdiction",
+   "category": "retrieval",
+   "question": "Where can a complaint for dishonour of cheque under s.138 NI Act be filed?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "dashrath",
+     "title": "Dashrath Rupsingh Rathod v. State of Maharashtra",
+     "citation": "(2014) 9 SCC 129",
+     "court": "sci",
+     "year": 2014,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 138 NI Act",
+       "territorial jurisdiction",
+       "dishonour of cheque",
+       "drawee bank",
+       "place of complaint"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-cheque-presumption",
+   "category": "retrieval",
+   "question": "Presumption of legally enforceable debt under section 139 NI Act and how it is rebutted",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "rangappa",
+     "title": "Rangappa v. Sri Mohan",
+     "citation": "(2010) 11 SCC 441",
+     "court": "sci",
+     "year": 2010,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 139 NI Act",
+       "presumption",
+       "legally enforceable debt",
+       "rebuttal",
+       "dishonour of cheque"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "basalingappa",
+     "title": "Basalingappa v. Mudibasappa",
+     "citation": "(2019) 5 SCC 418",
+     "court": "sci",
+     "year": 2019,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 139 NI Act",
+       "presumption",
+       "rebuttal",
+       "financial capacity",
+       "dishonour of cheque"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "hiten",
+     "title": "Hiten P. Dalal v. Bratindranath Banerjee",
+     "citation": "(2001) 6 SCC 16",
+     "court": "sci",
+     "year": 2001,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 139 NI Act",
+       "presumption",
+       "rebuttal",
+       "dishonour of cheque",
+       "burden"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-cheque-compounding",
+   "category": "retrieval",
+   "question": "Compounding and summary trial of cheque dishonour cases",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "kanchan",
+     "title": "Meters and Instruments Pvt. Ltd. v. Kanchan Mehta",
+     "citation": "(2018) 1 SCC 560",
+     "court": "sci",
+     "year": 2017,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 138 NI Act",
+       "compounding",
+       "summary trial",
+       "compensation",
+       "dishonour of cheque"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-gpa-sale",
+   "category": "retrieval",
+   "question": "Do GPA sales or agreements to sell transfer title to immovable property?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "surajlamp",
+     "title": "Suraj Lamp & Industries Pvt. Ltd. v. State of Haryana",
+     "citation": "(2012) 1 SCC 656",
+     "court": "sci",
+     "year": 2011,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "GPA sale",
+       "power of attorney",
+       "transfer of immovable property",
+       "registration",
+       "agreement to sell"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-regularisation",
+   "category": "retrieval",
+   "question": "Regularisation of temporary or daily wage employees in public employment",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "umadevi",
+     "title": "Secretary, State of Karnataka v. Umadevi (3)",
+     "citation": "(2006) 4 SCC 1",
+     "court": "sci",
+     "year": 2006,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "regularisation",
+       "temporary employees",
+       "public employment",
+       "Article 14",
+       "Article 16",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-equal-pay",
+   "category": "retrieval",
+   "question": "Equal pay for equal work for temporary employees",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "jagjit",
+     "title": "State of Punjab v. Jagjit Singh",
+     "citation": "(2017) 1 SCC 148",
+     "court": "sci",
+     "year": 2016,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "equal pay for equal work",
+       "temporary employees",
+       "Article 39(d)",
+       "daily wagers"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-industry",
+   "category": "retrieval",
+   "question": "What is an industry under section 2(j) of the Industrial Disputes Act?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "rajappa",
+     "title": "Bangalore Water Supply & Sewerage Board v. A. Rajappa",
+     "citation": "(1978) 2 SCC 213",
+     "court": "sci",
+     "year": 1978,
+     "bench": 7,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "industry",
+       "Section 2(j) Industrial Disputes Act",
+       "triple test",
+       "definition of industry"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-absolute-liability",
+   "category": "retrieval",
+   "question": "Absolute liability of hazardous industries after the oleum gas leak",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "mcmehta",
+     "title": "M.C. Mehta v. Union of India",
+     "citation": "(1987) 1 SCC 395",
+     "court": "sci",
+     "year": 1986,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "absolute liability",
+       "hazardous industry",
+       "oleum gas leak",
+       "Rylands v Fletcher",
+       "compensation"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-polluter-pays",
+   "category": "retrieval",
+   "question": "Polluter pays and precautionary principles for tanneries",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "vellore",
+     "title": "Vellore Citizens' Welfare Forum v. Union of India",
+     "citation": "(1996) 5 SCC 647",
+     "court": "sci",
+     "year": 1996,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "polluter pays",
+       "precautionary principle",
+       "sustainable development",
+       "tanneries",
+       "environment"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-talaq-pronouncement",
+   "category": "retrieval",
+   "question": "Requirements for a valid talaq: pronouncement and attempts at reconciliation",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "shamimara",
+     "title": "Shamim Ara v. State of Uttar Pradesh",
+     "citation": "(2002) 7 SCC 518",
+     "court": "sci",
+     "year": 2002,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "talaq",
+       "pronouncement",
+       "reasonable cause",
+       "reconciliation",
+       "Muslim law"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-section-89",
+   "category": "retrieval",
+   "question": "Reference of civil suits to ADR and mediation under section 89 CPC",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "afcons",
+     "title": "Afcons Infrastructure Ltd. v. Cherian Varkey Construction Co. (P) Ltd.",
+     "citation": "(2010) 8 SCC 24",
+     "court": "sci",
+     "year": 2010,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "Section 89 CPC",
+       "alternative dispute resolution",
+       "reference to mediation",
+       "suitable cases"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "salem",
+     "title": "Salem Advocate Bar Association v. Union of India",
+     "citation": "(2005) 6 SCC 344",
+     "court": "sci",
+     "year": 2005,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "CPC amendments",
+       "case management",
+       "Section 89 CPC",
+       "mediation",
+       "alternative dispute resolution"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  }
+ ]
+}

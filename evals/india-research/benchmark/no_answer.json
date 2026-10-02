@@ -1,0 +1,94 @@
+{
+ "suite": "no_answer",
+ "version": 1,
+ "cases": [
+  {
+   "id": "bench-na-drone",
+   "category": "no_answer",
+   "question": "Is there Karnataka High Court authority on drone overflights as trespass on agricultural land?",
+   "forum": "hc-karnataka",
+   "expected": [],
+   "probe": "2023 INSC 99999",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-na-crypto-staking",
+   "category": "no_answer",
+   "question": "Has any Indian court held that crypto staking rewards are agricultural income?",
+   "forum": "all-india",
+   "expected": [],
+   "probe": "(2024) 3 SCC 999",
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-na-ai-copyright-hc",
+   "category": "no_answer",
+   "question": "Telangana High Court ruling on copyright in AI-generated cause lists",
+   "forum": "hc-telangana",
+   "expected": [],
+   "probe": "2024:TSHC:999999",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-na-space-tort",
+   "category": "no_answer",
+   "question": "Liability of a private satellite operator for space debris damage to a farm in Andhra Pradesh",
+   "forum": "hc-andhra",
+   "expected": [],
+   "probe": "AIR 2023 AP 9999",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-na-metaverse",
+   "category": "no_answer",
+   "question": "Is a marriage solemnised in a metaverse valid under the Hindu Marriage Act?",
+   "forum": "all-india",
+   "expected": [],
+   "probe": "2022 SCC OnLine SC 99999",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-na-robot-bail",
+   "category": "no_answer",
+   "question": "Can bail be granted to an autonomous robot accused of an offence?",
+   "forum": "all-india",
+   "expected": [],
+   "probe": "2021 Cri LJ 99999",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-na-lunar-land",
+   "category": "no_answer",
+   "question": "Registration of sale deeds for land on the Moon under the Registration Act",
+   "forum": "all-india",
+   "expected": [],
+   "probe": "[2020] 9 SCR 9999",
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-na-quantum",
+   "category": "no_answer",
+   "question": "Admissibility of quantum-encrypted evidence without a decryption certificate under the BSA",
+   "forum": "all-india",
+   "expected": [],
+   "probe": "2025 INSC 99999",
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  }
+ ]
+}

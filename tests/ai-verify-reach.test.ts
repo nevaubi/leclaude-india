@@ -119,12 +119,13 @@ describe("selfCorrect never truncates the output", () => {
   });
 
   it("keeps late QUALIFICATION lines of a digest (object with array fields) and records each part's changes", async () => {
-    const keyAdmissions = [...Array.from({ length: 300 }, (_, i) => ({ cite: `${i + 1}:1`, text: `Admission ${i + 1} about the sampling schedule and the reporting chain.` })), { cite: "220:1", text: "QUALIFICATION (of 20:1): the report was only a draft in March." }];
+    // Large enough to need parts under the verify budget's output (20K tokens on a 400K model since 2026-10).
+    const keyAdmissions = [...Array.from({ length: 900 }, (_, i) => ({ cite: `${i + 1}:1`, text: `Admission ${i + 1} about the sampling schedule and the reporting chain.` })), { cite: "220:1", text: "QUALIFICATION (of 20:1): the report was only a draft in March." }];
     const output = { keyAdmissions, credibilityNotes: ["Consistent at 20:1"], followUps: ["Ask about 220:1"] };
     respond = (c) => { const o = parseOutput(c); return { corrected: o, changes: o.keyAdmissions.length ? [`checked ${o.keyAdmissions.length}`] : [] }; };
     const r = await selfCorrect({ label: "digest", output, evidence: "transcript", schema: { type: "object" }, budget: resolveContextBudget("verify", MINI, {}) });
     expect(calls.length).toBeGreaterThan(1);
-    expect(r.corrected.keyAdmissions).toHaveLength(301);
+    expect(r.corrected.keyAdmissions).toHaveLength(901);
     expect(r.corrected.keyAdmissions.at(-1)?.text).toMatch(/^QUALIFICATION/);
     expect(r.corrected.credibilityNotes).toEqual(["Consistent at 20:1"]);
     expect(r.corrected.followUps).toEqual(["Ask about 220:1"]);

@@ -23,7 +23,7 @@ import { datePresetRange } from "../query-builder";
 import { readSource } from "../service";
 import type { ReadRef, SearchHit, SearchSettings, SearchSource } from "../types";
 import { RESEARCH_MODEL_POLICY as POLICY } from "./model-policy";
-import { FOLLOW_UP_INSTRUCTIONS, PLAN_INSTRUCTIONS, REFINE_INSTRUCTIONS, TRANSLATE_QUERY_INSTRUCTIONS } from "./prompts";
+import { FOLLOW_UP_INSTRUCTIONS, PLAN_INSTRUCTIONS, REFINE_INSTRUCTIONS, RERANK_INSTRUCTIONS, TRANSLATE_QUERY_INSTRUCTIONS } from "./prompts";
 import { classifyTreatment, INDIAN_NEGATIVE_TREATMENT_PHRASES } from "./treatment";
 import type { AuthorityTreatment, LaneKind } from "./types";
 import { FEATURES } from "@/lib/features";
@@ -34,7 +34,11 @@ import { remoteStore } from "@/lib/db/remote";
 import { searchCorpus, type CorpusHit } from "@/modules/india/corpus/search";
 import { caseHref } from "@/modules/caselaw/shared";
 import { courtById } from "@/lib/india/courts";
-import { chunksToText, readJudgmentText, searchJudgmentText, type TextSearchHit } from "@/modules/india/corpus/text";
+import { chunksToText, readJudgmentText, type TextSearchHit } from "@/modules/india/corpus/text";
+import { searchJudgmentTextHybrid, type HybridHit, type JudgmentFilters } from "@/modules/india/corpus/hybrid";
+import { requestJudgmentEmbedding } from "@/modules/india/corpus/embeddings";
+import { sectionFilter } from "@/lib/india/query-expansion";
+import type { RerankScorer } from "./rerank";
 import { textKey } from "@/lib/ai/toolkit/india-judgment-text";
 import { readOfficialDocument, searchOfficial } from "@/modules/official/service";
 import { parseSourceRef, SOURCE_REF_PREFIX, type SourceSearchHit } from "@/modules/official/types";
@@ -56,7 +60,7 @@ export interface EngineDeps {
   model: string;
   fastModel: string;
   /** Structured provider search for one source kind. Never throws for "no results"; throws for provider failures. */
-  retrieve(source: SearchSource, query: string, settings: SearchSettings, signal?: AbortSignal): Promise<{ hits: SearchHit[]; total: number }>;
+  retrieve(source: SearchSource, query: string, settings: SearchSettings, signal?: AbortSignal): Promise<{ hits: SearchHit[]; total: number; notes?: string[] }>;
   /** Full text for a read reference (cached 24h by the service for external reads). */
   read(ref: ReadRef, opts: { title?: string; signal?: AbortSignal }): Promise<{ text: string; title?: string; cite?: string; url?: string; cached: boolean }>;
   /** A bounded lane agent run. Returns the lane note (and token usage when the runtime reports it). */
@@ -98,6 +102,13 @@ export interface EngineDeps {
    * reader defaults). Absent in minimal fakes: the engine then keeps its fixed bounds.
    */
   budget?(profile: BudgetProfileId): ResolvedBudget;
+  /**
+   * Issue-level relevance scores (0–3) for judgment candidates: a bounded fast-role model call. Absent in minimal fakes;
+   * the lanes then keep retrieval order (engine/rerank.ts decides when it runs and how ties break).
+   */
+  rerank?: RerankScorer;
+  /** "Cited by" counts (later judgments whose text carries one of the citations), where text exists. Absent in fakes. */
+  citedBy?(targets: { id: string; citations: string[] }[], signal?: AbortSignal): Promise<Map<string, number>>;
 }
 
 function toolCtx(signal?: AbortSignal): ToolContext {
@@ -110,9 +121,9 @@ function toolCtx(signal?: AbortSignal): ToolContext {
  * record page (/cases/<id>), which shows the official PDF and the dataset provenance. A record already returned by
  * another provider (same neutral citation, or same court + case number) is not repeated.
  */
-export async function corpusCaselawHits(query: string, o: { courts: string[]; yearFrom?: number; yearTo?: number; limit: number; existing: SearchHit[]; nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] } }): Promise<SearchHit[]> {
+export async function corpusCaselawHits(query: string, o: { courts: string[]; yearFrom?: number; yearTo?: number; limit: number; existing: SearchHit[]; nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] }; filters?: Pick<JudgmentFilters, "benchMin" | "judge" | "disposal" | "sectionKeys"> }): Promise<SearchHit[]> {
   if (!remoteStore() || !query.trim()) return [];
-  const { hits } = await searchCorpus({ q: query, courts: o.courts.length ? o.courts : undefined, yearFrom: o.yearFrom, yearTo: o.yearTo, limit: o.limit });
+  const { hits } = await searchCorpus({ q: query, courts: o.courts.length ? o.courts : undefined, yearFrom: o.yearFrom, yearTo: o.yearTo, limit: o.limit, ...(o.filters ?? {}) });
   const norm = (v?: string | null) => (v ?? "").replace(/\s+/g, " ").trim().toUpperCase();
   const seen = new Set<string>();
   for (const h of o.existing) {
@@ -149,7 +160,7 @@ function corpusHit(h: CorpusHit, nctx: { jurisdiction: SearchSettings["jurisdict
     judge: h.judges.join(", ") || undefined,
     docketNumber: h.case_number ?? undefined,
     authority: classifyAuthority(h.court_id, nctx.jurisdiction, nctx.courts, h.decision_date ?? undefined),
-    india: { judgmentId: h.id, courtId: h.court_id, judges: h.judges, neutralCitation: h.neutral_citation ?? undefined, reporterCitations: h.reporter_citation ? [h.reporter_citation] : undefined, caseNumber: h.case_number ?? undefined, provider: "corpus" },
+    india: { judgmentId: h.id, courtId: h.court_id, judges: h.judges, neutralCitation: h.neutral_citation ?? undefined, reporterCitations: h.reporter_citation ? [h.reporter_citation] : undefined, caseNumber: h.case_number ?? undefined, provider: "corpus", ...(h.bench_strength ? { benchStrength: h.bench_strength } : {}) },
     // Full text exists (Supreme Court text corpus): the reader can read it. Metadata-only records stay unreadable.
     ...(h.text_status === "full" ? { readRef: { kind: "url" as const, url: `${CORPUS_TEXT_PREFIX}${h.id}` } } : {}),
   };
@@ -209,9 +220,12 @@ export async function officialHits(query: string, o: { from?: string; to?: strin
  * Judgment full-text hits (best passage per judgment, with its page), restricted to the courts in scope; judgments
  * already returned by another provider (same neutral citation or record) are skipped. Every hit is readable.
  */
-export async function corpusTextHits(query: string, o: { courts: string[]; yearFrom?: number; yearTo?: number; limit: number; existing: SearchHit[]; nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] } }): Promise<SearchHit[]> {
+export async function corpusTextHits(query: string, o: { courts: string[]; yearFrom?: number; yearTo?: number; limit: number; existing: SearchHit[]; nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] }; filters?: Pick<JudgmentFilters, "benchMin" | "judge" | "disposal" | "sectionKeys">; notes?: string[] }): Promise<SearchHit[]> {
   if (!remoteStore() || !query.trim()) return [];
-  const { hits } = await searchJudgmentText(query, { courts: o.courts, yearFrom: o.yearFrom, yearTo: o.yearTo, limit: o.limit });
+  // Hybrid: full text fused with judgment-chunk embeddings where they exist; keyword-only (with a coverage note) otherwise.
+  const res = await searchJudgmentTextHybrid(query, { courts: o.courts, yearFrom: o.yearFrom, yearTo: o.yearTo, limit: o.limit, ...(o.filters ?? {}) });
+  if (o.notes) for (const n of [res.note, ...res.filterNotes]) if (n && !o.notes.includes(n)) o.notes.push(n);
+  const hits = res.hits;
   const norm = (v?: string | null) => (v ?? "").replace(/\s+/g, " ").trim().toUpperCase();
   const seen = new Set<string>();
   for (const h of o.existing) {
@@ -228,7 +242,7 @@ export async function corpusTextHits(query: string, o: { courts: string[]; yearF
   return out;
 }
 
-export function textHit(h: TextSearchHit, nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] }): SearchHit {
+export function textHit(h: TextSearchHit | HybridHit, nctx: { jurisdiction: SearchSettings["jurisdiction"]; courts: SearchSettings["courts"] }): SearchHit {
   // A High Court text keyed by CNR still carries its record's own neutral citation when the index has one.
   const neutral = h.neutralCitation ?? h.recordNeutralCitation ?? null;
   const citations = [neutral, h.reporterCitation].filter((x): x is string => Boolean(x));
@@ -237,7 +251,7 @@ export function textHit(h: TextSearchHit, nctx: { jurisdiction: SearchSettings["
     id: `corpus:${id}`,
     source: "caselaw",
     title: h.title || h.citation,
-    subtitle: [h.court, h.caseNumber, h.neutralCitation ? "" : h.citation, h.pageStart != null ? `passage at p. ${h.pageStart}` : "", "full text"].filter(Boolean).join(" · "),
+    subtitle: [h.court, h.caseNumber, h.neutralCitation ? "" : h.citation, h.pageStart != null ? `passage at p. ${h.pageStart}` : "", "full text", "match" in h && h.match !== "keyword" ? (h.match === "semantic" ? "semantic match" : "keyword + semantic match") : ""].filter(Boolean).join(" · "),
     // A CNR is identity, not a citation: CNR-keyed text formats as "Title (CNR …, High Court of …, decided on …)".
     cite: neutral ?? h.reporterCitation ?? undefined,
     citations,
@@ -248,7 +262,7 @@ export function textHit(h: TextSearchHit, nctx: { jurisdiction: SearchSettings["
     url: h.judgmentId ? `${caseHref(h.judgmentId)}${h.pageStart != null ? `#p${h.pageStart}` : ""}` : undefined,
     judge: h.judges.join(", ") || undefined,
     docketNumber: h.caseNumber ?? undefined,
-    score: h.rank,
+    score: "fusedScore" in h ? h.fusedScore : h.rank,
     authority: classifyAuthority(h.courtId, nctx.jurisdiction, nctx.courts, h.decisionDate ?? undefined),
     india: { judgmentId: id, courtId: h.courtId, judges: h.judges, neutralCitation: neutral ?? undefined, reporterCitations: h.reporterCitation ? [h.reporterCitation] : undefined, caseNumber: !neutral && h.cnr ? `CNR ${h.cnr}` : h.caseNumber ?? undefined, provider: "corpus" },
     readRef: { kind: "url", url: `${CORPUS_TEXT_PREFIX}${id}` },
@@ -436,6 +450,7 @@ const PLAN_SCHEMA = { type: "object", properties: { subQuestions: { type: "array
 const FOLLOWUP_SCHEMA = { type: "object", properties: { questions: { type: "array", items: { type: "string" } } }, required: ["questions"] };
 const REFINE_SCHEMA = { type: "object", properties: { refinements: { type: "array", items: { type: "object", properties: { lane: { type: "string", enum: LANE_ENUM }, queries: { type: "array", items: { type: "string" } } }, required: ["lane", "queries"] } } }, required: ["refinements"] };
 const TRANSLATE_SCHEMA = { type: "object", properties: { query: { type: "string" } }, required: ["query"] };
+const RERANK_SCHEMA = { type: "object", properties: { scores: { type: "array", items: { type: "object", properties: { id: { type: "string" }, score: { type: "number" } }, required: ["id", "score"] } } }, required: ["scores"] };
 
 export function defaultDeps(): EngineDeps {
   const cfg = aiConfig();
@@ -450,28 +465,38 @@ export function defaultDeps(): EngineDeps {
       const limit = Math.min(settings.limit, 12);
       const nctx = { jurisdiction: settings.jurisdiction, courts: settings.courts };
       const year = (d?: string) => (d ? Number(d.slice(0, 4)) : undefined);
-      const job = async (): Promise<{ hits: SearchHit[]; total: number }> => {
+      const job = async (): Promise<{ hits: SearchHit[]; total: number; notes?: string[] }> => {
         switch (source) {
           case "caselaw": {
             const courts = resolveCourts(settings.jurisdiction, settings.courts).split(" ").filter(Boolean);
             // Judgments are public authority; a matter-linked record is visible only inside its matters (never widened).
             const allowed = visibleMatters({ state: { matterId: settings.matterId ?? undefined } });
-            const local = await searchJudgments(query, { courts, yearFrom: year(range.from), yearTo: year(range.to) }, { limit, allowed });
+            const notes: string[] = [];
+            // Filters where the corpus has the column (bench strength, judge, disposal; statute section via the citator).
+            const section = settings.section ? sectionFilter(settings.section) : null;
+            if (settings.section && !section?.keys.length) notes.push(`Section filter "${settings.section}" was not recognised as a statute section and was not applied.`);
+            const filters = { benchMin: settings.benchMin, judge: settings.judge, disposal: settings.disposal, sectionKeys: section?.keys.length ? section.keys : undefined };
+            const metaFiltered = Boolean(filters.benchMin || filters.judge || filters.disposal || filters.sectionKeys);
+            // The local store has no bench / disposal / section columns: with such a filter it is skipped (never unfiltered).
+            const local = metaFiltered ? [] : await searchJudgments(query, { courts, yearFrom: year(range.from), yearTo: year(range.to) }, { limit, allowed });
             const hits = local.map((h) => normalizeJudgment(judgmentRow(h), nctx));
-            // Full-text passages and metadata records are searched in parallel; the text search has its own budget so a
-            // slow text search never costs the lane its other results. A record already found with text is not repeated.
+            // Full-text passages (hybrid: keyword + embeddings where built) and metadata records are searched in parallel;
+            // the text search has its own budget so a slow text search never costs the lane its other results. A record
+            // already found with text is not repeated.
             const yf = year(range.from), yt = year(range.to);
             const [textHits, metaHits] = await Promise.all([
-              withTimeout(corpusTextHits(query, { courts, yearFrom: yf, yearTo: yt, limit: Math.min(limit, 8), existing: hits, nctx }), 15_000, signal)
-                .catch((e) => { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment text search failed:", (e as Error).message); return [] as SearchHit[]; }),
-              corpusCaselawHits(query, { courts, yearFrom: yf, yearTo: yt, limit: Math.min(limit, 8), existing: hits, nctx })
+              withTimeout(corpusTextHits(query, { courts, yearFrom: yf, yearTo: yt, limit: Math.min(limit, 10), existing: hits, nctx, filters, notes }), 18_000, signal)
+                .catch((e) => { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment text search failed:", (e as Error).message); notes.push(`Judgment full-text search failed (${(e as Error).message.slice(0, 120)}); metadata results only.`); return [] as SearchHit[]; }),
+              corpusCaselawHits(query, { courts, yearFrom: yf, yearTo: yt, limit: Math.min(limit, 8), existing: hits, nctx, filters })
                 .catch((e) => { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment corpus search failed:", (e as Error).message); return [] as SearchHit[]; }),
             ]);
             hits.push(...textHits);
             const withText = new Set(textHits.flatMap((h) => [h.india?.judgmentId, h.cite].filter((x): x is string => Boolean(x)).map((x) => x.toUpperCase())));
             hits.push(...metaHits.filter((h) => ![h.india?.judgmentId, h.cite].some((x) => x && withText.has(x.toUpperCase()))));
-            try { hits.push(...(await indianKanoonHits(query, courts, settings, signal))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] Indian Kanoon search failed:", (e as Error).message); }
-            return { hits, total: hits.length };
+            if (!metaFiltered) {
+              try { hits.push(...(await indianKanoonHits(query, courts, settings, signal))); } catch (e) { if ((e as Error).name === "AbortError") throw e; console.warn("[research] Indian Kanoon search failed:", (e as Error).message); }
+            } else notes.push("Bench / judge / disposal / section filters applied to the judgment corpus; the local store and Indian Kanoon were not searched (they cannot apply them).");
+            return { hits, total: hits.length, notes };
           }
           case "statutes": {
             const rows = await searchStatuteSections(query, { limit });
@@ -492,7 +517,7 @@ export function defaultDeps(): EngineDeps {
       };
       // The intelligence corpus feeds the same lane in parallel where it adds material (library); its hits are normalized onto the provider kind.
       const intel = intelHitsFor(source, query, settings, 6);
-      let provider: { hits: SearchHit[]; total: number };
+      let provider: { hits: SearchHit[]; total: number; notes?: string[] };
       try {
         provider = await withTimeout(job(), 25_000, signal);
       } catch (e) {
@@ -503,7 +528,7 @@ export function defaultDeps(): EngineDeps {
       }
       const extra = await intel;
       const hits = mergeIntelHits(provider.hits, extra);
-      return { hits, total: provider.total + (hits.length - provider.hits.length) };
+      return { hits, total: provider.total + (hits.length - provider.hits.length), ...(provider.notes?.length ? { notes: provider.notes } : {}) };
     },
 
     async read(ref, opts) {
@@ -517,6 +542,10 @@ export function defaultDeps(): EngineDeps {
         const id = ref.url.slice(CORPUS_TEXT_PREFIX.length);
         const r = await withTimeout(readJudgmentText(id, { maxChars: 400_000 }), 30_000, opts.signal);
         if (!r || !r.chunks.length) throw new Error(`No full text for judgment ${id} in the judgment text corpus (unknown id or metadata-only record); it is not substituted with another judgment.`);
+        // Tiered embedding: a judgment read in research is queued first (tier 0) when it has no vectors yet. Best effort.
+        const store = remoteStore();
+        const key = r.neutralCitation ?? (r.cnr && r.decisionDate ? `${r.cnr}@${r.decisionDate}` : null);
+        if (store && key) void requestJudgmentEmbedding(store, key, r.courtId).catch(() => false);
         return { text: chunksToText(r.chunks), title: r.title ? `${r.title}, ${r.citation}` : r.citation, cite: r.neutralCitation ?? r.citation, url: r.judgmentId ? caseHref(r.judgmentId) : undefined, cached: true };
       }
       if (ref.kind === "url" && ref.url.startsWith(IK_READ_PREFIX)) {
@@ -660,6 +689,23 @@ export function defaultDeps(): EngineDeps {
       return { subQuestions: (r.subQuestions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 5), queries };
     },
 
+    async rerank(input) {
+      const list = input.candidates.map((c) => `${c.id} | ${c.title}${c.court ? ` | ${c.court}` : ""}${c.date ? ` | ${c.date.slice(0, 10)}` : ""}${c.bench ? ` | ${c.bench}-judge bench` : ""}\n   ${(c.snippet ?? "").replace(/\s+/g, " ")}`).join("\n");
+      const r = await generateJSON<{ scores: { id: string; score: number }[] }>({
+        fast: POLICY.rerank.fast,
+        taskType: POLICY.rerank.taskType,
+        reasoningEffort: POLICY.rerank.reasoningEffort,
+        cacheStablePrefix: POLICY.rerank.cacheStablePrefix,
+        instructions: RERANK_INSTRUCTIONS,
+        input: `Question: ${input.question}\n${input.issues.length ? `Issues:\n${input.issues.map((q) => `- ${q}`).join("\n")}\n` : ""}\nCandidates (id | title | court | date):\n${list}`,
+        schema: RERANK_SCHEMA,
+        name: "issue_scores",
+        maxOutputTokens: POLICY.rerank.maxOutputTokens,
+        signal: input.signal,
+      });
+      return (r.scores ?? []).map((x) => ({ id: String(x.id), score: Number(x.score) }));
+    },
+
     async citing(input) {
       if (!input.judgmentId) return classifyTreatment({ citing: [], citingCount: 0 }, undefined, { basis: "provider" });
       // Corpus judgments (sc:/hc: ids, neutral citations, CNR@date): later judgments whose text mentions the citation.
@@ -673,6 +719,17 @@ export function defaultDeps(): EngineDeps {
       // Treatment recorded in the corpus by the ingestion/citation workers is a negative signal only when it says so.
       const recorded = (r.target.corpusTreatment ?? []).map((t) => ({ title: t.by ?? "Treatment recorded in the corpus", snippet: `${t.status}${t.note ? `: ${t.note}` : ""}` }));
       return classifyTreatment({ citing: [...recorded, ...r.citing.map(row)], citingCount: r.citing.length }, undefined, { basis: "corpus", phrases: INDIAN_NEGATIVE_TREATMENT_PHRASES });
+    },
+
+    async citedBy(targets, signal) {
+      const out = new Map<string, number>();
+      if (!remoteStore()) return out;
+      const { findCitationMentions } = await import("@/modules/india/corpus/text");
+      await Promise.all(targets.map(async (t) => {
+        const r = await withTimeout(findCitationMentions(t.citations, { limit: 25 }), 6_000, signal).catch(() => null);
+        if (r?.available) out.set(t.id, r.mentions.length);
+      }));
+      return out;
     },
 
     async resolveCitation(citation) {

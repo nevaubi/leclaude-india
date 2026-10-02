@@ -5,7 +5,8 @@ import { withAuth } from "@/lib/auth/route";
 import { refs } from "@/lib/auth/resources";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+/** A streamed multi-step source Q&A agent (up to 6 tool steps): the platform maximum, as for /api/search/run. */
+export const maxDuration = 300;
 
 /** POST /api/search/ask — "Ask about this source" mini chat (useAgent-compatible body + {source, text}). */
 async function handlePOST(req: Request) {

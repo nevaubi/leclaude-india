@@ -65,7 +65,10 @@ describe("planner: adverse lane and forum-aware sub-questions", () => {
     expect(qs.some((q) => /BNS\/BNSS\/BSA/.test(q))).toBe(true);
     const merged = mergeSubQuestions(qs, ["What test governs parity in anticipatory bail before the Karnataka High Court?", "Does Section 482 BNSS permit conditions?"]);
     expect(merged.some((q) => q.includes(ADVERSE_SUBQUESTION_MARK))).toBe(true);
-    expect(planSubQuestions({ question: "q", settings: settings(), mode: "fast", hasMatter: false }).length).toBe(1);
+    // Fast mode asks the adverse-authority question too (a fast answer is not exempt from contrary authority).
+    const fastQs = planSubQuestions({ question: "q", settings: settings(), mode: "fast", hasMatter: false });
+    expect(fastQs).toHaveLength(2);
+    expect(fastQs[1]).toContain(ADVERSE_SUBQUESTION_MARK);
   });
 });
 
@@ -377,10 +380,11 @@ describe("run wall (serverless limit)", () => {
   const QUESTION = "Can anticipatory bail be refused only because the offence is economic?";
 
   it("defaults under the 300s function limit and honours RESEARCH_WALL_MS only when sane", () => {
-    expect(researchWallMs({})).toBe(265_000);
+    expect(researchWallMs({})).toBe(280_000);
+    expect(researchWallMs({})).toBeLessThan(300_000);
     expect(researchWallMs({ RESEARCH_WALL_MS: "600000" })).toBe(600_000);
-    expect(researchWallMs({ RESEARCH_WALL_MS: "5000" })).toBe(265_000);
-    expect(researchWallMs({ RESEARCH_WALL_MS: "abc" })).toBe(265_000);
+    expect(researchWallMs({ RESEARCH_WALL_MS: "5000" })).toBe(280_000);
+    expect(researchWallMs({ RESEARCH_WALL_MS: "abc" })).toBe(280_000);
   });
 
   it("keeps a streamed partial answer when synthesis hits its deadline and ends as budget_exhausted, not failed", async () => {

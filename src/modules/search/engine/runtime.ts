@@ -33,14 +33,18 @@ export interface RunPolicy {
   retryMaxMs: number;
 }
 
+/**
+ * Deep research. 2026-10 (before → after): planWaitMs 4s → 6s, treatmentWaitMs 2.5s → 4s, laneTimeoutMs 120s → 150s.
+ * runTimeMs stays 8 min: the effective budget is the run wall (researchWallMs, 265s → 280s under the 300s function limit).
+ */
 export const DEFAULT_POLICY: Readonly<RunPolicy> = {
-  planWaitMs: 4_000,
+  planWaitMs: 6_000,
   softDepWaitMs: 30_000,
-  treatmentWaitMs: 2_500,
+  treatmentWaitMs: 4_000,
   translateWaitMs: 6_000,
   coverageWaitMs: 2_500,
   laneConcurrency: 6,
-  laneTimeoutMs: 120_000,
+  laneTimeoutMs: 150_000,
   runTimeMs: 8 * 60_000,
   retrievalRetries: 2,
   modelRetries: 1,
@@ -48,10 +52,11 @@ export const DEFAULT_POLICY: Readonly<RunPolicy> = {
   retryMaxMs: 4_000,
 };
 
+/** Fast mode. 2026-10 (before → after): laneTimeoutMs 45s → 75s, runTimeMs 120s → 180s (the fast adverse lane needs room). */
 export const FAST_POLICY: Readonly<RunPolicy> = {
   ...DEFAULT_POLICY,
-  laneTimeoutMs: 45_000,
-  runTimeMs: 2 * 60_000,
+  laneTimeoutMs: 75_000,
+  runTimeMs: 3 * 60_000,
   retrievalRetries: 1,
   modelRetries: 1,
 };

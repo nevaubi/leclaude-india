@@ -12,7 +12,7 @@
 import type { BudgetProfileId } from "@/lib/ai/context-budget";
 import type { ReasoningEffort, TaskType } from "@/lib/ai/providers/types";
 
-export type ResearchStep = "plan" | "refine" | "triage" | "laneAgent" | "verify" | "correct" | "followUps" | "synthesize";
+export type ResearchStep = "plan" | "refine" | "triage" | "rerank" | "laneAgent" | "verify" | "correct" | "followUps" | "synthesize";
 
 export interface StepPolicy {
   taskType: TaskType;
@@ -32,6 +32,8 @@ export const RESEARCH_MODEL_POLICY: Record<ResearchStep, StepPolicy> = {
   plan: { taskType: "extract", fast: true, reasoningEffort: "low", cacheStablePrefix: true, maxOutputTokens: 700 },
   refine: { taskType: "extract", fast: true, reasoningEffort: "low", cacheStablePrefix: true, maxOutputTokens: 600 },
   triage: { taskType: "classify", fast: true, reasoningEffort: "low", cacheStablePrefix: true, maxOutputTokens: 400 },
+  // Issue-level rerank of judgment candidates: bounded (≤ 20 candidates, short snippets), cheap fast role, JSON scores.
+  rerank: { taskType: "classify", fast: true, reasoningEffort: "low", cacheStablePrefix: true, maxOutputTokens: 800 },
   laneAgent: { taskType: "summarize", fast: true, reasoningEffort: "low", cacheStablePrefix: true, budget: "research_lane" },
   verify: { taskType: "extract", fast: true, reasoningEffort: "low", cacheStablePrefix: true, budget: "verify" },
   correct: { taskType: "summarize", fast: true, reasoningEffort: "low", cacheStablePrefix: true, budget: "deep_research_synthesis" },

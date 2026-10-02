@@ -12,6 +12,7 @@ import { audit } from "@/lib/integrity/audit";
 import { attachProvenance } from "@/lib/integrity/record";
 import type { Matter } from "@/lib/types/domain";
 import { applicableCode } from "@/lib/india/criminal-code-map";
+import { transitionFactsFromText, transitionNote } from "@/lib/india/transition";
 import { languageInfo } from "@/lib/india/languages";
 import { bindingCourtIds, effectiveJurisdiction, jurisdictionByKey, resolveCourts } from "../jurisdictions";
 import { formatBluebook } from "../normalize";
@@ -20,6 +21,7 @@ import { providerMessage, researchPrincipalId, savedSearches, searchRuns, update
 import { ALL_SOURCES, type SearchHit, type SearchRun, type SearchSettings, type SearchSource } from "../types";
 import { configuredTenantId } from "@/lib/ai/vector-store";
 import { answerArtifactId, answerHash } from "./binding";
+import { buildAuthorityStatus } from "./authority-status";
 import { createReadRegistry, sweepCache } from "./cache";
 import { buildCitationCheck, crossCheckCitations, normCite, withCitationStates } from "./citecheck";
 import { decideCoverage, type CoverageDecision } from "./coverage";
@@ -59,6 +61,8 @@ export interface RunResearchInput {
   requestedAt?: number;
   /** Overrides for concurrency, timeouts, retries and budgets (tests pass tiny backoffs). */
   policy?: Partial<RunPolicy>;
+  /** Issue-level reranking switch for this run (default: RESEARCH_RERANK). Evals compare both. */
+  rerank?: boolean;
 }
 
 export interface RunResearchResult {
@@ -87,7 +91,8 @@ export function researchWallMs(env: Readonly<Record<string, string | undefined>>
   const v = Number(env.RESEARCH_WALL_MS);
   return Number.isFinite(v) && v >= 60_000 ? v : DEFAULT_WALL_MS;
 }
-const DEFAULT_WALL_MS = 265_000;
+/** 280s of the 300s function limit (before: 265s); the last 20s cover persistence, audit and the terminal event. */
+export const DEFAULT_WALL_MS = 280_000;
 /** Time kept back from the lanes for synthesis and verification. */
 const RESERVE_AFTER_LANES_MS = 120_000;
 /** A later round only starts with at least this much time left (lanes + synthesis + verification). */
@@ -167,7 +172,13 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
   const qLang = questionLanguage(question);
   const answerLanguage = resolveAnswerLanguage({ requested: settings.answerLanguage, question });
   const offenceDate = settings.offenceDate ?? offenceDateFromText(question);
-  const offenceRule = applicableCode(offenceDate ?? null);
+  // Transition law from data (BNS s.358, BNSS s.531): offence date → substantive code; proceeding date → procedure.
+  // "Committed before 1 July 2024" fixes the side of the boundary without an exact date.
+  const transition = transitionNote({ question, offenceDate, proceedingDate: settings.proceedingDate });
+  const offenceRule = transition.substantive !== "requires_review" ? { substantive: transition.substantive, notes: [] as string[] } : applicableCode(offenceDate ?? null);
+  // A relational statement ("committed before 1 July 2024") is not a date of offence: it is shown as the relation.
+  const offenceRelation = settings.offenceDate ? "on" : transitionFactsFromText(question).offence?.relation ?? "on";
+  const offenceIsExact = Boolean(offenceDate) && offenceRelation === "on";
   const existing = input.threadId ? getThread(input.threadId) : null;
   const threadReplaced = Boolean(input.threadId && !existing);
   const thread: ResearchThread = existing ?? createThread({ question, settings });
@@ -232,6 +243,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
   let citationChecks: ResearchMessage["citations"] = [];
   let citationCheck: ResearchMessage["citationCheck"];
   let banner: AnswerBanner = null;
+  let authorities: ResearchMessage["authorities"];
   let synthesisInstructionsText = "";
   let refinements: Partial<Record<LaneKind, string[]>> | undefined;
   let noKey = !deps.hasKey;
@@ -358,7 +370,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
       const known = pool;
       const laneResults = await scheduleLanes<ResearchLane, LaneResult>(
         lanes,
-        (lane, slot) => runLane(lane, { question, settings, matter, deps, emit, signal: slot.signal, runSignal: signal, timedOut: slot.timedOut, texts, reads, known, policy, metrics, priors: slot.priors, board, plan: round === 1 ? plan : undefined, coverage: coverageBlock || undefined }, { queuedMs: slot.queuedMs }),
+        (lane, slot) => runLane(lane, { question, settings, matter, deps, emit, signal: slot.signal, runSignal: signal, timedOut: slot.timedOut, texts, reads, known, policy, metrics, priors: slot.priors, board, plan: round === 1 ? plan : undefined, coverage: coverageBlock || undefined, issues: subQuestions, ...(input.rerank !== undefined ? { rerank: input.rerank } : {}) }, { queuedMs: slot.queuedMs }),
         {
           concurrency: policy.laneConcurrency,
           signal,
@@ -425,8 +437,10 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
       const courts = resolveCourts(settings.jurisdiction, settings.courts);
       const range = datePresetRange(settings.datePreset, { from: settings.dateFrom, to: settings.dateTo });
       const offenceLine = offenceDate || /\b(IPC|BNS|CrPC|BNSS|offen[cs]e|FIR|bail|accused)\b/i.test(searchQuery ?? question)
-        ? `Date of offence: ${offenceDate ?? "not stated"}. Substantive code under the transition rule: ${offenceRule.substantive}${offenceRule.notes.length ? ` (${offenceRule.notes.join(" ")})` : ""}.`
+        ? `Date of offence: ${offenceDate ? (offenceIsExact ? offenceDate : `${offenceRelation === "before" ? "before" : "on or after"} ${offenceDate}`) : "not stated"}. Substantive code under the transition rule: ${offenceRule.substantive}${offenceRule.notes.length ? ` (${offenceRule.notes.join(" ")})` : ""}.`
         : "";
+      // The deterministic transition note (coded savings provisions), stated to the model and kept on the message.
+      const transitionBlock = transition.applies ? `Transition law (deterministic, from the coded savings provisions; state it in the answer and do not contradict it):\n${transition.lines.map((l) => `- ${l}`).join("\n")}` : "";
       // Byte-stable per mode: the cacheable prefix. Date, matter, jurisdiction and the question travel in the user turn.
       synthesisInstructionsText = synthesisInstructions(mode, firmLabel(), LEGAL_STYLE_RULES);
       terms = focusTerms([question, ...lanes.flatMap((l) => l.queries), ...subQuestions]);
@@ -441,6 +455,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
         matterLine,
         `Forum: ${j.label}. Binding: ${bindingCourtIds(j.key).join(", ")} (computed from the court registry)${courts ? `; retrieval limited to ${courts}` : ""}.${range.from ? ` Date range from ${range.from}.` : ""}${range.to ? ` Through ${range.to}.` : ""}`,
         offenceLine,
+        transitionBlock,
         searchQuery ? `The question was asked in ${languageInfo(qLang.language)?.name ?? qLang.language}; English search terms used: ${searchQuery}.` : "",
         answerLanguageLine(answerLanguage),
         subQuestions.length ? `Sub-questions to cover:\n${subQuestions.map((q) => `- ${q}`).join("\n")}` : "",
@@ -586,6 +601,18 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
     citationChecks = withCitationStates(cross.checks, remote);
     citationCheck = buildCitationCheck(artifactHash, citationChecks);
     emit({ type: "citation.checked", artifactHash, resolved: citationCheck.resolved, unresolved: citationCheck.unresolved, requiresReview: citationCheck.requiresReview, checks: citationChecks, citationCheck });
+    // Authority status: every authority in the answer resolved to a corpus record (or shown unresolved), and "supported"
+    // only where a claim attributed to it was checked against its read text for this answer hash.
+    let citedBy: Map<string, number> | undefined;
+    if (deps.citedBy && remaining() > ms(8_000)) {
+      const citedNs = citedNumbers(answer);
+      const targets = numbered.filter((s) => s.kind === "caselaw" && s.n != null && citedNs.has(s.n) && s.hit.readRef).slice(0, 8);
+      if (targets.length) {
+        const cbStage = stage(Math.min(ms(6_000), remaining() - ms(5_000)));
+        try { citedBy = await deps.citedBy(targets.map((s) => ({ id: s.id, citations: [s.hit.india?.neutralCitation, ...(s.hit.india?.reporterCitations ?? []), s.cite].filter((x): x is string => Boolean(x)) })), cbStage.signal); } catch { citedBy = undefined; }
+      }
+    }
+    authorities = buildAuthorityStatus({ answer, artifactHash, sources: numbered, verification, checks: citationChecks, remotelyKnown: remote, citedBy });
   }
 
   // --- banner -----------------------------------------------------------------
@@ -658,7 +685,9 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
     queryLanguage: qLang.language,
     answerLanguage,
     searchQuery: qLang.needsTranslation ? searchQuery : undefined,
-    offence: offenceDate || offenceRule.substantive !== "requires_review" ? { date: offenceDate ?? null, substantive: offenceRule.substantive } : undefined,
+    offence: offenceDate || offenceRule.substantive !== "requires_review" ? { date: offenceIsExact ? offenceDate ?? null : null, substantive: offenceRule.substantive } : undefined,
+    transition: transition.applies ? { substantive: transition.substantive, procedure: transition.procedure, lines: transition.lines, source: transition.source } : undefined,
+    authorities: authorities?.rows.length ? authorities : undefined,
   };
   message.trust = answer ? messageTrustState(message, finalNumbered) : "generated";
   const compact = pool.map(compactSource);

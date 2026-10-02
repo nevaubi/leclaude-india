@@ -1,0 +1,323 @@
+{
+ "suite": "binding_force",
+ "version": 1,
+ "cases": [
+  {
+   "id": "bench-bf-allahabad",
+   "category": "binding_force",
+   "question": "Anticipatory bail for pre-July-2024 offences: which High Court decisions bind a court in Uttar Pradesh?",
+   "forum": "hc-allahabad",
+   "expected": [
+    {
+     "key": "tatheer",
+     "title": "Tatheer Jafri v. State of U.P.",
+     "citation": "2025:AHC-LKO:18131",
+     "court": "hc-allahabad",
+     "year": 2025,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "docs/product/roadmap-india.md P3.3 (product owner benchmark; Allahabad High Court, Lucknow Bench, neutral citation) — verify against the official copy",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 482 BNSS",
+       "Section 438 CrPC",
+       "offence before 1 July 2024",
+       "Section 531 BNSS",
+       "transition"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "chowgule",
+     "title": "Chowgule & Co. v. State of Goa",
+     "citation": null,
+     "court": "hc-bombay",
+     "year": 2024,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "docs/product/roadmap-india.md P3.3 (product owner benchmark; Bombay High Court at Goa, 2024) — verify identity against the official copy",
+     "fixture": {
+      "keywords": [
+       "Section 531 BNSS",
+       "Section 482",
+       "BNSS",
+       "CrPC",
+       "transition",
+       "proceedings instituted after 1 July 2024"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "sushila",
+     "title": "Sushila Aggarwal v. State (NCT of Delhi)",
+     "citation": "(2020) 5 SCC 1",
+     "court": "sci",
+     "year": 2020,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 438 CrPC",
+       "duration",
+       "limited period",
+       "till end of trial",
+       "Constitution Bench"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "expectBinding": {
+    "tatheer": "binding",
+    "chowgule": "persuasive",
+    "sushila": "binding"
+   },
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-bf-bombay",
+   "category": "binding_force",
+   "question": "Transition to the BNSS for proceedings instituted after 1 July 2024: authority binding in Goa",
+   "forum": "hc-bombay",
+   "expected": [
+    {
+     "key": "chowgule",
+     "title": "Chowgule & Co. v. State of Goa",
+     "citation": null,
+     "court": "hc-bombay",
+     "year": 2024,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "docs/product/roadmap-india.md P3.3 (product owner benchmark; Bombay High Court at Goa, 2024) — verify identity against the official copy",
+     "fixture": {
+      "keywords": [
+       "Section 531 BNSS",
+       "Section 482",
+       "BNSS",
+       "CrPC",
+       "transition",
+       "proceedings instituted after 1 July 2024"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "tatheer",
+     "title": "Tatheer Jafri v. State of U.P.",
+     "citation": "2025:AHC-LKO:18131",
+     "court": "hc-allahabad",
+     "year": 2025,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "docs/product/roadmap-india.md P3.3 (product owner benchmark; Allahabad High Court, Lucknow Bench, neutral citation) — verify against the official copy",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 482 BNSS",
+       "Section 438 CrPC",
+       "offence before 1 July 2024",
+       "Section 531 BNSS",
+       "transition"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "expectBinding": {
+    "chowgule": "binding",
+    "tatheer": "persuasive"
+   },
+   "split": "heldout",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-bf-karnataka",
+   "category": "binding_force",
+   "question": "Transition to the BNSS for anticipatory bail: authority before the Karnataka High Court",
+   "forum": "hc-karnataka",
+   "expected": [
+    {
+     "key": "chowgule",
+     "title": "Chowgule & Co. v. State of Goa",
+     "citation": null,
+     "court": "hc-bombay",
+     "year": 2024,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "docs/product/roadmap-india.md P3.3 (product owner benchmark; Bombay High Court at Goa, 2024) — verify identity against the official copy",
+     "fixture": {
+      "keywords": [
+       "Section 531 BNSS",
+       "Section 482",
+       "BNSS",
+       "CrPC",
+       "transition",
+       "proceedings instituted after 1 July 2024"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "tatheer",
+     "title": "Tatheer Jafri v. State of U.P.",
+     "citation": "2025:AHC-LKO:18131",
+     "court": "hc-allahabad",
+     "year": 2025,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "docs/product/roadmap-india.md P3.3 (product owner benchmark; Allahabad High Court, Lucknow Bench, neutral citation) — verify against the official copy",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 482 BNSS",
+       "Section 438 CrPC",
+       "offence before 1 July 2024",
+       "Section 531 BNSS",
+       "transition"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "sibbia",
+     "title": "Gurbaksh Singh Sibbia v. State of Punjab",
+     "citation": "(1980) 2 SCC 565",
+     "court": "sci",
+     "year": 1980,
+     "bench": 5,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 438 CrPC",
+       "conditions",
+       "Constitution Bench",
+       "apprehension of arrest"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "expectBinding": {
+    "chowgule": "persuasive",
+    "tatheer": "persuasive",
+    "sibbia": "binding"
+   },
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-bf-subordinate",
+   "category": "binding_force",
+   "question": "Arrest checklist binding on a magistrate in Karnataka",
+   "forum": "ka-subordinate",
+   "expected": [
+    {
+     "key": "arnesh",
+     "title": "Arnesh Kumar v. State of Bihar",
+     "citation": "(2014) 8 SCC 273",
+     "court": "sci",
+     "year": 2014,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "arrest",
+       "Section 41 CrPC",
+       "Section 41A CrPC",
+       "Section 498A IPC",
+       "seven years",
+       "checklist",
+       "magistrate detention"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "expectBinding": {
+    "arnesh": "binding"
+   },
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  },
+  {
+   "id": "bench-bf-all-india",
+   "category": "binding_force",
+   "question": "Without a forum: which decisions on bail in economic offences bind?",
+   "forum": "all-india",
+   "expected": [
+    {
+     "key": "sanjaychandra",
+     "title": "Sanjay Chandra v. Central Bureau of Investigation",
+     "citation": "(2012) 1 SCC 40",
+     "court": "sci",
+     "year": 2012,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "high",
+     "source": "Supreme Court Cases (SCC) reporter citation",
+     "fixture": {
+      "keywords": [
+       "bail",
+       "economic offences",
+       "object of bail",
+       "gravity",
+       "punishment before trial"
+      ],
+      "fullText": true
+     }
+    },
+    {
+     "key": "tatheer",
+     "title": "Tatheer Jafri v. State of U.P.",
+     "citation": "2025:AHC-LKO:18131",
+     "court": "hc-allahabad",
+     "year": 2025,
+     "bench": null,
+     "role": "supporting",
+     "confidence": "medium",
+     "source": "docs/product/roadmap-india.md P3.3 (product owner benchmark; Allahabad High Court, Lucknow Bench, neutral citation) — verify against the official copy",
+     "fixture": {
+      "keywords": [
+       "anticipatory bail",
+       "Section 482 BNSS",
+       "Section 438 CrPC",
+       "offence before 1 July 2024",
+       "Section 531 BNSS",
+       "transition"
+      ],
+      "fullText": true
+     }
+    }
+   ],
+   "expectBinding": {
+    "sanjaychandra": "binding",
+    "tatheer": "persuasive"
+   },
+   "split": "dev",
+   "grading": "code",
+   "requiresModel": false
+  }
+ ]
+}

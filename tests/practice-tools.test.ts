@@ -1,8 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildFeeTable, chequeToText, formatIsoDate, limitationToText, mappingRows, mappingRowsToTsv, parseRupees, parseSectionLine, parseSectionList, parseSlabTable, arbitrationToText, applicableToText, feeToText, DECISION_SUPPORT_FOOTER } from "@/modules/tools/lib";
 import { mapSection, applicableCode } from "@/lib/india/criminal-code-map";
 import { arbitrationSetAsideTimeline, chequeDishonourTimeline, computeLimitation, limitationRule } from "@/lib/india/limitation";
 import { computeAdValoremFee } from "@/lib/india/court-fees";
+import { SAMPLE_CALENDAR, type CourtCalendar } from "@/lib/india/holidays";
+import {
+  CALENDAR_CAVEAT, calendarYears, causeListQuery, choiceForum, condonationDelay, countCourtDays, courtDaysToText, delayNote, delayToText, describeCalendarChoice, addWorkingDays, nextCourtDay,
+  officialChoice, resolveCalendar, COURT_CALENDAR_FORUMS, type OfficialCalendarResponse,
+} from "@/modules/tools/lib";
+import { TOOL_IDS, toolFromParam } from "@/modules/tools/ids";
+import { fetchCourtCalendar } from "@/modules/tools/components/use-court-calendars";
 
 const q = (s: string) => parseSectionLine(s).queries.map((x) => `${x.code} ${x.section}`);
 
@@ -159,5 +166,137 @@ describe("copy text", () => {
     expect(ap).toContain("Substantive law: IPC");
     expect(ap).toContain("Procedure: BNSS");
     expect(ap).toContain(DECISION_SUPPORT_FOOTER);
+  });
+});
+
+/* ───────────────── official court calendars, court days, condonation, cause lists ───────────────── */
+
+
+const DHC: CourtCalendar = {
+  id: "official:hc-delhi:2026", courtId: "hc-delhi", years: [2026], weeklyOff: [0],
+  holidays: [{ date: "2026-10-02", name: "Gandhi Jayanti" }], vacations: [{ from: "2026-12-24", to: "2026-12-31", name: "Winter vacation" }],
+  sample: false, source: "High Court of Delhi: official calendar data for 2026.",
+};
+const DHC_RESPONSE: OfficialCalendarResponse = { calendar: DHC, sources: [{ documentId: "od_1", url: "https://delhihighcourt.nic.in/files/calendar-2026.pdf", fetchedAt: "2026-09-03T10:15:00Z", years: [2026] }], forum: "hc-delhi", notes: [] };
+
+describe("practice tools: new tools are registered", () => {
+  it("lists the new tools and resolves them from ?tool=", () => {
+    expect(TOOL_IDS).toEqual(["limitation", "cheque", "arbitration", "condonation", "court-days", "causelist", "codes", "fees"]);
+    expect(toolFromParam("court-days")).toBe("court-days");
+    expect(toolFromParam("causelist")).toBe("causelist");
+    expect(toolFromParam("nope")).toBe("limitation");
+  });
+});
+
+describe("court calendar choice", () => {
+  it("parses official choices and resolves only loaded calendars (never a substitute)", () => {
+    expect(COURT_CALENDAR_FORUMS.map((f) => f.forum)).toEqual(["sci", "hc-delhi", "hc-karnataka", "nclt", "nclat"]);
+    expect(choiceForum(officialChoice("hc-delhi"))).toBe("hc-delhi");
+    expect(choiceForum("sample")).toBeNull();
+    expect(choiceForum("official:../x")).toBeNull();
+    expect(resolveCalendar("sample", {})).toBe(SAMPLE_CALENDAR);
+    expect(resolveCalendar("none", { "hc-delhi": DHC_RESPONSE })).toBeUndefined();
+    expect(resolveCalendar("official:hc-delhi", { "hc-delhi": DHC_RESPONSE })).toBe(DHC);
+    expect(resolveCalendar("official:sci", { "hc-delhi": DHC_RESPONSE })).toBeUndefined();
+    expect(resolveCalendar("official:sci", { sci: { calendar: null, sources: [], forum: null, notes: ["no official calendar loaded for sci 2026"] } })).toBeUndefined();
+    expect(calendarYears("2026-10-02")).toEqual([2025, 2026, 2027]);
+  });
+
+  it("describes the calendar with its source, fetched date and the ad-hoc caveat", () => {
+    const d = describeCalendarChoice("official:hc-delhi", { "hc-delhi": DHC_RESPONSE });
+    expect(d).toContain("High Court of Delhi official calendar for 2026");
+    expect(d).toContain("https://delhihighcourt.nic.in/files/calendar-2026.pdf (fetched 3 Sep 2026)");
+    expect(d).toContain(CALENDAR_CAVEAT);
+    expect(describeCalendarChoice("official:sci", {})).toMatch(/official calendar not loaded \(court holidays not checked\)/);
+    expect(describeCalendarChoice("none", {})).toBe("None selected");
+    expect(describeCalendarChoice("sample", {})).toMatch(/illustrative/);
+  });
+
+  it("classifies the calendar API's answers without inventing a calendar", async () => {
+    const reply = (status: number, body: unknown) => vi.fn(async () => new Response(body === undefined ? "<html>404</html>" : JSON.stringify(body), { status, headers: { "content-type": body === undefined ? "text/html" : "application/json" } }));
+    vi.stubGlobal("fetch", reply(200, DHC_RESPONSE));
+    expect(await fetchCourtCalendar("hc-delhi", [2026])).toEqual({ kind: "ok", data: DHC_RESPONSE });
+    vi.stubGlobal("fetch", reply(200, { calendar: null, sources: [], forum: null, notes: ["none"] }));
+    expect(await fetchCourtCalendar("sci", [2026])).toMatchObject({ kind: "ok", data: { calendar: null } });
+    vi.stubGlobal("fetch", reply(503, { error: "not configured", code: "official_not_configured" }));
+    expect((await fetchCourtCalendar("sci", [2026])).kind).toBe("not_configured");
+    vi.stubGlobal("fetch", reply(404, undefined));
+    expect((await fetchCourtCalendar("sci", [2026])).kind).toBe("not_available");
+    vi.stubGlobal("fetch", reply(403, { error: "forbidden" }));
+    expect((await fetchCourtCalendar("sci", [2026])).kind).toBe("denied");
+    vi.stubGlobal("fetch", reply(500, { error: "Could not read the court calendar", code: "calendar_failed" }));
+    expect(await fetchCourtCalendar("sci", [2026])).toEqual({ kind: "error", message: "Could not read the court calendar" });
+    const f = reply(200, DHC_RESPONSE);
+    vi.stubGlobal("fetch", f);
+    await fetchCourtCalendar("hc-delhi", [2025, 2026, 2027]);
+    expect(f.mock.calls[0]).toBeDefined();
+    expect(String((f.mock.calls[0] as unknown[])[0])).toBe("/api/official/calendars?forum=hc-delhi&years=2025,2026,2027");
+  });
+  afterEach(() => { vi.unstubAllGlobals(); });
+});
+
+describe("court days", () => {
+  it("counts sitting days with both ends included and lists the closures", () => {
+    const r = countCourtDays("2026-10-01", "2026-10-05", DHC);
+    expect(r).toMatchObject({ status: "computed", open: 3, days: 5, unknown: null });
+    expect(r.closed).toEqual([{ date: "2026-10-02", reason: "holiday: Gandhi Jayanti" }, { date: "2026-10-04", reason: "weekly off (Sunday)" }]);
+    const text = courtDaysToText({ from: "2026-10-01", to: "2026-10-05" }, r, "Delhi HC");
+    expect(text).toContain("Working days: 3 of 5 calendar days");
+    expect(text).toContain("2026-10-02");
+  });
+
+  it("stops (no number) where the calendar cannot answer, and rejects bad ranges", () => {
+    const r = countCourtDays("2026-12-30", "2027-01-02", DHC);
+    expect(r.status).toBe("requires_verification");
+    expect(r.open).toBeNull();
+    expect(r.unknown?.date).toBe("2027-01-01");
+    expect(countCourtDays("2026-10-05", "2026-10-01", DHC).status).toBe("invalid_input");
+    expect(countCourtDays("2026-10", "2026-10-05", DHC).status).toBe("invalid_input");
+    expect(countCourtDays("2026-10-01", "2026-10-03", SAMPLE_CALENDAR).status).toBe("requires_verification");
+  });
+
+  it("finds the next sitting day and adds working days", () => {
+    expect(nextCourtDay("2026-10-02", DHC)).toMatchObject({ status: "computed", date: "2026-10-03", skipped: [{ date: "2026-10-02" }] });
+    expect(nextCourtDay("2026-12-26", DHC)).toMatchObject({ date: null, status: "requires_verification" });
+    expect(addWorkingDays("2026-10-01", 2, DHC)).toMatchObject({ status: "computed", date: "2026-10-05" });
+    expect(addWorkingDays("2026-12-20", 10, DHC)).toMatchObject({ status: "requires_verification", date: null });
+    expect(addWorkingDays("2026-10-01", 0, DHC).status).toBe("invalid_input");
+  });
+});
+
+describe("condonation of delay", () => {
+  it("counts days after the last day and never predicts the outcome", () => {
+    const late = condonationDelay("2026-10-01", "2026-10-11");
+    expect(late).toEqual({ status: "delayed", days: 10, notes: [] });
+    expect(delayNote(late)).toMatch(/10 days late/);
+    expect(delayNote(late)).toMatch(/does not assess it or predict the outcome/);
+    expect(delayNote(late, false)).toMatch(/s\.5 of the Limitation Act does not extend time/);
+    expect(delayNote(late, "special")).toMatch(/only as the special law provides/);
+    expect(condonationDelay("2026-10-01", "2026-10-01")).toMatchObject({ status: "within_time", days: 0 });
+    expect(condonationDelay("2026-10-05", "2026-10-01")).toMatchObject({ status: "within_time", days: 0, notes: ["Filed 4 day(s) before the last day of limitation."] });
+    expect(condonationDelay("2026-10", "2026-10-01").status).toBe("invalid_input");
+    const text = delayToText({ lastDay: "2026-10-01", filedOn: "2026-10-11", proceeding: "Appeal under the CPC to a High Court", authority: "Art. 116(a)" }, late, true);
+    expect(text).toContain("Delay: 10 day(s)");
+    expect(text).toContain("Condonation: Delay condonable on sufficient cause");
+    expect(text).not.toMatch(/likely|will be condoned|chance/i);
+  });
+});
+
+describe("cause list search query", () => {
+  const base = { forum: "sci", date: "2026-10-05", caseNumber: "", diary: "", advocate: "" };
+  it("builds exact-match queries", () => {
+    expect(causeListQuery(base)).toEqual({ qs: "forum=sci&date=2026-10-05&limit=200", error: null });
+    expect(causeListQuery({ ...base, date: "", caseNumber: "SLP(C) No. 1234/2026" }).qs).toBe("forum=sci&case=SLP%28C%29+No.+1234%2F2026&limit=200");
+    expect(causeListQuery({ ...base, diary: "54583/2026" }).qs).toContain("diary=54583%2F2026");
+    expect(causeListQuery({ ...base, advocate: "  AJAY   MARWAH " }).qs).toContain("advocate=AJAY+MARWAH");
+  });
+  it("refuses what it cannot match exactly", () => {
+    expect(causeListQuery({ ...base, forum: "hc-mars" }).error).toMatch(/Choose a court/);
+    expect(causeListQuery({ ...base, caseNumber: "anything goes" }).error).toMatch(/not one recognisable case number/);
+    expect(causeListQuery({ ...base, forum: "hc-delhi", diary: "54583/2026" }).error).toMatch(/Supreme Court only/);
+    expect(causeListQuery({ ...base, diary: "abc" }).error).toMatch(/not a diary number/);
+    expect(causeListQuery({ ...base, advocate: "AB" }).error).toMatch(/at least 3 letters/);
+    expect(causeListQuery({ ...base, date: "" }).error).toMatch(/Give a list date, or a case or diary number/);
+    expect(causeListQuery({ ...base, date: "2026-13-01" }).error).toMatch(/list date in full/);
   });
 });

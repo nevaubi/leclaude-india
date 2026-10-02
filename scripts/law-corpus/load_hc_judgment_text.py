@@ -11,15 +11,16 @@ Usage (needs DATABASE_URL; pip install duckdb "psycopg[binary]"):
     TEXT_MAX_DB_MB=20000 python3 scripts/law-corpus/load_hc_judgment_text.py karnataka
 
 Rules:
-- Only English rows. The dataset's synthetic header ("Case: ... / Section: X") is removed; text is otherwise as published.
+- Only English rows. The chunk text is `text_original` (as parsed, no synthetic header) when the parquet has that column
+  and the value is non-empty; otherwise the dataset's synthetic header ("Case: ... / Section: X") is removed from
+  `text` (older snapshots). Text is otherwise as published.
 - Rows are keyed by the dataset chunk id (idempotent upserts).
 - A judgment record is marked text_status = 'full' only when its CNR and decision date both match the text's; a CNR
   with several orders is never given another order's text.
 """
 import os, re, sys, time
 
-import duckdb
-import psycopg
+# duckdb and psycopg are imported in main() so the pure helpers can be checked without them.
 
 VERSION = os.environ.get("LAW_DATASET_VERSION", "v2026.08.1")
 MAX_DB_MB = int(os.environ.get("TEXT_MAX_DB_MB", "20000"))
@@ -68,6 +69,18 @@ def strip_header(text):
     return text.strip()
 
 
+def chunk_body(text, text_original=None):
+    """The chunk's text as published: text_original when present and non-empty, else `text` without the header."""
+    if isinstance(text_original, str) and text_original.strip():
+        return text_original.strip()
+    return strip_header(text or "")
+
+
+def parquet_columns(duck, url):
+    """Column names of a parquet file (DESCRIBE reads only the footer)."""
+    return {row[0] for row in duck.execute(f"DESCRIBE SELECT * FROM read_parquet('{url}')").fetchall()}
+
+
 def db_mb(conn):
     with conn.cursor() as cur:
         cur.execute("select pg_database_size(current_database())")
@@ -79,18 +92,19 @@ def load(conn, duck, name):
     url = f"https://oss-data-in.vaquill.ai/{VERSION}/in_{name}_judgments.parquet"
     t0 = time.time()
     stored = skipped = 0
+    original = "text_original" if "text_original" in parquet_columns(duck, url) else "NULL::VARCHAR"
     res = duck.execute(
         f"""SELECT chunk_id, case_id, chunk_index, total_chunks, page_start, page_end, section_type, text,
-                   try_cast(substr(decision_date, 1, 10) AS DATE) AS d, title, case_number
+                   try_cast(substr(decision_date, 1, 10) AS DATE) AS d, title, case_number, {original} AS text_original
             FROM read_parquet('{url}') WHERE language_code = 'en'""")
     while True:
         rows = res.fetchmany(BATCH)
         if not rows:
             break
         out = []
-        for chunk_id, case_id, idx, total, p0, p1, stype, text, d, title, case_number in rows:
+        for chunk_id, case_id, idx, total, p0, p1, stype, text, d, title, case_number, text_original in rows:
             cnr = (case_id or "").strip().upper()
-            body = strip_header(text or "")
+            body = chunk_body(text, text_original)
             if not CNR.match(cnr) or not body or d is None:
                 skipped += 1
                 continue
@@ -138,6 +152,8 @@ def main():
     url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
     if not url:
         sys.exit("DATABASE_URL is not set")
+    import duckdb
+    import psycopg
     duck = duckdb.connect()
     duck.execute("INSTALL httpfs; LOAD httpfs;")
     with psycopg.connect(url) as conn:

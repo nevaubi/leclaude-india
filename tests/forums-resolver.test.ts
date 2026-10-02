@@ -21,7 +21,7 @@ describe("local-law resolver", () => {
   it("resolves by exact normalised title within the pointer's State", async () => {
     const seen: SqlQuery[] = [];
     const store = fakeStore([
-      row({ id: "IND_KA_1", title: "The KARNATAKA RENT ACT, 1999", state: "Karnataka", state_code: "KA", year: "2001", status: "in_force", source_url: "https://www.indiacode.nic.in/handle/123456789/1" }),
+      row({ id: "IND_KA_1", title: "The KARNATAKA RENT ACT, 1999", state: "Karnataka", state_code: "KA", year: "2001", status: "in_force", source_url: "https://indiacode.gov.in/handle/123456789/1" }),
       row({ id: "IND_KA_2", title: "The Karnataka Rent Control Act, 1961", state: "Karnataka", state_code: "KA" }),
     ], seen);
     const r = await resolveLocalLaw([KA_RENT], store);

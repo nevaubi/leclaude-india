@@ -84,3 +84,13 @@ CREATE TABLE IF NOT EXISTS law_provisions (
 CREATE INDEX IF NOT EXISTS law_provisions_act_ord ON law_provisions (act_id, ord);
 CREATE INDEX IF NOT EXISTS law_provisions_act_section ON law_provisions (act_id, lower(section_number));
 CREATE INDEX IF NOT EXISTS law_provisions_search ON law_provisions USING gin (search);
+
+-- Additive columns (loader v2). Safe to re-run; existing rows keep NULL until their file is reloaded.
+--   law_instruments.status_counts  provisions per dataset status for the instrument ({"in_force": 412, "repealed": 3}); the
+--                                  instrument `status` stays the most common value, this keeps the mixture visible.
+--   law_instruments.in_force       true only when every provision with a recorded status is in_force; false when any is not;
+--                                  NULL when no provision records a status.
+--   law_provisions.amendment_count the dataset's amendment_count for the chunk, as published.
+ALTER TABLE law_instruments ADD COLUMN IF NOT EXISTS status_counts jsonb;
+ALTER TABLE law_instruments ADD COLUMN IF NOT EXISTS in_force boolean;
+ALTER TABLE law_provisions ADD COLUMN IF NOT EXISTS amendment_count int;

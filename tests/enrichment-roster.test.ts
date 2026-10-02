@@ -103,6 +103,11 @@ describe("guarded extraction", () => {
     const { entries } = guardExtracted([{ name: "Justice S G Pandit", photo_url: "https://elsewhere.example/x.jpg" }], md, "https://hc.example.gov.in/judges");
     expect(entries[0].photoUrl).toBeNull();
   });
+  it("treats apostrophe variants as the same character but still drops names that are not printed", () => {
+    const page = "| Hon`ble Mr. Justice Vibhu Bakhru | Chief Justice |\n| Hon’ble Mr. Justice Anu Sivaraman |";
+    const { entries } = guardExtracted([{ name: "Hon'ble Mr. Justice Vibhu Bakhru" }, { name: "Hon'ble Mr. Justice Anu Sivaraman" }, { name: "Hon'ble Mr. Justice Someone Else" }], page, "https://hc.example.gov.in/judges");
+    expect(entries).toHaveLength(2);
+  });
 });
 
 describe("source registry", () => {

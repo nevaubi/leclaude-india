@@ -7,7 +7,8 @@ import { BytesCache, PRIORITY, processUnit, scrubIndexedDocuments, type StageCou
 import { officialSources, sourceEnabled } from "./registry";
 import type { IngestRunReport, SourceDef, SourceId } from "./types";
 import { isSourceId } from "./types";
-import { claimUnit, dbSize, enqueueUnits, officialLimitBytes, officialStore, pgArray, sweepExpiredUnits, unitId, UNIT_STAGES, type OfficialUnit, type UnitStage } from "./units";
+import { claimUnit, dbSize, enqueueUnits, getOfficialState, officialLimitBytes, officialStore, pgArray, setOfficialState, sweepExpiredUnits, unitId, UNIT_STAGES, type OfficialUnit, type UnitStage } from "./units";
+import { backfillCursor, parseCursor } from "./adapters/regulators/common";
 
 /**
  * Bounded ingest runs for the official-sources corpus (one API call / one cron slice). Durable and resumable: all work
@@ -70,6 +71,8 @@ export interface OfficialRunOptions {
   retryFailed?: boolean;
   /** Bounded automatic redrive (scheduled runs): failed units older than the cooldown, at most `maxRedrives` times each. */
   redrive?: RedriveOptions;
+  /** Backfill passes to start (default: OFFICIAL_BACKFILL / OFFICIAL_BACKFILL_GENERATION). */
+  backfill?: BackfillRequest | null;
   store?: RemoteStore | null;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -209,6 +212,11 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
         if (n) result.notes.push(`${n} failed unit(s) re-queued`);
       }
       if (stages.includes("discover")) {
+        const started = await startBackfills(store, enabled, o.backfill ?? backfillRequest());
+        if (started.length) {
+          await scheduleDiscovery(store, started, true);
+          result.notes.push(`backfill started: ${started.map((d) => d.id).join(", ")}`);
+        }
         const queued = await scheduleDiscovery(store, enabled, o.forceDiscover === true);
         if (queued) result.notes.push(`${queued} discovery unit(s) scheduled`);
       }
@@ -390,6 +398,46 @@ export async function requeueCappedOcr(store: RemoteStore, sources: string[], ca
     await store.query({ query: `UPDATE official_documents SET error = $2, updated_at = now() WHERE id = $1 AND status = 'ocr_needed'`, params: [String(r.id), `${n} page(s) queued for OCR (OFFICIAL_OCR_MAX_PAGES raised to ${Math.floor(cap)})`] });
   }
   return rows.length;
+}
+
+/**
+ * Full-history backfill for the sources whose discovery walks listing pages (regulators, gazette, Parliament). Their
+ * default pass is incremental (newest pages until the previous pass's newest item); a backfill pass walks every page to
+ * the oldest and then switches back to incremental by itself. A request names the sources and a generation: each
+ * source starts once per generation (recorded in corpus_state), so a finished backfill never restarts on its own.
+ */
+export interface BackfillRequest {
+  generation: string;
+  sources: string[];
+}
+
+/** Sources whose cursor is the walker's (./adapters/regulators/common.ts); court adapters keep their own cursors. */
+export const BACKFILL_SOURCES: readonly SourceId[] = ["ibbi", "sebi-orders", "cci-orders", "sansad", "egazette", "cbic", "gst-council", "cbdt"];
+
+export function backfillRequest(env: Readonly<Record<string, string | undefined>> = process.env): BackfillRequest | null {
+  const sources = (env.OFFICIAL_BACKFILL ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (!sources.length) return null;
+  const generation = (env.OFFICIAL_BACKFILL_GENERATION ?? "1").trim().slice(0, 40) || "1";
+  return { generation, sources };
+}
+
+/** Seed a backfill cursor for each requested, enabled walker source not yet started in this generation. */
+export async function startBackfills(store: RemoteStore, enabled: SourceDef[], req: BackfillRequest | null): Promise<SourceDef[]> {
+  if (!req) return [];
+  const wanted = new Set(req.sources);
+  const out: SourceDef[] = [];
+  for (const def of enabled) {
+    if (!wanted.has(def.id) || !BACKFILL_SOURCES.includes(def.id)) continue;
+    const markerKey = `official_backfill:${def.id}`;
+    const marker = await getOfficialState<{ generation?: string }>(store, markerKey);
+    if (marker?.generation === req.generation) continue;
+    const cursorKey = `official_cursor:${def.id}`;
+    const current = parseCursor(await getOfficialState<string>(store, cursorKey));
+    if (current?.mode !== "backfill") await setOfficialState(store, cursorKey, backfillCursor({ lastSeen: current?.lastSeen ?? {} }));
+    await setOfficialState(store, markerKey, { generation: req.generation, startedAt: new Date().toISOString() });
+    out.push(def);
+  }
+  return out;
 }
 
 export interface RedriveOptions {

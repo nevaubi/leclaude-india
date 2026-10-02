@@ -1,8 +1,9 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { ArrowLeft, Database, ExternalLink, FileText, Lock, RotateCcw, SearchX, TriangleAlert, UserRound } from "lucide-react";
-import { PageTopbar } from "@/components/shell/page-topbar";
+import { ArrowLeft, Database, ExternalLink, FileText, Lock, RotateCcw, SearchX, TriangleAlert } from "lucide-react";
+import { PhotoBackdrop } from "@/components/corpus/visual-image";
+import { courtVisual, useVisuals } from "@/modules/media/use-visuals";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/misc";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,7 +12,6 @@ import { caseHref, formatCaseDate } from "@/modules/caselaw/shared";
 import { CaseApiError, fetchCaseJson } from "@/modules/caselaw/components/fetch";
 import { displayJudgeName } from "../names";
 import { STATUS_LABEL, type JudgeJudgments, type JudgeProfile, type JudgeProfileResponse } from "../shared";
-import { CourtEmblem } from "./court-emblem";
 import { hostOf } from "./judges-directory";
 import { JudgeAvatar } from "./judge-avatar";
 
@@ -34,9 +34,8 @@ export function JudgeProfileView({ id }: { id: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageTopbar icon={<UserRound />} title="Judges" context={data ? displayJudgeName(data.judge.name) : undefined} />
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-        <div className="mx-auto w-full max-w-[1100px] px-4 pb-10 pt-3 sm:px-6">
+        <div className="mx-auto w-full max-w-[1180px] px-4 pb-12 pt-3 sm:px-6">
           <Link href="/judges" className="inline-flex items-center gap-1 rounded text-[12px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
             <ArrowLeft className="size-3.5" aria-hidden />Judges
           </Link>
@@ -47,51 +46,44 @@ export function JudgeProfileView({ id }: { id: string }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[120px_1fr] gap-2 py-[3px] text-[12.5px] leading-snug">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words">{children}</dd>
-    </div>
-  );
-}
-
 const DASH = <span className="text-muted-foreground/60">—</span>;
 
 function ProfileBody({ data }: { data: JudgeProfileResponse }) {
   const j = data.judge;
   const name = displayJudgeName(j.name);
+  const visuals = useVisuals();
+  const photo = courtVisual(visuals, j.courtId);
   return (
-    <article className="mt-3">
-      <div className="flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-start">
-        <JudgeAvatar name={j.name} photo={j.photo} fill rounded="md" className="aspect-[4/5] w-[132px] text-[28px]" />
+    <article className="mt-2">
+      <header className={cn("relative isolate flex flex-col gap-5 overflow-hidden rounded-xl border p-5 sm:flex-row sm:items-end sm:p-6", photo && "pb-8 sm:pb-8")}>
+        <PhotoBackdrop visual={photo} />
+        <JudgeAvatar name={j.name} photo={j.photo} fill rounded="md" className="aspect-[4/5] w-[136px] text-[28px] shadow-sm ring-4 ring-background" />
         <div className="min-w-0 flex-1">
-          <h1 className="text-[19px] font-semibold leading-snug tracking-[-0.01em]">{name}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
+          <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{j.court ?? "Court not recorded"}</div>
+          <h1 className="mt-1 font-serif text-[28px] leading-tight tracking-[-0.015em]">{name}</h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
             {j.designation ? <span className="text-foreground/85">{j.designation}</span> : null}
             {j.designation ? <span aria-hidden>·</span> : null}
-            <span className="inline-flex items-center gap-1.5"><CourtEmblem courtId={j.courtId} size={18} />{j.court ?? "Court not recorded"}</span>
-            <span aria-hidden>·</span>
             <span className={cn(j.status !== "sitting" && "text-warning-foreground dark:text-warning")}>{STATUS_LABEL[j.status]}</span>
           </div>
-          <dl className="mt-3 max-w-[560px]">
-            <Field label="As printed">{j.printedName}</Field>
-            <Field label="Appointed">{formatCaseDate(j.dateOfAppointment) ?? DASH}</Field>
-            {j.termExpires ? <Field label="Present term to">{formatCaseDate(j.termExpires)}</Field> : <Field label="Retires">{formatCaseDate(j.retirementDate) ?? DASH}</Field>}
+          <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-[12.5px]">
+            <div><dt className="text-[11px] text-muted-foreground">As printed</dt><dd>{j.printedName}</dd></div>
+            <div><dt className="text-[11px] text-muted-foreground">Appointed</dt><dd className="tabular">{formatCaseDate(j.dateOfAppointment) ?? DASH}</dd></div>
+            {j.termExpires ? <div><dt className="text-[11px] text-muted-foreground">Present term to</dt><dd className="tabular">{formatCaseDate(j.termExpires)}</dd></div> : <div><dt className="text-[11px] text-muted-foreground">Retires</dt><dd className="tabular">{formatCaseDate(j.retirementDate) ?? DASH}</dd></div>}
           </dl>
-          <div className="mt-3 flex flex-wrap gap-1.5">
+          <div className="mt-3.5 flex flex-wrap gap-1.5">
             {j.profileUrl ? (
-              <Button asChild size="xs" variant="outline"><a href={j.profileUrl} target="_blank" rel="noopener noreferrer">Official profile · {hostOf(j.profileUrl)}<ExternalLink className="size-3 opacity-60" /></a></Button>
+              <Button asChild size="xs" variant="outline" className="bg-background/80"><a href={j.profileUrl} target="_blank" rel="noopener noreferrer">Official profile · {hostOf(j.profileUrl)}<ExternalLink className="size-3 opacity-60" /></a></Button>
             ) : null}
-            <Button asChild size="xs" variant="outline"><Link href={`/cases?judge=${encodeURIComponent(j.name)}`}><FileText className="size-3.5" />Search case law by this name</Link></Button>
+            <Button asChild size="xs" variant="outline" className="bg-background/80"><Link href={`/cases?judge=${encodeURIComponent(j.name)}`}><FileText className="size-3.5" />Search case law by this name</Link></Button>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Judgments j={j} judgments={data.judgments} />
         <aside className="min-w-0">
-          <section className="rounded-md border" aria-label="Source">
+          <section className="rounded-lg border" aria-label="Source">
             <header className="flex h-8 items-center border-b px-3"><h2 className="text-[12.5px] font-medium">Source</h2></header>
             <ul className="space-y-2 px-3 py-2.5 text-[11.5px] leading-snug text-muted-foreground">
               <li>
@@ -115,7 +107,7 @@ function ProfileBody({ data }: { data: JudgeProfileResponse }) {
 
 function Judgments({ j, judgments }: { j: JudgeProfile; judgments: JudgeJudgments }) {
   return (
-    <section className="min-w-0 rounded-md border" aria-label="Judgments">
+    <section className="min-w-0 rounded-lg border" aria-label="Judgments">
       <header className="flex h-8 items-center gap-2 border-b px-3">
         <h2 className="text-[12.5px] font-medium">Judgments</h2>
         <span className="flex-1" />

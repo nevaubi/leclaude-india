@@ -2,12 +2,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { BookOpen, Info, LayoutList, Scale, Search, SearchX, X } from "lucide-react";
+import { BookOpen, Info, Search, SearchX, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { Chip, EmptyState, Kbd, Spinner } from "@/components/ui/misc";
-import { CorpusHeader } from "@/components/corpus/corpus-header";
+import { LawHubMeta } from "@/components/corpus/law-hub";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
@@ -154,7 +154,7 @@ export function LawDirectory() {
   const inputRef = React.useRef<HTMLInputElement>(null);
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "/" && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable)) { e.preventDefault(); inputRef.current?.focus(); }
+      if (e.key === "/" && inputRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable)) { e.preventDefault(); inputRef.current?.focus(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -180,23 +180,17 @@ export function LawDirectory() {
     { value: "title", label: "Acts first, A–Z" }, { value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" },
   ];
 
-  const header = (
-    <CorpusHeader
-      icon={Scale}
-      title="Statutes"
-      description="Central and State Acts and regulator publications, section by section, each linked to its publisher's official page."
-      coverage={unavailable ? undefined : <LawCoverageLine facets={facets} loading={facetsLoading} error={facetsError} onRetry={() => setFacetsNonce((n) => n + 1)} />}
-      actions={unavailable ? undefined : landing
-        ? <Button size="xs" variant="outline" onClick={showAll}><LayoutList className="size-3.5" />Browse all Acts</Button>
-        : <Button size="xs" variant="ghost" onClick={clearAll}>Start page</Button>}
-    />
+  const meta = unavailable ? null : (
+    <LawHubMeta>
+      <LawCoverageLine facets={facets} loading={facetsLoading} error={facetsError} onRetry={() => setFacetsNonce((n) => n + 1)} />
+      {landing ? <><span aria-hidden className="text-muted-foreground/50">·</span><button type="button" onClick={showAll} className="rounded text-foreground/80 underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Browse all Acts</button></> : null}
+    </LawHubMeta>
   );
 
   if (unavailable) {
     return (
       <div className="flex h-full flex-col">
-        {header}
-        <div className="flex flex-1 items-center justify-center border-t p-6"><LawUnavailable error={unavailable} /></div>
+        <div className="flex flex-1 items-center justify-center p-6"><LawUnavailable error={unavailable} /></div>
       </div>
     );
   }
@@ -207,18 +201,18 @@ export function LawDirectory() {
   const actCount = sectionsMode && sections ? new Set(sections.hits.map((h) => h.actId)).size : 0;
 
   const searchRow = (
-    <div className={cn("flex flex-wrap items-center gap-2", landing ? "max-w-[760px]" : "")}>
-      <div className={cn("relative min-w-[220px] flex-1", landing ? "" : "sm:max-w-[420px]")}>
-        <Search className={cn("pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted-foreground", landing ? "left-3 size-4" : "left-2.5 size-3.5")} aria-hidden />
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative min-w-[220px] flex-1 sm:max-w-[420px]">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <Input
           ref={inputRef}
-          size={landing ? "default" : "sm"}
+          size="sm"
           value={qDraft}
           onChange={(e) => setQDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Escape" && qDraft) { e.preventDefault(); setQDraft(""); setFilters({ q: "" }); } }}
           placeholder={sectionsMode ? "Words in the provisions, e.g. anticipatory bail" : "Act or regulation title, State or regulator"}
           aria-label={sectionsMode ? "Search provisions" : "Search Acts and regulations"}
-          className={cn(landing ? "pl-9 pr-9" : "pl-8 pr-8")}
+          className="pl-8 pr-8"
           maxLength={200}
         />
         {qDraft ? (
@@ -227,7 +221,7 @@ export function LawDirectory() {
           </button>
         ) : <Kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border px-1 text-[10.5px] text-muted-foreground sm:inline-flex">/</Kbd>}
       </div>
-      <ToggleGroup type="single" size={landing ? "default" : "sm"} variant="outline" value={filters.mode} onValueChange={(v) => { if (v === "acts" || v === "sections") setFilters({ mode: v }); }} aria-label="Search Acts or sections" className="shrink-0">
+      <ToggleGroup type="single" size="sm" variant="outline" value={filters.mode} onValueChange={(v) => { if (v === "acts" || v === "sections") setFilters({ mode: v }); }} aria-label="Search Acts or sections" className="shrink-0">
         <ToggleGroupItem value="acts" className="px-3 text-[12.5px]">Acts</ToggleGroupItem>
         <ToggleGroupItem value="sections" className="px-3 text-[12.5px]">Sections</ToggleGroupItem>
       </ToggleGroup>
@@ -236,10 +230,10 @@ export function LawDirectory() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {header}
-      <form className={cn("shrink-0 border-b px-4 sm:px-6", landing ? "pb-4" : "pb-2")} role="search" onSubmit={(e) => { e.preventDefault(); setFilters({ q: qDraft.trim() }); }}>
+      {meta}
+      {!landing ? <form className="shrink-0 border-b px-4 pb-2 pt-3 sm:px-6" role="search" onSubmit={(e) => { e.preventDefault(); setFilters({ q: qDraft.trim() }); }}>
         {searchRow}
-        {!landing ? (
+        {(
           <div className="mt-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="Filters">
             <Select value={filters.jurisdiction || "__all"} onValueChange={(v) => setFilters({ jurisdiction: v === "__all" ? "" : (v as LawFilters["jurisdiction"]) })}>
               <SelectTrigger size="xs" className="w-[132px]" aria-label="Jurisdiction"><SelectValue /></SelectTrigger>
@@ -293,10 +287,10 @@ export function LawDirectory() {
                 <SelectContent>{sortOptions.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
               </Select>
             ) : null}
-            {active ? <Button type="button" variant="ghost" size="xs" onClick={clearAll}><X className="size-3.5" />Clear filters</Button> : null}
+            {active ? <Button type="button" variant="ghost" size="xs" onClick={clearAll}><X className="size-3.5" />Clear filters</Button> : <Button type="button" variant="ghost" size="xs" onClick={clearAll}>Start page</Button>}
           </div>
-        ) : null}
-      </form>
+        )}
+      </form> : null}
 
       {landing ? (
         <LawLanding facets={facets} facetsLoading={facetsLoading} facetsError={facetsError} onRetryFacets={() => setFacetsNonce((n) => n + 1)} onPick={(patch) => { if (patch.q) setQDraft(patch.q); setFilters(patch); }} sectionsMode={sectionsMode} />

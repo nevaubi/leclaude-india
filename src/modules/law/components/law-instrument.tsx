@@ -16,7 +16,7 @@ import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { displayChapterTitle, displayHeading, groupToc, lawBlocks, type LawBlock } from "../reader";
 import {
-  citationTitle, displayLawCitation, jurisdictionLabel, LAW_ATTRIBUTION_LINE, LAW_DATASET, lawApiHref, lawHref, repeatedProvisionLabel, NO_SECTION, normSectionKey, normVariant, provisionUnit, publisherLabel, safeHttpUrl, snippetParts,
+  citationTitle, displayLawCitation, jurisdictionLabel, statusTone, LAW_ATTRIBUTION_LINE, LAW_DATASET, lawApiHref, lawHref, repeatedProvisionLabel, NO_SECTION, normSectionKey, normVariant, provisionUnit, publisherLabel, safeHttpUrl, snippetParts,
   type LawInstrument, type LawInstrumentResponse, type LawProvisionHit, type LawSearchResponse, type LawSectionRef, type LawSectionResponse, type LawTocEntry,
 } from "../shared";
 import { asLawApiError, fetchLawJson, type LawApiError } from "./fetch";
@@ -196,14 +196,15 @@ function SourcePopover({ i }: { i: LawInstrument }) {
 
 function InstrumentHeader({ i, total }: { i: LawInstrument; total: number }) {
   return (
-    <header className="shrink-0 px-4 pb-3 pt-3 sm:px-6">
+    <header className="shrink-0 px-4 pb-3.5 pt-3 sm:px-6">
       <BackLink i={i} />
-      <div className="mt-1.5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <div className="mt-2 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
-          <h1 className="max-w-[880px] text-[20px] font-semibold leading-snug tracking-[-0.015em]">{citationTitle(i)}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-muted-foreground">
-            <StatusText status={i.status} className={cn(i.status === "in_force" && "text-foreground/85")} />
-            <span aria-hidden className="text-muted-foreground/50">·</span>
+          <h1 className="max-w-[880px] font-serif text-[23px] leading-tight tracking-[-0.01em]">{citationTitle(i)}</h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
+            <span className={cn("inline-flex items-center rounded-full border px-2 py-px", i.status === "in_force" ? "border-success/30 bg-success/5" : statusTone(i.status) === "off" ? "border-warning/40 bg-warning/5" : "")}>
+              <StatusText status={i.status} className={cn("text-[11.5px]", i.status === "in_force" && "text-foreground/85")} />
+            </span>
             <span>{jurisdictionLabel(i)}</span>
             <span aria-hidden className="text-muted-foreground/50">·</span>
             <span>{kindLabel(i.kind)}{i.year ? <span className="tabular">, {i.year}</span> : null}</span>
@@ -212,7 +213,7 @@ function InstrumentHeader({ i, total }: { i: LawInstrument; total: number }) {
           </div>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1">
-          <OfficialLink i={i} url={i.source_url} label={<>Official text<span className="hidden sm:inline"> · {publisherLabel(i)}</span></>} />
+          <OfficialLink i={i} url={i.source_url} label={<>Official text<span className="hidden xl:inline"> · {publisherLabel(i)}</span></>} />
           <Button asChild size="xs" variant="ghost"><Link href={`/search?q=${encodeURIComponent(citationTitle(i))}`}><Search className="size-3.5" />Research</Link></Button>
           <SourcePopover i={i} />
         </div>
@@ -260,8 +261,8 @@ function Toc({ instrument, toc, selected, onMore, moreLoading, moreError }: { in
           {groups.map((g, gi) => (
             <div key={`${g.key}|${gi}`}>
               {g.title || g.chapter ? (
-                <div className="sticky top-0 z-[1] border-b border-line-quiet bg-background/95 px-3 pb-1 pt-2 backdrop-blur-sm">
-                  <div className="flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                <div className="sticky top-0 z-[1] border-b border-line-quiet bg-background/95 px-3 pb-1.5 pt-2.5 backdrop-blur-sm">
+                  <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                     {g.chapter ? <span className="tabular">Chapter {g.chapter}</span> : null}
                     {g.outOfSequence ? (
                       <Tip label="These entries appear out of statutory order under this chapter (often preamble or objects text). Check the official text for their placement.">
@@ -269,7 +270,7 @@ function Toc({ instrument, toc, selected, onMore, moreLoading, moreError }: { in
                       </Tip>
                     ) : null}
                   </div>
-                  {g.title ? <div className="truncate text-[11.5px] font-medium text-foreground/80" title={g.title}>{g.title}</div> : null}
+                  {g.title ? <div className="truncate text-[12px] font-medium text-foreground/85 lowercase first-letter:uppercase" title={g.title}>{g.title}</div> : null}
                 </div>
               ) : gi > 0 ? <div className="mx-3 my-1 border-t border-line-quiet" /> : null}
               <ul className="py-0.5">
@@ -390,7 +391,7 @@ function Overview({ i, toc, onOpenToc }: { i: LawInstrument; toc: LawInstrumentR
                   <li key={`${g.key}|${k}`}>
                     <Link href={lawHref(i.id, a.section, a.variant)} scroll={false} className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-baseline gap-3 px-3 py-2 text-[12.5px] hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50">
                       <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground tabular">{g.chapter ? `Chapter ${g.chapter}` : ""}</span>
-                      <span className="truncate text-foreground/90">{g.title}</span>
+                      <span className="truncate text-foreground/90 lowercase first-letter:uppercase">{g.title}</span>
                       <span className="text-[11.5px] text-muted-foreground tabular">{a.section === b.section ? a.section : `${a.section}–${b.section}`}</span>
                     </Link>
                   </li>
@@ -496,10 +497,13 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
     const blocks = lawBlocks(s.text, s.section);
     const chapter = displayChapterTitle(s.chapter_title);
     body = (
-      <article className={cn("mx-auto w-full max-w-[76ch] px-5 pb-12 pt-6 sm:px-8", loading && "opacity-70")} aria-label={cite}>
-        {chapter || s.chapter ? <div className="text-[11px] font-medium uppercase tracking-[0.07em] text-muted-foreground">{s.chapter ? `Chapter ${s.chapter}` : ""}{s.chapter && chapter ? " · " : ""}{chapter}</div> : null}
-        <h2 className="mt-1.5 text-[21px] font-semibold leading-snug tracking-[-0.015em]">
-          {section === NO_SECTION ? heading ?? "Preamble and unnumbered text" : <><span className="tabular">{shortCite}</span>{heading ? <span className="font-normal text-foreground/80"> — {heading}</span> : null}</>}
+      <article className={cn("mx-auto w-full max-w-[74ch] px-5 pb-12 pt-7 sm:px-8", loading && "opacity-70")} aria-label={cite}>
+        {chapter || s.chapter ? <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{s.chapter ? `Chapter ${s.chapter}` : ""}{s.chapter && chapter ? " · " : ""}{chapter ? <span className="normal-case tracking-normal text-[12px]"><span className="inline-block lowercase first-letter:uppercase">{chapter}</span></span> : null}</div> : null}
+        <h2 className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          {section === NO_SECTION ? <span className="font-serif text-[24px] leading-snug tracking-[-0.01em]">{heading ?? "Preamble and unnumbered text"}</span> : <>
+            <span className="inline-flex items-baseline gap-1 rounded-md bg-muted px-2 py-0.5 text-[13px] font-semibold text-foreground/80 tabular"><span className="sr-only">{shortCite}</span><span aria-hidden>{shortCite.replace(/^(Section|Rule|Regulation|Clause) /, (m) => (m.startsWith("Section") ? "§ " : m))}</span></span>
+            {heading ? <span className="font-serif text-[24px] leading-snug tracking-[-0.01em]">{heading}</span> : null}
+          </>}
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {s.in_force === false ? <Chip tone="warning">Not in force</Chip> : null}
@@ -520,7 +524,7 @@ function SectionPane({ instrument, toc, section, variant, onOpenToc }: { instrum
         {s.defined_terms.length || s.acts_referenced.length ? (
           <dl className="mt-6 grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t pt-3 text-[12px]">
             {s.defined_terms.length ? <><dt className="text-muted-foreground">Defines</dt><dd className="flex flex-wrap gap-1">{s.defined_terms.map((t) => <Chip key={t} tone="muted">{t}</Chip>)}</dd></> : null}
-            {s.acts_referenced.length ? <><dt className="text-muted-foreground">Refers to</dt><dd className="flex flex-wrap gap-1">{s.acts_referenced.map((t) => <Chip key={t} tone="muted">{t}</Chip>)}</dd></> : null}
+            {s.acts_referenced.length ? <><dt className="text-muted-foreground">Refers to</dt><dd className="flex flex-wrap gap-1">{s.acts_referenced.map((t) => <Link key={t} href={`/law?q=${encodeURIComponent(t)}&status=all`} className="rounded-[var(--radius-chip)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"><Chip tone="muted" className="hover:text-foreground">{t}</Chip></Link>)}</dd></> : null}
           </dl>
         ) : null}
         <nav className="mt-8 grid gap-2 sm:grid-cols-2" aria-label="Adjacent sections">

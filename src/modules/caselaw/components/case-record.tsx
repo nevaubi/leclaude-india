@@ -9,11 +9,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { languageInfo } from "@/lib/india/languages";
 import { caseApiHref, caseHref, formatCaseDate, urlHost, type CaseRecord, type CaseRecordResponse, type SameCaseRecord } from "../shared";
-import { benchLabel, courtLabel } from "./case-directory";
+import { benchLabel, courtLabel } from "./case-labels";
 import { CaseApiError, fetchCaseJson } from "./fetch";
 import { JudgmentTextSection } from "./judgment-text";
 import { CoramJudges } from "@/modules/judges/components/coram-judges";
-import { CourtEmblem } from "@/modules/judges/components/court-emblem";
+import { CoramAvatars } from "@/modules/judges/components/coram-avatars";
+import { PhotoBackdrop } from "@/components/corpus/visual-image";
+import { courtVisual, useVisuals } from "@/modules/media/use-visuals";
 
 const DASH = <span className="text-muted-foreground/60">—</span>;
 const show = (v: React.ReactNode) => (v === null || v === undefined || v === "" ? DASH : v);
@@ -116,7 +118,7 @@ function Citation({ label, value }: { label: string; value: string | null }) {
 
 function Section({ title, children, className, aside }: { title: string; children: React.ReactNode; className?: string; aside?: React.ReactNode }) {
   return (
-    <section className={cn("rounded-md border", className)} aria-label={title}>
+    <section className={cn("rounded-lg border", className)} aria-label={title}>
       <header className="flex h-8 items-center gap-2 border-b px-3">
         <h2 className="text-[12.5px] font-medium">{title}</h2>
         <span className="flex-1" />
@@ -155,81 +157,65 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
   const date = formatCaseDate(r.decision_date);
   const pdfHost = urlHost(r.pdf_url);
   const bench = r.bench ?? benchLabel(r);
+  const visuals = useVisuals();
+  const photo = courtVisual(visuals, r.court_id);
   return (
     <article className="mt-2">
-      {/* Header */}
-      <div className="border-b pb-3">
-        <h1 className="max-w-[900px] text-[18px] font-semibold leading-snug tracking-[-0.01em]">{r.title}</h1>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
-          <span className={cn("inline-flex items-center gap-1.5", r.court ? "text-foreground/85" : "text-muted-foreground")}>
-            {r.court_id ? <CourtEmblem courtId={r.court_id} size={18} /> : null}
-            {r.court ?? courtLabel(r)}
-          </span>
+      {/* Hero: the court's building as a quiet backdrop; parties as the title. */}
+      <header className={cn("relative isolate overflow-hidden rounded-xl border px-5 pb-5 pt-4 sm:px-6", photo && "pb-8")}>
+        <PhotoBackdrop visual={photo} />
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-muted-foreground">
+          <span className={cn("font-medium", r.court ? "text-foreground/85" : "text-muted-foreground")}>{r.court ?? courtLabel(r)}</span>
           {bench ? <><span aria-hidden>·</span><span>{bench}</span></> : null}
           <span aria-hidden>·</span>
           <span className="tabular">{date ? `Decided ${date}` : "Decision date not available"}</span>
+          {r.disposal ? <><span aria-hidden>·</span><span>{r.disposal}</span></> : null}
         </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <h1 className="mt-1.5 max-w-[880px] font-serif text-[24px] leading-[1.25] tracking-[-0.01em] text-foreground">{r.title}</h1>
+        <div className="mt-3 flex flex-wrap gap-1.5">
           <Citation label="Neutral" value={r.neutral_citation} />
           <Citation label="Reporter" value={r.reporter_citation} />
           <Citation label="Case no." value={r.case_number} />
           <Citation label="CNR" value={r.cnr} />
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          {r.pdf_url ? (
-            <Button asChild size="xs" variant="outline" className="max-w-full">
-              <a href={r.pdf_url} target="_blank" rel="noopener noreferrer">
-                <FileText className="size-3.5" />Official PDF<span className="min-w-0 truncate text-muted-foreground">{pdfHost ? `· ${pdfHost}` : ""}</span><ExternalLink className="size-3 opacity-60" />
-              </a>
-            </Button>
-          ) : <span className="text-[12px] text-muted-foreground">Official PDF not available</span>}
-          <Button asChild size="xs" variant="outline">
-            <Link href={`/search?q=${encodeURIComponent(researchQuery(r))}`}><Search className="size-3.5" />Research this</Link>
-          </Button>
-          <span className="text-[11.5px] text-muted-foreground">{r.text_status === "full" ? "Full text below. The official PDF is the text of record." : "Full text not available here; open the official PDF."}</span>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="min-w-0 space-y-4">
-          {r.text_status === "full" ? <JudgmentTextSection id={r.id} citation={r.neutral_citation} /> : null}
-
-          <Section title="Case details">
-            <dl>
-              <Field label="Court">{r.court ?? DASH}</Field>
-              <Field label="Bench">{show(r.bench)}</Field>
-              <Field label="Bench strength">{r.bench_strength ? `${r.bench_strength} judge${r.bench_strength === 1 ? "" : "s"}` : DASH}</Field>
-              <Field label="Case number">{show(r.case_number)}</Field>
-              <Field label="Case type">{show(r.case_type)}</Field>
-              <Field label="CNR">{show(r.cnr)}</Field>
-              <Field label="Neutral citation">{show(r.neutral_citation)}</Field>
-              <Field label="Reporter citation">{show(r.reporter_citation)}</Field>
-              <Field label="Decision date">{show(date)}</Field>
-              <Field label="Registration date">{show(formatCaseDate(r.registration_date))}</Field>
-              <Field label="Disposal">{show(r.disposal)}</Field>
-              <Field label="Language">{show(languageName(r.language))}</Field>
-            </dl>
-          </Section>
-
-          <Section title="Parties">
-            <dl>
-              <Field label="Petitioner / appellant">{show(r.petitioner)}</Field>
-              <Field label="Respondent">{show(r.respondent)}</Field>
-            </dl>
-          </Section>
-
-          <Section title="Coram">
-            <dl>
-              <Field label="Judges">{r.judges.length ? <CoramJudges courtId={r.court_id} judges={r.judges} author={r.author} /> : DASH}</Field>
-              <Field label="Author">{show(r.author)}</Field>
-            </dl>
-          </Section>
-
-          {r.snippet ? (
-            <Section title="Summary" aside={<span className="text-[11px] text-muted-foreground">provided by the source; not the judgment text</span>}>
-              <p className="whitespace-pre-wrap text-[13px] leading-relaxed">{r.snippet}</p>
-            </Section>
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+          {r.judges.length ? (
+            <span className="inline-flex min-w-0 items-center gap-2 text-[12px] text-muted-foreground">
+              <CoramAvatars courtId={r.court_id} judges={r.judges} size={26} max={5} linked />
+              <span className="min-w-0 truncate">{r.judges.length === 1 ? r.judges[0] : `${r.judges.length}-judge bench`}</span>
+            </span>
           ) : null}
+          <span className="flex flex-wrap items-center gap-1.5">
+            {r.pdf_url ? (
+              <Button asChild size="xs" variant="outline" className="max-w-full bg-background/80">
+                <a href={r.pdf_url} target="_blank" rel="noopener noreferrer">
+                  <FileText className="size-3.5" />Official PDF<span className="min-w-0 truncate text-muted-foreground">{pdfHost ? `· ${pdfHost}` : ""}</span><ExternalLink className="size-3 opacity-60" />
+                </a>
+              </Button>
+            ) : <span className="text-[12px] text-muted-foreground">Official PDF not available</span>}
+            <Button asChild size="xs" variant="outline" className="bg-background/80">
+              <Link href={`/search?q=${encodeURIComponent(researchQuery(r))}`}><Search className="size-3.5" />Research this</Link>
+            </Button>
+          </span>
+        </div>
+      </header>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-4">
+          {r.snippet ? (
+            <section aria-label="Summary" className="rounded-lg border bg-[var(--surface-quiet)] px-4 py-3">
+              <div className="mb-1 flex items-baseline gap-2"><h2 className="text-[12.5px] font-medium">Summary</h2><span className="text-[11px] text-muted-foreground">provided by the source; not the judgment text</span></div>
+              <p className="max-w-[72ch] whitespace-pre-wrap font-serif text-[14.5px] leading-relaxed text-foreground/90">{r.snippet}</p>
+            </section>
+          ) : null}
+
+          {r.text_status === "full" ? <JudgmentTextSection id={r.id} citation={r.neutral_citation} /> : (
+            <section aria-label="Judgment text" className="flex flex-col items-start gap-2 rounded-lg border border-dashed px-4 py-5">
+              <h2 className="text-[13px] font-medium">The judgment text is not available here</h2>
+              <p className="max-w-[62ch] text-[12.5px] text-muted-foreground">Read the judgment in the official PDF published by the court. It is the text of record.</p>
+              {r.pdf_url ? <Button asChild size="xs" variant="outline"><a href={r.pdf_url} target="_blank" rel="noopener noreferrer"><FileText className="size-3.5" />Open the official PDF<ExternalLink className="size-3 opacity-60" /></a></Button> : null}
+            </section>
+          )}
 
           {r.translations.length ? (
             <Section title="Translations">
@@ -244,11 +230,34 @@ function RecordBody({ data }: { data: CaseRecordResponse }) {
               </ul>
             </Section>
           ) : null}
-
         </div>
 
         <aside className="min-w-0 space-y-4">
           <NarrowFields.Provider value>
+            <Section title="Case details">
+              <dl>
+                <Field label="Court">{r.court ?? DASH}</Field>
+                {r.bench ? <Field label="Bench">{r.bench}</Field> : null}
+                <Field label="Bench strength">{r.bench_strength ? `${r.bench_strength} judge${r.bench_strength === 1 ? "" : "s"}` : DASH}</Field>
+                <Field label="Case type">{show(r.case_type)}</Field>
+                <Field label="Registered">{show(formatCaseDate(r.registration_date))}</Field>
+                <Field label="Decided">{show(date)}</Field>
+                <Field label="Disposal">{show(r.disposal)}</Field>
+                <Field label="Language">{show(languageName(r.language))}</Field>
+              </dl>
+            </Section>
+            <Section title="Parties">
+              <dl>
+                <Field label="Petitioner">{show(r.petitioner)}</Field>
+                <Field label="Respondent">{show(r.respondent)}</Field>
+              </dl>
+            </Section>
+            {r.judges.length ? (
+              <Section title="Coram" className="text-[12.5px]">
+                <CoramJudges courtId={r.court_id} judges={r.judges} author={r.author} />
+                {r.author && !r.judges.includes(r.author) ? <p className="mt-1.5 text-[12px]"><span className="text-muted-foreground">Author: </span>{r.author}</p> : null}
+              </Section>
+            ) : null}
             <SourceCard r={r} />
           </NarrowFields.Provider>
           <SameCase items={data.sameCase} r={r} />

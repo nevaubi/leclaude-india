@@ -54,31 +54,31 @@ export function JudgmentTextSection({ id, citation }: { id: string; citation: st
 
   let lastPage: number | null = null;
   return (
-    <section className="rounded-md border" aria-label="Judgment text">
+    <section className="rounded-lg border" aria-label="Judgment text">
       <header className="flex h-8 items-center gap-2 border-b px-3">
         <h2 className="text-[12.5px] font-medium">Judgment text</h2>
         <span className="flex-1" />
         {chunks.length ? <Button size="xs" variant="ghost" onClick={copyAll}>{copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}{meta?.nextChunk != null ? "Copy loaded text" : "Copy text"}</Button> : null}
       </header>
-      <div className="max-h-[70vh] overflow-auto px-3 py-2.5 scrollbar-thin">
+      <div className="max-h-[70vh] overflow-auto px-4 py-3 scrollbar-thin sm:px-5">
         {loading && !chunks.length ? (
           <div className="space-y-2"><Skeleton className="h-3 w-full" /><Skeleton className="h-3 w-11/12" /><Skeleton className="h-3 w-10/12" /><Skeleton className="h-3 w-full" /></div>
         ) : error && !chunks.length ? (
           <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">{error}<Button size="xs" variant="outline" onClick={() => void load(0)}><RotateCcw className="size-3.5" />Retry</Button></div>
         ) : (
-          <div className="space-y-3 text-[13px] leading-relaxed">
+          <div className="max-w-[72ch] space-y-3 font-serif text-[14.5px] leading-[1.7]">
             {chunks.map((c) => {
               const marker = c.pageStart != null && c.pageStart !== lastPage ? c.pageStart : null;
               if (marker != null) lastPage = marker;
               return (
                 <div key={c.index}>
-                  {marker != null ? <div className="mb-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground tabular" id={`p${marker}`}>Page {marker}</div> : null}
+                  {marker != null ? <div className="mb-1 font-sans text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground tabular" id={`p${marker}`}>Page {marker}</div> : null}
                   <p className={cn("whitespace-pre-wrap", c.section === "conclusion" && "border-l-2 pl-2")}>{clean(c.text)}</p>
                 </div>
               );
             })}
             {meta?.nextChunk != null ? (
-              <Button size="xs" variant="outline" disabled={loading} onClick={() => void load(meta.nextChunk!)}>{loading ? "Loading…" : "Continue reading"}</Button>
+              <Button size="xs" variant="outline" className="font-sans" disabled={loading} onClick={() => void load(meta.nextChunk!)}>{loading ? "Loading…" : "Continue reading"}</Button>
             ) : null}
             {error && chunks.length ? <p className="text-[12px] text-destructive">{error}</p> : null}
           </div>

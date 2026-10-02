@@ -2,8 +2,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Database, FileText, Gavel, LayoutList, Lock, RotateCcw, Scale, Search, SearchX, X } from "lucide-react";
-import { CorpusHeader } from "@/components/corpus/corpus-header";
+import { Database, FileText, Lock, RotateCcw, Scale, Search, SearchX, X } from "lucide-react";
+import { LawHubMeta } from "@/components/corpus/law-hub";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
@@ -11,33 +11,23 @@ import { Chip, EmptyState, Kbd, Spinner } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { courtById } from "@/lib/india/courts";
 import {
   caseFiltersToParams, caseHref, formatCaseDate, hasActiveFilters, MATCH_LABEL, MAX_YEAR, MIN_YEAR, parseCaseFilters,
   type CaseFacets, type CaseFilters, type CaseHit, type CaseListResponse, type CaseSort,
 } from "../shared";
-import { CourtFilter, courtShortName } from "./court-filter";
-import { CaseCoverageLine, CourtCoverageCards } from "./coverage-strip";
+import { CourtFilter } from "./court-filter";
+import { CaseCoverageLine } from "./coverage-strip";
+import { benchLabel, courtLabel } from "./case-labels";
+import { CaseLanding } from "./case-landing";
 import { CaseApiError, fetchCaseJson } from "./fetch";
 
 type ListState = { hits: CaseHit[]; mode: "search" | "browse"; hasMore: boolean; nextCursor: string | null; tookMs: number | null };
 
-export function courtLabel(h: Pick<CaseHit, "court" | "court_id" | "court_code">): string {
-  if (h.court) return h.court_id === "sci" ? "Supreme Court" : courtShortName(h.court);
-  return "Other court";
-}
-
-export function benchLabel(h: Pick<CaseHit, "court_id" | "bench_id" | "bench_code" | "bench_strength">): string | null {
-  const bench = courtById(h.court_id)?.benches.find((b) => b.id === h.bench_id);
-  const where = h.court_id === "sci" ? null : bench ? bench.city : null;
-  const strength = h.bench_strength ? `${h.bench_strength}-judge` : null;
-  return [where, strength].filter(Boolean).join(" · ") || null;
-}
+export { benchLabel, courtLabel };
 
 const dash = <span className="text-muted-foreground/60">—</span>;
 const fmt = (n: number) => n.toLocaleString("en-IN");
 const asCaseError = (e: unknown) => (e instanceof CaseApiError ? e : new CaseApiError(String((e as Error)?.message ?? e), 0, null));
-const EXAMPLE_SEARCHES = ["2023 INSC 1066", "arbitration agreement stamp", "Union of India", "anticipatory bail"];
 
 /** /cases: the case law directory (browse and search the judgment metadata index). All filters live in the URL. */
 export function CaseDirectory() {
@@ -141,7 +131,7 @@ export function CaseDirectory() {
   const inputRef = React.useRef<HTMLInputElement>(null);
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "/" && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable)) { e.preventDefault(); inputRef.current?.focus(); }
+      if (e.key === "/" && inputRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable)) { e.preventDefault(); inputRef.current?.focus(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -188,23 +178,14 @@ export function CaseDirectory() {
   const hits = list?.hits ?? [];
   const exactCount = hits.filter((h) => h.match === "exact").length;
 
-  const header = (
-    <CorpusHeader
-      icon={Gavel}
-      title="Case law"
-      description="Supreme Court and High Court judgments with citations and official PDFs."
-      coverage={notConfigured || forbidden ? undefined : <CaseCoverageLine facets={facets} loading={facetsLoading} error={facetsError?.message ?? null} onRetry={() => setFacetsNonce((n) => n + 1)} />}
-      actions={notConfigured || forbidden ? undefined : landing
-        ? <Button size="xs" variant="outline" onClick={showAll}><LayoutList className="size-3.5" />Browse all records</Button>
-        : <Button size="xs" variant="ghost" onClick={clearAll}>Start page</Button>}
-    />
+  const meta = notConfigured || forbidden ? null : (
+    <LawHubMeta><CaseCoverageLine facets={facets} loading={facetsLoading} error={facetsError?.message ?? null} onRetry={() => setFacetsNonce((n) => n + 1)} /></LawHubMeta>
   );
 
   if (notConfigured || forbidden) {
     return (
       <div className="flex h-full flex-col">
-        {header}
-        <div className="flex flex-1 items-center justify-center border-t p-6">
+        <div className="flex flex-1 items-center justify-center p-6">
           {notConfigured
             ? <EmptyState icon={Database} title="Case law is not available" description="Case law has not been set up for this workspace yet." />
             : <EmptyState icon={Lock} title={unauthenticated ? "Sign in to view case law" : "You do not have access to case law"} description={unauthenticated ? "Your session has ended." : "Ask an administrator for research access."} />}
@@ -213,22 +194,43 @@ export function CaseDirectory() {
     );
   }
 
+  if (landing) {
+    return (
+      <>
+        {meta}
+        <CaseLanding
+          facets={facets}
+          facetsLoading={facetsLoading}
+          facetsError={facetsError?.message ?? null}
+          onRetryFacets={() => setFacetsNonce((n) => n + 1)}
+          onPickCourt={(keys) => setFilters({ courts: keys })}
+          hits={hits}
+          loading={loading}
+          error={error && !list ? error.message : null}
+          onRetry={() => setNonce((n) => n + 1)}
+          onBrowseAll={showAll}
+        />
+      </>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {header}
+      {meta}
 
-      <form className={cn("shrink-0 border-b px-4 sm:px-6", landing ? "pb-4" : "pb-2")} role="search" onSubmit={(e) => { e.preventDefault(); setFilters({ q: qDraft.trim() }); }}>
-        <div className={cn("relative", landing ? "max-w-[760px]" : "sm:max-w-[480px]")}>
-          <Search className={cn("pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted-foreground", landing ? "left-3 size-4" : "left-2.5 size-3.5")} aria-hidden />
+      <form className="shrink-0 border-b px-4 pb-2 pt-3 sm:px-6" role="search" onSubmit={(e) => { e.preventDefault(); setFilters({ q: qDraft.trim() }); }}>
+        <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1 sm:max-w-[480px]">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
             ref={inputRef}
-            size={landing ? "default" : "sm"}
+            size="sm"
             value={qDraft}
             onChange={(e) => setQDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Escape" && qDraft) { e.preventDefault(); setQDraft(""); setFilters({ q: "" }); } }}
             placeholder="Title, party, neutral citation, CNR or case number"
             aria-label="Search case law"
-            className={landing ? "pl-9 pr-9" : "pl-8 pr-8"}
+            className="pl-8 pr-8"
             maxLength={200}
           />
           {qDraft ? (
@@ -237,15 +239,9 @@ export function CaseDirectory() {
             </button>
           ) : <Kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border px-1 text-[10.5px] text-muted-foreground sm:inline-flex">/</Kbd>}
         </div>
-        {landing ? (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground">
-            <span>Try</span>
-            {EXAMPLE_SEARCHES.map((q) => (
-              <button key={q} type="button" onClick={() => { setQDraft(q); setFilters({ q }); }} className="rounded border bg-background px-1.5 py-0.5 text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{q}</button>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="Filters">
+        {!active ? <Button type="button" size="xs" variant="ghost" className="ml-auto" onClick={clearAll}>Start page</Button> : null}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="Filters">
             <CourtFilter courts={facets?.courts ?? null} loading={facetsLoading} value={filters.courts} onChange={(courts) => setFilters({ courts })} />
             <YearRange from={filters.yearFrom} to={filters.yearTo} onChange={(yearFrom, yearTo) => setFilters({ yearFrom, yearTo })} />
             <TextFilter value={filters.judge} placeholder="Judge" ariaLabel="Filter by judge" onCommit={(judge) => setFilters({ judge })} width="w-[130px]" />
@@ -262,33 +258,9 @@ export function CaseDirectory() {
               <SelectContent>{sortOptions.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
             </Select>
             {active ? <Button type="button" variant="ghost" size="xs" onClick={clearAll}><X className="size-3.5" />Clear filters</Button> : null}
-          </div>
-        )}
+        </div>
       </form>
 
-      {landing ? (
-        <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
-          <div className="mx-auto w-full max-w-[1180px] space-y-7 px-4 pb-10 pt-4 sm:px-6">
-            <section aria-labelledby="cases-courts">
-              <div className="flex items-baseline gap-2"><h2 id="cases-courts" className="text-[13px] font-semibold tracking-[-0.005em]">Courts</h2><span className="truncate text-[11.5px] text-muted-foreground">Select a court to browse its decisions</span></div>
-              <div className="mt-2.5"><CourtCoverageCards facets={facets} loading={facetsLoading} error={facetsError?.message ?? null} onRetry={() => setFacetsNonce((n) => n + 1)} onPick={(keys) => setFilters({ courts: keys })} /></div>
-            </section>
-            <section aria-labelledby="cases-latest">
-              <div className="flex items-baseline gap-2">
-                <h2 id="cases-latest" className="text-[13px] font-semibold tracking-[-0.005em]">Latest decisions</h2>
-                <span className="truncate text-[11.5px] text-muted-foreground">Most recent decisions</span>
-                <Button size="xs" variant="ghost" className="ml-auto" onClick={showAll}>Browse all<ArrowRight className="size-3.5" /></Button>
-              </div>
-              {error && !list ? (
-                <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">Records could not be loaded: {error.message}<Button size="xs" variant="outline" onClick={() => setNonce((n) => n + 1)}><RotateCcw className="size-3.5" />Retry</Button></div>
-              ) : loading && !list ? <ResultSkeleton rows={6} className="mt-2 rounded-lg border" /> : hits.length ? (
-                <ol className="mt-2 divide-y rounded-lg border">{hits.slice(0, 8).map((h) => <ResultRow key={h.id} h={h} compact />)}</ol>
-              ) : <p className="mt-2 rounded-lg border border-dashed px-3 py-3 text-[12.5px] text-muted-foreground">No decisions are available yet.</p>}
-            </section>
-          </div>
-        </div>
-      ) : (
-        <>
           <div className="flex min-h-8 shrink-0 items-center gap-x-2 px-4 py-1 text-[11.5px] text-muted-foreground sm:px-6" aria-live="polite">
             {loading && !list ? <><Spinner size={12} /> {filters.q ? "Searching records…" : "Loading records…"}</> : error && !list ? <span className="text-destructive">Could not load records</span> : list ? (
               <>
@@ -337,8 +309,6 @@ export function CaseDirectory() {
               <Button variant="ghost" size="xs" onClick={() => { setError(null); loadMore(); }}>Retry</Button>
             </div>
           ) : null}
-        </>
-      )}
     </div>
   );
 }

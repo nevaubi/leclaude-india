@@ -360,16 +360,17 @@ export interface CorpusStatus {
   issues: { withIssues: number; unresolvedCourt: number; noDecisionDate: number };
   /** Hosting limits read from the database: Neon's logical size cap (MB; null when not set or not Neon) and whether
    *  the pgvector extension can be installed. */
-  storage?: { maxClusterSizeMb: number | null; pgvectorAvailable: boolean };
+  storage?: { maxClusterSizeMb: number | null; maxClusterSizeSetting: string | null; pgvectorAvailable: boolean };
 }
 
-async function storageLimits(store: RemoteStore): Promise<{ maxClusterSizeMb: number | null; pgvectorAvailable: boolean }> {
+async function storageLimits(store: RemoteStore): Promise<{ maxClusterSizeMb: number | null; maxClusterSizeSetting: string | null; pgvectorAvailable: boolean }> {
   try {
     const r = await store.query({ query: `SELECT current_setting('neon.max_cluster_size', true) AS max, EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS pgvector` });
     const max = Number(r[0]?.max);
-    return { maxClusterSizeMb: Number.isFinite(max) && max > 0 ? max : null, pgvectorAvailable: r[0]?.pgvector === "t" || r[0]?.pgvector === "true" };
+    // Neon reports -1 when the project has no logical size cap; an empty value means the setting is not present.
+    return { maxClusterSizeMb: Number.isFinite(max) && max > 0 ? max : null, maxClusterSizeSetting: r[0]?.max ?? null, pgvectorAvailable: r[0]?.pgvector === "t" || r[0]?.pgvector === "true" };
   } catch {
-    return { maxClusterSizeMb: null, pgvectorAvailable: false };
+    return { maxClusterSizeMb: null, maxClusterSizeSetting: null, pgvectorAvailable: false };
   }
 }
 

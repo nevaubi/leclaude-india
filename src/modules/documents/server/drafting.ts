@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 import type { Principal } from "@/lib/auth/types";
 import { generateJSON, generateText } from "@/lib/ai/agent";
 import {
-  buildDateRows, checkSynopsis, detectParagraphs, EMPTY_DATES_STATE, glossaryHints, languageLabel, newReply, rowsHash, ruleCategory, splitDefects, STANCES,
+  buildDateRows, checkSynopsis, detectParagraphs, EMPTY_DATES_STATE, glossaryHints, isStance, languageLabel, needsApproval, newReply, rowsHash, ruleCategory, splitDefects, STANCES,
   synopsisInput, TRANSLATION_LABEL, TRANSLATION_LANGUAGES, translationKey,
   type DateOverride, type DateRow, type DatesFormat, type DatesState, type Defect, type DefectCategory, type DefectForum, type DefectNotice, type ManualDateRow,
   type ParaReply, type ParawiseState, type ReplyEvidence, type ReplyStance, type SynopsisDraft, type TranslationRecord,
@@ -15,13 +15,14 @@ import { pagesFromChunks, textHash } from "./extract";
 import { searchChunks } from "./search";
 import { recordAudit } from "./sets";
 import { docStore, publicFile } from "./store";
-import { normalizeDate, normalizePageText, quoteFound } from "./text";
+import { normalizeDate, normalizePageText, QUOTE_MIN_WORDS, quoteFound } from "./text";
 import { workStore, type WorkItem } from "./work-store";
 
 /**
  * Drafting services for document sets: list of dates & synopsis, para-wise reply, working translations, registry
  * defect notices. Every function authorizes the set (read for reads, write for changes) before touching its data;
- * work items are stored per set (work-store.ts) with compare-and-set versions so two people cannot silently overwrite.
+ * work items are stored per set (work-store.ts) and written with an atomic compare-and-set on their stored version, so
+ * two people (or a long proposal run and an edit) cannot silently overwrite each other.
  */
 
 const now = () => new Date().toISOString();
@@ -29,6 +30,18 @@ const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\u0000/g, "").trim().slice(0, max) : "");
 
 function conflict(): DocsError { return new DocsError("This changed since you opened it. Reload and try again.", 409, "conflict"); }
+
+/** Write `item` only if the stored version is still `expected` (atomic); a lost race is a 409. */
+async function commit<T>(item: WorkItem<T>, expected: number): Promise<void> {
+  if (!(await (await workStore()).putIfVersion(item, expected))) throw conflict();
+}
+
+/** Today's date in India (the court calendar), as 02.10.2026. */
+function istDate(d = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "2-digit", year: "numeric" }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("day")}.${get("month")}.${get("year")}`;
+}
 
 async function timelineEvents(setId: string): Promise<{ events: DocEvent[]; extracted: number; total: number }> {
   const store = await docStore();
@@ -44,14 +57,15 @@ async function timelineEvents(setId: string): Promise<{ events: DocEvent[]; extr
 
 export interface DatesView { state: DatesState; rows: DateRow[]; extracted: number; total: number }
 
-async function loadDatesState(setId: string): Promise<DatesState> {
+/** The stored list-of-dates state and the stored compare-and-set version it was read at. */
+async function loadDatesState(setId: string): Promise<{ state: DatesState; stored: number }> {
   const item = await (await workStore()).get<DatesState>(setId, "dates", "list");
-  return item?.data ? { ...EMPTY_DATES_STATE, ...item.data } : { ...EMPTY_DATES_STATE };
+  return { state: item?.data ? { ...EMPTY_DATES_STATE, ...item.data } : { ...EMPTY_DATES_STATE }, stored: item?.version ?? 0 };
 }
 
 export async function getDates(principal: Principal, setId: string): Promise<DatesView> {
   const set = await loadSet(principal, setId, "read");
-  const [state, tl] = await Promise.all([loadDatesState(set.id), timelineEvents(set.id)]);
+  const [{ state }, tl] = await Promise.all([loadDatesState(set.id), timelineEvents(set.id)]);
   return { state, rows: buildDateRows(tl.events, state), extracted: tl.extracted, total: tl.total };
 }
 
@@ -86,8 +100,7 @@ function cleanManual(v: unknown): ManualDateRow | null {
 /** Save edits (compare-and-set on `version`): format, per-event overrides, hand-added rows, an edited synopsis. */
 export async function saveDates(principal: Principal, setId: string, patch: { version?: unknown; format?: unknown; overrides?: unknown; manual?: unknown; synopsisText?: unknown; clearSynopsis?: unknown }): Promise<DatesView> {
   const set = await loadSet(principal, setId, "write");
-  const ws = await workStore();
-  const cur = await loadDatesState(set.id);
+  const { state: cur, stored } = await loadDatesState(set.id);
   if (Number(patch.version) !== cur.version) throw conflict();
   const next: DatesState = { ...cur, version: cur.version + 1 };
   if (patch.format === "sc" || patch.format === "hc") next.format = patch.format as DatesFormat;
@@ -102,8 +115,11 @@ export async function saveDates(principal: Principal, setId: string, patch: { ve
   }
   if (Array.isArray(patch.manual)) next.manual = patch.manual.slice(0, 500).map(cleanManual).filter((x): x is ManualDateRow => !!x);
   if (patch.clearSynopsis === true) next.synopsis = null;
-  else if (typeof patch.synopsisText === "string" && cur.synopsis) next.synopsis = { ...cur.synopsis, text: str(patch.synopsisText, 20_000), edited: true };
-  await ws.put<DatesState>({ setId: set.id, kind: "dates", key: "list", data: next, textHash: null, createdBy: principal.id, updatedAt: now() });
+  else if (typeof patch.synopsisText === "string" && cur.synopsis) {
+    const text = str(patch.synopsisText, 20_000);
+    if (text !== cur.synopsis.text) next.synopsis = { ...cur.synopsis, text, edited: true };
+  }
+  await commit<DatesState>({ setId: set.id, kind: "dates", key: "list", data: next, textHash: next.synopsis?.rowsHash ?? null, createdBy: principal.id, updatedAt: now() }, stored);
   const tl = await timelineEvents(set.id);
   return { state: next, rows: buildDateRows(tl.events, next), extracted: tl.extracted, total: tl.total };
 }
@@ -111,7 +127,7 @@ export async function saveDates(principal: Principal, setId: string, patch: { ve
 export const SYNOPSIS_INSTRUCTIONS = (format: DatesFormat) => [
   `You write the SYNOPSIS that accompanies the list of dates in a ${format === "sc" ? "Supreme Court of India" : "High Court"} petition.`,
   "Use ONLY the numbered rows supplied. Do not add any fact, name, date, amount, statute or inference that the rows do not state.",
-  "Cite the row(s) supporting each sentence as [R1], [R2] … immediately after the sentence. Cite only row numbers you were given.",
+  "Cite the row(s) supporting each sentence as [R1], [R2] … at the end of that sentence, before its full stop. Every sentence needs at least one row number; cite only row numbers you were given.",
   "Write in plain, formal English: one to three short paragraphs, 120–350 words, chronological, no headings, no bullet points, no legal argument and no prayer.",
   "If the rows do not support a coherent narrative, say so in one sentence rather than filling gaps.",
 ].join("\n");
@@ -121,7 +137,7 @@ export const SYNOPSIS_MAX_ROWS = 150;
 /** Draft a synopsis grounded only on the selected rows; markers, dates and uncited sentences are checked in code. */
 export async function draftSynopsis(principal: Principal, setId: string, input: { rowIds?: unknown; version?: unknown }, signal?: AbortSignal): Promise<DatesView> {
   const set = await loadSet(principal, setId, "write");
-  const state = await loadDatesState(set.id);
+  const { state, stored } = await loadDatesState(set.id);
   if (input.version != null && Number(input.version) !== state.version) throw conflict();
   const tl = await timelineEvents(set.id);
   const all = buildDateRows(tl.events, state);
@@ -142,11 +158,10 @@ export async function draftSynopsis(principal: Principal, setId: string, input: 
   if (!text) throw new DocsError("The model returned no synopsis", 502, "empty");
   const checks = checkSynopsis(text, rows);
   const synopsis: SynopsisDraft = { text, rowIds: rows.map((r) => r.id), rowsHash: rowsHash(rows), generatedAt: now(), model: null, ...checks, edited: false };
-  const fresh = await loadDatesState(set.id);
-  if (fresh.version !== state.version) throw conflict();
-  const next: DatesState = { ...fresh, synopsis, version: fresh.version + 1 };
-  await (await workStore()).put<DatesState>({ setId: set.id, kind: "dates", key: "list", data: next, textHash: synopsis.rowsHash, createdBy: principal.id, updatedAt: now() });
-  recordAudit(principal, "ai.generate", { kind: "document_set", id: set.id, matterId: set.matterId ?? undefined }, { surface: "documents.synopsis", rows: rows.length, unresolved: checks.unresolved.length, unknownDates: checks.unknownDates.length });
+  // Compare-and-set against the version read before the model call: an edit made meanwhile wins (409 here).
+  const next: DatesState = { ...state, synopsis, version: state.version + 1 };
+  await commit<DatesState>({ setId: set.id, kind: "dates", key: "list", data: next, textHash: synopsis.rowsHash, createdBy: principal.id, updatedAt: now() }, stored);
+  recordAudit(principal, "ai.generate", { kind: "document_set", id: set.id, matterId: set.matterId ?? undefined }, { surface: "documents.synopsis", rows: rows.length, unresolved: checks.unresolved.length, unknownDates: checks.unknownDates.length, unknownAmounts: checks.unknownAmounts.length, uncited: checks.uncited });
   return { state: next, rows: all, extracted: tl.extracted, total: tl.total };
 }
 
@@ -186,7 +201,7 @@ export async function startParawise(principal: Principal, setId: string, fileId:
   if (!paras.length) throw new DocsError("No numbered paragraphs were found in this file (expected lines starting “1.”, “2.” …). Choose the plaint or petition, or check that its text was read.", 422, "no_paragraphs");
   if (paras.length > 400) throw new DocsError("This file has more than 400 numbered paragraphs; split it first.", 422, "too_many");
   const state: ParawiseState = { fileId: file.id, fileName: file.name, textHash: hash, paras: paras.map(newReply), model: null, updatedAt: now(), version: (existing?.data.version ?? 0) + 1 };
-  await ws.put<ParawiseState>({ setId: set.id, kind: "parawise", key: file.id, data: state, textHash: hash, createdBy: principal.id, updatedAt: state.updatedAt });
+  await commit<ParawiseState>({ setId: set.id, kind: "parawise", key: file.id, data: state, textHash: hash, createdBy: principal.id, updatedAt: state.updatedAt }, existing?.version ?? 0);
   return { state, stale: false, paragraphs: paras.length, textHash: hash, file };
 }
 
@@ -198,6 +213,7 @@ const PASSAGES_PER_PARA = 4;
 export const PARAWISE_INSTRUCTIONS = [
   "You draft the defendant's para-wise reply to paragraphs of a plaint / petition, for a lawyer to review.",
   "For each paragraph choose a stance: admitted (only when the supplied passages clearly confirm every fact in it), denied (the passages contradict it), not_admitted (facts not within the defendant's knowledge or not shown by the passages), matter_of_record (it only recites documents or proceedings), legal_submission (it states law or argument), no_reply (formal: description of parties, cause title, valuation).",
+  "Remember that an allegation not specifically denied may be taken as admitted (Order VIII Rule 5 CPC): use matter_of_record or no_reply only when the paragraph alleges no fact the defendant could dispute.",
   "Write `reply` as one to three sentences of the reply text after the opening words (e.g. 'It is specifically denied that …'). Do not invent facts.",
   "`reasoning` explains the stance in one sentence, tied to the passages.",
   "`evidence`: the numbered passages you rely on, each with a verbatim quote (at most 250 characters) copied from that passage. Never paraphrase inside quote. Use an empty list when no passage bears on the paragraph.",
@@ -243,6 +259,7 @@ export async function proposeReplies(principal: Principal, setId: string, fileId
   if (opts.version != null && Number(opts.version) !== item.data.version) throw conflict();
   if (item.data.textHash !== hash) throw new DocsError("The pleading's text changed since its paragraphs were detected. Restart the reply.", 409, "stale");
   const state = item.data;
+  const stored = item.version ?? 0;
   const wanted = Array.isArray(opts.ns) ? new Set(opts.ns.map(String)) : null;
   const todo = state.paras.filter((p) => (wanted ? wanted.has(p.n) : p.status !== "proposed")).slice(0, PARAWISE_PER_CALL);
   const store = await docStore();
@@ -279,7 +296,8 @@ export async function proposeReplies(principal: Principal, setId: string, fileId
       for (const p of batch) {
         const r = byN.get(p.n);
         if (!r) { failed++; results.set(p.n, { ...p, status: "failed", error: "The model gave no reply for this paragraph." }); continue; }
-        const stance: ReplyStance = STANCES.includes(r.stance as ReplyStance) ? (r.stance as ReplyStance) : "not_admitted";
+        // An answer outside the schema is never read as an admission: it becomes "not admitted".
+        const stance: ReplyStance = isStance(r.stance) ? r.stance : "not_admitted";
         const allowed = new Set(perPara.get(p.n) ?? []);
         let dropped = 0;
         const evidence: ReplyEvidence[] = [];
@@ -289,7 +307,7 @@ export async function proposeReplies(principal: Principal, setId: string, fileId
           // Only passages supplied for THIS paragraph count; anything else is dropped, never re-bound.
           if (!src || !allowed.has(k)) { dropped++; continue; }
           const quote = str(e?.quote, 300);
-          evidence.push({ fileId: src.fileId, fileName: src.fileName, page: src.page, quote, quoteFound: !!quote && quoteFound(quote, src.text) });
+          evidence.push({ fileId: src.fileId, fileName: src.fileName, page: src.page, quote, quoteFound: !!quote && quoteFound(quote, src.text, { minWords: QUOTE_MIN_WORDS }) });
         }
         const reply = str(r.reply, 2000);
         results.set(p.n, {
@@ -304,16 +322,17 @@ export async function proposeReplies(principal: Principal, setId: string, fileId
       for (const p of batch) { failed++; results.set(p.n, { ...p, status: "failed", error: str((e as Error)?.message ?? "failed", 300) }); }
     }
   }
-  // Merge into the latest stored state (compare-and-set: concurrent edits win over a stale proposal run).
-  const latest = await ws.get<ParawiseState>(set.id, "parawise", file.id);
-  if (!latest || latest.data.version !== state.version) throw conflict();
-  const next: ParawiseState = { ...latest.data, paras: latest.data.paras.map((p) => results.get(p.n) ?? p), updatedAt: now(), version: latest.data.version + 1 };
-  await ws.put<ParawiseState>({ setId: set.id, kind: "parawise", key: file.id, data: next, textHash: hash, createdBy: principal.id, updatedAt: next.updatedAt });
+  // Compare-and-set against the version read before the model calls: an edit or approval made meanwhile wins (409).
+  const next: ParawiseState = { ...state, paras: state.paras.map((p) => results.get(p.n) ?? p), updatedAt: now(), version: state.version + 1 };
+  await commit<ParawiseState>({ setId: set.id, kind: "parawise", key: file.id, data: next, textHash: hash, createdBy: principal.id, updatedAt: next.updatedAt }, stored);
   recordAudit(principal, "ai.generate", { kind: "document_file", id: file.id, label: file.name, matterId: set.matterId ?? undefined }, { surface: "documents.parawise", proposed: results.size - failed, failed });
   return { state: next, stale: false, paragraphs: next.paras.length, textHash: hash, file, remaining: next.paras.filter((p) => p.status !== "proposed").length, failed };
 }
 
-/** Edit one paragraph's stance / reply, or approve it. Approval binds to the current stance and text; editing clears it. */
+/**
+ * Edit one paragraph's stance / reply, or approve it. Approval binds to the current stance and text (editing clears it)
+ * and is refused while the pleading's text differs from the text the paragraphs were detected in.
+ */
 export async function updateReply(principal: Principal, setId: string, fileId: string, patch: { version?: unknown; n?: unknown; stance?: unknown; reply?: unknown; approve?: unknown }): Promise<ParawiseView> {
   const set = await loadSet(principal, setId, "write");
   const { file, hash } = await filePages(set.id, fileId);
@@ -321,25 +340,31 @@ export async function updateReply(principal: Principal, setId: string, fileId: s
   const item = await ws.get<ParawiseState>(set.id, "parawise", file.id);
   if (!item) throw new DocsError("Start the para-wise reply first", 409, "not_started");
   if (Number(patch.version) !== item.data.version) throw conflict();
+  const stale = item.data.textHash !== hash;
+  if (patch.approve === true && stale) throw new DocsError("The pleading's text changed since its paragraphs were detected. Restart the reply before approving anything.", 409, "stale");
   const n = String(patch.n ?? "");
   const idx = item.data.paras.findIndex((p) => p.n === n);
   if (idx < 0) throw new DocsError(`No paragraph ${str(n, 10)}`, 404, "not_found");
   const p = { ...item.data.paras[idx] };
   let changed = false;
   if (typeof patch.stance === "string") {
-    if (!STANCES.includes(patch.stance as ReplyStance)) throw new DocsError("Unknown stance", 422, "invalid");
-    if (patch.stance !== p.stance) { p.stance = patch.stance as ReplyStance; changed = true; }
+    if (!isStance(patch.stance)) throw new DocsError("Unknown stance", 422, "invalid");
+    if (patch.stance !== p.stance) { p.stance = patch.stance; changed = true; }
   }
   if (typeof patch.reply === "string") { const r = str(patch.reply, 4000); if (r !== p.reply) { p.reply = r; changed = true; } }
   if (changed) { p.edited = true; p.approved = false; p.approvedBy = null; p.approvedAt = null; }
-  if (patch.approve === true) { p.approved = true; p.approvedBy = principal.name || principal.id; p.approvedAt = now(); }
+  if (patch.approve === true) {
+    if (p.stance === "unreviewed") throw new DocsError("Choose a response for this paragraph before approving it", 422, "invalid");
+    p.approved = true; p.approvedBy = principal.name || principal.id; p.approvedAt = now();
+  }
   if (patch.approve === false) { p.approved = false; p.approvedBy = null; p.approvedAt = null; }
   const paras = item.data.paras.slice();
   paras[idx] = p;
+  // The stored textHash stays the one the paragraphs were detected in (staleness is judged against it).
   const next: ParawiseState = { ...item.data, paras, updatedAt: now(), version: item.data.version + 1 };
-  await ws.put<ParawiseState>({ setId: set.id, kind: "parawise", key: file.id, data: next, textHash: hash, createdBy: principal.id, updatedAt: next.updatedAt });
-  if (patch.approve === true && p.stance === "admitted") recordAudit(principal, "update", { kind: "document_file", id: file.id, label: file.name, matterId: set.matterId ?? undefined }, { surface: "documents.parawise", approvedAdmission: p.n });
-  return { state: next, stale: next.textHash !== hash, paragraphs: paras.length, textHash: hash, file };
+  await commit<ParawiseState>({ setId: set.id, kind: "parawise", key: file.id, data: next, textHash: item.data.textHash, createdBy: principal.id, updatedAt: next.updatedAt }, item.version ?? 0);
+  if (patch.approve === true && needsApproval(p.stance)) recordAudit(principal, "update", { kind: "document_file", id: file.id, label: file.name, matterId: set.matterId ?? undefined }, { surface: "documents.parawise", approvedParagraph: p.n, stance: p.stance });
+  return { state: next, stale, paragraphs: paras.length, textHash: hash, file };
 }
 
 // =====================================================================================================================
@@ -475,15 +500,16 @@ export async function createDefectNotice(principal: Principal, setId: string, in
         d.task = str(r.task, 200);
         d.fix = str(r.fix, 600);
       }
-      aiClassified = true;
+      // "Classified by AI" only when the model's answer matched at least one defect; otherwise the rules stand alone.
+      aiClassified = defects.some((d) => d.classifiedBy === "ai" || d.task || d.fix);
     } catch (e) {
       if (signal?.aborted) throw e;
       // Keyword rules stand; the notice says AI classification did not run.
     }
   }
   const t = now();
-  const notice: DefectNotice = { id: `dn_${nanoid(10)}`, title: title || `Defect notice ${t.slice(0, 10)}`, forum, text, textHash: sha(text), defects, createdAt: t, createdBy: principal.name || principal.id, updatedAt: t, version: 1, aiClassified };
-  await (await workStore()).put<DefectNotice>({ setId: set.id, kind: "defects", key: notice.id, data: notice, textHash: notice.textHash, createdBy: principal.id, updatedAt: t });
+  const notice: DefectNotice = { id: `dn_${nanoid(10)}`, title: title || `Defect notice ${istDate()}`, forum, text, textHash: sha(text), defects, createdAt: t, createdBy: principal.name || principal.id, updatedAt: t, version: 1, aiClassified };
+  await commit<DefectNotice>({ setId: set.id, kind: "defects", key: notice.id, data: notice, textHash: notice.textHash, createdBy: principal.id, updatedAt: t }, 0);
   return notice;
 }
 
@@ -505,7 +531,7 @@ export async function updateDefect(principal: Principal, setId: string, noticeId
   });
   if (!defects.some((d) => d.id === patch.defectId)) throw new DocsError("Defect not found", 404, "not_found");
   const next: DefectNotice = { ...item.data, defects, updatedAt: now(), version: item.data.version + 1 };
-  await ws.put<DefectNotice>({ ...item, data: next, updatedAt: next.updatedAt });
+  await commit<DefectNotice>({ ...item, data: next, updatedAt: next.updatedAt }, item.version ?? 0);
   return next;
 }
 

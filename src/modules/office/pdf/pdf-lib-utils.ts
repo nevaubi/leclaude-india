@@ -13,9 +13,9 @@ import { hexToRgb, type PdfRect } from "./model";
 export type TextAnchor = "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right" | "center";
 
 const WINANSI_EXTRA = new Set("€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ".split("").map((c) => c.charCodeAt(0)));
-const REPLACEMENTS: Record<string, string> = { "→": "->", "←": "<-", "≤": "<=", "≥": ">=", "−": "-", "‑": "-", " ": " ", " ": " ", "′": "'", "″": '"', "­": "", " ": " ", "​": "", "﻿": "", "‐": "-", "‒": "-", "―": "—", "’": "’", "✓": "x", "✔": "x", "□": "[ ]", "☐": "[ ]", "☑": "[x]", "≠": "!=", "·": "·", "…": "…" };
+const REPLACEMENTS: Record<string, string> = { "→": "->", "←": "<-", "≤": "<=", "≥": ">=", "−": "-", "‑": "-", " ": " ", " ": " ", "′": "'", "″": '"', "­": "", " ": " ", "​": "", "﻿": "", "‐": "-", "‒": "-", "―": "—", "’": "’", "✓": "x", "✔": "x", "□": "[ ]", "☐": "[ ]", "☑": "[x]", "≠": "!=", "·": "·", "…": "…", "₹": "Rs." };
 
-/** Replace characters the 14 standard fonts cannot encode. */
+/** Replace characters the 14 standard fonts cannot encode (the rupee sign becomes "Rs."; anything else unknown, "?"). */
 export function sanitizeWinAnsi(text: string): string {
   let out = "";
   for (const ch of text) {

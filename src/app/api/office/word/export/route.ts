@@ -16,13 +16,17 @@ import { refs } from "@/lib/auth/resources";
 import { audit } from "@/lib/integrity/audit";
 import { officeDocFromBody } from "@/modules/office/shared/route-auth";
 import { assistantRecord, docBodyHash, exportCheckState, providerRole } from "@/modules/office/word/filing-check-server";
-import { appendixBlocks, declarationBlocks, dedupeSourceItems, exportCustomProps, type CheckState } from "@/modules/office/word/provenance";
+import { aiSurfacesFromMeta, appendixBlocks, declarationBlocks, dedupeSourceItems, exportCustomProps, type CheckState } from "@/modules/office/word/provenance";
 import type { CustomProp } from "@/modules/office/word/ooxml/custom-props";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-/** Export provenance options (the Word editor sends these; other callers omit them and get the plain export). */
+/**
+ * Export provenance options (the Word editor sends these after its filing-check gate). A .docx exported without them
+ * (document list, library, API) still carries the provenance properties, recording that no check ran and no gate was
+ * shown; nothing is appended to its body.
+ */
 interface ProvenanceRequest {
   /** Append the visible "Declaration on use of AI tools" block (text editable by the user). */
   declaration?: { text?: string } | null;
@@ -46,10 +50,12 @@ async function handlePOST(req: NextRequest) {
   let basePackage: Uint8Array | null = null;
   let importedComments: DocxImportedComment[] | undefined;
   let matterId: string | undefined;
+  let aiSurfaces: string[] = [];
   if (body.docId) {
     const doc = getOfficeDoc(body.docId);
     if (!doc) return jsonError("Document not found", 404);
     matterId = doc.matterId ?? undefined;
+    aiSurfaces = aiSurfacesFromMeta(doc.meta as Record<string, unknown> | undefined);
     content = content ?? (doc.content as PMNode);
     title = title ?? doc.title;
     settings = settings ?? ((doc.meta?.settings as Partial<DocSettings> | undefined) ?? undefined);
@@ -74,7 +80,7 @@ async function handlePOST(req: NextRequest) {
   let auditMeta: Record<string, unknown> = {};
   if (prov) {
     const hash = docBodyHash(doc);
-    const { state: check } = await exportCheckState(doc);
+    const { state: check, report } = await exportCheckState(doc);
     const assistant = assistantRecord(body.docId);
     const sources = dedupeSourceItems(assistant.sources);
     const extra: PMNode[] = [];
@@ -86,17 +92,28 @@ async function handlePOST(req: NextRequest) {
       ? { acknowledged: prov.acknowledgement.acknowledged === true, by: principal.name || principal.id, at: new Date().toISOString(), items: Math.max(0, Math.floor(Number(prov.acknowledgement.items) || 0)), matchesExport: prov.acknowledgement.docHash === hash }
       : null;
     customProps = exportCustomProps({
-      exportedAt: new Date().toISOString(), docHash: hash, check: check as CheckState, acknowledgement: ack, assistantTurns: assistant.turns, providerRole: providerRole(), models: assistant.models,
+      exportedAt: new Date().toISOString(), docHash: hash, check: check as CheckState, gate: "editor", openIssues: report ? report.issues.length : undefined, acknowledgement: ack,
+      assistantTurns: assistant.turns, aiSurfaces, providerRole: providerRole(), models: assistant.models,
       declaration: declarationText !== null, appendix: { included: Boolean(prov.appendix), sources: sources.length },
     });
     auditMeta = {
-      docHash: hash, citationCheck: check.state === "not_run" ? { state: "not_run", reason: check.reason } : { state: check.state, ...check.counts },
-      acknowledgement: ack ? { acknowledged: ack.acknowledged, items: ack.items, matchesExport: ack.matchesExport } : null,
+      docHash: hash, gate: "editor", citationCheck: check.state === "not_run" ? { state: "not_run", reason: check.reason } : { state: check.state, ...check.counts },
+      acknowledgement: ack ? { acknowledged: ack.acknowledged, items: ack.items, matchesExport: ack.matchesExport } : null, openIssues: report ? report.issues.length : null,
       declaration: declarationText !== null, appendix: Boolean(prov.appendix),
     };
+  } else if (format === "docx") {
+    // No gate was shown for this export: the file says so (check not run, nothing acknowledged) instead of saying nothing.
+    const hash = docBodyHash(doc);
+    const assistant = assistantRecord(body.docId);
+    const check: CheckState = { state: "not_run", reason: "exported without the Word editor's filing check; no citation check ran for this export" };
+    customProps = exportCustomProps({
+      exportedAt: new Date().toISOString(), docHash: hash, check, gate: "none", acknowledgement: null, assistantTurns: assistant.turns, aiSurfaces, providerRole: providerRole(), models: assistant.models,
+      declaration: false, appendix: { included: false, sources: 0 },
+    });
+    auditMeta = { docHash: hash, gate: "none", citationCheck: { state: "not_run", reason: check.reason }, acknowledgement: null };
   }
   const record = () => {
-    if (!prov) return;
+    if (!prov && format !== "docx") return;
     try { audit("export", { kind: "officeDoc", id: body.docId, label: title ?? "Document", matterId }, { format, ...auditMeta }, { id: principal.id, name: principal.name }); } catch (e) { console.warn("[word export] audit failed", (e as Error).message); }
   };
 

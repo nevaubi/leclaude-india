@@ -7,8 +7,8 @@ import { citatorFor } from "@/modules/india/citator/read";
 import { chunksToText, readJudgmentText } from "@/modules/india/corpus/text";
 import { checkCitations } from "@/modules/search/service";
 import type { PMNode } from "./doc-model";
-import { filingSummary, filingText, runFilingCheck, textBlocks, type FilingCheckDeps, type FilingCheckReport } from "./filing-check";
-import type { CheckState, ProvenanceSourceItem } from "./provenance";
+import { filingText, runFilingCheck, textBlocks, type FilingCheckDeps, type FilingCheckReport } from "./filing-check";
+import { checkStateOf, type CheckState, type ProvenanceSourceItem } from "./provenance";
 
 /**
  * Server wiring for the Word filing check: the India citation check (judgment store), exact Supreme Court neutral
@@ -58,7 +58,7 @@ const cache = new Map<string, { at: number; report: FilingCheckReport }>();
 
 export function resetFilingCacheForTests() { cache.clear(); }
 
-/** Run (or reuse) the filing check for a document body. `deps` is injectable for tests. */
+/** Run (or reuse a complete check of) the filing check for a document body. `deps` is injectable for tests. */
 export async function filingCheckFor(doc: PMNode, opts: { deps?: FilingCheckDeps; signal?: AbortSignal; fresh?: boolean } = {}): Promise<FilingCheckReport> {
   const hash = docBodyHash(doc);
   // The cache key covers block ids too: two documents with the same text keep their own "show in document" targets.
@@ -66,12 +66,18 @@ export async function filingCheckFor(doc: PMNode, opts: { deps?: FilingCheckDeps
   const hit = cache.get(key);
   if (!opts.fresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.report;
   const report = await runFilingCheck(doc, hash, opts.deps ?? serverFilingDeps(), opts.signal);
-  if (cache.size > 100) cache.delete(cache.keys().next().value as string);
-  cache.set(key, { at: Date.now(), report });
+  // Only a complete check is reused: a resolver or corpus outage must not be served again for ten minutes.
+  if (report.coverage === "complete") {
+    if (cache.size > 100) cache.delete(cache.keys().next().value as string);
+    cache.set(key, { at: Date.now(), report });
+  } else cache.delete(key);
   return report;
 }
 
-/** The check state recorded in an export: a fresh/cached check of exactly this body, or why there is none. */
+/**
+ * The check state recorded in an export: a fresh/cached check of exactly this body — "checked" only when it ran in
+ * full, "partial" when part of it could not run, "not_run" when nothing ran — or why there is none.
+ */
 export async function exportCheckState(doc: PMNode, opts: { deps?: FilingCheckDeps; timeoutMs?: number } = {}): Promise<{ state: CheckState; report: FilingCheckReport | null }> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 25_000);
@@ -80,7 +86,7 @@ export async function exportCheckState(doc: PMNode, opts: { deps?: FilingCheckDe
       filingCheckFor(doc, { deps: opts.deps, signal: ctrl.signal }),
       new Promise<never>((_, rej) => ctrl.signal.addEventListener("abort", () => rej(new Error("timed out")), { once: true })),
     ]);
-    return { state: { state: "checked", checkedAt: report.checkedAt, counts: report.counts, summary: filingSummary(report.counts) }, report };
+    return { state: checkStateOf(report), report };
   } catch (e) {
     return { state: { state: "not_run", reason: `the check could not complete: ${(e as Error).message}` }, report: null };
   } finally {

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { exportBlockers, STANCE_LABEL, STANCES, writtenStatementMarkdown, type ParaReply, type ReplyStance } from "../../drafting";
+import { blockerMessage, exportBlockers, needsApproval, STANCE_LABEL, STANCES, writtenStatementMarkdown, type ParaReply, type ReplyStance } from "../../drafting";
 import { errorKind, errorMessage, isAbort, UNCONFIGURED_MESSAGE, type ApiErrorKind } from "../api";
 import { FilePicker } from "../file-picker";
 import { Notice, SurfaceState } from "../notice";
@@ -17,6 +17,7 @@ import type { DraftingProps } from "./drafting-tab";
 type Load = { status: "idle" } | { status: "loading" } | { status: "ready"; view: ParawiseView } | { status: "error"; message: string; kind: ApiErrorKind };
 
 const STANCE_TONE: Record<ReplyStance, string> = {
+  unreviewed: "text-muted-foreground",
   admitted: "text-warning-foreground dark:text-warning",
   denied: "text-foreground",
   not_admitted: "text-foreground",
@@ -25,7 +26,11 @@ const STANCE_TONE: Record<ReplyStance, string> = {
   no_reply: "text-muted-foreground",
 };
 
-/** Para-wise reply: numbered paragraphs found in code, AI-proposed responses with checked quotes, admissions approved by a person. */
+/**
+ * Para-wise reply: numbered paragraphs found in code, AI-proposed responses with checked quotes. Nothing exports until
+ * every paragraph has a reviewed response and a person has approved each admission and each response that does not
+ * deny (matter of record, no reply: an untraversed allegation may be taken as admitted, Order VIII Rule 5 CPC).
+ */
 export function ReplyTool({ setId, setName, matterId, aiReady, fileCount, onView }: DraftingProps) {
   const [fileId, setFileId] = React.useState<string | null>(null);
   const [load, setLoad] = React.useState<Load>({ status: "idle" });
@@ -86,17 +91,26 @@ export function ReplyTool({ setId, setName, matterId, aiReady, fileCount, onView
     try { set(await parawiseApi.update(setId, { fileId, version: state.version, n: p.n, ...patch })); } catch (e) { fail(e); }
   };
 
-  const blockers = state ? exportBlockers(state.paras) : null;
+  const blockers = state ? exportBlockers(state.paras, { stale: view?.stale }) : null;
   const exportWord = async () => {
     if (!state) return;
     try {
-      const md = writtenStatementMarkdown(state, { pleading: /petition/i.test(state.fileName) ? "petition" : "plaint" });
-      await saveToWord({ title: `Written statement (para-wise reply) — ${setName}`, markdown: md, matterId, source: "documents.parawise", tags: ["written statement", "para-wise reply"] });
+      const md = writtenStatementMarkdown(state, { pleading: /petition/i.test(state.fileName) ? "petition" : "plaint", stale: view?.stale });
+      const proposed = state.paras.filter((p) => p.proposed).length;
+      await saveToWord({
+        title: `Written statement (para-wise reply) — ${setName}`, markdown: md, matterId, source: "documents.parawise", tags: ["written statement", "para-wise reply"],
+        ai: { assisted: proposed > 0, detail: proposed ? `Responses to ${proposed} of ${state.paras.length} paragraphs proposed by AI; admissions and non-denials approved by a person.` : "Responses written by hand." },
+      });
     } catch (e) { toast.error((e as Error).message); }
   };
 
   if (fileCount === 0) return <SurfaceState icon={MessageSquareReply} title="No files yet">Add the plaint or petition (and the documents that answer it) in the Files tab.</SurfaceState>;
-  const counts = state ? { admitted: state.paras.filter((p) => p.stance === "admitted").length, approved: state.paras.filter((p) => p.stance === "admitted" && p.approved).length, proposed: state.paras.filter((p) => p.status === "proposed").length } : null;
+  const counts = state ? {
+    needApproval: state.paras.filter((p) => needsApproval(p.stance)).length,
+    approved: state.paras.filter((p) => needsApproval(p.stance) && p.approved).length,
+    proposed: state.paras.filter((p) => p.status === "proposed").length,
+    gaps: state.paras.filter((p) => p.gapBefore).length,
+  } : null;
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
@@ -107,12 +121,12 @@ export function ReplyTool({ setId, setName, matterId, aiReady, fileCount, onView
           {state && (
             <div className="ms-auto flex items-center gap-1">
               <Button size="xs" variant="ghost" onClick={() => void start(true)} title="Detect paragraphs again (discards replies)"><RotateCcw className="size-3.5" /> Restart</Button>
-              <Button size="xs" variant="outline" disabled={!!blockers || !state.paras.length} onClick={() => void exportWord()} title={blockers ? "Approve every admission first" : undefined}><FileText className="size-3.5" /> Written statement to Word</Button>
+              <Button size="xs" variant="outline" disabled={!!blockers || !state.paras.length} onClick={() => void exportWord()} title={blockers ? blockerMessage(blockers) : undefined}><FileText className="size-3.5" /> Written statement to Word</Button>
             </div>
           )}
         </div>
 
-        {load.status === "idle" && <SurfaceState icon={MessageSquareReply} title="Choose the pleading to answer">Its numbered paragraphs are found in code (lines starting “1.”, “2.” …). Each gets a proposed response tied to the other documents in this set; every admission waits for your approval.</SurfaceState>}
+        {load.status === "idle" && <SurfaceState icon={MessageSquareReply} title="Choose the pleading to answer">Its numbered paragraphs are found in code (lines starting “1.”, “2.” … after the cause title). Each gets a proposed response tied to the other documents in this set; every admission, and every response that does not deny, waits for your approval.</SurfaceState>}
         {load.status === "loading" && <div className="flex items-center gap-2 py-6 text-[13px] text-muted-foreground" aria-busy="true"><Loader2 className="size-4 animate-spin" /> Loading…</div>}
         {load.status === "error" && (load.kind === "denied" ? <SurfaceState icon={ShieldAlert} title="Not found or no access">{load.message}</SurfaceState> : <SurfaceState icon={AlertCircle} title="Could not load" action={<Button size="xs" variant="ghost" onClick={() => setReload((n) => n + 1)}><RotateCcw className="size-3.5" /> Try again</Button>}>{load.message}</SurfaceState>)}
 
@@ -127,14 +141,19 @@ export function ReplyTool({ setId, setName, matterId, aiReady, fileCount, onView
             {view?.stale && <Notice tone="warning" action={<Button size="xs" variant="ghost" onClick={() => void start(true)}>Restart</Button>}>The pleading’s text changed since its paragraphs were detected. Restart to detect them again.</Notice>}
             {aiReady === false && <Notice tone="warning">{UNCONFIGURED_MESSAGE} You can still write the replies by hand.</Notice>}
             <div className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-[12px]">
-              <span className="tabular text-muted-foreground">{state.paras.length} paragraphs · {counts!.proposed} proposed · {counts!.admitted} admission{counts!.admitted === 1 ? "" : "s"} ({counts!.approved} approved)</span>
+              <span className="tabular text-muted-foreground">{state.paras.length} paragraphs · {counts!.proposed} proposed · {counts!.needApproval} need approval ({counts!.approved} approved){counts!.gaps ? ` · ${counts!.gaps} numbering gap${counts!.gaps === 1 ? "" : "s"}` : ""}</span>
               <div className="ms-auto flex items-center gap-1">
                 {run?.running && <Button size="xs" variant="ghost" onClick={() => ctrl.current?.abort()}><X className="size-3.5" /> Cancel</Button>}
                 <Button size="xs" disabled={aiReady === false || !!run?.running || counts!.proposed === state.paras.length} onClick={() => void propose()}>{run?.running ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Propose replies</Button>
               </div>
               {run && (run.running || run.failed > 0) && <div className="basis-full"><Progress value={run.total ? (run.done / run.total) * 100 : 100} className="h-1" aria-label="Proposal progress" />{run.failed > 0 && <p className="mt-1 text-destructive">{run.failed} paragraph{run.failed === 1 ? "" : "s"} could not be proposed; retry them individually.</p>}</div>}
             </div>
-            {blockers && <Notice tone="warning">Admissions bind the client. Approve each one (paragraph {blockers.unapprovedAdmissions.join(", ")}) before exporting the written statement.</Notice>}
+            {blockers && (
+              <Notice tone="warning">
+                <div>{blockerMessage(blockers)}</div>
+                {blockers.unapproved.length > 0 && <div className="mt-0.5 text-[11.5px] text-muted-foreground">An allegation that is not specifically denied may be taken as admitted (Order VIII Rule 5 CPC), so “Matter of record” and “No reply needed” need approval like an admission.</div>}
+              </Notice>
+            )}
             <ol className="space-y-2">
               {state.paras.map((p) => {
                 const draft = drafts[p.n] ?? p.reply;
@@ -142,21 +161,25 @@ export function ReplyTool({ setId, setName, matterId, aiReady, fileCount, onView
                   <li key={p.n} className="rounded-md border">
                     <div className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
                       <div className="min-w-0">
-                        <div className="mb-1 flex items-center gap-2 text-[11.5px] text-muted-foreground"><span className="font-semibold text-foreground">¶ {p.n}</span>{p.page != null && <button type="button" className="hover:text-foreground hover:underline" onClick={() => onView({ fileId: state.fileId, page: p.page, name: state.fileName })}>p. {p.page}</button>}</div>
+                        <div className="mb-1 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
+                          <span className="font-semibold text-foreground">¶ {p.n}</span>
+                          {p.page != null && <button type="button" className="hover:text-foreground hover:underline" onClick={() => onView({ fileId: state.fileId, page: p.page, name: state.fileName })}>p. {p.page}</button>}
+                          {p.gapBefore ? <span className="inline-flex items-center gap-1 text-warning-foreground dark:text-warning" title="The pleading's numbering skips here. Check the text in the Files tab: a paragraph may have been lost in extraction, or merged into the one above."><AlertCircle className="size-3" /> Numbering gap: {p.gapBefore} number{p.gapBefore === 1 ? "" : "s"} skipped before this paragraph</span> : null}
+                        </div>
                         <p className="line-clamp-6 whitespace-pre-wrap font-serif text-[13px] leading-relaxed" title={p.paraText}>{p.paraText}</p>
                       </div>
                       <div className="min-w-0 space-y-1.5">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Select value={p.stance} onValueChange={(v) => void update(p, { stance: v })}>
-                            <SelectTrigger size="xs" className={cn("w-[170px]", STANCE_TONE[p.stance])} aria-label={`Response to paragraph ${p.n}`}><SelectValue /></SelectTrigger>
+                          <Select value={p.stance === "unreviewed" ? "" : p.stance} onValueChange={(v) => void update(p, { stance: v })}>
+                            <SelectTrigger size="xs" className={cn("w-[170px]", STANCE_TONE[p.stance])} aria-label={`Response to paragraph ${p.n}`}><SelectValue placeholder={STANCE_LABEL.unreviewed} /></SelectTrigger>
                             <SelectContent>{STANCES.map((s) => <SelectItem key={s} value={s}>{STANCE_LABEL[s]}</SelectItem>)}</SelectContent>
                           </Select>
                           {p.status === "failed" && <span className="text-[11.5px] text-destructive" title={p.error ?? undefined}>Proposal failed</span>}
                           {p.status === "pending" && <span className="text-[11.5px] text-muted-foreground">Not proposed yet</span>}
                           {p.edited && <span className="text-[11.5px] text-muted-foreground">Edited</span>}
-                          {p.stance === "admitted" && (p.approved
+                          {needsApproval(p.stance) && (p.approved
                             ? <span className="ms-auto inline-flex items-center gap-1 text-[11.5px] text-muted-foreground"><ShieldCheck className="size-3.5" /> Approved by {p.approvedBy}<Button size="xs" variant="ghost" onClick={() => void update(p, { approve: false })}>Withdraw</Button></span>
-                            : <Button size="xs" variant="outline" className="ms-auto" onClick={() => void update(p, { approve: true })}><CheckCircle2 className="size-3.5" /> Approve admission</Button>)}
+                            : <Button size="xs" variant="outline" className="ms-auto" disabled={view?.stale} onClick={() => void update(p, { approve: true })} title={p.stance === "admitted" ? undefined : "This response does not deny the paragraph; an untraversed allegation may be taken as admitted. Approve to confirm."}><CheckCircle2 className="size-3.5" /> {p.stance === "admitted" ? "Approve admission" : "Approve"}</Button>)}
                           {(p.status !== "proposed" || p.error) && aiReady !== false && <Button size="xs" variant="ghost" disabled={!!run?.running} onClick={() => void propose([p.n])}><Sparkles className="size-3.5" /> Propose</Button>}
                         </div>
                         <Textarea rows={2} value={draft} placeholder="Reply text after the opening words (optional)" onChange={(e) => setDrafts((d) => ({ ...d, [p.n]: e.target.value }))} onBlur={() => { if (draft !== p.reply) void update(p, { reply: draft }).then(() => setDrafts((d) => { const n = { ...d }; delete n[p.n]; return n; })); }} className="text-[12.5px]" aria-label={`Reply to paragraph ${p.n}`} />

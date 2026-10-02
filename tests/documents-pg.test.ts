@@ -22,7 +22,7 @@ vi.mock("@/lib/ai/agent", async (importOriginal) => ({
   generateJSON: async (opts: { input: string }) => {
     ai.calls++;
     return String(opts.input).includes("indemnify")
-      ? { facts: [{ statement: "The Contractor indemnifies the Client.", parties: [], category: "obligation", quote: "The Contractor shall indemnify the Client", page: 2, date: null }], events: [{ dateText: "03.04.2022", description: "Notice served", parties: [], quote: "served on 03.04.2022", page: 2 }] }
+      ? { facts: [{ statement: "The Contractor indemnifies the Client.", parties: [], category: "obligation", quote: "The Contractor shall indemnify the Client", page: 2, date: null }], events: [{ dateText: "03.04.2022", description: "Notice served", parties: [], quote: "indemnify the Client. Notice was served on 03.04.2022", page: 2 }] }
       : { facts: [], events: [] };
   },
   describeImage: async () => ({ text: "Scanned schedule naming Mumbai as the seat of arbitration.", responseId: "r" }),
@@ -156,4 +156,23 @@ describe.skipIf(!PG)("document sets on Postgres", () => {
     const left = await store.query({ query: `SELECT (SELECT count(*) FROM docs_chunks) AS c, (SELECT count(*) FROM docs_files) AS f, (SELECT count(*) FROM docs_extractions) AS x` });
     expect(left[0]).toEqual({ c: "0", f: "0", x: "0" });
   }, 120_000);
+
+  it("drafting work items: atomic compare-and-set on the version column, and the version backfilled for older rows", async () => {
+    const { PgWorkStore } = await import("@/modules/documents/server/work-store");
+    // A table from before the version column, holding one item at JSON version 3.
+    await store.query({ query: `DROP TABLE IF EXISTS docs_work` });
+    await store.query({ query: `CREATE TABLE docs_work (set_id text NOT NULL, kind text NOT NULL, key text NOT NULL, data text NOT NULL, text_hash text, created_by text NOT NULL, updated_at text NOT NULL, PRIMARY KEY (set_id, kind, key))` });
+    await store.query({ query: `INSERT INTO docs_work VALUES ('s1', 'dates', 'list', '{"version":3}', NULL, 'u', '2026-01-01')` });
+    const ws = new PgWorkStore(store);
+    const old = (await ws.get<{ version: number }>("s1", "dates", "list"))!;
+    expect(old.version).toBe(3);
+    const at = (v: number) => ({ setId: "s1", kind: "dates" as const, key: "list", data: { version: v }, textHash: null, createdBy: "u", updatedAt: "2026-01-02" });
+    expect(await ws.putIfVersion(at(4), 2)).toBe(false); // stale expectation: nothing written
+    expect(await ws.putIfVersion(at(4), 3)).toBe(true);
+    expect(await ws.putIfVersion(at(5), 3)).toBe(false); // the second writer from version 3 loses
+    expect((await ws.get<{ version: number }>("s1", "dates", "list"))!.version).toBe(4);
+    expect(await ws.putIfVersion({ ...at(1), key: "new" }, 0)).toBe(true); // create
+    expect(await ws.putIfVersion({ ...at(1), key: "new" }, 0)).toBe(false); // create over an existing row
+    await ws.deleteSet("s1");
+  });
 });

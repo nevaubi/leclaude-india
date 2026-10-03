@@ -9,7 +9,7 @@ import { issueSessionToken, sessionsConfigured } from "@/lib/auth/session";
 import type { Principal } from "@/lib/auth/types";
 import { getWorkspace } from "@/lib/workspace";
 import { ServiceError } from "./errors";
-import { canManageWorkspace, setupWorkspace, type SetupInput } from "./service";
+import { canManageWorkspace, getMember, isPlatformAdmin, principalFirmId, setupWorkspace, type SetupInput } from "./service";
 
 /**
  * Workspace sign-in (email + password), the one-time owner bootstrap and administrator password resets.
@@ -43,7 +43,7 @@ function minutes(seconds: number): string {
   return m <= 1 ? "a minute" : `${m} minutes`;
 }
 
-function issueFor(personId: string): IssuedSession {
+export function issueMemberSession(personId: string): IssuedSession {
   const person = activeMember(personId);
   const cred = getCredential(personId);
   if (!person || !cred) throw new ServiceError(409, "This account cannot sign in.", undefined, "no_account");
@@ -76,7 +76,7 @@ export async function signIn(input: { email?: unknown; password?: unknown; ip?: 
     return { ok: false, status: 401, code: "invalid_credentials", message: GENERIC_SIGNIN_ERROR };
   }
   resetKey(accountKey);
-  const session = issueFor(person.id);
+  const session = issueMemberSession(person.id);
   try {
     audit("login", { kind: "person", id: person.id, label: person.name }, { method: "password" }, { id: person.id, name: person.name });
   } catch (e) {
@@ -169,7 +169,7 @@ export async function bootstrapOwner(input: BootstrapInput, opts: { ip?: string;
   } catch (e) {
     log("auth.audit_failed", { error: (e as Error).message });
   }
-  return { workspaceCreated, ownerId: owner.id, session: sessionsConfigured() ? issueFor(owner.id) : null };
+  return { workspaceCreated, ownerId: owner.id, session: sessionsConfigured() ? issueMemberSession(owner.id) : null };
 }
 
 /** Fresh-workspace setup without a token (AUTH_MODE=dev only, via POST /api/workspace): store the owner's password when one was given. */
@@ -193,6 +193,8 @@ export async function setInitialOwnerPassword(ownerId: string, password: unknown
 export async function adminSetPassword(actor: Principal | null, targetId: string, password: unknown): Promise<{ self: boolean; session: IssuedSession | null }> {
   if (!actor || actor.source !== "jwt" || !actor.sessionId) throw new ServiceError(403, "Sign in with your own account to set passwords.", undefined, "session_required");
   if (!canManageWorkspace(actor) || actor.roles.includes("service")) throw new ServiceError(403, "Only the workspace owner, a partner or an admin may set passwords.", undefined, "forbidden");
+  const targetMember = getMember(targetId);
+  if (!isPlatformAdmin(actor) && targetMember?.firmId !== principalFirmId(actor)) throw new ServiceError(403, "You can only manage accounts in your firm.", undefined, "forbidden");
   const target = activeMember(targetId);
   if (!target) throw new ServiceError(404, "Team member not found", undefined, "not_found");
   const ownerId = getWorkspace().owner?.id;
@@ -207,5 +209,5 @@ export async function adminSetPassword(actor: Principal | null, targetId: string
   }
   const self = target.id === actor.id;
   // Changing your own password revokes your current session too; hand back a fresh one.
-  return { self, session: self && sessionsConfigured() ? issueFor(target.id) : null };
+  return { self, session: self && sessionsConfigured() ? issueMemberSession(target.id) : null };
 }

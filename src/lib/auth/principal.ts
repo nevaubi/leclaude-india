@@ -242,6 +242,11 @@ export function verifyJwt(token: string, cfg: JwtConfig): Record<string, unknown
 
 /** Matter access for a signed-in member: tenant-wide for the owner, partners and admins; otherwise the matters they staff. */
 export function matterIdsForPerson(personId: string, roles: readonly Role[], ownerId?: string): Principal["matterIds"] {
+  const person = db().collection<Person & { matterScope?: "*" | string[] }>("people").get(personId);
+  // An explicit admin-assigned scope wins over role defaults. This lets mock-firm partners/admins be restricted to
+  // the matters allocated to their firm instead of inheriting tenant-wide access.
+  if (person?.matterScope === "*") return "*";
+  if (Array.isArray(person?.matterScope)) return Array.from(new Set(person.matterScope));
   if (personId === ownerId || roles.includes("partner") || roles.includes("admin")) return "*";
   return db().matters.all().filter((m) => m.leadAttorneyId === personId || (m.teamIds ?? []).includes(personId)).map((m) => m.id);
 }

@@ -34,6 +34,10 @@ export interface TeamMember {
   email?: string;
   title?: string;
   firmRole: FirmRole | null;
+  firmId?: string;
+  firmName?: string;
+  matterScope?: "*" | string[];
+  platformAdmin?: boolean;
   active: boolean;
   owner: boolean;
   deactivatedAt?: string;

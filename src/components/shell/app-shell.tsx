@@ -20,7 +20,7 @@ import { DEFAULT_USER } from "@/lib/current-user";
 import { useT } from "@/lib/i18n/client";
 import { LocaleMenu } from "./locale-switcher";
 
-export interface ShellUser { id: string; name: string; role?: string; email?: string }
+export interface ShellUser { id: string; name: string; role?: string; email?: string; firmName?: string }
 
 /** Neutral placeholder only; the layout always passes the workspace owner. */
 const DEFAULT_SHELL_USER: ShellUser = { ...DEFAULT_USER };

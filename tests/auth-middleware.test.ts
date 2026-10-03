@@ -59,7 +59,7 @@ describe("gate (AUTH_MODE=jwt)", () => {
   });
 
   it("allowlists only sign-in, bootstrap, health, cron routes, /login, /setup and static assets", async () => {
-    for (const p of ["/login", "/setup", "/api/auth/login", "/api/auth/logout", "/api/auth/bootstrap", "/api/health", "/api/official/run", "/api/intel/jobs/tick", "/api/india/hc-text/run", "/_next/static/chunks/a.js", "/brand/sw-mark.svg", "/icon.svg"]) {
+    for (const p of ["/login", "/setup", "/invite/example-token", "/api/auth/login", "/api/auth/logout", "/api/auth/bootstrap", "/api/auth/invite", "/api/health", "/api/official/run", "/api/intel/jobs/tick", "/api/india/hc-text/run", "/_next/static/chunks/a.js", "/brand/sw-mark.svg", "/icon.svg"]) {
       expect(isPublicPath(p), p).toBe(true);
       expect(await gate(input({ pathname: p })), p).toEqual({ kind: "next" });
     }

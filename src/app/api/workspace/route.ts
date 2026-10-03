@@ -2,7 +2,7 @@ import { withDb } from "@/lib/db/request";
 import type { NextRequest } from "next/server";
 import { withAuth, requirePrincipal } from "@/lib/auth/route";
 import { AuthError } from "@/lib/auth/errors";
-import { canManageWorkspace, setupWorkspace, updateWorkspace, workspaceView } from "@/modules/workspace/service";
+import { isPlatformAdmin, setupWorkspace, updateWorkspace, workspaceView } from "@/modules/workspace/service";
 import { readJsonObject, serviceErrorResponse, ServiceError } from "@/modules/workspace/errors";
 import { setInitialOwnerPassword } from "@/modules/workspace/signin";
 import { passwordProblem } from "@/lib/auth/password";
@@ -36,7 +36,7 @@ async function handlePOST(req: NextRequest) {
 
 /** PUT /api/workspace — firm name and owner profile; the owner (or a partner/admin) only. */
 async function handlePUT(req: NextRequest) {
-  if (!canManageWorkspace(requirePrincipal())) throw AuthError.forbidden("only the workspace owner, a partner or an admin may edit the workspace");
+  if (!isPlatformAdmin(requirePrincipal())) throw AuthError.forbidden("only the platform administrator may edit the deployment workspace");
   try {
     const body = await readJsonObject(req);
     return Response.json(updateWorkspace(body));

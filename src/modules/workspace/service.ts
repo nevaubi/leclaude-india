@@ -17,7 +17,20 @@ import { EMAIL_RE, FIRM_ROLE_PERSON, FIRM_ROLES, isFirmRole, TEAM_PERSON_ROLES, 
  */
 
 /** Stored person with the workspace bookkeeping fields this module adds. */
-export type PersonRecord = Person & { firmRole?: FirmRole; active?: boolean; deactivatedAt?: string; createdAt?: string; updatedAt?: string };
+export const DEFAULT_FIRM_ID = "firm_default";
+
+export type PersonRecord = Person & {
+  firmRole?: FirmRole;
+  firmId?: string;
+  /** Explicit matter scope assigned by a platform admin. When absent, legacy role/team rules apply. */
+  matterScope?: "*" | string[];
+  /** Cross-firm provisioning rights. The workspace owner is always treated as a platform admin. */
+  platformAdmin?: boolean;
+  active?: boolean;
+  deactivatedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 const PLATFORM_TO_FIRM: Partial<Record<Role, FirmRole>> = { partner: "Partner", associate: "Associate", paralegal: "Paralegal", litigation_support: "Litigation support", admin: "Admin" };
 const FIRM_TO_PLATFORM: Record<FirmRole, Role> = { Partner: "partner", Associate: "associate", Paralegal: "paralegal", "Litigation support": "litigation_support", Admin: "admin" };
@@ -62,6 +75,10 @@ export function toMember(p: PersonRecord, ownerId = getWorkspace().owner?.id): T
     email: p.email,
     title: p.title,
     firmRole: firmRoleOf(p),
+    firmId: p.firmId ?? DEFAULT_FIRM_ID,
+    firmName: p.organization,
+    matterScope: p.matterScope,
+    platformAdmin: p.platformAdmin === true || p.id === ownerId,
     active: isActive(p),
     owner: p.id === ownerId,
     deactivatedAt: p.deactivatedAt,
@@ -170,6 +187,9 @@ export function setupWorkspace(input: SetupInput): WorkspaceView {
     organization: firmName,
     role: FIRM_ROLE_PERSON[firmRole].role,
     firmRole,
+    firmId: existing?.firmId ?? DEFAULT_FIRM_ID,
+    matterScope: existing?.matterScope ?? "*",
+    platformAdmin: true,
     active: true,
     deactivatedAt: undefined,
     createdAt: existing?.createdAt ?? now,
@@ -222,10 +242,23 @@ export function updateWorkspace(input: SetupInput): WorkspaceView {
 }
 
 /** True when the principal may manage the workspace profile and the team: the owner, a partner or an admin. */
-export function canManageWorkspace(principal: Principal | null): boolean {
+export function principalFirmId(principal: Principal | null): string | null {
+  if (!principal) return null;
+  const p = people().get(principal.id);
+  return p?.firmId ?? DEFAULT_FIRM_ID;
+}
+
+export function isPlatformAdmin(principal: Principal | null): boolean {
   if (!principal) return false;
   const ws = getWorkspace();
-  if (ws.owner && principal.id === ws.owner.id) return true;
+  if (ws.owner?.id === principal.id) return true;
+  const p = people().get(principal.id);
+  return p?.platformAdmin === true && principal.roles.includes("admin");
+}
+
+export function canManageWorkspace(principal: Principal | null): boolean {
+  if (!principal) return false;
+  if (isPlatformAdmin(principal)) return true;
   return principal.roles.some((r) => r === "partner" || r === "admin" || r === "service");
 }
 
@@ -233,12 +266,12 @@ export function canManageWorkspace(principal: Principal | null): boolean {
 // Team
 // ---------------------------------------------------------------------------
 
-export function listTeam(opts: { includeInactive?: boolean; q?: string } = {}): TeamMember[] {
+export function listTeam(opts: { includeInactive?: boolean; q?: string; firmId?: string } = {}): TeamMember[] {
   const ownerId = getWorkspace().owner?.id;
   const q = opts.q?.trim().toLowerCase();
   return people()
     .all()
-    .filter((p) => isTeamPerson(p) && (opts.includeInactive || isActive(p)))
+    .filter((p) => isTeamPerson(p) && (!opts.firmId || (p.firmId ?? DEFAULT_FIRM_ID) === opts.firmId) && (opts.includeInactive || isActive(p)))
     .filter((p) => !q || `${p.name} ${p.email ?? ""} ${p.title ?? ""}`.toLowerCase().includes(q))
     .map((p) => toMember(p, ownerId))
     .sort((a, b) => Number(b.owner) - Number(a.owner) || Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
@@ -249,7 +282,14 @@ export function getMember(id: string): TeamMember | null {
   return p && isTeamPerson(p) ? toMember(p) : null;
 }
 
-export function createMember(input: MemberInput): TeamMember {
+export interface MemberProvisioning {
+  firmId?: string;
+  firmName?: string;
+  matterScope?: "*" | string[];
+  platformAdmin?: boolean;
+}
+
+export function createMember(input: MemberInput, provisioning: MemberProvisioning = {}): TeamMember {
   const m = validateMember(input, false);
   if (emailTaken(m.email!)) throw new ServiceError(409, "A team member with that email already exists.", { email: "A team member with that email already exists." }, "duplicate_email");
   const now = new Date().toISOString();
@@ -258,9 +298,12 @@ export function createMember(input: MemberInput): TeamMember {
     name: m.name!,
     email: m.email,
     title: titleForRole(m.firmRole!, m.title),
-    organization: getWorkspace().firmName,
+    organization: provisioning.firmName ?? getWorkspace().firmName,
     role: FIRM_ROLE_PERSON[m.firmRole!].role,
     firmRole: m.firmRole,
+    firmId: provisioning.firmId ?? DEFAULT_FIRM_ID,
+    matterScope: provisioning.matterScope,
+    platformAdmin: provisioning.platformAdmin === true,
     active: true,
     createdAt: now,
     updatedAt: now,

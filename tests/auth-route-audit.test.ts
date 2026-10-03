@@ -13,6 +13,7 @@ const UNWRAPPED_ALLOWED: Record<string, { methods: string[]; reason: string }> =
   "auth/login": { methods: ["POST"], reason: "starts a session; rate-limited, generic errors" },
   "auth/logout": { methods: ["POST"], reason: "only clears this browser's cookie" },
   "auth/bootstrap": { methods: ["GET", "POST"], reason: "GET returns booleans; POST needs AUTH_SETUP_TOKEN and closes once any password exists" },
+  "auth/invite": { methods: ["GET", "POST"], reason: "single-use hashed invitation token; GET reveals assigned email/firm/role, POST creates the invited account" },
   health: { methods: ["GET"], reason: "liveness; anonymous callers get { ok, time } only when sign-in is enforced" },
 };
 

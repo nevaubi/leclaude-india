@@ -27,7 +27,10 @@ import * as workspace from "@/app/api/workspace/route";
 import * as people from "@/app/api/people/route";
 import * as person from "@/app/api/people/[id]/route";
 import * as password from "@/app/api/people/[id]/password/route";
-import { createMember } from "@/modules/workspace/service";
+import * as adminAccess from "@/app/api/admin/access/route";
+import * as inviteAccess from "@/app/api/auth/invite/route";
+import { createMember, type PersonRecord } from "@/modules/workspace/service";
+import { INVITATIONS_COLLECTION, type InvitationRecord } from "@/modules/workspace/admin-access";
 import { GENERIC_SIGNIN_ERROR } from "@/modules/workspace/signin";
 import * as edStats from "@/app/api/ediscovery/stats/route";
 import * as edDocs from "@/app/api/ediscovery/docs/route";
@@ -316,5 +319,86 @@ describe("administrator password set / reset", () => {
     expect(hasPassword(ashaId)).toBe(true);
     expect(db().people.get(ashaId)).not.toHaveProperty("hash");
     expect(db().collection(CREDENTIALS_COLLECTION).count()).toBeGreaterThanOrEqual(3);
+  });
+});
+
+
+describe("platform admin firm invitations", () => {
+  const signInAs = async (email: string, pw: string) => cookieFrom(await call(login.POST, send("/api/auth/login", { email, password: pw })) as Response);
+
+  it("creates a scoped mock firm, sends a single-use invitation, and lets the invitee choose their own identity and password", async () => {
+    process.env.AUTH_MODE = "jwt";
+    delete process.env.RESEND_API_KEY;
+    delete process.env.AUTH_EMAIL_FROM;
+
+    const ownerToken = await signInAs("meera@firm.test", OWNER_PW);
+    const headers = withCookie(ownerToken);
+
+    const firm = await json(await call(adminAccess.POST, send("/api/admin/access", {
+      action: "create_firm",
+      name: "Kapoor Litigation Chambers",
+      jurisdiction: "Delhi",
+      description: "Mock client firm",
+      matterIds: ["m_t_staffed"],
+    }, "POST", headers)));
+    expect(firm.status).toBe(201);
+    expect(firm.body.firm).toMatchObject({ name: "Kapoor Litigation Chambers", matterIds: ["m_t_staffed"] });
+
+    const invited = await json(await call(adminAccess.POST, send("/api/admin/access", {
+      action: "invite_user",
+      email: "neha@kapoor.test",
+      firmId: firm.body.firm.id,
+      firmRole: "Associate",
+      title: "Senior Associate",
+    }, "POST", headers)));
+    expect(invited.status).toBe(201);
+    expect(invited.body.emailSent).toBe(false);
+    expect(invited.body.inviteUrl).toContain("/invite/");
+    expect(JSON.stringify(invited.body)).not.toContain("tokenHash");
+
+    const rawToken = new URL(invited.body.inviteUrl).pathname.split("/").pop()!;
+    const stored = db().collection<InvitationRecord>(INVITATIONS_COLLECTION).get(invited.body.invitation.id)!;
+    expect(stored.tokenHash).not.toBe(rawToken);
+    expect(JSON.stringify(stored)).not.toContain(rawToken);
+
+    const publicView = await json(await call(inviteAccess.GET, nreq(`/api/auth/invite?token=${encodeURIComponent(rawToken)}`)));
+    expect(publicView.status).toBe(200);
+    expect(publicView.body.invitation).toMatchObject({
+      email: "neha@kapoor.test",
+      firmName: "Kapoor Litigation Chambers",
+      firmRole: "Associate",
+    });
+
+    const accepted = await json(await call(inviteAccess.POST, send("/api/auth/invite", {
+      token: rawToken,
+      firstName: "Neha",
+      lastName: "Kapoor",
+      password: "neha secure password",
+    })));
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.user).toMatchObject({ name: "Neha Kapoor", email: "neha@kapoor.test" });
+    expect(accepted.headers.get("set-cookie")).toContain("HttpOnly");
+
+    const member = db().people.all().find((p) => p.email === "neha@kapoor.test") as PersonRecord | undefined;
+    expect(member).toBeTruthy();
+    expect(member).toMatchObject({
+      name: "Neha Kapoor",
+      organization: "Kapoor Litigation Chambers",
+      firmId: firm.body.firm.id,
+      matterScope: ["m_t_staffed"],
+    });
+    expect(member).not.toHaveProperty("password");
+
+    const signed = await resolvePrincipal(nreq("/x", { headers: withCookie(cookieFrom(accepted)) }));
+    expect(signed.id).toBe(member!.id);
+    expect(signed.matterIds).toEqual(["m_t_staffed"]);
+
+    const reused = await call(inviteAccess.POST, send("/api/auth/invite", {
+      token: rawToken,
+      firstName: "Again",
+      lastName: "No",
+      password: "another secure password",
+    }));
+    expect(reused.status).toBe(404);
   });
 });

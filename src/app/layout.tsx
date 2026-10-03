@@ -80,10 +80,13 @@ async function shellUser(ws: WorkspaceView): Promise<ShellUser | null> {
   const p = await pagePrincipal();
   if (!p) return null;
   let title: string | undefined;
+  let firmName: string | undefined;
   try {
-    title = db().people.get(p.id)?.title;
+    const person = db().people.get(p.id);
+    title = person?.title;
+    firmName = person?.organization;
   } catch { /* the shell still renders with the name */ }
-  return { id: p.id, name: p.name, email: p.email, role: title };
+  return { id: p.id, name: p.name, email: p.email, role: title, firmName };
 }
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -117,7 +120,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <ThemeProvider>
           <TooltipProvider delayDuration={250}>
             {ws.configured && user ? (
-              <AppShell appName={appName} firmName={firmName} user={user} signInEnabled={enforced}>{children}</AppShell>
+              <AppShell appName={appName} firmName={user.firmName || firmName} user={user} signInEnabled={enforced}>{children}</AppShell>
             ) : enforced && ws.configured ? (
               // Signed out with sign-in enforced: only /login (and /setup, which redirects) reach here; render bare.
               children

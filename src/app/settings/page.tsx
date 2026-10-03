@@ -7,7 +7,7 @@ import { KeyValueList } from "@/components/ui/form";
 import { aiRuntimeStatus } from "@/lib/ai/config";
 import { db } from "@/lib/db";
 import { currentUser, DEFAULT_USER } from "@/lib/current-user";
-import { canManageWorkspace, workspaceView } from "@/modules/workspace/service";
+import { canManageWorkspace, isPlatformAdmin, workspaceView } from "@/modules/workspace/service";
 import { TeamSettings } from "@/modules/workspace/components/team-settings";
 import { IntegrityPanel } from "@/modules/settings/integrity-panel";
 import { ReviewQueueSummary } from "@/modules/settings/review-queue-summary";
@@ -25,6 +25,7 @@ import { appDisplayName } from "@/lib/brand";
 import { effectiveLanguagePreferences } from "@/lib/i18n/preferences";
 import { pagePrincipal, signInEnforced } from "@/lib/auth/page";
 import { LanguageSettings } from "@/modules/settings/language-settings";
+import { AdminAccessSettings } from "@/modules/settings/admin-access";
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
@@ -80,6 +81,7 @@ export default async function SettingsPage() {
             </SettingsSection>
 
             <SettingsSection id="team" title={t("settings.group.team")} bare>
+              {isPlatformAdmin(principal) && <AdminAccessSettings />}
               {/* Remounts (and refetches) when demo data is loaded or removed, so the demo team appears without a reload. */}
               <TeamSettings key={demo.loadedAt ?? "no-demo"} />
             </SettingsSection>

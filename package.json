@@ -75,6 +75,7 @@
     "diff": "^9.0.0",
     "docx": "^9.7.2",
     "fast-xml-parser": "^5.11.1",
+    "html-to-image": "^1.11.13",
     "hyperformula": "^3.4.0",
     "jszip": "^3.10.2",
     "lucide-react": "^1.47.0",
@@ -95,6 +96,7 @@
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0",
+    "thinking-orbs": "^0.3.2",
     "xlsx": "^0.18.5",
     "zod": "^4.6.5",
     "zustand": "^5.0.15"

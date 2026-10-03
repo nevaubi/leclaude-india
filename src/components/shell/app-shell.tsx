@@ -20,6 +20,7 @@ import { BrandMark, BrandLockup } from "@/components/brand/logo";
 import { DEFAULT_USER } from "@/lib/current-user";
 import { useT } from "@/lib/i18n/client";
 import { LocaleMenu } from "./locale-switcher";
+import { VoiceLauncher } from "@/modules/voice/voice-launcher";
 
 export interface ShellUser { id: string; name: string; role?: string; email?: string }
 
@@ -210,6 +211,7 @@ function ShellFrame({ children, appName, firmName, user, signInEnabled }: { chil
         <main className="min-h-0 flex-1 overflow-hidden"><InTabbedSectionProvider value={sectionTabs != null}>{children}</InTabbedSectionProvider></main>
       </div>
       {paletteOpen && <CommandPalette />}
+      <VoiceLauncher />
     </div>
   );
 }

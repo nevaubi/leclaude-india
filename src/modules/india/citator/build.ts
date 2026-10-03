@@ -50,23 +50,24 @@ async function textColumns(store: RemoteStore): Promise<{ ok: boolean; hc: boole
   return { ok: t(r[0]?.ok), hc: t(r[0]?.hc) };
 }
 
-async function readChunks(store: RemoteStore, j: JudgmentRow, hc: boolean): Promise<TextChunkIn[]> {
+async function readChunks(store: RemoteStore, j: JudgmentRow, hc: boolean): Promise<{ chunks: TextChunkIn[]; truncated: boolean }> {
   const neutral = j.courtId === "sci" ? canonicalNeutral(j.neutral) : null;
   let rows: Row[] = [];
   if (neutral) {
-    rows = await store.query({ query: `SELECT chunk_index, page_start, text FROM corpus_texts WHERE neutral_citation = $1 ORDER BY chunk_index LIMIT ${MAX_CHUNKS}`, params: [neutral.toUpperCase()] });
+    rows = await store.query({ query: `SELECT chunk_index, page_start, text FROM corpus_texts WHERE neutral_citation = $1 ORDER BY chunk_index LIMIT ${MAX_CHUNKS + 1}`, params: [neutral.toUpperCase()] });
   } else if (hc && j.cnr && j.date) {
-    rows = await store.query({ query: `SELECT chunk_index, page_start, text FROM corpus_texts WHERE cnr = $1 AND decision_date = $2::date ORDER BY chunk_index LIMIT ${MAX_CHUNKS}`, params: [j.cnr, j.date] });
+    rows = await store.query({ query: `SELECT chunk_index, page_start, text FROM corpus_texts WHERE cnr = $1 AND decision_date = $2::date AND court_id = $3 ORDER BY chunk_index LIMIT ${MAX_CHUNKS + 1}`, params: [j.cnr, j.date, j.courtId] });
   }
   const out: TextChunkIn[] = [];
   let used = 0;
-  for (const r of rows) {
+  let truncated = rows.length > MAX_CHUNKS;
+  for (const r of rows.slice(0, MAX_CHUNKS)) {
     const text = r.text ?? "";
-    if (used + text.length > MAX_TEXT_CHARS && out.length) break;
+    if (used + text.length > MAX_TEXT_CHARS) { truncated = true; break; }
     used += text.length;
     out.push({ index: Number(r.chunk_index), pageStart: r.page_start == null ? null : Number(r.page_start), text });
   }
-  return out;
+  return { chunks: out, truncated };
 }
 
 async function pool<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {
@@ -131,7 +132,7 @@ function writeStatements(j: JudgmentRow, rows: Resolved[], textChars: number, tr
  * One bounded batch: up to `limit` judgments with text after `afterId` (id order). Stops early (between judgments)
  * when `deadlineMs` (a duration from the call) has passed; `nextCursor` is the last judgment fully written.
  */
-export async function buildCitationsBatch(o: { store: RemoteStore; limit?: number; afterId?: string | null; deadlineMs?: number; now?: () => number }): Promise<CitatorBatchResult> {
+export async function buildCitationsBatch(o: { store: RemoteStore; limit?: number; afterId?: string | null; deadlineMs?: number; now?: () => number; onlyUnscanned?: boolean }): Promise<CitatorBatchResult> {
   const { store } = o;
   const now = o.now ?? Date.now;
   const t0 = now();
@@ -144,7 +145,7 @@ export async function buildCitationsBatch(o: { store: RemoteStore; limit?: numbe
 
   const rows = await store.query({
     query: `SELECT id, court_id, year, neutral_citation, reporter_citation, cnr, decision_date::text AS decision_date FROM corpus_judgments
-      WHERE text_status IN (${TEXT_STATUSES_SQL})${o.afterId ? " AND id > $1" : ""} ORDER BY id LIMIT ${limit}`,
+      WHERE text_status IN (${TEXT_STATUSES_SQL})${o.afterId ? " AND id > $1" : ""}${o.onlyUnscanned ? ` AND NOT EXISTS (SELECT 1 FROM corpus_citator_scans cs WHERE cs.citing_id = corpus_judgments.id AND cs.extractor_version = ${EXTRACTOR_VERSION})` : ""} ORDER BY id LIMIT ${limit}`,
     params: o.afterId ? [o.afterId] : [],
   });
   const judgments: JudgmentRow[] = rows.filter((r) => r.id).map((r) => ({
@@ -155,11 +156,12 @@ export async function buildCitationsBatch(o: { store: RemoteStore; limit?: numbe
   // Read text in parallel (bounded), extract, then resolve every case citation of the batch in one query.
   const texts = await pool(judgments, TEXT_CONCURRENCY, (j) => (now() > deadline ? Promise.resolve(null) : readChunks(store, j, cols.hc)));
   const extracted = judgments.map((j, i) => {
-    const chunks = texts[i];
-    if (!chunks) return null;
+    const read = texts[i];
+    if (!read) return null;
+    const chunks = read.chunks;
     const ownKeys = [canonicalCitation(j.neutral), canonicalCitation(j.reporter), j.neutral, j.reporter].filter((x): x is string => Boolean(x));
     const { drafts, truncated } = extractCitationDrafts(chunks, { ownKeys });
-    return { drafts, truncated, chars: chunks.reduce((n, c) => n + c.text.length, 0) };
+    return { drafts, truncated: truncated || read.truncated, chars: chunks.reduce((n, c) => n + c.text.length, 0) };
   });
   const canon = extracted.flatMap((e) => (e ? e.drafts.filter((d) => d.kind === "case" && d.valid).map((d) => d.key) : []));
   const candidates = await resolveKeys(store, canon);
@@ -196,8 +198,9 @@ export async function buildCitationsBatch(o: { store: RemoteStore; limit?: numbe
 export const DEFAULT_CITATOR_MAX_DB_MB = 60_000;
 
 export function citatorLimitBytes(env: Readonly<Record<string, string | undefined>> = process.env): number {
-  const mb = Number(env.CITATOR_MAX_DB_MB);
-  return (Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_CITATOR_MAX_DB_MB) * 1024 * 1024;
+  const mb = [env.CITATOR_MAX_DB_MB, env.OFFICIAL_MAX_DB_MB, env.CORPUS_MAX_DB_MB]
+    .map(Number).find((n) => Number.isFinite(n) && n > 0) ?? DEFAULT_CITATOR_MAX_DB_MB;
+  return mb * 1024 * 1024;
 }
 
 async function databaseBytes(store: RemoteStore): Promise<number> {
@@ -205,7 +208,7 @@ async function databaseBytes(store: RemoteStore): Promise<number> {
   return Number(r[0]?.b ?? 0);
 }
 
-export interface CitatorCursor { afterId: string | null; done: boolean; version: number; passStartedAt: string; updatedAt: string; scannedThisPass: number }
+export interface CitatorCursor { afterId: string | null; done: boolean; version: number; passStartedAt: string; updatedAt: string; scannedThisPass: number; rebuild?: boolean }
 
 export interface CitatorRunResult extends CitatorBatchResult { batches: number; cursor: CitatorCursor; dbBytes?: number; limitBytes?: number }
 
@@ -229,11 +232,10 @@ export async function runCitatorBuild(o: { store?: RemoteStore | null; limit?: n
   await ensureCitatorSchema(store);
   const iso = () => new Date(now()).toISOString();
   let cursor = await citatorCursor(store);
-  if (!cursor || o.restart || cursor.version !== EXTRACTOR_VERSION) {
-    cursor = { afterId: null, done: false, version: EXTRACTOR_VERSION, passStartedAt: iso(), updatedAt: iso(), scannedThisPass: 0 };
+  if (!cursor || cursor.done || o.restart || cursor.version !== EXTRACTOR_VERSION) {
+    cursor = { afterId: null, done: false, version: EXTRACTOR_VERSION, passStartedAt: iso(), updatedAt: iso(), scannedThisPass: 0, rebuild: Boolean(o.restart) };
   }
   const total: CitatorRunResult = { processed: 0, citations: 0, resolved: 0, unresolved: 0, ambiguous: 0, statutes: 0, noText: 0, nextCursor: cursor.afterId, done: cursor.done, stop: cursor.done ? "pass_complete" : "batch_complete", batches: 0, cursor };
-  if (cursor.done) return total;
   const limitBytes = citatorLimitBytes();
   total.limitBytes = limitBytes;
   while (now() - t0 < budget) {
@@ -242,7 +244,7 @@ export async function runCitatorBuild(o: { store?: RemoteStore | null; limit?: n
     total.dbBytes = dbBytes;
     if (dbBytes >= limitBytes) { total.stop = "storage_budget"; break; }
     const remaining = budget - (now() - t0);
-    const r = await buildCitationsBatch({ store, limit: o.limit, afterId: cursor.afterId, deadlineMs: remaining, now });
+    const r = await buildCitationsBatch({ store, limit: o.limit, afterId: cursor.afterId, deadlineMs: remaining, now, onlyUnscanned: !cursor.rebuild });
     total.batches++;
     for (const k of ["processed", "citations", "resolved", "unresolved", "ambiguous", "statutes", "noText"] as const) total[k] += r[k];
     total.stop = r.stop;

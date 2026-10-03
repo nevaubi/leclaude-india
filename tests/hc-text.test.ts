@@ -93,8 +93,8 @@ describe("HC text: schedule and configuration", () => {
   it("text status helpers treat every text-bearing status as readable", () => {
     for (const s of ["full", "full_text", "ocr", "partial"]) expect(hasJudgmentText(s)).toBe(true);
     for (const s of ["none", "metadata", "failed", null]) expect(hasJudgmentText(s)).toBe(false);
-    expect(textStatusLabel("ocr")).toBe("Full text (OCR)");
-    expect(textStatusLabel("failed")).toBe("PDF only");
+    expect(textStatusLabel("ocr")).toBe("OCR text");
+    expect(textStatusLabel("failed")).toBe("Text unavailable");
   });
 });
 

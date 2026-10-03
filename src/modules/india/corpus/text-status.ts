@@ -23,11 +23,12 @@ export const TEXT_STATUSES_SQL = TEXT_STATUSES_WITH_TEXT.map((s) => `'${s}'`).jo
 /** Short label for chips and tables. */
 export function textStatusLabel(status: string | null | undefined): string {
   switch (status) {
-    case "full":
-    case "full_text": return "Full text";
-    case "ocr": return "Full text (OCR)";
+    case "full": return "Parsed text";
+    case "full_text": return "PDF text";
+    case "ocr": return "OCR text";
     case "partial": return "Partial text";
-    default: return "PDF only";
+    case "failed": return "Text unavailable";
+    default: return "Text not confirmed";
   }
 }
 

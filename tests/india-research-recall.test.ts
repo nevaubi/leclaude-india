@@ -382,3 +382,10 @@ describe("budgets", () => {
     expect(sanitizeSettings({ offenceDate: "30.06.2024" as never, benchMin: 1 }).offenceDate).toBeUndefined();
   });
 });
+
+it('never exceeds its embedding chunk budget across a batch of four claimed judgments', async () => {
+ let claimed=false;let sent=0;let released=0;
+ const store: RemoteStore={async query(q){const s=q.query;if(s.includes("to_regclass('public.corpus_texts')"))return [{ok:'t',hc:'t'}];if(s.includes('information_schema.columns')&&s.includes('corpus_text_embeddings'))return [{udt_name:'halfvec'}];if(s.startsWith("UPDATE corpus_embed_queue q SET status = 'running'")){if(claimed)return [];claimed=true;return ['a','b','c','d'].map(text_key=>({text_key,court_id:'sci',attempts:'1'}));}if(s.includes('FROM corpus_texts t')&&s.includes('NOT EXISTS (SELECT 1 FROM corpus_text_embeddings'))return [{id:String(q.params?.[0]),chunk_index:'0',court_id:'sci',y:'2025',text:'A judgment passage',sha:'sha'}];if(s.startsWith('UPDATE corpus_embed_queue SET status = $2'))released++;if(s.startsWith('WITH c AS'))return [{n:'0'}];return [];},async transaction(){return [];}};
+ const r=await runJudgmentEmbedding(store,{deadline:Date.now()+60000,maxChunks:1,model:'test-embed',embed:async(texts)=>{sent+=texts.length;return texts.map(()=>new Float32Array(1024));}});
+ expect(sent).toBe(1);expect(r.embedded).toBe(1);expect(released).toBe(4);
+});

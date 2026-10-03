@@ -175,7 +175,7 @@ def max_amendment_count(values):
 
 def load_file(conn, duck, name, sums):
     if name in REGULATORS:
-        file, kind, juris = f"in_{name}_regulations.parquet", "regulation", "regulator"
+        file, kind, juris = f"in_{name}_regulations.parquet", ("report" if name == "law-commission" else "regulation"), "regulator"
         label = REGULATOR_NAMES[name]
     else:
         file, kind, juris = f"in_{name}_legislation.parquet", "act", "central" if name == "central" else "state"

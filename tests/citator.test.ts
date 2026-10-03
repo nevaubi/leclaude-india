@@ -35,10 +35,10 @@ class CorpusFake implements RemoteStore {
     if (s.includes("to_regclass('public.corpus_texts')")) return [{ ok: "t", hc: "t" }];
     if (s.includes("WHERE text_status IN ('full', 'full_text', 'ocr', 'partial')")) {
       const limit = Number(/LIMIT (\d+)/.exec(s)![1]);
-      return this.judgments.filter((j) => ["full", "full_text", "ocr", "partial"].includes(j.text_status) && (!p.length || j.id > String(p[0]))).sort((a, b) => a.id.localeCompare(b.id)).slice(0, limit) as unknown as Row[];
+      return this.judgments.filter((j) => ["full", "full_text", "ocr", "partial"].includes(j.text_status) && (!p.length || j.id > String(p[0])) && (!s.includes("NOT EXISTS (SELECT 1 FROM corpus_citator_scans") || !this.scans.has(j.id))).sort((a, b) => a.id.localeCompare(b.id)).slice(0, limit) as unknown as Row[];
     }
     if (s.includes("FROM corpus_texts WHERE neutral_citation = $1")) {
-      return (this.texts[String(p[0])] ?? []).map((text, i) => ({ chunk_index: String(i), page_start: String(i + 1), text }));
+      return (this.texts[String(p[0])] ?? []).slice(0, Number(/LIMIT (\d+)/.exec(s)?.[1] ?? 400)).map((text, i) => ({ chunk_index: String(i), page_start: String(i + 1), text }));
     }
     if (s.includes("regexp_replace")) {
       const keys = new Set(String(p[0]).replace(/[{}"]/g, "").split(","));
@@ -50,7 +50,7 @@ class CorpusFake implements RemoteStore {
       for (let i = 0; i < p.length; i += COLS.length) this.citations.push(Object.fromEntries(COLS.map((c, k) => [c, p[i + k]])));
       return [];
     }
-    if (s.startsWith("INSERT INTO corpus_citator_scans")) { this.scans.set(String(p[0]), { citations: p[2], text_chars: p[3] }); return []; }
+    if (s.startsWith("INSERT INTO corpus_citator_scans")) { this.scans.set(String(p[0]), { extractor_version: p[1], citations: p[2], text_chars: p[3], truncated: p[4] }); return []; }
     return [];
   }
   async transaction(qs: SqlQuery[]): Promise<Row[][]> {
@@ -293,5 +293,22 @@ describe("citator_check tool", () => {
     expect(citatorCheckTool.parameters.required).toEqual(["id"]);
     expect(citatorCheckTool.description).toMatch(/NOT a verified treatment/);
     expect(citatorCheckTool.description).toMatch(/no result establishes good law/);
+  });
+});
+
+describe('incremental citation maintenance', () => {
+  it('discovers newly available text after a previously completed pass without reprocessing scanned judgments', async () => {
+    const store = fake();
+    await runCitatorBuild({ store, deadlineMs: 5000 });
+    store.judgments.push({ ...J1, id: 'sc:a0', neutral_citation: '2026 INSC 100', year: '2026' });
+    store.texts['2026 INSC 100'] = ['This decision follows 2024 INSC 1.'];
+    const next = await runCitatorBuild({ store, deadlineMs: 5000 });
+    expect(next.processed).toBe(1);
+    expect(store.scans.has('sc:a0')).toBe(true);
+  });
+  it('marks scans truncated when the reader capped a long judgment', async () => {
+    const store = new CorpusFake([{ ...J1 }], { '2024 INSC 1': Array.from({ length: 450 }, () => 'This passage cites (2010) 1 SCC 1.') });
+    await buildCitationsBatch({ store, limit: 1 });
+    expect(store.scans.get(J1.id)?.truncated).toBe(true);
   });
 });

@@ -2,8 +2,8 @@ import "server-only";
 import type { AdapterContext, SourceAdapter } from "../../adapter";
 import type { DiscoveredDoc, SourceDef } from "../../types";
 import {
-  GOV_TERMS, clean, getJsonLoose, printedDate, safeUrl, walkStreams,
-  type CursorMode, type ListingPage, type ListingStream, type SequenceStream, type StreamSpec,
+  GOV_TERMS, clean, printedDate, safeUrl, walkStreams,
+  type CursorMode, type ListingPage, type ListingStream, type StreamSpec,
 } from "./common";
 
 /**
@@ -26,18 +26,11 @@ import {
  */
 
 const LS_API = "https://sansad.in/api_ls";
-const RS_API = "https://sansad.in/api_rs";
 const RSDOC = "https://rsdoc.nic.in";
 const ELIB = "https://elibrary.sansad.in";
 const FILE_HOSTS = ["sansad.in"];
 const LS_PAGE = 50;
 const ELIB_PAGE = 20;
-/**
- * Pages an incremental pass may walk in one Lok Sabha session before giving up on meeting the previous pass's newest
- * question: a whole session (a session publishes about 4,500 questions, ~240 per sitting day; 120 × 50 = 6,000), so a
- * delayed pass or a heavy day still reaches the marker. Passes normally stop at the marker after a few pages.
- */
-const LS_INCREMENTAL_PAGES = 120;
 /** eLibrary pages per incremental pass (200 newest accessions per collection). */
 const ELIB_INCREMENTAL_PAGES = 10;
 
@@ -48,7 +41,6 @@ export const ELIB_COLLECTIONS = {
 };
 
 export type RsQuestionType = "STARRED" | "UNSTARRED";
-const RS_TYPES: RsQuestionType[] = ["STARRED", "UNSTARRED"];
 
 /** The only whereclause ever sent to rsdoc.nic.in (the official UI's exact equality form). Throws on anything else. */
 export function rsWhereClause(session: number, qno: number, type: RsQuestionType): string {
@@ -136,22 +128,6 @@ export function lsSessionPairs(answer: unknown): { ls: number; session: number }
   return out.sort((a, b) => b.ls - a.ls || b.session - a.session);
 }
 
-function lsStream(ls: number, session: number): ListingStream {
-  return {
-    kind: "listing",
-    id: `ls:${ls}:${session}`,
-    backfill: true,
-    firstPage: 1,
-    incrementalPages: LS_INCREMENTAL_PAGES,
-    async fetch(page: number, ctx: AdapterContext): Promise<ListingPage> {
-      const parsed = parseLsQuestions(await ctx.fetchJson(lsQuestionsUrl(ls, session, page)));
-      if (!parsed) return { items: [], last: true, notes: ["answer had no question list"] };
-      // A page of questions none of which has its file yet is not the end of the list: `last` follows the raw rows.
-      return { items: parsed.items, rawCount: parsed.rows, last: parsed.rows === 0 || page * LS_PAGE >= parsed.total };
-    },
-  };
-}
-
 // ---- Rajya Sabha ---------------------------------------------------------------------------------------------------
 
 interface RsQuestion {
@@ -198,21 +174,6 @@ export function parseRsQuestion(answer: unknown, session: number, qno: number, t
       status: clean(q.status) || null,
       rsSerial: q.qslno ?? null,
       fileUrlHindi: safeUrl(q.hindifiles, "https://sansad.in/", FILE_HOSTS),
-    },
-  };
-}
-
-function rsStream(session: number, type: RsQuestionType): SequenceStream {
-  return {
-    kind: "sequence",
-    id: `rs:${session}:${type}`,
-    backfill: true,
-    start: 1,
-    maxMisses: 5,
-    incrementalMax: 300,
-    async fetch(qno: number, ctx: AdapterContext): Promise<DiscoveredDoc | null> {
-      const ans = await getJsonLoose<unknown>(ctx, rsQuestionUrl(session, qno, type));
-      return parseRsQuestion(ans, session, qno, type);
     },
   };
 }
@@ -316,52 +277,33 @@ function elibStream(collection: keyof typeof ELIB_COLLECTIONS): ListingStream {
 // ---- plan ----------------------------------------------------------------------------------------------------------
 
 export function sansadStream(id: string): StreamSpec | null {
-  let m = /^ls:(\d{1,2}):(\d{1,3})$/.exec(id);
-  if (m) return lsStream(Number(m[1]), Number(m[2]));
-  m = /^rs:(\d{1,4}):(STARRED|UNSTARRED)$/.exec(id);
-  if (m) return rsStream(Number(m[1]), m[2] as RsQuestionType);
-  m = /^elib:(committee|debates)$/.exec(id);
-  if (m) return elibStream(m[1] as keyof typeof ELIB_COLLECTIONS);
-  return null;
+  // Old durable cursors can still name questions. Refuse those streams before any network request.
+  const m = /^elib:(committee|debates)$/.exec(id);
+  return m ? elibStream(m[1] as keyof typeof ELIB_COLLECTIONS) : null;
 }
 
-/** Streams of a pass: incremental = the two newest sessions of each house + eLibrary; backfill = every session. */
+/** Only retained legislative-history collections are scheduled; questions are retired. */
 export async function sansadPlan(ctx: AdapterContext, mode: CursorMode, only: string[] | null): Promise<string[]> {
-  const ids: string[] = [];
-  const recent = mode === "incremental" ? 2 : Infinity;
-  try {
-    const ls = lsSessionPairs(await ctx.fetchJson(`${LS_API}/business/AllLoksabhaAndSessionDates`));
-    ls.slice(0, recent).forEach((p) => ids.push(`ls:${p.ls}:${p.session}`));
-  } catch (e) {
-    ctx.log("sansad: Lok Sabha session list unavailable", { error: e instanceof Error ? e.message : String(e) });
-  }
-  try {
-    const rs = await ctx.fetchJson<{ session?: number }[]>(`${RS_API}/business/getSessionsList?docType=SQ`);
-    const sessions = (Array.isArray(rs) ? rs : []).map((x) => Number(x.session)).filter((n) => Number.isInteger(n) && n > 0).sort((a, b) => b - a);
-    sessions.slice(0, recent).forEach((s) => RS_TYPES.forEach((t) => ids.push(`rs:${s}:${t}`)));
-  } catch (e) {
-    ctx.log("sansad: Rajya Sabha session list unavailable", { error: e instanceof Error ? e.message : String(e) });
-  }
-  ids.push("elib:committee", "elib:debates");
-  return only ? ids.filter((id) => only.some((o) => (o.endsWith("*") ? id.startsWith(o.slice(0, -1)) : id === o))) : ids;
+  void ctx; void mode;
+  const ids = ['elib:committee', 'elib:debates'];
+  return only ? ids.filter((id) => only.some((o) => (o.endsWith('*') ? id.startsWith(o.slice(0, -1)) : id === o))) : ids;
 }
 
 export const def: SourceDef = {
   id: "sansad",
-  name: "Parliament: questions, debates and committee reports",
+  name: "Parliament: debates and committee reports",
   publisher: "Lok Sabha Secretariat and Rajya Sabha Secretariat (Digital Sansad)",
-  kinds: ["parliament_question", "parliament_debate", "committee_report"],
+  kinds: ["parliament_debate", "committee_report"],
   forum: "parliament",
   homepage: "https://sansad.in/",
   fetch: "direct",
   cadenceMinutes: 1440,
-  attribution: "Parliament of India: Lok Sabha and Rajya Sabha questions (sansad.in), Lok Sabha Digital Library (elibrary.sansad.in).",
+  attribution: "Parliament of India: Lok Sabha Digital Library debates and committee reports (elibrary.sansad.in).",
   terms: GOV_TERMS,
   enabled: true,
   notes: [
-    "rsdoc.nic.in accepts a raw SQL predicate in its whereclause parameter; only the official UI's exact equality form (ses_no=N and qno='Q' and qtype='STARRED'|'UNSTARRED') is ever sent, built from validated numbers.",
-    "eLibrary committee reports and debates use DSpace's TEXT bundle (Apache Tika extraction, no page numbers) as text; the original PDF is linked in metadata for checking quotes.",
-    "Lok Sabha questions come from the Lok Sabha questions API (13th Lok Sabha onwards); an incremental pass walks a current session down to the previous pass's newest question (up to 120 pages of 50).",
+    "Parliamentary questions were retired by operator policy on 2026-10-03. Legacy question parsers remain for fixture compatibility, not scheduled ingestion.",
+    "Committee reports and debates are legislative history, not enacted law. DSpace text bundles have no page numbers; the original PDF is linked for checking quotations.",
   ],
 };
 
@@ -371,4 +313,3 @@ export const adapter: SourceAdapter = {
     return walkStreams(ctx, { plan: sansadPlan, stream: sansadStream, resolve: resolveElib, key: (d) => d.url });
   },
 };
-

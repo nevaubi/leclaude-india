@@ -1,4 +1,5 @@
 import "server-only";
+import { retiredCollectionReason } from "./collection-policy";
 import { ADAPTERS } from "./adapters";
 import type { SourceAdapter } from "./adapter";
 import { SOURCE_IDS, type SourceDef, type SourceId, type SourceKind } from "./types";
@@ -115,14 +116,17 @@ export function sourceDef(id: SourceId | string): SourceDef | null {
   if (!(SOURCE_IDS as readonly string[]).includes(id)) return null;
   const sid = id as SourceId;
   const a = adapterLookup(sid);
-  if (a?.def && a.def.id === sid) return a.def;
+  if (a?.def && a.def.id === sid) {
+    const reason = retiredCollectionReason(sid);
+    return reason ? { ...a.def, enabled: false, notes: [...(a.def.notes ?? []), reason] } : a.def;
+  }
   return placeholderDef(sid);
 }
 
 /** True when the source has an adapter and its definition is enabled. */
 export function sourceEnabled(id: SourceId): boolean {
   const a = adapterLookup(id);
-  return Boolean(a && a.def.id === id && a.def.enabled);
+  return Boolean(a && a.def.id === id && a.def.enabled && !retiredCollectionReason(id));
 }
 
 // Extra hosts registered by adapters at runtime. Kept on globalThis (not a module constant) so an adapter module that

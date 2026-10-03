@@ -218,7 +218,12 @@ export async function runJudgmentEmbedding(store: RemoteStore, o: { deadline: nu
     out.claimed += claimed.length;
     for (const job of claimed) {
       const key = String(job.text_key);
-      const cap = Math.max(1, Math.min(400, budget));
+      if (budget <= 0 || now() >= o.deadline - 5_000 || o.signal?.aborted) {
+        await release(store, key, Math.max(0, Number(job.attempts) - 1), null);
+        out.remaining = true;
+        continue;
+      }
+      const cap = Math.min(400, budget);
       let rows: Row[];
       try {
         rows = await store.query({

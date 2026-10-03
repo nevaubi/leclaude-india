@@ -281,7 +281,7 @@ describe("Sansad (live JSON fixtures)", () => {
     });
   });
 
-  it("discovers the newest sessions of both houses and the eLibrary, within the whereclause contract", async () => {
+  it("discovers retained eLibrary material without requesting retired parliamentary questions", async () => {
     const rsAnswer = fxJson<Record<string, unknown>[]>("sansad-rs-question.json").map((q) => ({ ...q, ses_no: 271 }));
     const json = (u: string): unknown => {
       if (u.endsWith("/api_ls/business/AllLoksabhaAndSessionDates")) return fxJson("sansad-ls-sessions.json");
@@ -300,24 +300,15 @@ describe("Sansad (live JSON fixtures)", () => {
     const r = await sansad.discover(ctx);
     expect(r.done).toBe(true);
     const kinds = r.items.map((d) => `${d.kind}:${d.meta?.house}`);
-    expect(kinds.filter((k) => k === "parliament_question:lok_sabha")).toHaveLength(3);
-    expect(kinds.filter((k) => k === "parliament_question:rajya_sabha")).toHaveLength(1);
+    expect(kinds.filter((k) => k === "parliament_question:lok_sabha")).toHaveLength(0);
+    expect(kinds.filter((k) => k === "parliament_question:rajya_sabha")).toHaveLength(0);
     const reports = r.items.filter((d) => d.kind === "committee_report");
     expect(reports).toHaveLength(2);
     expect(reports[0]).toMatchObject({ fileUrl: "https://elibrary.sansad.in/server/api/core/bitstreams/7dc8f230-44bd-41b1-a524-3e2da178b1e8/content", mime: "text/plain" });
     expect(reports[0].meta).toMatchObject({ originalPdfUrl: "https://elibrary.sansad.in/server/api/core/bitstreams/9b8c083b-397f-4c27-853e-0c57d4d39538/content", noFile: false });
     expect(reports[1].meta).toMatchObject({ noFile: true });
-    // Only the two newest sessions of each house are walked incrementally, and every rsdoc call is the exact UI form.
-    const rsCalls = calls.json.filter((u) => u.startsWith("https://rsdoc.nic.in/"));
-    expect(rsCalls.length).toBeGreaterThan(0);
-    for (const u of rsCalls) {
-      const where = decodeURIComponent(new URL(u).search.replace(/^\?whereclause=/, ""));
-      expect(where).toMatch(/^ses_no=(271|270) and qno='\d+' and qtype='(STARRED|UNSTARRED)'$/);
-    }
-    expect(calls.json.some((u) => u.includes("loksabhaNo=17"))).toBe(false);
-    const c = parseCursor(r.nextCursor)!;
-    expect(c.lastSeen["rs:271:STARRED"]).toBe("1");
-    expect(c.lastSeen["ls:18:8"]).toBe("https://sansad.in/getFile/lsapps/loksabhaquestions/annex/188/AS360_7GaY3g.pdf?source=lsapps");
+    expect(calls.json.some((u) => ['rsdoc', 'api_ls/question', 'api_rs/business', 'AllLoksabhaAndSessionDates'].some((part) => u.includes(part)))).toBe(false);
+    expect(parseCursor(r.nextCursor)!.lastSeen['ls:18:8']).toBeUndefined();
   });
 
   /** A Lok Sabha session of `total` questions, newest first, 50 per page; `hasFile(q)` decides whether a file is up. */
@@ -338,29 +329,17 @@ describe("Sansad (live JSON fixtures)", () => {
   };
   const lsUrl = (q: number) => `https://sansad.in/getFile/loksabhaquestions/annex/188/AU${q}.pdf?source=pqals`;
 
-  it("walks a Lok Sabha session down to the previous pass's newest question even when more than 200 are new", async () => {
-    // Review finding: an incremental pass read at most 4 pages (200 questions) per session while a sitting day publishes ~240.
-    const cursor = JSON.stringify({ v: 1, mode: "incremental", plan: [], i: 0, page: null, skip: 0, misses: 0, walked: 0, lastSeen: { "ls:18:8": lsUrl(150) }, newest: {}, only: null });
+  it("retires old question cursors instead of spending calls walking them", async () => {
+    const cursor = JSON.stringify({ v: 1, mode: "incremental", plan: ['ls:18:8'], i: 0, page: 1, skip: 0, misses: 0, walked: 0, lastSeen: { "ls:18:8": lsUrl(150) }, newest: {}, only: null });
     const { ctx, calls } = makeCtx({ cursor, json: lsSession(500), limit: 1000 });
     const r = await sansad.discover(ctx);
-    expect(r.done).toBe(true);
-    const qs = r.items.filter((d) => d.meta?.house === "lok_sabha").map((d) => d.meta?.questionNo);
-    expect(qs).toHaveLength(350);
-    expect(qs[0]).toBe(500);
-    expect(qs[qs.length - 1]).toBe(151);
-    expect(calls.json.filter((u) => u.includes("qetFilteredQuestionsAns"))).toHaveLength(8);
-    expect(r.notes?.join(" ") ?? "").not.toMatch(/not met/);
-    expect(parseCursor(r.nextCursor)!.lastSeen["ls:18:8"]).toBe(lsUrl(500));
+    expect(r.items.filter((d) => d.kind === 'parliament_question')).toHaveLength(0);
+    expect(calls.json.filter((u) => u.includes('qetFilteredQuestionsAns'))).toHaveLength(0);
   });
-
-  it("keeps walking past a Lok Sabha page whose questions have no file yet", async () => {
-    // Review finding: a page with no usable rows was taken as the last page.
-    const { ctx, calls } = makeCtx({ json: lsSession(100, (q) => q <= 50) });
+  it("does not discover questions even when the question API offers downloadable PDFs", async () => {
+    const { ctx, calls } = makeCtx({ json: lsSession(100) });
     const r = await sansad.discover(ctx);
-    const qs = r.items.filter((d) => d.meta?.house === "lok_sabha").map((d) => d.meta?.questionNo);
-    expect(qs).toHaveLength(50);
-    expect(qs[0]).toBe(50);
-    expect(calls.json.filter((u) => u.includes("qetFilteredQuestionsAns"))).toHaveLength(2);
-    expect(parseCursor(r.nextCursor)!.lastSeen["ls:18:8"]).toBe(lsUrl(50));
+    expect(r.items.filter((d) => d.kind === 'parliament_question')).toHaveLength(0);
+    expect(calls.json.some((u) => u.includes('qetFilteredQuestionsAns'))).toBe(false);
   });
 });

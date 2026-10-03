@@ -1,4 +1,5 @@
 import "server-only";
+import { retiredCollectionReason } from "./collection-policy";
 import type { RemoteStore, Row, SqlQuery } from "@/lib/db/remote";
 import { isProviderError } from "@/modules/intel/providers/base";
 import type { ParseInput, SourceAdapter } from "./adapter";
@@ -157,7 +158,7 @@ function toDocRow(r: Row): DocRow {
 async function loadDoc(store: RemoteStore, id: string | null): Promise<DocRow | null> {
   if (!id) return null;
   const rows = await store.query({ query: `SELECT ${DOC_ROW} FROM official_documents WHERE id = $1`, params: [id] });
-  return rows[0] ? toDocRow(rows[0]) : null;
+  return rows[0] && !retiredCollectionReason(String(rows[0].source), rows[0].kind) ? toDocRow(rows[0]) : null;
 }
 
 export async function insertReject(store: RemoteStore, source: string, url: string, stage: string, reason: string): Promise<void> {
@@ -411,6 +412,8 @@ function sumCounts(a: Partial<StageCounts>, b: Partial<StageCounts>): Partial<St
 
 function validDiscovered(def: SourceDef, d: DiscoveredDoc, allow: string[]): string | null {
   if (!d || d.sourceId !== def.id) return "item is for another source";
+  const retired = retiredCollectionReason(def.id, d.kind);
+  if (retired) return retired;
   for (const u of [d.url, d.fileUrl].filter(Boolean) as string[]) {
     let url: URL;
     try { url = new URL(u); } catch { return `invalid URL: ${String(u).slice(0, 200)}`; }
@@ -481,6 +484,7 @@ async function processDiscover(unit: OfficialUnit, deps: PipelineDeps): Promise<
 
 /** Upsert discovered documents and queue their next stage. Returns how many were new. */
 export async function upsertDiscovered(store: RemoteStore, def: SourceDef, items: DiscoveredDoc[]): Promise<number> {
+  items = items.filter((d) => !retiredCollectionReason(def.id, d.kind));
   if (!items.length) return 0;
   const recs = items.map((d) => {
     const meta = { ...(d.meta ?? {}) } as Record<string, unknown>;
@@ -992,6 +996,8 @@ async function processParse(unit: OfficialUnit, deps: PipelineDeps): Promise<Uni
 /** Process one claimed unit. Unexpected errors are recorded on the unit (retry with backoff); store errors propagate. */
 export async function processUnit(unit: OfficialUnit, deps: PipelineDeps): Promise<UnitOutcome> {
   try {
+    const retired = retiredCollectionReason(unit.source);
+    if (retired) { await skipUnit(deps.store, unit.id, retired); return { status: "skipped", counts: {}, note: retired }; }
     switch (unit.stage) {
       case "discover": return await processDiscover(unit, deps);
       case "fetch": return await processFetch(unit, deps);

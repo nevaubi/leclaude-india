@@ -143,17 +143,25 @@ export interface OfficialSectionsRunResult {
   stop: "deadline" | "queue_empty" | "limit";
 }
 
-async function resolveAct(client: IndiaCodeClient, row: Row, signal?: AbortSignal): Promise<ActResolution> {
+export async function resolveAct(client: IndiaCodeClient, row: Row, signal?: AbortSignal): Promise<ActResolution> {
   const year = row.year == null ? null : Number(row.year);
+  const title = String(row.title);
   if (row.handle) {
     try {
       const item = await client.getByHandle(String(row.handle), signal);
-      const t = normActTitle(mdValue(item.metadata, "dc.title") ?? "");
-      if (mdValue(item.metadata, "dc.identifier.collection") === "ACT" && t === normActTitle(String(row.title))) return { ok: true, item, method: "handle" };
-    } catch { /* handle moved or retired: fall through to the exact title search */ }
+      if (chooseExactAct(title, year, [item]).ok) return { ok: true, item, method: "handle" };
+    } catch (error) { if (signal?.aborted) throw error; }
   }
-  const page = await client.searchActs({ query: `"${String(row.title).replace(/"/g, "")}"`, size: 20, signal });
-  return chooseExactAct(String(row.title), year, page.items);
+  const query = '"' + title.replace(/"/g, '') + '" AND (' + client.jurisdictionQuery('central') + ')';
+  const candidates = new Map<string, DspaceItem>();
+  for (let page = 0; page < 20; page++) {
+    signal?.throwIfAborted();
+    const result = await client.searchActs({ query, page, size: 100, signal });
+    for (const item of result.items) candidates.set(item.id, item);
+    if (page + 1 >= result.page.totalPages) return chooseExactAct(title, year, [...candidates.values()]);
+  }
+  // Never call a partially searched result set unique, or label an unseen exact match missing.
+  throw new Error('India Code exact-match search exceeded its bounded page window; reconciliation incomplete');
 }
 
 /** Process queued Acts until the deadline (or `limit` Acts). Idempotent: an Act's sections are replaced as a whole. */

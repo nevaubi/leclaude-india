@@ -76,7 +76,7 @@ export interface EngineDeps {
    * Claim verification against the sources. `perSourceChars` is the reach the verifier must have per source (the most
    * the synthesis was given for any source): verification is never weaker than synthesis.
    */
-  verify(input: { answer: string; sources: { title?: string; cite?: string; url?: string; text: string }[]; signal?: AbortSignal; perSourceChars?: number }): Promise<VerificationResult>;
+  verify(input: { maxClaims?: number; answer: string; sources: { title?: string; cite?: string; url?: string; text: string }[]; signal?: AbortSignal; perSourceChars?: number }): Promise<VerificationResult>;
   correct(input: { instructions: string; input: string; signal?: AbortSignal }): Promise<string>;
   refine(input: { question: string; gaps: string[]; laneKinds: LaneKind[]; signal?: AbortSignal }): Promise<Partial<Record<LaneKind, string[]>>>;
   followUps(input: { question: string; answer: string; matterLine: string; signal?: AbortSignal }): Promise<string[]>;
@@ -463,7 +463,7 @@ export function defaultDeps(): EngineDeps {
     async retrieve(source, query, settings, signal) {
       const ctx = toolCtx(signal);
       const range = datePresetRange(settings.datePreset, { from: settings.dateFrom, to: settings.dateTo });
-      const limit = Math.min(settings.limit, 12);
+      const limit = settings.fast ? Math.min(settings.limit, 12) : Math.min(Math.max(settings.limit, 20), 24);
       const nctx = { jurisdiction: settings.jurisdiction, courts: settings.courts };
       const year = (d?: string) => (d ? Number(d.slice(0, 4)) : undefined);
       const job = async (): Promise<{ hits: SearchHit[]; total: number; notes?: string[] }> => {
@@ -486,7 +486,7 @@ export function defaultDeps(): EngineDeps {
             // already found with text is not repeated.
             const yf = year(range.from), yt = year(range.to);
             const [textHits, metaHits] = await Promise.all([
-              withTimeout(corpusTextHits(query, { courts, yearFrom: yf, yearTo: yt, limit: Math.min(limit, 10), existing: hits, nctx, filters, notes }), 18_000, signal)
+              withTimeout(corpusTextHits(query, { courts, yearFrom: yf, yearTo: yt, limit: Math.min(limit, settings.fast ? 10 : 16), existing: hits, nctx, filters, notes }), 18_000, signal)
                 .catch((e) => { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment text search failed:", (e as Error).message); notes.push(`Judgment full-text search failed (${(e as Error).message.slice(0, 120)}); metadata results only.`); return [] as SearchHit[]; }),
               corpusCaselawHits(query, { courts, yearFrom: yf, yearTo: yt, limit: Math.min(limit, 8), existing: hits, nctx, filters })
                 .catch((e) => { if ((e as Error).name === "AbortError") throw e; console.warn("[research] judgment corpus search failed:", (e as Error).message); return [] as SearchHit[]; }),
@@ -599,7 +599,7 @@ export function defaultDeps(): EngineDeps {
         taskType: POLICY.laneAgent.taskType,
         reasoningEffort: POLICY.laneAgent.reasoningEffort,
         cacheStablePrefix: POLICY.laneAgent.cacheStablePrefix,
-        verbosity: "low",
+        verbosity: "medium",
         maxSteps: input.maxSteps,
         budget: POLICY.laneAgent.budget,
         signal: input.signal,
@@ -618,7 +618,7 @@ export function defaultDeps(): EngineDeps {
         cacheStablePrefix: POLICY.synthesize.cacheStablePrefix,
         budget: POLICY.synthesize.budget,
         maxSteps: 1,
-        verbosity: "medium",
+        verbosity: input.instructions.includes("DEEP RESEARCH —") ? "high" : "medium",
         signal: input.signal,
         metadata: { app: "leclaude", surface: "research-synthesis" },
         onEvent: (e) => { if (e.type === "text.delta") input.onDelta(e.delta); },
@@ -630,7 +630,7 @@ export function defaultDeps(): EngineDeps {
       // The verifier's reach (sources, characters per source, answer length, output) follows the `verify` budget of the
       // fast model, raised per source to the synthesis reach; what it could not check is reported (coverage / partial),
       // never counted as verified.
-      return verifyClaims({ answer: input.answer, sources: input.sources, maxClaims: 25, signal: input.signal, fast: POLICY.verify.fast, taskType: POLICY.verify.taskType, cacheStablePrefix: POLICY.verify.cacheStablePrefix, budget: aiBudget(POLICY.verify.budget ?? "verify", { fast: POLICY.verify.fast }), perSourceChars: input.perSourceChars });
+      return verifyClaims({ answer: input.answer, sources: input.sources, maxClaims: input.maxClaims ?? 25, signal: input.signal, fast: POLICY.verify.fast, taskType: POLICY.verify.taskType, cacheStablePrefix: POLICY.verify.cacheStablePrefix, budget: aiBudget(POLICY.verify.budget ?? "verify", { fast: POLICY.verify.fast }), perSourceChars: input.perSourceChars });
     },
 
     async correct(input) {
@@ -645,7 +645,7 @@ export function defaultDeps(): EngineDeps {
         reasoningEffort: POLICY.refine.reasoningEffort,
         cacheStablePrefix: POLICY.refine.cacheStablePrefix,
         instructions: REFINE_INSTRUCTIONS,
-        input: `Question: ${input.question}\nLanes: ${input.laneKinds.join(", ")}\nUnsupported claims:\n${input.gaps.map((g) => `- ${g}`).join("\n")}`,
+        input: `Question: ${input.question}\nLanes: ${input.laneKinds.join(", ")}\nResearch gaps or unsupported claims:\n${input.gaps.map((g) => `- ${g}`).join("\n")}`,
         schema: REFINE_SCHEMA,
         name: "lane_refinements",
         maxOutputTokens: POLICY.refine.maxOutputTokens,

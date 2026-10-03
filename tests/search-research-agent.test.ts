@@ -107,7 +107,10 @@ describe("run speed (fake latency)", () => {
   });
 
   it("keeps the synthesis prefix byte-stable across questions, forums and matters and passes citation-native evidence with stable ids", async () => {
-    const a = fakeDeps({ skipRead: ["judgment:j_bom_anil_patil"] });
+    const a = fakeDeps();
+    const originalRead = a.read.bind(a);
+    // The deterministic reader now fills skipped reads. Simulate a genuinely unavailable text instead.
+    a.read = async (ref, opts) => { if (ref.kind === "judgment" && ref.id === "j_bom_anil_patil") throw Object.assign(new Error("Text unavailable"), { status: 404 }); return originalRead(ref, opts); };
     await runResearch({ question: "First question about parity", settings: settings(), runId: "run_cache_a" }, () => {}, undefined, a);
     const matter = db().matters.all()[0];
     const b = fakeDeps();

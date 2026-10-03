@@ -53,6 +53,7 @@ export function classifyFailure(e: unknown): FailureKind {
   const err = (e ?? {}) as { name?: string; message?: string; status?: number; code?: string };
   const msg = `${err.message ?? (typeof e === "string" ? e : "")}`;
   if (err.name === "AIConfigError" || err.code === "no_api_key" || err.code === "not_configured") return "not_configured";
+  if (err.status === 404 || err.status === 410 || err.code === "no_result") return "no_result";
   if (err.status === 429 || err.code === "rate_limit" || /\b429\b|rate limit/i.test(msg)) return "rate_limit";
   if (err.code === "timeout" || /\btimeout\b|timed out|ETIMEDOUT/i.test(msg)) return "timeout";
   if (err.status === 401 || err.status === 403 || err.status === 407 || /\b(401|403|407)\b|unauthorized|forbidden|invalid api key|authentication/i.test(msg)) return "auth_failure";

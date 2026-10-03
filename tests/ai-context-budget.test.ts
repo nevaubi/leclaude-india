@@ -39,7 +39,7 @@ describe("resolveContextBudget", () => {
 
   it("deep research on a 1.05M model: 16 sources in full at ~40k chars each, ≤2k-character blocks, under the 272K price tier", () => {
     const b = resolveContextBudget("deep_research_synthesis", BIG, NO_ENV);
-    expect(b.maxFullSources).toBe(16);
+    expect(b.maxFullSources).toBe(32);
     // 16 full sources share the evidence total (600K): 37.5K each (40K for 12 before 2026-10).
     expect(b.perSourceChars).toBe(37_500);
     expect(b.blockChars).toBe(2_000);

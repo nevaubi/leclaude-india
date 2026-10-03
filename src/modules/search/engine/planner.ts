@@ -169,18 +169,18 @@ export function planLanes(input: PlanInput): ResearchLane[] {
   const narrow = (ids: string[]) => (override.length ? ids.filter((id) => override.includes(id)) : ids);
   const binding = narrow(bindingCourtIds(s.jurisdiction));
   const persuasive = narrow(persuasiveCourtIds(s.jurisdiction));
-  // Read caps: full judgment text now exists for the Supreme Court and three High Courts, and a failed read no longer
-  // counts, so judgment and statute lanes read one more source each (still bounded by maxSteps and the lane timeout).
+  // Deep lanes prefetch substantive text, then retain room for targeted discoveries. Failed reads do not consume
+  // the cap. Global fetch concurrency, model context and the run wall remain bounded; fast mode is unchanged.
   if (has("caselaw")) {
-    lanes.push(mk("controlling", ["caselaw"], expanded, 7, 5, binding.length ? binding : undefined));
-    if (persuasive.length || !override.length) lanes.push(mk("persuasive", ["caselaw"], expanded, 6, 4, persuasive.length ? persuasive : undefined));
-    lanes.push(mk("contrary", ["caselaw"], expanded.slice(0, 2).map(contraryQuery), 6, 4, override.length ? override : undefined));
+    lanes.push(mk("controlling", ["caselaw"], expanded, 10, 8, binding.length ? binding : undefined));
+    if (persuasive.length || !override.length) lanes.push(mk("persuasive", ["caselaw"], expanded, 9, 6, persuasive.length ? persuasive : undefined));
+    lanes.push(mk("contrary", ["caselaw"], expanded.slice(0, 2).map(contraryQuery), 10, 6, override.length ? override : undefined));
   }
-  if (has("statutes")) lanes.push(mk("statute", ["statutes"], expanded, 6, 4));
-  if (input.hasMatter && has("ediscovery")) lanes.push(mk("record", ["ediscovery"], [base], 6, 4));
-  if (has("web") || has("library")) lanes.push(mk("secondary", (["web", "library"] as SearchSource[]).filter(has), [base], 5, 3));
+  if (has("statutes")) lanes.push(mk("statute", ["statutes"], expanded, 9, 6));
+  if (input.hasMatter && has("ediscovery")) lanes.push(mk("record", ["ediscovery"], [base], 9, 6));
+  if (has("web") || has("library")) lanes.push(mk("secondary", (["web", "library"] as SearchSource[]).filter(has), [base], 9, 5));
 
-  if (!lanes.length) lanes.push(mk("controlling", ["caselaw"], [base], 7, 5, binding.length ? binding : undefined));
+  if (!lanes.length) lanes.push(mk("controlling", ["caselaw"], [base], 10, 8, binding.length ? binding : undefined));
   // Later rounds only re-run lanes that received refinements (the thin ones); round 1 keeps everything.
   const planned = round > 1 && input.refinements ? lanes.filter((l) => input.refinements?.[l.kind]?.length) : lanes;
   const out = (planned.length ? planned : lanes).slice(0, 6);

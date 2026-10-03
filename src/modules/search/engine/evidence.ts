@@ -9,7 +9,7 @@
  * that cannot take search_result blocks render the same numbering as text. Pure and client-safe.
  */
 import type { SearchResultBlock } from "@/lib/ai/providers/types";
-import { estimateTokens } from "@/lib/ai/context-budget";
+import { charsForTokens, estimateTokens } from "@/lib/ai/context-budget";
 import { languageInfo } from "@/lib/india/languages";
 import { benchLabel, hitCourtLabel, indianDate, judgmentCitations } from "../india-citations";
 import { formatBluebook } from "../normalize";
@@ -134,22 +134,36 @@ export function buildEvidenceBlocks(sources: ResearchSource[], textOf: (s: Resea
   let tokens = 0;
   let full = 0;
   const ordered = [...sources].filter((s) => s.n != null).sort((a, b) => a.n! - b.n!);
+  let remainingFull = Math.min(maxFull, ordered.filter((s) => s.read && textOf(s)?.trim()).length);
   return ordered.map((s) => {
     const source = s.evidenceId ?? evidenceSourceId(s, { matterId: opts.matterId, tenantId: opts.tenantId });
     const title = evidenceTitle(s);
     const text = s.read ? textOf(s) ?? "" : "";
     let content: string[];
     if (s.read && text && total < maxTotal && tokens < maxTokens && full < maxFull) {
-      const paras = focusParagraphs(text, opts.terms, { maxChars: Math.min(per, maxTotal - total), maxParagraphChars: Math.max(400, maxBlock - 16), fill: Number.isFinite(maxFull) });
+      // Fair remaining shares: the first long judgment cannot starve later statutes or contrary authority.
+      const slots = Math.max(1, remainingFull);
+      const charShare = Math.min(per, Math.floor((maxTotal - total) / slots));
+      const tokenShare = Math.floor((maxTokens - tokens) / slots);
+      const paras = focusParagraphs(text, opts.terms, { maxChars: Math.max(0, charShare - 80), maxParagraphChars: Math.max(400, maxBlock - 16), fill: Number.isFinite(maxFull) });
       content = groupBlocks(paras.map((p) => `¶${p.n} ${p.text}`), maxBlock);
       // Script-aware token guard: drop trailing blocks that would push the evidence past the token budget.
       if (Number.isFinite(maxTokens)) {
         const kept: string[] = [];
-        for (const c of content) { const t = estimateTokens(c); if (kept.length && tokens + t > maxTokens) break; kept.push(c); tokens += t; }
+        let used = 0;
+        for (const c of content) {
+          const room = Math.max(0, Math.min(tokenShare - used, maxTokens - tokens));
+          if (!room) break;
+          const part = estimateTokens(c) <= room ? c : c.slice(0, charsForTokens(c, room));
+          if (!part.trim()) break;
+          const cost = estimateTokens(part); kept.push(part); used += cost; tokens += cost;
+          if (part.length < c.length) break;
+        }
         content = kept;
       }
       total += content.reduce((a, c) => a + c.length, 0);
       full++;
+      remainingFull--;
     } else if (s.read && text) {
       content = [`(read in full; text omitted for length — snippet only, do not characterize beyond it) ${s.snippet ?? ""}`.trim()];
     } else {

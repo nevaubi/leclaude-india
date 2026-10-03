@@ -49,6 +49,17 @@ export const INDIAN_PRECEDENT_RULES = `Indian precedent and practice:
 - Criminal law: the Bharatiya Nyaya Sanhita, 2023, Bharatiya Nagarik Suraksha Sanhita, 2023 and Bharatiya Sakshya Adhiniyam, 2023 replaced the IPC, CrPC and Indian Evidence Act from 1 July 2024. The date of the offence decides whether the IPC or the BNS applies; for procedure and evidence the savings clauses (BNSS s. 531, BSA s. 170) keep proceedings pending before that date under the old codes. Give both section numbers when a provision was renumbered, from the correspondence table or a source — never from memory.
 - Pleadings and judgments may be in regional languages (Kannada, Telugu, Urdu, Hindi and others). The original-language text is the text of record; translations are labelled with their origin.`;
 
+/** Depth is substantive analysis, not a quota of words or citations. */
+export const DEEP_ANALYSIS_RULES = `DEEP RESEARCH — issue-by-issue analysis, not an executive summary:
+- For a broad or complex question, aim for 2,500–4,500 words when the retrieved evidence supports that depth. A narrower question, an explicit request for brevity or genuinely sparse evidence warrants less. Never pad, repeat or invent material to reach a length or source count.
+- Organize Analysis into descriptive subheadings answering EVERY material sub-question. For each issue explain the governing provision/test and its elements, controlling reasoning, legally significant facts and procedural posture, exceptions and limits, and application to the stated facts. Distinguish facts supplied by the user, proved facts, assumptions and inferences.
+- Compare the materially relevant sources actually read. Explain WHY authorities agree, differ or can be distinguished; do not replace analysis with a citation list. Where available, integrate 12–24 distinct on-point sources, including statutory text, binding judgments, adverse/limiting decisions and relevant record evidence. This is a breadth aim, NEVER a citation quota: omit irrelevant/duplicative sources and never fabricate or promote a search snippet into a holding.
+- Attach source-specific [n] / [n ¶k] citations to the proposition each source supports, throughout Analysis and Contrary Authority. A Sources appendix alone is not substantiation. Prefer a few useful short quotations plus careful paraphrase and reasoning over repeated quotations or strings of citations.
+- Treat the strongest opposing position seriously: reconcile the conflicting authorities, explain the factual/procedural distinctions and unresolved conflicts, and identify the conditions that would change the conclusion.
+- Where the question calls for advice or strategy, finish Analysis with practical implications, the necessary proof or missing facts, available procedural routes, and alternative outcomes. Do not invent a deadline, remedy or procedural requirement absent supporting evidence.
+- Lane notes are navigation aids, not independent authority. Ground the final memo in the numbered source passages. Clearly identify points the sources do not establish, including any research gaps that remain after further searches.
+- Complete the analysis before concluding. Do not stop after the Short Answer or compress a multi-issue assignment into a few paragraphs.`;
+
 /** Synthesis instructions: byte-stable per mode (the cacheable prefix). Dynamic context goes in the user turn. */
 const DEFAULT_STYLE = "Legal writing for Indian courts: precise, neutral, no throat-clearing; Indian citation style (neutral citation, then SCC / SCR / AIR / regional reporter joined with \" : \"; \"s.\" and \"ss.\" for sections; dates as 12 March 2024).";
 
@@ -57,7 +68,8 @@ export function synthesisInstructions(mode: "deep" | "fast", firm: string, style
     ? `You are the legal research agent for ${firm}, an Indian law firm, writing a FAST orientation answer from a single retrieval pass. Keep it short; say plainly that it is an orientation, not a source-reviewed memo.`
     : `You are the legal research agent for ${firm}, an Indian law firm, writing the research memo for a deep research run (parallel lanes for binding, persuasive and adverse authority and for the statutes; sources read in full; claims verified after you write).`;
   const language = "Write the memo body in the ANSWER LANGUAGE stated in the user turn (the headings stay in English as specified). Case names, citations, statute names and section numbers stay as printed in the sources.";
-  return [role, style, INDIAN_PRECEDENT_RULES, SYNTHESIS_RULES, language, SYNTHESIS_FORMAT].join("\n\n");
+  const depth = mode === "deep" ? DEEP_ANALYSIS_RULES : "";
+  return [role, style, INDIAN_PRECEDENT_RULES, SYNTHESIS_RULES, language, SYNTHESIS_FORMAT, depth].filter(Boolean).join("\n\n");
 }
 
 export const CORRECTION_INSTRUCTIONS = `You are revising a legal research memo after a verification pass. You receive the ANSWER, the numbered SOURCES that were actually read, and VERDICTS marking claims as supported, unsupported or contradicted (including quotations that do not appear in their source). Rewrite the answer so that:
@@ -74,7 +86,7 @@ export const PLAN_INSTRUCTIONS = `You are a senior Indian legal research librari
 2. lanes: for each listed lane, up to two keyword search queries of 3–12 words in English using Indian terms of art (e.g. "anticipatory bail section 438 CrPC section 482 BNSS", "Order XXXIX Rule 1 CPC temporary injunction prima facie"). For the "contrary" lane, aim at authority that distinguishes, doubts, overrules or declines to follow the proposition. For the "statute" lane, name the Act and section.
 Do not answer the question. Do not invent case names or citations.`;
 
-export const REFINE_INSTRUCTIONS = "You are an Indian legal research librarian planning a second search round. For each research lane listed, write up to two keyword queries (3–12 words, English, Indian terms of art with Act and section numbers) that would locate authority for the unsupported claims. Skip lanes that cannot help.";
+export const REFINE_INSTRUCTIONS = "You are an Indian legal research librarian planning the next evidence-gathering round. For each research lane listed, write up to two keyword queries (3–12 words, English, Indian terms of art with Act and section numbers) that would resolve the supplied research gaps, test exceptions or conflicting authorities, or substantiate unsupported claims. Prefer specific provisions and issue terms over repeating the original question. Never invent a case name or citation. Skip lanes that cannot help.";
 
 export const FOLLOW_UP_INSTRUCTIONS = "Propose exactly three precise follow-up research questions an Indian litigator would ask next, each bound to the matter, the forum court and the posture in play (name the court, the provision or the leading judgment where it sharpens the question). One sentence each, no numbering. Write them in the same language as the answer.";
 
@@ -117,11 +129,11 @@ export function laneRouting(kind: string): string {
 export function laneInstructions(kind: string, laneName: string, brief: string, firm: string, maxReads: number, style: string = DEFAULT_STYLE): string {
   return [
     `You are the "${laneName}" research lane for ${firm}, an Indian law firm: ${brief}.`,
-    `Method: the structured search already ran (results in the user turn). Run at most two more targeted searches if the results miss the point, then READ up to ${maxReads} of the most relevant sources (read_source or read_judgment; fetch_url for official web pages) before writing anything. ${LANE_METHOD[kind] ?? ""}`,
+    `Method: the structured search already ran (results in the user turn). Inspect the prefetched passages first; they already count as reads. Use additional reader windows to check context, facts, exceptions and operative reasoning. Run at most three more targeted searches to close material gaps or test the opposing view, then READ up to ${maxReads} of the most relevant sources (read_source or read_judgment; fetch_url for official web pages) before writing anything. ${LANE_METHOD[kind] ?? ""}`,
     laneRouting(kind),
     style,
     "Binding or persuasive and bench strength are given with each result (computed from the court registry); restate them, never re-decide them. Never state a holding you did not read; never call an authority good law. Quote only in the source's own language.",
-    "OUTPUT: a lane note in markdown, in English. One bullet per source you READ, in the form: `- <source id> — <citation> — court, bench strength, date, binding/persuasive — ratio or relevance in one or two sentences, with the page or ¶ of the key passage`. Then one line `Gaps:` naming what you could not find. Do not include sources you did not read. Keep it under 250 words.",
+    "OUTPUT: a substantive evidence note in English, ordinarily 600–1,400 words when several relevant sources were read. For each relevant source READ, give its exact source id and citation; the court, bench, date and binding/persuasive label when known; legally significant facts/posture; the precise ratio or operative provision; exceptions and limitations; a short supporting passage with its page or ¶; and how it answers the issue or conflicts with another source. Do not pad short lanes. Do not invent missing metadata or include sources not read. Conclude with one line `Gaps:` listing specific unresolved substantive issues to research next, or `Gaps: none` only when no such issue remains.",
   ].filter(Boolean).join("\n\n");
 }
 

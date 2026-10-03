@@ -8,6 +8,7 @@ import type { LaneKind, ResearchLane, ResearchSource, VerificationSummary } from
 export interface CoverageInput {
   round: number;
   maxRounds: number;
+  mode?: "deep" | "fast";
   sources: ResearchSource[];
   answer: string;
   verification: VerificationSummary | null;
@@ -48,7 +49,9 @@ export function decideCoverage(input: CoverageInput): CoverageDecision {
   const reasons: string[] = [];
 
   if (input.sources.length < MIN_SOURCES) reasons.push(`only ${input.sources.length} source${input.sources.length === 1 ? "" : "s"} found`);
-  if (readCount < MIN_READ && input.sources.length > 0) reasons.push("no source was read in full");
+  const readableCount = input.sources.filter((s) => s.read || s.hit.readRef).length;
+  const requiredReads = input.mode === "deep" ? Math.min(12, Math.max(1, readableCount)) : MIN_READ;
+  if (readCount < requiredReads && input.sources.length > 0) reasons.push(readCount === 0 ? "no source was read in full" : `only ${readCount} of ${readableCount} available sources read; evidence breadth remains thin`);
   if (cited.size === 0 && input.sources.length > 0) reasons.push("the answer cites no sources");
   if (v && v.verdicts.length > 0 && v.score < MIN_SCORE) reasons.push(`verification score ${(v.score * 100).toFixed(0)}%`);
   if (v && v.unsupported + v.contradicted > MAX_UNSUPPORTED) reasons.push(`${v.unsupported + v.contradicted} unsupported or contradicted claims`);
@@ -80,4 +83,36 @@ export function broaden(query: string): string {
   const parts = q.split(/\s+AND\s+/);
   if (parts.length > 2) return `${parts[0]} AND (${parts.slice(1).join(" OR ")})`;
   return q;
+}
+
+/** Evidence acquisition is checked BEFORE drafting so follow-up searches have time to run. */
+export function planReadFollowup(input: {
+  round: number; maxRounds: number; sources: ResearchSource[]; lanes: ResearchLane[];
+  notes: { laneId: string; note: string }[]; newReads: number;
+}): CoverageDecision | null {
+  if (input.round >= input.maxRounds || (input.round > 1 && input.newReads === 0)) return null;
+  const readCount = input.sources.filter((s) => s.read).length;
+  const readable = input.sources.filter((s) => s.read || s.hit.readRef);
+  const target = Math.min(24, readable.length);
+  const refinements: Partial<Record<LaneKind, string[]>> = {};
+  const gaps: string[] = [];
+  for (const lane of input.lanes) {
+    const note = input.notes.find((n) => n.laneId === lane.id)?.note ?? "";
+    const stated = /^\s*(?:\*\*)?Gaps:(?:\*\*)?\s*(.+)$/im.exec(note)?.[1]?.trim();
+    const substantiveGap = stated && !/^(none\b|no (?:material |substantive )?gaps\b|n\/?a\b)/i.test(stated) ? stated.slice(0, 900) : "";
+    const unread = input.sources.filter((s) => !s.read && s.hit.readRef && s.laneIds.includes(lane.id));
+    const queries: string[] = [];
+    if (substantiveGap) {
+      gaps.push(lane.name + ": " + substantiveGap);
+      const query = claimToQuery(substantiveGap);
+      if (query.split(/\s+/).length >= 2) queries.push(query);
+    }
+    if (readCount < target && unread.length) {
+      gaps.push(lane.name + ": " + unread.length + " located sources still need reading; prioritize distinct relevant authorities, not duplicates.");
+      queries.push(...lane.queries.slice(0, 2));
+    }
+    if (queries.length) refinements[lane.kind] = [...new Set(queries)].slice(0, 3);
+  }
+  if (!Object.keys(refinements).length) return null;
+  return { complete: false, exhausted: false, reason: "More evidence needed before drafting: " + readCount + " sources read; targeted gaps remain", gaps: gaps.slice(0, 8), refinements };
 }

@@ -81,26 +81,53 @@ export interface ReadRegistry {
 
 export function createReadRegistry(texts: Map<string, string> = new Map()): ReadRegistry {
   const inflight = new Map<string, Promise<{ text: string }>>();
+  const completed = new Map<string, { text: string }>();
   let shared = 0;
-  const startFetch = <T extends { text: string }>(key: string, fetch: () => Promise<T>): Promise<T> => {
-    const p = fetch().then((r) => { texts.set(key, r.text ?? ""); return r; }).finally(() => { if (inflight.get(key) === p) inflight.delete(key); });
+  let active = 0;
+  const queue: (() => void)[] = [];
+  const abort = () => new DOMException("Aborted", "AbortError");
+  // A run may have six lanes, each reading in parallel. Bound the combined network fan-out.
+  const acquire = (signal?: AbortSignal): Promise<() => void> => new Promise((resolve, reject) => {
+    const onAbort = () => { const i = queue.indexOf(enter); if (i >= 0) queue.splice(i, 1); reject(abort()); };
+    const enter = () => {
+      signal?.removeEventListener("abort", onAbort);
+      if (signal?.aborted) { reject(abort()); queue.shift()?.(); return; }
+      active++;
+      resolve(() => { active--; queue.shift()?.(); });
+    };
+    if (signal?.aborted) { reject(abort()); return; }
+    if (active < 6) enter();
+    else { queue.push(enter); signal?.addEventListener("abort", onAbort, { once: true }); }
+  });
+  const startFetch = <T extends { text: string }>(key: string, fetch: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+    const p = (async () => {
+      const release = await acquire(signal);
+      try {
+        if (signal?.aborted) throw abort();
+        const r = await fetch();
+        if (signal?.aborted) throw abort();
+        if (!r.text?.trim()) throw new Error("Source returned no readable text; it was not read.");
+        texts.set(key, r.text);
+        completed.set(key, r);
+        return r;
+      } finally { release(); }
+    })().finally(() => { if (inflight.get(key) === p) inflight.delete(key); });
     inflight.set(key, p);
     return p;
   };
   return {
     texts,
     async read(key, fetch, signal) {
+      if (signal?.aborted) throw abort();
+      const cached = completed.get(key) as Awaited<ReturnType<typeof fetch>> | undefined;
+      if (cached) { shared++; return { ...cached, shared: true }; }
       const existing = inflight.get(key) as Promise<Awaited<ReturnType<typeof fetch>>> | undefined;
       if (existing) {
         shared++;
-        try {
-          return { ...(await existing), shared: true };
-        } catch (e) {
-          // The lane that owned the fetch was aborted (timeout/cancel); this lane is still live, so it reads for itself.
-          if ((e as Error)?.name !== "AbortError" || signal?.aborted) throw e;
-        }
+        try { const result = await existing; if (signal?.aborted) throw abort(); return { ...result, shared: true }; }
+        catch (e) { if ((e as Error)?.name !== "AbortError" || signal?.aborted) throw e; }
       }
-      return { ...(await startFetch(key, fetch)), shared: false };
+      return { ...(await startFetch(key, fetch, signal)), shared: false };
     },
     sharedReads: () => shared,
   };

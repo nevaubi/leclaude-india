@@ -24,7 +24,7 @@ import { answerArtifactId, answerHash } from "./binding";
 import { buildAuthorityStatus } from "./authority-status";
 import { createReadRegistry, sweepCache } from "./cache";
 import { buildCitationCheck, crossCheckCitations, normCite, withCitationStates } from "./citecheck";
-import { decideCoverage, type CoverageDecision } from "./coverage";
+import { decideCoverage, planReadFollowup, type CoverageDecision } from "./coverage";
 import { defaultDeps, type EngineDeps, type ResearchPlan } from "./deps";
 import { buildEvidenceBlocks, evidenceSourceId, evidenceText } from "./evidence";
 import { runLane, type LaneResult } from "./lanes";
@@ -301,7 +301,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
     const sources = verifyInput(verifiable);
     // The verifier's reach per source is at least what the synthesis was given for any source (budgeted runs).
     const reach = synthBudget ? sources.reduce((m, x) => Math.max(m, x.text.length), 0) : undefined;
-    const v = await timedModelCall(metrics, () => withRetry(() => deps.verify({ answer, sources, signal: stageSignal, ...(reach ? { perSourceChars: reach } : {}) }), { ...modelRetry, signal: stageSignal }));
+    const v = await timedModelCall(metrics, () => withRetry(() => deps.verify({ answer, sources, maxClaims: mode === "deep" ? 80 : 25, signal: stageSignal, ...(reach ? { perSourceChars: reach } : {}) }), { ...modelRetry, signal: stageSignal }));
     agents++;
     const raw = toSummary(v, verifiable, hash, pass);
     const checked = checkClaimEvidence(answer, raw.verdicts, numbered, textOf);
@@ -346,7 +346,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
       // Regional-language question: every lane also searches the question's own words (judgments in that language).
       const regional: ResearchLane[] = searchQuery && round === 1 ? planned.map((l) => ({ ...l, queries: Array.from(new Set([...l.queries, l.kind === "contrary" ? l.queries[0] : question.slice(0, 200)])).slice(0, 3) })) : planned;
       // Lanes get what is left after keeping time back for synthesis and verification (never below 25s).
-      const laneCap = Math.max(ms(25_000), remaining() - ms(RESERVE_AFTER_LANES_MS));
+      const laneCap = Math.min(mode === "deep" ? ms(round === 1 ? 90_000 : 45_000) : Number.POSITIVE_INFINITY, Math.max(ms(25_000), remaining() - ms(RESERVE_AFTER_LANES_MS)));
       const lanes: ResearchLane[] = regional.map((l) => ({ ...l, timeoutMs: Math.min(l.timeoutMs ?? policy.laneTimeoutMs, laneCap) }));
       emit({ type: "plan.created", round, reason: round === 1 ? undefined : "coverage was thin; refined queries", lanes });
       // Fast-model planning runs concurrently with the first retrieval wave (lanes start on deterministic queries).
@@ -367,6 +367,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
       }
 
       // --- lanes: bounded concurrency, dependency-aware, per-lane timeouts ------
+      const readBefore = pool.filter((s) => s.read).length;
       const known = pool;
       const laneResults = await scheduleLanes<ResearchLane, LaneResult>(
         lanes,
@@ -387,10 +388,42 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
         pool = mergeSources(pool, r.sources);
         if (r.agentRan) agents++;
         const lane = lanes.find((l) => l.id === r.laneId)!;
-        if (r.note) laneNotes.push(`### ${lane.name}\n${r.note}`);
+        if (r.note) {
+          const heading = `### ${lane.name}\n`;
+          const nextNote = heading + r.note;
+          const previous = laneNotes.findIndex((text) => text.startsWith(heading));
+          if (previous < 0) laneNotes.push(nextNote); else laneNotes[previous] = nextNote;
+        }
         laneSummaries.push({ id: lane.id, name: lane.name, kind: lane.kind, status: r.status, sources: r.sources.length, read: r.read, durationMs: r.durationMs, round, error: r.error, failure: r.failure });
       }
       if (aborted()) break;
+
+      // Research gaps trigger focused reading/search passes BEFORE the expensive final draft.
+      const acquisition = mode === "deep" && deps.hasKey && pool.length ? planReadFollowup({ round, maxRounds, sources: pool, lanes, notes: results, newReads: pool.filter((s) => s.read).length - readBefore }) : null;
+      if (acquisition && remaining() > ms(MIN_ROUND_MS + 15_000)) {
+        refinements = acquisition.refinements;
+        const toolId = `${runId}:gap-pass:${round}`;
+        const refineStarted = Date.now();
+        emit({ type: "tool.started", toolId, name: "refine_research", label: "Checking research gaps before drafting" });
+        try {
+          const refineStage = stage(ms(10_000));
+          const nextQueries = await timedModelCall(metrics, () => deps.refine({ question, gaps: acquisition.gaps, laneKinds: lanes.map((l) => l.kind), signal: refineStage.signal }));
+          const allowed = new Set(lanes.map((l) => l.kind));
+          for (const [kind, queries] of Object.entries(nextQueries) as [LaneKind, string[]][]) {
+            if (allowed.has(kind) && queries?.length) refinements[kind] = [...new Set([...queries, ...(refinements[kind] ?? [])])].slice(0, 3);
+          }
+          emit({ type: "tool.completed", toolId, name: "refine_research", label: "Targeted follow-up queries ready", durationMs: Date.now() - refineStarted });
+        } catch (e) {
+          if (aborted()) break;
+          emit({ type: "tool.failed", toolId, name: "refine_research", label: "Checking research gaps", error: "Query refinement unavailable; deterministic gap queries retained", failure: classifyFailure(e), durationMs: Date.now() - refineStarted, retrying: false });
+        }
+        // Recheck the clock: never trade away the time needed to write and verify the result.
+        if (remaining() >= ms(MIN_ROUND_MS)) {
+          emit({ type: "coverage.gap", round, reason: acquisition.reason, gaps: acquisition.gaps, refinements: refinements as Record<string, string[]> });
+          emit({ type: "round.completed", round, complete: false, reason: acquisition.reason });
+          continue;
+        }
+      }
 
       // --- treatment signals (started when cases were read; bounded wait) and currentness flags ----
       if (treatments.size) {
@@ -567,7 +600,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
 
       // --- coverage decision -------------------------------------------------
       const emptyLaneIds = results.filter((r) => r.sources.length === 0).map((r) => r.laneId);
-      coverage = decideCoverage({ round, maxRounds, sources: pool, answer, verification, lanes, emptyLaneIds });
+      coverage = decideCoverage({ round, maxRounds, mode, sources: pool, answer, verification, lanes, emptyLaneIds });
       if (!coverage.complete || coverage.exhausted) emit({ type: "coverage.gap", round, reason: coverage.reason, gaps: coverage.gaps, refinements: coverage.refinements as Record<string, string[]> });
       emit({ type: "round.completed", round, complete: coverage.complete, reason: coverage.reason });
       if (coverage.complete) break;
@@ -662,7 +695,7 @@ export async function runResearch(input: RunResearchInput, send: Send, signal: A
     createdAt: new Date().toISOString(),
     runId,
     stats,
-    verification: verification ? { ...verification, verdicts: verification.verdicts.slice(0, 40) } : undefined,
+    verification: verification ? { ...verification, verdicts: verification.verdicts.slice(0, 80) } : undefined,
     citations: citationChecks?.length ? citationChecks : undefined,
     citationCheck,
     provenance,

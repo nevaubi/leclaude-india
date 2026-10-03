@@ -124,7 +124,7 @@ export const BUDGET_PROFILES: Readonly<Record<BudgetProfileId, ProfileSpec>> = {
   // search/engine: synthesis 8_000 output; evidence 6_000/source, 80_000 total, 1_400 per block.
   // 2026-10 (India research recall): output target 16K → 24K (ceil 32K → 48K), full sources 12 → 16, evidence target
   // 520K → 600K chars (ceil 560K → 640K; the 85%-of-input cap still applies: ≈612K at the 240K-token input ceiling).
-  deep_research_synthesis: { inputShare: 0.5, inputTokens: R(32_000, 240_000, 240_000), outputTokens: R(8_000, 24_000, 48_000), perSourceChars: R(6_000, 40_000, 48_000), totalEvidenceChars: R(80_000, 600_000, 640_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(32_000, 60_000, 64_000), historyChars: R(2_500, 8_000, 16_000), maxFullSources: R(12, 16, 16), historyTurns: R(4, 6, 8), maxSteps: 1, effort: "medium", concurrency: 6 },
+  deep_research_synthesis: { inputShare: 0.5, inputTokens: R(32_000, 240_000, 240_000), outputTokens: R(8_000, 24_000, 48_000), perSourceChars: R(6_000, 40_000, 48_000), totalEvidenceChars: R(80_000, 600_000, 640_000), blockChars: R(1_400, 2_000, 2_000), toolResultChars: R(32_000, 60_000, 64_000), historyChars: R(2_500, 8_000, 16_000), maxFullSources: R(12, 32, 32), historyTurns: R(4, 6, 8), maxSteps: 1, effort: "medium", concurrency: 6 },
   // search/engine lanes: 1_800 output; read_source 30_000 default / 32_000 result; read caps 3–5 per lane.
   // 2026-10: input target 120K → 160K tokens (ceil 160K → 200K, so a 1M-window fast model earns extra reads), output
   // 3K → 6K (ceil 6K → 12K), steps 8 → 10, full sources 7 → 8 (ceil 8 → 10), input share 0.3 → 0.4 (400K models: 79K → 106K).

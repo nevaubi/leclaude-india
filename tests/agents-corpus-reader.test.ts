@@ -147,10 +147,10 @@ describe("runLane over corpus sources", () => {
     expect(input).toMatch(/corpus:sc:2024_10_108_125 · [^\n]*\[full text\]/);
   });
 
-  it("planned judgment and statute lanes read one more source than before, still bounded", () => {
+  it("deep judgment and statute lanes have larger explicit read and step caps", () => {
     const lanes = planLanes({ question: "anticipatory bail parity", settings, mode: "deep", hasMatter: false });
     const caps = Object.fromEntries(lanes.map((l) => [l.kind, [l.maxReads, l.maxSteps]]));
-    expect(caps).toMatchObject({ controlling: [5, 7], persuasive: [4, 6], contrary: [4, 6], statute: [4, 6] });
-    expect(lanes.every((l) => l.maxReads <= 5 && l.maxSteps <= 7)).toBe(true);
+    expect(caps).toMatchObject({ controlling: [8, 10], persuasive: [6, 9], contrary: [6, 10], statute: [6, 9] });
+    expect(lanes.every((l) => l.maxReads <= 8 && l.maxSteps <= 10)).toBe(true);
   });
 });

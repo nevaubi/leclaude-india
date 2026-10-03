@@ -222,7 +222,39 @@ function smidStream(smid: number): ListingStream {
   };
 }
 
-const STREAMS = new Map<string, StreamSpec>([["rss", rssStream()], ...SEBI_SMIDS.map((s) => [`smid:${s.smid}`, smidStream(s.smid)] as const)]);
+/** Publisher-maintained legal editions, not Gazette backfill. Dates and amendment labels remain distinct. */
+export function parseSebiLegalListing(html:string, collection:'regulations'|'master-circulars', pageUrl:string):DiscoveredDoc[] {
+  const items:DiscoveredDoc[]=[];
+  for(const row of tableRows(html)) {
+    const cells=[...row.matchAll(/<td\b[^>]*>([\s\S]*?)(?:<\/td>|(?=<td\b|<\/tr>))/gi)].map(m=>m[1]); if(cells.length<2)continue;
+    const anchor=/<a\b[^>]*>([\s\S]*?)<\/a>/i.exec(cells[1]); if(!anchor)continue;
+    const url=safeUrl(attr(anchor[0],'href'),pageUrl,HOSTS);
+    if(!url || !new URL(url).pathname.startsWith('/legal/'+collection+'/'))continue;
+    const title=clean(htmlText(anchor[1]));if(!title)continue;
+    const datePrinted=clean(htmlText(cells[0]));
+    const editionLabel=/\[([^\]]*(?:amend|updated)[^\]]*)\]/i.exec(title)?.[1]??null;
+    items.push({sourceId:'sebi-orders',kind:collection==='regulations'?'regulation':'circular',url,fileUrl:null,title,
+      docDate:/^\d{4}$/.test(datePrinted)?null:printedDate(datePrinted),
+      meta:{forum:'sebi',collection,listingUrl:pageUrl,datePrinted,editionLabel,versionBasis:editionLabel?'publisher_title':'publication_date',legalStatus:'not_independently_verified',publisherListing:'updated',observedAt:new Date().toISOString()}});
+  }
+  return items;
+}
+function legalStream(collection:'regulations'|'master-circulars'):ListingStream {
+  const ssid=collection==='regulations'?3:6;
+  const url=BASE+'/sebiweb/home/HomeAction.do?doListing=yes&sid=1&smid=0&ssid='+ssid;
+  return {kind:'listing',id:'legal:'+collection,backfill:true,firstPage:1,incrementalPages:1,
+    async fetch(page,ctx) {
+      if(collection==='regulations' && page>1)return {items:[],last:true};
+      const html=page===1?(await ctx.fetchPage(url)).html??'':(await ctx.postForm(SEBI_PAGER_URL,{...sebiPagerFields(0,page),sid:'1',ssid:String(ssid),ssidhidden:String(ssid),sText:'Legal',ssText:'Master Circulars',smText:''},{headers:{Referer:url}})).text.split('#@#')[0];
+      const range=sebiPagerRange(html);
+      if(page>1 && (!range||range.from!==(page-1)*PAGE_SIZE+1)) throw new Error('SEBI legal pagination did not match requested page');
+      const items=parseSebiLegalListing(html,collection,url);
+      if(page===1&&!items.length)throw new Error('SEBI legal listing returned no readable records; coverage unknown');
+      return {items,last:collection==='regulations'||!range||range.to>=range.total};
+    }};
+}
+
+const STREAMS = new Map<string, StreamSpec>([["legal:regulations", legalStream("regulations")], ["legal:master-circulars", legalStream("master-circulars")], ["rss", rssStream()], ...SEBI_SMIDS.map((s) => [`smid:${s.smid}`, smidStream(s.smid)] as const)]);
 
 /**
  * Appeal numbers as printed: SAT's own form ("Appeal No. 123 of 2025", "Misc. Appeal No. …") and, as `qualifier`,
@@ -330,11 +362,11 @@ export function parseSebiOrderText(doc: ParseInput): ParseResult<{ meta: Record<
 
 export const def: SourceDef = {
   id: "sebi-orders",
-  name: "SEBI enforcement orders (incl. SAT orders)",
+  name: "SEBI regulations, circulars & orders",
   publisher: "Securities and Exchange Board of India",
-  kinds: ["order"],
+  kinds: ["order", "regulation", "circular"],
   forum: "sebi",
-  homepage: "https://www.sebi.gov.in/enforcement/orders.html",
+  homepage: "https://www.sebi.gov.in/legal.html",
   fetch: "direct",
   cadenceMinutes: 360,
   attribution: "Orders as published by the Securities and Exchange Board of India (sebi.gov.in); SAT orders as mirrored by SEBI under \"Orders of SAT\".",

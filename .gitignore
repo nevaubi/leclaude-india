@@ -50,3 +50,6 @@ next-env.d.ts
 # claude code project hook state and local settings
 .claude/state/
 .claude/settings.local.json
+
+# Local corpus maintenance evidence, fixtures and temporary logs
+.corpus-quality-work/

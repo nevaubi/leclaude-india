@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Check, Copy, ExternalLink, FileText, Library, ListFilter, Search, SearchX, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,9 @@ import {
 } from "../shared";
 import { isOfficialUnavailable, OcrBadge, OfficialErrorState, OfficialUnavailable, useOfficialStatus } from "./states";
 
+import {retiredCollectionReason} from '@/modules/official/collection-policy';
+import {CollectionOverview} from './collection-overview';
+import {CorpusQualityPanel} from './corpus-quality-panel';
 const fmt = (n: number) => n.toLocaleString("en-IN");
 const ALL = "all";
 const NOT_CONFIGURED = new OfficialApiError("Official sources are not configured on this workspace.", 503, "official_not_configured");
@@ -34,13 +37,12 @@ const NOT_CONFIGURED = new OfficialApiError("Official sources are not configured
  */
 export function SourcesLibrary() {
   const sp = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
   const filters = React.useMemo(() => parseSourcesFilters(new URLSearchParams(sp.toString())), [sp]);
   const update = React.useCallback((patch: Partial<SourcesFilters>) => {
     const qs = sourcesFiltersToParams({ ...filters, ...patch }).toString();
-    router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
-  }, [filters, pathname, router]);
+    window.history.replaceState(null, "", `${pathname}${qs ? `?${qs}` : ""}`);
+  }, [filters, pathname]);
   const { status, error, loading, retry } = useOfficialStatus();
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   // The reader's back link returns here with the same tab, query and filters.
@@ -67,6 +69,7 @@ export function SourcesLibrary() {
         </Sheet>
         <main className="min-h-0 min-w-0 overflow-auto scrollbar-thin">
           <div className="mx-auto w-full max-w-[920px] px-4 pb-10 pt-4 sm:px-6">
+            {filters.tab === "search" && !filters.q && !hasSourceFilters(filters) ? <CollectionOverview status={status} /> : null}
             {filters.tab === "browse"
               ? <BrowseTab filters={filters} onChange={update} empty={total === 0} onOpenFilters={() => setFiltersOpen(true)} from={here} />
               : <SearchTab filters={filters} onChange={update} empty={total === 0} onOpenFilters={() => setFiltersOpen(true)} from={here} />}
@@ -81,12 +84,12 @@ export function SourcesLibrary() {
       <header className="shrink-0 border-b px-4 pt-3 sm:px-6">
         {/* The Law section tab already names the page; the heading stays for screen readers. */}
         <h1 className="sr-only">Official sources</h1>
-        <p className="min-w-0 text-[12px] text-muted-foreground">Court, tribunal, regulator, Gazette and Parliament documents as their publishers released them</p>
+        <p className="min-w-0 text-[12px] text-muted-foreground">Judgments, regulatory materials and legislative history — grouped by source and legal function</p>
         <Tabs value={filters.tab} onValueChange={(v) => update({ tab: v as SourcesTab })} className="mt-1">
           <TabsList variant="underline" className="h-9 gap-3">
-            <TabsTrigger value="search">Search</TabsTrigger>
+            <TabsTrigger value="search">Collections & search</TabsTrigger>
             <TabsTrigger value="browse">Browse</TabsTrigger>
-            <TabsTrigger value="coverage">Coverage</TabsTrigger>
+            <TabsTrigger value="coverage">Quality & coverage</TabsTrigger>
           </TabsList>
         </Tabs>
       </header>
@@ -109,8 +112,8 @@ function LibrarySkeleton() {
 // ---------------------------------------------------------------------------
 
 function FilterRail({ status, filters, onChange }: { status: OfficialStatus; filters: SourcesFilters; onChange: (p: Partial<SourcesFilters>) => void }) {
-  const sources = [...status.sources].sort((a, b) => Number(b.enabled) - Number(a.enabled));
-  const kinds = [...new Set(status.sources.flatMap((s) => s.kinds ?? []))] as SourceKind[];
+  const sources = status.sources.filter(s => !retiredCollectionReason(s.id)).sort((a, b) => Number(b.enabled) - Number(a.enabled));
+  const kinds = [...new Set(status.sources.flatMap((s) => (s.kinds ?? []).filter(k => !retiredCollectionReason(s.id, k))))] as SourceKind[];
   const forums = forumOptions(status);
   const toggle = <T extends string>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   return (
@@ -365,6 +368,9 @@ function DocRow({ d, from }: { d: SourceDocument; from: string }) {
           {d.pages ? <span className="tabular">· {d.pages} page{d.pages === 1 ? "" : "s"}</span> : null}
           <span>· {d.status === "indexed" ? extractionLabel(d.extraction) : docStatusLabel(d.status)}</span>
           {isOcrText(d.extraction, d.ocrPages) ? <OcrBadge /> : null}
+          <span title="Stored content version; not an independent legal-validity finding">· v{d.version}</span>
+          {d.sha256 ? <span title="Source content fingerprint recorded for change detection">· Hash recorded</span> : null}
+          {typeof d.meta?.editionLabel === 'string' ? <span title={d.meta.editionLabel}>· Publisher edition</span> : null}
         </div>
       </div>
       {official ? <a href={official} target="_blank" rel="noopener noreferrer" className="inline-flex h-6 items-center gap-1 self-start rounded px-1.5 text-[11.5px] text-primary hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" title={official}><FileText className="size-3.5" aria-hidden />{hostOf(official)}<ExternalLink className="size-3" aria-hidden /></a> : <span />}
@@ -377,11 +383,12 @@ function DocRow({ d, from }: { d: SourceDocument; from: string }) {
 // ---------------------------------------------------------------------------
 
 function CoverageTab({ status }: { status: OfficialStatus }) {
-  const rows = coverageRows(status);
+  const rows = coverageRows(status).filter(r => !retiredCollectionReason(r.id));
   const storage = storageLine(status);
   const embeddings = status.embeddings === "none" ? "No embeddings: search is by keyword only" : `Embeddings stored (${status.embeddings})`;
   return (
     <div className="mx-auto w-full max-w-[1180px] px-4 pb-10 pt-4 sm:px-6">
+      <CorpusQualityPanel />
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
         <span className="tabular"><span className="font-medium text-foreground/85">{fmt(rows.reduce((n, r) => n + r.documents, 0))}</span> documents collected</span>
         <span aria-hidden>·</span><span>{embeddings}</span>
@@ -396,7 +403,7 @@ function CoverageTab({ status }: { status: OfficialStatus }) {
             <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium">
               <th scope="col">Source</th>
               <th scope="col" className="text-right">Documents</th>
-              <th scope="col" className="text-right">Indexed</th>
+              <th scope="col" className="text-right">Text searchable</th>
               <th scope="col" className="text-right" title="Text chunks with an embedding, of all stored chunks (chunks, not documents)">Embedded chunks</th>
               <th scope="col" className="text-right">Waiting</th>
               <th scope="col" className="text-right">OCR needed</th>

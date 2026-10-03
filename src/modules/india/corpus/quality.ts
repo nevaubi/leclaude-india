@@ -5,10 +5,13 @@ import { getState, setState } from './backfill';
 import { reconcileTextBatch } from './reconcile';
 import { runCitatorBuild } from '../citator/build';
 import { runJudgmentEmbedding } from './embeddings';
+import { sampleQualityCoverage } from './quality-view';
+import { isProviderQuotaError, QUOTA_DEFER_SECONDS } from '@/lib/ai/quota';
 
 export const QUALITY_POLICY_KEY = 'corpus_quality_policy_v1';
 const LEASE_KEY = 'corpus_quality_lease_v1';
 const LAST_KEY = 'corpus_quality_last_v1';
+const EMBED_PAUSE_KEY = 'corpus_quality_embed_pause_v1';
 export function qualityLimits(raw: Record<string, unknown>) {
   const n = Number(raw.maxEmbeddingChunks);
   return { maxEmbeddingChunks: Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), 2000) : 1000, embeddings: raw.embeddings !== false };
@@ -57,11 +60,27 @@ export async function runCorpusQuality(o: { store: RemoteStore; workers?: Partia
       const deadlineMs = Math.min(budget, end - now() - 15000);
       if (deadlineMs < 5000) { out.tasks[name] = { stop: 'deadline' }; out.stop = 'partial'; continue; }
       try {
+        if(name==='embed') {
+          const pause=await getState<{retryAfter?:string}>(store,EMBED_PAUSE_KEY);
+          if(pause?.retryAfter && Date.parse(pause.retryAfter)>now()) {
+            out.tasks.embed={stop:'provider_quota',retryAfter:pause.retryAfter};out.stop='partial';continue;
+          }
+        }
         const result = await workers[name](store, { deadline: now() + deadlineMs, deadlineMs, maxChunks: limits.maxEmbeddingChunks, now });
         out.tasks[name] = result;
-        if (result && typeof result === 'object' && ('error' in result && result.error)) out.stop = 'partial';
+        if (result && typeof result === 'object' && ('error' in result && result.error)) {
+          out.stop = 'partial';
+          if(name==='embed' && isProviderQuotaError(result.error)) {
+            const retryAfter=new Date(now()+QUOTA_DEFER_SECONDS*1000).toISOString();
+            await setState(store,EMBED_PAUSE_KEY,{retryAfter,reason:'provider_quota'});
+            out.tasks.embed={...result,stop:'provider_quota',retryAfter};
+          }
+        }
       }
       catch (error) { out.tasks[name] = { stop: 'error', error: (error instanceof Error ? error.message : String(error)).slice(0,300) }; out.stop = 'partial'; }
+    }
+    if (!o.workers && now() < end - 15000) {
+      try { await sampleQualityCoverage(store); } catch(error) { out.tasks.coverage = { error: error instanceof Error ? error.message.slice(0,200) : 'Snapshot unavailable' }; }
     }
     out.finishedAt = new Date(now()).toISOString();
     await setState(store, LAST_KEY, out);

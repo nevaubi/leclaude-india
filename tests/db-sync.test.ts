@@ -159,3 +159,28 @@ describe("serverless shared store (sync.ts)", () => {
     expect(db().kv.get<number>("probe:retry")).toBe(1);
   });
 });
+
+
+describe("bounded database recovery", () => {
+  it("hydrates oversized datasets without a giant response and retains every vector chunk", async () => {
+    await flushDb();
+    const now = new Date().toISOString();
+    const doc = remote.db.prepare("INSERT INTO lc_docs VALUES (?, ?, ?, ?, ?)");
+    for (let i = 0; i < 520; i++) doc.run("bulk_recovery", String(i).padStart(4, "0"), JSON.stringify({ id: String(i).padStart(4, "0"), text: "x".repeat(4096) }), now, now);
+    const vec = remote.db.prepare("INSERT INTO lc_vectors VALUES (?, ?, ?, ?, ?)");
+    for (let i = 0; i < 513; i++) vec.run("bulk_recovery", "many-chunks", i, JSON.stringify({ collection: "bulk_recovery", doc_id: "many-chunks", chunk_index: i, text: "chunk " + i }), new Uint8Array([1, 2, 3, 4]));
+    const blob = remote.db.prepare("INSERT INTO lc_blobs VALUES (?, ?, ?, ?, ?, ?, ?)");
+    for (let i = 0; i < 65; i++) blob.run("recovery_blob_" + i, "test.bin", "application/octet-stream", 8192, new Uint8Array(8192).fill(i), null, now);
+    const cap = <T,>(rows: T): T => { if (Buffer.byteLength(JSON.stringify(rows)) > 512000) throw Object.assign(new Error("response is too large (max is 512000 bytes)"), { status: 507 }); return rows; };
+    const bounded: RemoteStore = { query: async (q) => cap(await remote.query(q)), transaction: async (qs) => cap(await remote.transaction(qs)) };
+    setRemoteStoreForTests(bounded);
+    coldInstance();
+    try {
+      await syncDb();
+      expect(db().collection("bulk_recovery").count()).toBe(520);
+      expect(db().blobs.get("recovery_blob_64")?.bytes.length).toBe(8192);
+      const { getSqlite } = await import("@/lib/db/sqlite");
+      expect((getSqlite().prepare("SELECT COUNT(*) AS n FROM vectors WHERE collection = ?").get("bulk_recovery") as { n: number }).n).toBe(513);
+    } finally { setRemoteStoreForTests(remote); }
+  });
+});

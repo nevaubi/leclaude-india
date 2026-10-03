@@ -1,7 +1,7 @@
 import "server-only";
 import type { DatabaseSync } from "node:sqlite";
 import { cacheRegistry, getSqlite } from "./sqlite";
-import { REMOTE_SCHEMA, fromBytea, remoteStore, type RemoteStore, type Row, type SqlQuery } from "./remote";
+import { REMOTE_SCHEMA, fromBytea, remoteStore, type RemoteStore, type Row, type SqlQuery, type SqlValue } from "./remote";
 
 /**
  * Durable, shared storage for serverless hosts.
@@ -116,8 +116,8 @@ function applyBlob(db: DatabaseSync, id: string, row: Row | undefined): void {
     .run(id, row.name, row.mime!, Number(row.size), fromBytea(row.bytes) ?? new Uint8Array(), row.meta, row.created_at!);
 }
 
-function applyVectors(db: DatabaseSync, collection: string, docId: string, rows: Row[]): void {
-  db.prepare("DELETE FROM vectors WHERE collection = ? AND doc_id = ?").run(collection, docId);
+function applyVectors(db: DatabaseSync, collection: string, docId: string, rows: Row[], replace = true): void {
+  if (replace) db.prepare("DELETE FROM vectors WHERE collection = ? AND doc_id = ?").run(collection, docId);
   for (const r of rows) {
     const obj = JSON.parse(r.row_json!) as Record<string, unknown>;
     const cols = Object.keys(obj).filter((k) => k !== "embedding");
@@ -126,7 +126,7 @@ function applyVectors(db: DatabaseSync, collection: string, docId: string, rows:
     const values = [...cols.map((k) => (obj[k] == null ? null : typeof obj[k] === "object" ? JSON.stringify(obj[k]) : (obj[k] as string | number))), fromBytea(r.embedding)];
     db.prepare(`INSERT INTO vectors (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`).run(...(values as (string | number | null | Uint8Array)[]));
   }
-  vectorInvalidator?.(collection);
+  if (replace) vectorInvalidator?.(collection);
 }
 
 function withApplying<T>(fn: () => T): T {
@@ -143,38 +143,78 @@ async function ensureRemoteSchema(store: RemoteStore): Promise<void> {
   await store.transaction(REMOTE_SCHEMA);
 }
 
+function oversizedResponse(error: unknown): boolean {
+  const e = error as { status?: number; message?: string };
+  return e?.status === 413 || (e?.status === 507 && /response.*too large/i.test(e.message ?? ""));
+}
+
+/** Keyset pages keep cold starts below the HTTP response cap without truncating data. */
+async function scanRemote(store: RemoteStore, select: string, keys: string[], apply: (rows: Row[]) => void, initialLimit = 128): Promise<void> {
+  let cursor: SqlValue[] = [];
+  let limit = initialLimit;
+  for (;;) {
+    const where = cursor.length ? " WHERE (" + keys.join(", ") + ") > (" + keys.map((_, i) => "$" + (i + 1)).join(", ") + ")" : "";
+    const query = select + where + " ORDER BY " + keys.join(", ") + " LIMIT $" + (cursor.length + 1);
+    let rows: Row[];
+    try { rows = await store.query({ query, params: [...cursor, limit] }); }
+    catch (e) {
+      if (!oversizedResponse(e) || limit === 1) throw e;
+      limit = Math.max(1, Math.floor(limit / 2));
+      continue;
+    }
+    if (!rows.length) return;
+    apply(rows);
+    if (rows.length < limit) return;
+    const last = rows[rows.length - 1];
+    cursor = keys.map((key) => {
+      const column = key.split(".").pop()!;
+      return column === "chunk_index" ? Number(last[column]) : last[column]!;
+    });
+  }
+}
+
 async function hydrate(store: RemoteStore): Promise<void> {
   await ensureRemoteSchema(store);
-  const [[seqRow], docs, kv, blobs, vectors] = await store.transaction([
-    { query: "SELECT COALESCE(MAX(seq), 0)::text AS seq FROM lc_changes" },
-    { query: "SELECT collection, id, json, created_at, updated_at FROM lc_docs" },
-    { query: "SELECT key, value, updated_at FROM lc_kv" },
-    { query: "SELECT id, name, mime, size::text AS size, bytes, meta, created_at FROM lc_blobs" },
-    { query: "SELECT collection, doc_id, chunk_index::text AS chunk_index, row_json, embedding FROM lc_vectors ORDER BY collection, doc_id, chunk_index" },
-  ]);
+  // Capture the watermark BEFORE paging; replay concurrent writes/deletes before serving requests.
+  const [seqRow] = await store.query({ query: "SELECT COALESCE(MAX(seq), 0)::text AS seq FROM lc_changes" });
   const db = getSqlite();
-  withApplying(() => {
+  const applyPage = (fn: () => void) => withApplying(() => {
     db.exec("BEGIN");
-    try {
-      db.exec("DELETE FROM docs; DELETE FROM kv; DELETE FROM blobs; DELETE FROM vectors;");
-      for (const r of docs) applyDoc(db, r.collection!, r.id!, r);
-      for (const r of kv) applyKv(db, r.key!, r);
-      for (const r of blobs) applyBlob(db, r.id!, r);
-      const byDoc = new Map<string, Row[]>();
-      for (const r of vectors) {
-        const k = `${r.collection}\u0000${r.doc_id}`;
-        byDoc.set(k, [...(byDoc.get(k) ?? []), r]);
-      }
-      for (const [k, rows] of byDoc) { const [c, d] = k.split("\u0000"); applyVectors(db, c, d, rows); }
-      db.exec("COMMIT");
-    } catch (e) {
-      db.exec("ROLLBACK");
-      throw e;
-    }
+    try { fn(); db.exec("COMMIT"); }
+    catch (e) { db.exec("ROLLBACK"); throw e; }
   });
+  // Only the disposable LOCAL mirror is cleared. No remote data is deleted or rewritten.
+  applyPage(() => db.exec("DELETE FROM docs; DELETE FROM kv; DELETE FROM blobs; DELETE FROM vectors;"));
   cacheRegistry.clear();
+  await scanRemote(store, "SELECT collection, id, json, created_at, updated_at FROM lc_docs", ["collection", "id"], (rows) => applyPage(() => {
+    for (const r of rows) applyDoc(db, r.collection!, r.id!, r);
+  }));
+  await scanRemote(store, "SELECT key, value, updated_at FROM lc_kv", ["key"], (rows) => applyPage(() => {
+    for (const r of rows) applyKv(db, r.key!, r);
+  }));
+  await scanRemote(store, "SELECT id, name, mime, size::text AS size, bytes, meta, created_at FROM lc_blobs", ["id"], (rows) => applyPage(() => {
+    for (const r of rows) applyBlob(db, r.id!, r);
+  }), 8);
+  const vectorCollections = new Set<string>();
+  await scanRemote(store, "SELECT collection, doc_id, chunk_index::text AS chunk_index, row_json, embedding FROM lc_vectors", ["collection", "doc_id", "lc_vectors.chunk_index"], (rows) => applyPage(() => {
+    const byDoc = new Map<string, Row[]>();
+    for (const r of rows) {
+      const key = JSON.stringify([r.collection, r.doc_id]);
+      const group = byDoc.get(key);
+      if (group) group.push(r); else byDoc.set(key, [r]);
+    }
+    // A document can span multiple pages: append, never erase its previous chunks.
+    for (const group of byDoc.values()) {
+      vectorCollections.add(group[0].collection!);
+      applyVectors(db, group[0].collection!, group[0].doc_id!, group, false);
+    }
+  }), 256);
+  // Invalidation can migrate legacy vector metadata, so it must run outside a page transaction.
+  withApplying(() => { for (const collection of vectorCollections) vectorInvalidator?.(collection); });
   const s = state();
   s.lastSeq = Number(seqRow?.seq ?? 0);
+  await pull(store);
+  cacheRegistry.clear();
   s.hydrated = true;
 }
 

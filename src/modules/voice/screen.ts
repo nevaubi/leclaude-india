@@ -35,6 +35,13 @@ function getTarget(id:unknown):HTMLElement {
   return item.el;
 }
 const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+async function waitForNavigation(href:string,signal:AbortSignal){
+  const expected=new URL(href,location.origin);for(let i=0;i<100;i++){
+    if(signal.aborted)throw new Error('Navigation cancelled.');
+    if(location.pathname===expected.pathname&&location.search===expected.search){await waitForView(signal);return;}
+    await pause(100);
+  }throw new Error('Navigation is still loading. Read the screen before continuing.');
+}
 export async function waitForView(signal:AbortSignal) { for(let i=0;i<12;i++){if(signal.aborted)return;await pause(100);if(i>=2&&!document.querySelector('main [aria-busy=true]'))return;} }
 export async function captureViewport():Promise<string> {
   const {toJpeg}=await import('html-to-image');
@@ -49,7 +56,7 @@ export async function executeAction(action:VoiceAction,deps:ActionDeps):Promise<
     if(action.name==='navigate'){
       const href=safeVoiceHref(args.href);if(!href)throw new Error('Only app navigation is allowed.');
       if(href===location.pathname+location.search+location.hash)return {ok:true,message:'Already on '+href};
-      deps.navigate(href);await waitForView(deps.signal);return {ok:true,message:'Current page: '+location.pathname+location.search};
+      deps.navigate(href);await waitForNavigation(href,deps.signal);return {ok:true,message:'Current page: '+location.pathname+location.search};
     }
     if(action.name==='read_screen'){await waitForView(deps.signal);return {ok:true,message:'Screen refreshed.'};}
     if(action.name==='screenshot'){
@@ -77,7 +84,7 @@ export async function executeAction(action:VoiceAction,deps:ActionDeps):Promise<
       else {const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value')?.set?.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}
       return {ok:true,message:'Entered text in '+name+' without submitting.'};
     }
-    if(el instanceof HTMLAnchorElement){if(el.hasAttribute('download'))throw new Error('Downloads require a manual click.');const href=safeVoiceHref(el.getAttribute('href'));if(!href)throw new Error('External links and downloads require manual navigation.');deps.navigate(href);await waitForView(deps.signal);return {ok:true,message:'Opened '+href};}
+    if(el instanceof HTMLAnchorElement){if(el.hasAttribute('download'))throw new Error('Downloads require a manual click.');const href=safeVoiceHref(el.getAttribute('href'));if(!href)throw new Error('External links and downloads require manual navigation.');deps.navigate(href);await waitForNavigation(href,deps.signal);return {ok:true,message:'Opened '+href};}
     const harmless=/^(open|view|show|hide|close|cancel|back|next|previous|expand|collapse|search|filter|clear filters|all |choose|select|sort|more|details|tab|menu|new chat|research|quick answer|matters|judges|courts|statutes|case law|news|library|documents|drafting|settings)/i.test(name)||el.matches('[role=tab],[role=combobox],[role=option],summary');
     if((needsConfirmation(name)||!harmless)&&!await deps.confirm('Click “'+name+'”?'))return {ok:false,message:'User declined '+name};
     if(deps.signal.aborted)return {ok:false,message:'Cancelled.'};

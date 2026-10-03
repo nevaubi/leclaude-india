@@ -47,7 +47,7 @@ export async function connectCartesia(key: string): Promise<void> {
   ]);
 }
 export async function createCartesiaAccessToken(key: string): Promise<string> {
-  const data = await cartesia('/access-token', key, { grants: { tts: true, stt: true }, expires_in: SESSION_SECONDS });
+  const data = await cartesia('/access-token', key, { grants: { agent: true }, expires_in: SESSION_SECONDS });
   if (typeof data.token !== 'string' || !data.token) throw new Error('Cartesia did not return a client session token.');
   return data.token;
 }

@@ -1,23 +1,31 @@
-# Skylar voice guide
+# Skylar managed voice
 
-The bottom-right microphone opens an opt-in assistant. Cartesia Ink 2 transcribes microphone audio with turn detection; Sonic 3.6 speaks using Skylar. The existing provider-neutral fast model handles dialogue and observed UI tools. The agent is mounted in the persistent application shell and survives in-app navigation.
+The compact mic/orb UI is unchanged. One Cartesia Managed Agent WebSocket owns audio, dialogue memory, turn detection, interruptions and tool calling for the entire call. The previous independent STT/TTS and per-turn HTTP model loop is no longer used by the widget.
 
-## Activation
+## Configuration
 
-Set CARTESIA_API_KEY in server environment variables, or sign in as the workspace owner and paste the key into the microphone panel's Connect Cartesia field. The latter validates the key and encrypts it with AES-256-GCM in a separate private_voice Postgres schema using a key derived from AUTH_JWT_SECRET. The master key is never returned by the API. Browsers receive scoped STT/TTS access tokens and a separate user/tenant-bound signed application ticket, each lasting 900 seconds. Rotating AUTH_JWT_SECRET requires reconnecting the encrypted provider key.
+CARTESIA_API_KEY remains server-side. CARTESIA_AGENT_ID optionally selects another compatible agent; otherwise the app uses its provisioned Pramana Skylar agent, recorded in src/modules/voice/managed-agent.ts along with its configuration. The hosted model is gpt-5.4-mini and the voice is Skylar. Basic voice conversation needs no separate OpenAI key. Optional screenshot analysis uses the app's existing configured vision runtime.
 
-## Interaction
+POST /api/voice/session authenticates the user, mints a 900-second agent-grant token, and issues a user/tenant-bound application ticket for the vision endpoint. No master key is returned to the browser.
 
-Speech interrupts queued audio and cancels pending reasoning. A throttled background planner prefetches likely navigation destinations from partial speech; it never commits actions from unfinished speech. Final utterances can navigate, click observed controls, fill ordinary inputs, scroll, and refresh screen context. Up to six sequential observation/action rounds are allowed per turn; repeated identical or failed actions stop the batch. Navigation is same-origin and limited to app pages. API URLs, credentials, external links and downloads cannot be operated by voice. Unknown or consequential buttons and edits to autosaving rich-text documents require a spoken or clicked confirmation.
+## Protocol and tools
 
-Screen vision is off by default. When enabled, screenshots are generated on demand from this app's viewport, with marked private fields and the voice UI excluded, and passed to the configured vision-capable model. Cross-origin images or embedded viewers may be absent from DOM-rendered screenshots. This is not desktop capture.
+Connect once to /v1/agents/websocket/{agent_id}. Send session_create first, with pcm_24000 and as_available, then wait for session_ready. Stream 50 ms mono 24 kHz PCM16 frames in base64 JSON audio_input events. Output uses the same format. Browser agent tokens cannot set dynamic_variables, as verified against the live API; current page context is instead read through client tools.
 
-The feature stores neither raw microphone recordings nor screenshots. Conversation text lives in this browser tab for the current session; a reload or closing the tab ends the call. Canonical dialogue is bounded to 70 messages, keeping the opening context plus recent turns. Provider retention and processing terms still apply; the UI discloses which data is transmitted.
+Play audio_output on one persistent Web Audio context. audio_output_clear immediately discards queued playback. turn_started and turn_ended update the existing status and transcript. In-app navigation does not recreate the connection.
 
-## Legal assistance
+Execute client_tool_call events sequentially against observed controls. Return client_tool_result with the original tool_call_id, including errors and cancellations. Results are bounded to 4096 UTF-8 bytes. read_screen accepts query and offset to locate controls without discarding a long list. Navigation verifies the destination before reporting success.
 
-Skylar provides general information and app guidance, not a representation that she is human or a lawyer. Current-law research and precise citations should use the existing Research page. She can navigate there and populate a question, then discuss visible source-linked results. Screen text and documents are explicitly treated as untrusted data rather than instructions.
+Consequential actions retain spoken/clicked confirmation. Screen vision remains opt-in. The screenshot tool captures only the app viewport and obtains a short description through authenticated /api/voice/vision; raw images are not placed into Cartesia tool results. Marked private fields and the voice UI are excluded.
+
+## Lifetime and retention
+
+The client stops the call at 15 minutes and releases the microphone, socket, nodes and timers. Muting preserves the connection. Silent audio maintains transport while paused. Cartesia separately ends a call after 240 seconds of conversational inactivity; check-ins are configured at 15 seconds. A real disconnect ends the native call; no silent replacement call claims to preserve its history. A full browser reload ends the call.
+
+Managed conversation history is held by Cartesia. Provider transcripts, recordings and retention follow the Cartesia account settings; this is not a zero-retention promise. The app does not save raw microphone audio or screenshots. Precise authorities and dates should use the app's cited Research and practice tools.
 
 ## Verification
 
-Unit tests cover safe navigation, confirmation labels, credential redaction, ticket expiry and user/tenant binding. Browser tests use a fake microphone and mocked Cartesia/LLM responses to exercise the actual UI and control flow without spending provider credits. A live Cartesia audio test is still needed after connecting the operator's key.
+Protocol/lifecycle tests cover the handshake, browser-token restrictions, PCM rate, repeated turns, interruptions, tool-result IDs, UTF-8 limits and 15-minute timer. A real Cartesia call using synthetic utterances verified follow-up memory and a navigation tool call under one call ID. Browser integration tests use the actual local session endpoint and simulated agent events to verify navigation, typing, spoken confirmation, vision, mute/resume and microphone release. The duration cap is clock-tested, not a 15-minute network soak.
+
+References: https://docs.cartesia.ai/agents/configuration and https://docs.cartesia.ai/line/integrations/websocket-api

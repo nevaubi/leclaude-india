@@ -3,7 +3,7 @@ export const SESSION_SECONDS = 15 * 60;
 export const CARTESIA_VERSION = '2026-08-14';
 export const SKYLAR_VOICE_ID = 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4';
 export type VoicePhase = 'idle' | 'connecting' | 'listening' | 'thinking' | 'acting' | 'speaking' | 'paused' | 'error';
-export interface VoiceSession { token: string; accessToken: string; expiresAt: number; voiceId: string; version: string; ttsModel: string; sttModel: string }
+export interface VoiceSession { token:string; accessToken:string; expiresAt:number; agentId:string; transport:'managed'; version:string; sampleRate:24000; audioFormat:'pcm_24000' }
 export interface ScreenTarget { id: string; label: string; role: string; href?: string; value?: string; editable: boolean; confirm: boolean }
 export interface ScreenContext { path: string; title: string; text: string; targets: ScreenTarget[]; visionAllowed: boolean }
 export interface VoiceAction { id: string; name: string; args: Record<string, unknown> }

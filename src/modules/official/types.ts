@@ -18,6 +18,7 @@
 
 /** Registry ids of the sources (definitions live with each adapter; see ./registry.ts). */
 export type SourceId =
+  | "sci-library" // Supreme Court practice handbooks; reference material with publisher editions
   | "sci-causelist" // Supreme Court cause lists (advance, daily main/supplementary, weekly) — api.sci.gov.in/jonew/cl
   | "sci-orders" // Supreme Court latest judgments (homepage) and daily orders (/latest-orders/) via /sci-get-pdf/
   | "sci-calendar" // Supreme Court calendar and holidays (/calendar/ HTML table + year PDFs)
@@ -47,7 +48,7 @@ export type SourceId =
 
 /** Every registered source id, in display order. */
 export const SOURCE_IDS: readonly SourceId[] = [
-  "sci-causelist", "sci-orders", "sci-calendar", "hc-calendars", "dhc-causelist", "nclt", "nclat", "ibbi", "sebi-orders",
+  "sci-causelist", "sci-orders", "sci-calendar", "sci-library", "hc-calendars", "dhc-causelist", "nclt", "nclat", "ibbi", "sebi-orders",
   "sat-orders", "cci-orders", "ngt-orders", "egazette", "cbic", "gst-council", "cbdt", "mca-master", "sansad",
   "rbi", "itat-orders", "cestat-orders", "aptel", "ncdrc", "cic-decisions", "rera-appellate",
   "lawcommission",

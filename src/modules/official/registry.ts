@@ -19,6 +19,7 @@ const GOV = "Government publication; verify against the official copy";
 
 /** Hosts each source may be fetched from (publisher sites and the CDNs they serve files from). */
 export const ALLOW_HOSTS: Record<SourceId, string[]> = {
+  "sci-library": ["sci.gov.in","cdn.s3waas.gov.in","cdnbbsr.s3waas.gov.in"],
   "sci-causelist": ["sci.gov.in", "s3waas.gov.in"],
   "sci-orders": ["sci.gov.in", "s3waas.gov.in"],
   "sci-calendar": ["sci.gov.in", "s3waas.gov.in"],
@@ -51,6 +52,7 @@ export const ALLOW_HOSTS: Record<SourceId, string[]> = {
 const PLACEHOLDER: Record<SourceId, { name: string; publisher: string; kinds: SourceKind[]; forum: string | null; homepage: string; cadenceMinutes: number }> = {
   "sci-causelist": { name: "Supreme Court cause lists", publisher: "Supreme Court of India", kinds: ["cause_list"], forum: "sci", homepage: "https://www.sci.gov.in/cause-list/", cadenceMinutes: 60 },
   "sci-orders": { name: "Supreme Court judgments and daily orders", publisher: "Supreme Court of India", kinds: ["judgment", "order"], forum: "sci", homepage: "https://www.sci.gov.in/", cadenceMinutes: 360 },
+  "sci-library": { name: "Supreme Court practice publications", publisher: "Supreme Court of India", kinds: ["reference_report"], forum: "sci", homepage: "https://www.sci.gov.in/judges-library/", cadenceMinutes: 1440 },
   "sci-calendar": { name: "Supreme Court calendar", publisher: "Supreme Court of India", kinds: ["calendar"], forum: "sci", homepage: "https://www.sci.gov.in/calendar/", cadenceMinutes: 1440 * 7 },
   "hc-calendars": { name: "High Court calendars", publisher: "High Courts of India", kinds: ["calendar"], forum: null, homepage: "https://delhihighcourt.nic.in/", cadenceMinutes: 1440 * 7 },
   "dhc-causelist": { name: "Delhi High Court cause lists", publisher: "High Court of Delhi", kinds: ["cause_list"], forum: "hc-delhi", homepage: "https://delhihighcourt.nic.in/", cadenceMinutes: 60 },

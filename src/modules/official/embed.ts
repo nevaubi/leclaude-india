@@ -1,4 +1,5 @@
 import "server-only";
+import {voyageConfig,voyageEmbedPassages} from "./voyage";
 import { aiConfig } from "@/lib/ai/config";
 import { bufferToFloat32, embedTexts, float32ToBuffer } from "@/lib/ai/embeddings";
 import { fromBytea, type RemoteStore } from "@/lib/db/remote";
@@ -82,7 +83,9 @@ export async function recordedVectorSupport(store: RemoteStore): Promise<VectorS
 }
 
 /** The embedding model when an embedding provider is configured; null otherwise (keyword-only corpus). */
-export function embeddingModel(): string | null {
+export async function embeddingModel(): Promise<string | null> {
+  const voyage=await voyageConfig();
+  if(voyage)return voyage.model;
   try {
     const cfg = aiConfig();
     return cfg.embeddingProvider ? cfg.embeddingModel : null;
@@ -90,7 +93,11 @@ export function embeddingModel(): string | null {
 }
 
 export function defaultEmbed(): EmbedFn {
-  return (texts, o) => embedTexts(texts, { dimensions: EMBED_DIMS, signal: o.signal, inputType: o.query ? "query" : "document" });
+  return async (texts, o) => {
+    const voyage=await voyageConfig();
+    if(voyage)return voyageEmbedPassages(texts,{...voyage,query:o.query,signal:o.signal});
+    return embedTexts(texts, { dimensions: EMBED_DIMS, signal: o.signal, inputType: o.query ? "query" : "document" });
+  };
 }
 
 /** pgvector text literal ("[0.1,0.2,…]"), 7 significant digits. */
@@ -123,7 +130,7 @@ export interface EmbedRunResult {
  * an embedding error stops this pass and is returned (the chunks stay keyword-searchable).
  */
 export async function embedPendingChunks(store: RemoteStore, opts: { documentId?: string | null; maxChunks: number; embed?: EmbedFn; model?: string | null; signal?: AbortSignal; deadline?: number; now?: () => number }): Promise<EmbedRunResult> {
-  const model = opts.model === undefined ? embeddingModel() : opts.model;
+  const model = opts.model === undefined ? await embeddingModel() : opts.model;
   const out: EmbedRunResult = { embedded: 0, failed: 0, remaining: false, model, mode: "none", error: null };
   if (!model) return { ...out, error: "embeddings are not configured" };
   const max = Math.max(0, Math.floor(opts.maxChunks));
@@ -133,8 +140,8 @@ export async function embedPendingChunks(store: RemoteStore, opts: { documentId?
   const embed = opts.embed ?? defaultEmbed();
   const now = opts.now ?? Date.now;
   const rows = await store.query({
-    query: `SELECT document_id, idx, text, text_sha256 FROM official_chunks WHERE embedding IS NULL${opts.documentId ? " AND document_id = $1" : ""} ORDER BY document_id, idx LIMIT ${max + 1}`,
-    params: opts.documentId ? [opts.documentId] : [],
+    query: `SELECT document_id, idx, text, text_sha256 FROM official_chunks WHERE (embedding IS NULL OR embedding_model IS DISTINCT FROM ${opts.documentId ? "$2" : "$1"} OR embedding_dims IS DISTINCT FROM ${EMBED_DIMS})${opts.documentId ? " AND document_id = $1" : ""} ORDER BY document_id, idx LIMIT ${max + 1}`,
+    params: opts.documentId ? [opts.documentId, model] : [model],
   });
   out.remaining = rows.length > max;
   const todo = rows.slice(0, max);
@@ -145,7 +152,7 @@ export async function embedPendingChunks(store: RemoteStore, opts: { documentId?
     const batch = todo.slice(i, i + BATCH);
     let vectors: Float32Array[];
     try {
-      vectors = await embed(batch.map((r) => String(r.text ?? "").slice(0, 8_000)), { signal: opts.signal });
+      vectors = await embed(batch.map((r) => String(r.text ?? "")), { signal: opts.signal });
     } catch (e) {
       out.remaining = true;
       if (opts.signal?.aborted) break; // the run's deadline: not an embedding failure
@@ -166,7 +173,7 @@ export async function embedPendingChunks(store: RemoteStore, opts: { documentId?
     const written = await store.query({
       query: `UPDATE official_chunks c SET embedding = decode(x.e, 'hex'), embedding_model = $2, embedding_dims = ${EMBED_DIMS}${setV}
         FROM jsonb_to_recordset($1::jsonb) AS x(document_id text, idx int, sha text, e text, v text)
-        WHERE c.document_id = x.document_id AND c.idx = x.idx AND c.text_sha256 = x.sha AND c.embedding IS NULL
+        WHERE c.document_id = x.document_id AND c.idx = x.idx AND c.text_sha256 = x.sha AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM $2 OR c.embedding_dims IS DISTINCT FROM ${EMBED_DIMS})
         RETURNING c.document_id`,
       params: [JSON.stringify(recs), model],
     });
@@ -175,15 +182,15 @@ export async function embedPendingChunks(store: RemoteStore, opts: { documentId?
   }
   if (opts.documentId && !out.remaining && !out.error) {
     // Rows written meanwhile (a re-index replaced the chunks) or skipped by the version guard: not done yet.
-    const left = await store.query({ query: `SELECT 1 AS n FROM official_chunks WHERE document_id = $1 AND embedding IS NULL LIMIT 1`, params: [opts.documentId] });
+    const left = await store.query({ query: `SELECT 1 AS n FROM official_chunks WHERE document_id = $1 AND (embedding IS NULL OR embedding_model IS DISTINCT FROM $2 OR embedding_dims IS DISTINCT FROM ${EMBED_DIMS}) LIMIT 1`, params: [opts.documentId, model] });
     if (left.length) out.remaining = true;
   }
   // The document's counter is recomputed even when nothing was written (a stale count would re-queue it every run).
   if (opts.documentId) docs.add(opts.documentId);
   if (docs.size) {
     await store.query({
-      query: `UPDATE official_documents d SET embedded = (SELECT count(*) FROM official_chunks c WHERE c.document_id = d.id AND c.embedding IS NOT NULL), updated_at = now() WHERE d.id = ANY($1::text[])`,
-      params: [pgArray([...docs])],
+      query: `UPDATE official_documents d SET embedded = (SELECT count(*) FROM official_chunks c WHERE c.document_id = d.id AND c.embedding IS NOT NULL AND c.embedding_model = $2 AND c.embedding_dims = ${EMBED_DIMS}), updated_at = now() WHERE d.id = ANY($1::text[])`,
+      params: [pgArray([...docs]), model],
     });
   }
   return out;
@@ -195,12 +202,12 @@ export async function embedPendingChunks(store: RemoteStore, opts: { documentId?
  * index unit finished early. Bounded per call; finished (done / skipped) units are re-queued, failed ones are left to
  * the redrive. Returns how many units were queued.
  */
-export async function queueMissingEmbeddings(store: RemoteStore, sources: string[], limit: number, priority: number): Promise<number> {
+export async function queueMissingEmbeddings(store: RemoteStore, sources: string[], limit: number, priority: number, model?: string | null): Promise<number> {
   if (!sources.length || limit <= 0) return 0;
   const r = await store.query({
     query: `WITH c AS (
         SELECT d.id, d.source, d.url FROM official_documents d
-        WHERE d.status = 'indexed' AND d.chunks > d.embedded AND d.source = ANY($1::text[])
+        WHERE d.status = 'indexed' AND (d.chunks > d.embedded${model ? ` OR EXISTS (SELECT 1 FROM official_chunks c WHERE c.document_id = d.id AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM $2 OR c.embedding_dims IS DISTINCT FROM ${EMBED_DIMS}))` : ''}) AND d.source = ANY($1::text[])
           AND NOT EXISTS (SELECT 1 FROM official_units u WHERE u.id = 'index:' || d.id AND u.status IN ('pending', 'running', 'failed'))
         ORDER BY d.indexed_at DESC NULLS LAST, d.id LIMIT ${Math.max(1, Math.min(Math.floor(limit), 1_000))}),
       ins AS (
@@ -210,7 +217,7 @@ export async function queueMissingEmbeddings(store: RemoteStore, sources: string
         WHERE official_units.status IN ('done', 'skipped')
         RETURNING 1)
       SELECT count(*)::int AS n FROM ins`,
-    params: [pgArray(sources)],
+    params: model ? [pgArray(sources),model] : [pgArray(sources)],
   });
   return Number(r[0]?.n ?? 0);
 }

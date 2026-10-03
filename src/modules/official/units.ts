@@ -160,6 +160,11 @@ export async function skipUnit(store: RemoteStore, id: string, note: string): Pr
  * exponential backoff (2^attempts minutes, at most 60).
  */
 export async function failUnit(store: RemoteStore, unit: Pick<OfficialUnit, "id" | "attempts">, error: string, opts: { permanent?: boolean } = {}): Promise<"failed" | "retry"> {
+  if (!opts.permanent && /^voyage: rate_limited/.test(error)) {
+    const seconds=Math.min(3600,Math.max(60,Number(/retry after (\d+) seconds/.exec(error)?.[1])||60));
+    await deferUnit(store,unit.id,seconds,'Voyage rate limit; queued for retry.');
+    return 'retry';
+  }
   if (!opts.permanent && isProviderQuotaError(error)) {
     // The model provider has no credit: wait (attempt given back), never fail the unit for it.
     await deferUnit(store, unit.id, QUOTA_DEFER_SECONDS, `model provider has no credit; resumes later: ${error.slice(0, 300)}`);

@@ -109,7 +109,7 @@ async function semanticCandidates(store: RemoteStore, vec: Float32Array, model: 
   if (f.yearTo) { params.push(f.yearTo); where.push(`e.decision_year <= $${params.length}`); }
   const res = await store.transaction([
     { query: `SELECT set_config('statement_timeout', '8000', true) AS t` },
-    { query: `SELECT set_config('hnsw.ef_search', '${SEMANTIC_CANDIDATES}', true) AS e` },
+    { query: `SELECT set_config('hnsw.ef_search', '${SEMANTIC_CANDIDATES}', true) AS e, set_config('hnsw.iterative_scan', 'strict_order', true) AS scan` },
     { query: `SELECT e.chunk_id, e.text_key, (e.embedding_v <=> $1::${type})::float8 AS dist FROM corpus_text_embeddings e WHERE ${where.join(" AND ")} ORDER BY e.embedding_v <=> $1::${type} LIMIT ${SEMANTIC_CANDIDATES}`, params },
   ]);
   const rows = res[res.length - 1] ?? [];
@@ -164,7 +164,7 @@ export async function searchJudgmentTextHybrid(q: string, f: JudgmentFilters & {
   if (!store || !q.trim()) return { available: Boolean(store), mode: "keyword", hits: [], filterNotes };
   const meta = hasMetaFilter(f);
   const citator = f.sectionKeys?.length ? await citatorAvailable(store) : false;
-  const model = deps.model === undefined ? embeddingModel() : deps.model;
+  const model = deps.model === undefined ? (await embeddingModel()) : deps.model;
   // The query embedding runs while the keyword search runs.
   const vecP: Promise<Float32Array | null> = model ? (deps.embed ?? defaultEmbed())([q.trim()], { query: true }).then((v) => v[0] ?? null, () => null) : Promise.resolve(null);
   const kw = await searchJudgmentText(q, { courts: f.courts, yearFrom: f.yearFrom, yearTo: f.yearTo, limit: Math.min(50, meta ? limit * 3 : limit * 2) }, store);

@@ -71,7 +71,7 @@ const settled = <T>(p: Promise<T>, fallback: T): Promise<T> => p.catch(() => fal
 export async function officialStatus(storeArg?: RemoteStore | null): Promise<OfficialStatus> {
   const defs = officialSources();
   const store = storeArg === undefined ? remoteStore() : storeArg;
-  const model = embeddingModel();
+  const model = (await embeddingModel());
   if (!store) {
     return { configured: false, sources: defs.map((d) => ({ ...d, stats: emptyStats(d.id), discovery: emptyDiscovery(), recentErrors: [] })), dbBytes: null, limitBytes: officialLimitBytes(), embeddings: "none", queue: { pending: 0, running: 0, failed: 0, done: 0 } };
   }

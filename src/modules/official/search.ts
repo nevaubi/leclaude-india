@@ -46,7 +46,7 @@ const MAX_PER_DOCUMENT = 3;
 export const EXCERPT_CHARS = 1_800;
 const RRF_K = 60;
 
-export const SOURCE_KINDS: readonly SourceKind[] = ["cause_list", "order", "judgment", "defect_list", "calendar", "regulation", "circular", "notification", "gazette", "minutes", "parliament_question", "parliament_debate", "committee_report", "company_record", "dataset"];
+export const SOURCE_KINDS: readonly SourceKind[] = ["cause_list", "order", "judgment", "defect_list", "calendar", "regulation", "circular", "notification", "gazette", "minutes", "parliament_question", "parliament_debate", "committee_report", "company_record", "dataset", "reference_report"];
 
 export function isSourceKind(v: unknown): v is SourceKind {
   return typeof v === "string" && (SOURCE_KINDS as readonly string[]).includes(v);
@@ -252,7 +252,7 @@ async function semanticAnn(store: RemoteStore, n: NormalizedSearch, vec: Float32
     `SELECT c.document_id, c.idx, (c.embedding_v <=> $1::${type})::float8 AS dist FROM official_chunks c JOIN official_documents d ON d.id = c.document_id
       WHERE c.embedding_v IS NOT NULL AND c.embedding_model = $2 AND ${CURRENT_TEXT}${filters.length ? ` AND ${filters.join(" AND ")}` : ""}
       ORDER BY c.embedding_v <=> $1::${type} LIMIT ${SEMANTIC_CANDIDATES}`,
-    params, timeoutMs, [{ query: `SELECT set_config('hnsw.ef_search', '${SEMANTIC_CANDIDATES}', true) AS e` }]);
+    params, timeoutMs, [{ query: `SELECT set_config('hnsw.ef_search', '${SEMANTIC_CANDIDATES}', true) AS e, set_config('hnsw.iterative_scan', 'strict_order', true) AS scan` }]);
   // Nearest neighbours always exist; only those close enough count as matches.
   return rows
     .map((r) => ({ key: keyOf(String(r.document_id), Number(r.idx)), documentId: String(r.document_id), idx: Number(r.idx), dist: Number(r.dist) }))
@@ -281,7 +281,7 @@ export async function searchOfficial(query: SourceSearchQuery, storeArg?: Remote
   const none: OfficialSearchResult = { hits: [], mode: n.mode === "semantic" ? "semantic" : "keyword", candidates: 0, empty: true };
   if ((n.sources && !n.sources.length) || (n.kinds && !n.kinds.length)) return none;
   const timeoutMs = deps.timeoutMs ?? SEARCH_TIMEOUT_MS;
-  const model = deps.model === undefined ? embeddingModel() : deps.model;
+  const model = deps.model === undefined ? (await embeddingModel()) : deps.model;
 
   // The query embedding (a provider call) runs while the keyword stage runs; its failure is handled below.
   const wantVec = Boolean(model) && n.mode !== "keyword";

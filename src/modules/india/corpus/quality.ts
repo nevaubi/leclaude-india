@@ -5,6 +5,7 @@ import { getState, setState } from './backfill';
 import { reconcileTextBatch } from './reconcile';
 import { runCitatorBuild } from '../citator/build';
 import { runJudgmentEmbedding } from './embeddings';
+import { embeddingModel } from '@/modules/official/embed';
 import { sampleQualityCoverage } from './quality-view';
 import { isProviderQuotaError, QUOTA_DEFER_SECONDS } from '@/lib/ai/quota';
 
@@ -31,7 +32,7 @@ const DEFAULT_WORKERS: QualityWorkers = {
     return totals;
   },
   citator: (store, o) => runCitatorBuild({ store, limit: 100, deadlineMs: o.deadlineMs, now: o.now }),
-  embed: (store, o) => runJudgmentEmbedding(store, { deadline: o.deadline, maxChunks: o.maxChunks, seed: 150, now: o.now }),
+  embed: (store, o) => runJudgmentEmbedding(store, { deadline: o.deadline, maxChunks: o.maxChunks, seed: 150, now: o.now, signal: AbortSignal.timeout(Math.max(1000,o.deadline-o.now()-1000)) }),
 };
 /** Separate leases and time allocations prevent bulk metadata ingestion from starving quality work. */
 export async function runCorpusQuality(o: { store: RemoteStore; workers?: Partial<QualityWorkers>; now?: () => number }): Promise<QualityRun> {
@@ -61,19 +62,23 @@ export async function runCorpusQuality(o: { store: RemoteStore; workers?: Partia
       if (deadlineMs < 5000) { out.tasks[name] = { stop: 'deadline' }; out.stop = 'partial'; continue; }
       try {
         if(name==='embed') {
-          const pause=await getState<{retryAfter?:string}>(store,EMBED_PAUSE_KEY);
-          if(pause?.retryAfter && Date.parse(pause.retryAfter)>now()) {
-            out.tasks.embed={stop:'provider_quota',retryAfter:pause.retryAfter};out.stop='partial';continue;
+          const pause=await getState<{retryAfter?:string;model?:string;reason?:string}>(store,EMBED_PAUSE_KEY);
+          const activeModel=await embeddingModel();
+          if(pause?.retryAfter && Date.parse(pause.retryAfter)>now() && (pause.model ? pause.model===activeModel : !activeModel?.startsWith('voyage-'))) {
+            out.tasks.embed={stop:pause.reason??'provider_quota',retryAfter:pause.retryAfter};out.stop='partial';continue;
           }
         }
         const result = await workers[name](store, { deadline: now() + deadlineMs, deadlineMs, maxChunks: limits.maxEmbeddingChunks, now });
         out.tasks[name] = result;
         if (result && typeof result === 'object' && ('error' in result && result.error)) {
           out.stop = 'partial';
-          if(name==='embed' && isProviderQuotaError(result.error)) {
-            const retryAfter=new Date(now()+QUOTA_DEFER_SECONDS*1000).toISOString();
-            await setState(store,EMBED_PAUSE_KEY,{retryAfter,reason:'provider_quota'});
-            out.tasks.embed={...result,stop:'provider_quota',retryAfter};
+          if(name==='embed' && (isProviderQuotaError(result.error)||String(result.error).includes('rate_limited'))) {
+            const limited=String(result.error).includes('rate_limited');
+            const seconds=limited?Math.min(3600,Math.max(60,Number(/retry after (\d+) seconds/.exec(String(result.error))?.[1])||60)):QUOTA_DEFER_SECONDS;
+            const reason=limited?'rate_limited':'provider_quota';
+            const retryAfter=new Date(now()+seconds*1000).toISOString();
+            await setState(store,EMBED_PAUSE_KEY,{retryAfter,reason,model:await embeddingModel()});
+            out.tasks.embed={...result,stop:reason,retryAfter};
           }
         }
       }

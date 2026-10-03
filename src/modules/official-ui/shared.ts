@@ -42,7 +42,7 @@ export const KIND_LABEL: Record<SourceKind, string> = {
   committee_report: "Committee report",
   company_record: "Company record",
   dataset: "Dataset",
-  reference_report: "Law Commission report",
+  reference_report: "Reference publication",
 };
 
 export const SOURCE_KINDS = Object.keys(KIND_LABEL) as SourceKind[];

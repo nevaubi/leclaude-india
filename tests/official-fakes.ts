@@ -168,9 +168,9 @@ export class OfficialFakeStore implements RemoteStore {
       return [...this.docs.values()].filter((d) => d.status === "ocr_needed" && (d.error ?? "").includes("above the OCR cap") && sources.includes(d.source) && Number(/^(\d+) page/.exec(d.error ?? "")?.[1] ?? Infinity) <= Number(p[1]))
         .map((d) => ({ id: d.id, source: d.source, url: d.url, error: d.error }));
     }
-    if (sql.startsWith("WITH c AS ( SELECT d.id, d.source, d.url FROM official_documents d WHERE d.status = 'indexed' AND d.chunks > d.embedded")) {
+    if (sql.startsWith("WITH c AS ( SELECT d.id, d.source, d.url FROM official_documents d WHERE d.status = 'indexed' AND (d.chunks > d.embedded")) {
       const sources = arr(p[0]);
-      const rows = [...this.docs.values()].filter((d) => d.status === "indexed" && d.chunks > d.embedded && sources.includes(d.source) && !["pending", "running", "failed"].includes(this.units.get(`index:${d.id}`)?.status ?? ""));
+      const rows = [...this.docs.values()].filter((d) => d.status === "indexed" && (d.chunks > d.embedded || (p[1] != null && this.chunks.some(c=>c.document_id===d.id && (!c.embedding || c.embedding_model!==p[1] || c.embedding_dims!==1024)))) && sources.includes(d.source) && !["pending", "running", "failed"].includes(this.units.get(`index:${d.id}`)?.status ?? ""));
       let n = 0;
       for (const d of rows) {
         const u = this.units.get(`index:${d.id}`);
@@ -203,7 +203,7 @@ export class OfficialFakeStore implements RemoteStore {
     if (sql.startsWith("UPDATE official_documents SET chunks = 0, embedded = 0, text_sha256 = NULL")) { this.patchDoc(String(p[0]), { chunks: 0, embedded: 0, text_sha256: null }); return []; }
     if (sql.startsWith("UPDATE official_documents SET parse_result")) { this.patchDoc(String(p[0]), { parse_result: JSON.parse(String(p[1])) }); return []; }
     if (sql.startsWith("UPDATE official_documents d SET embedded")) {
-      for (const id of arr(p[0])) { const d = this.docs.get(id); if (d) d.embedded = this.chunks.filter((c) => c.document_id === id && c.embedding).length; }
+      for (const id of arr(p[0])) { const d = this.docs.get(id); if (d) d.embedded = this.chunks.filter((c) => c.document_id === id && c.embedding && (p[1]==null || (c.embedding_model===p[1] && c.embedding_dims===1024))).length; }
       return [];
     }
     // ---- chunks ----
@@ -217,21 +217,21 @@ export class OfficialFakeStore implements RemoteStore {
       for (const r of JSON.parse(String(p[0])) as FakeChunk[]) this.chunks.push({ ...r, embedding: null, embedding_model: null, embedding_dims: null });
       return [];
     }
-    if (sql.startsWith("SELECT document_id, idx, text, text_sha256 FROM official_chunks WHERE embedding IS NULL")) {
+    if (sql.startsWith("SELECT document_id, idx, text, text_sha256 FROM official_chunks WHERE (embedding IS NULL")) {
       const limit = Number(/LIMIT (\d+)/.exec(sql)?.[1] ?? 1000);
-      return this.chunks.filter((c) => !c.embedding && (!sql.includes("document_id = $1") || c.document_id === p[0])).sort((a, b) => a.document_id.localeCompare(b.document_id) || a.idx - b.idx).slice(0, limit).map((c) => ({ document_id: c.document_id, idx: String(c.idx), text: c.text, text_sha256: c.text_sha256 }));
+      return this.chunks.filter((c) => (!c.embedding || c.embedding_model!==p[sql.includes("document_id = $1")?1:0] || c.embedding_dims!==1024) && (!sql.includes("document_id = $1") || c.document_id === p[0])).sort((a, b) => a.document_id.localeCompare(b.document_id) || a.idx - b.idx).slice(0, limit).map((c) => ({ document_id: c.document_id, idx: String(c.idx), text: c.text, text_sha256: c.text_sha256 }));
     }
     if (sql.startsWith("UPDATE official_chunks c SET embedding = decode(x.e, 'hex')")) {
       const out: Row[] = [];
       for (const r of JSON.parse(String(p[0])) as { document_id: string; idx: number; sha?: string; e: string }[]) {
         const c = this.chunks.find((k) => k.document_id === r.document_id && k.idx === r.idx);
-        if (!c || (sql.includes("c.text_sha256 = x.sha") && (c.text_sha256 !== r.sha || c.embedding))) continue;
+        if (!c || (sql.includes("c.text_sha256 = x.sha") && (c.text_sha256 !== r.sha || (c.embedding && c.embedding_model===p[1] && c.embedding_dims===1024)))) continue;
         c.embedding = `\\x${r.e}`; c.embedding_model = String(p[1]); c.embedding_dims = 1024;
         out.push({ document_id: c.document_id });
       }
       return out;
     }
-    if (sql.startsWith("SELECT 1 AS n FROM official_chunks WHERE document_id = $1 AND embedding IS NULL")) return this.chunks.some((c) => c.document_id === p[0] && !c.embedding) ? [{ n: "1" }] : [];
+    if (sql.startsWith("SELECT 1 AS n FROM official_chunks WHERE document_id = $1 AND (embedding IS NULL")) return this.chunks.some((c) => c.document_id === p[0] && (!c.embedding || c.embedding_model!==p[1] || c.embedding_dims!==1024)) ? [{ n: "1" }] : [];
     if (sql.startsWith("SELECT idx, page_start, text FROM official_chunks WHERE document_id = $1")) {
       const d = this.docs.get(String(p[0]));
       return this.chunks.filter((c) => c.document_id === p[0] && (!sql.includes("text_sha256 =") || c.text_sha256 === d?.text_sha256)).sort((a, b) => a.idx - b.idx).map((c) => ({ idx: String(c.idx), page_start: c.page_start == null ? null : String(c.page_start), text: c.text }));

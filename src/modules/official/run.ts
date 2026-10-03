@@ -225,7 +225,7 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
 
   async function runWorkers(): Promise<OfficialRunResult> {
     const signal = ctrl.signal;
-    const embedModel = o.embedModel === undefined ? embeddingModel() : o.embedModel;
+    const embedModel = o.embedModel === undefined ? (await embeddingModel()) : o.embedModel;
     const maxOcrPages = o.maxOcrPages ?? ocrMaxPages();
     const sourceIds = enabled.map((d) => d.id);
     try {
@@ -264,7 +264,7 @@ export async function runOfficialIngest(o: OfficialRunOptions): Promise<Official
     }
     if (embedModel && stages.includes("index")) {
       try {
-        const n = await queueMissingEmbeddings(store, sourceIds, EMBED_QUEUE_PER_RUN, PRIORITY.index);
+        const n = await queueMissingEmbeddings(store, sourceIds, EMBED_QUEUE_PER_RUN, PRIORITY.index, embedModel);
         if (n) result.notes.push(`${n} document(s) queued for embeddings`);
       } catch (e) {
         result.notes.push(`embedding queue skipped: ${(e as Error).message.slice(0, 200)}`);

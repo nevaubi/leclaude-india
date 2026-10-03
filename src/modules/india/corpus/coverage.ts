@@ -55,9 +55,10 @@ const EMPTY: CorpusCoverage = { configured: false, judgments: [], texts: [], sta
 
 /** Short publisher labels for the prompt block (registry order). */
 const OFFICIAL_LABEL: Record<SourceId, string> = {
+  "sci-library": "SC practice reference handbook",
   "sci-causelist": "SC cause lists", "sci-orders": "SC judgments and orders", "sci-calendar": "SC calendar", "hc-calendars": "HC calendars",
   "dhc-causelist": "Delhi HC cause lists", nclt: "NCLT", nclat: "NCLAT", ibbi: "IBBI (incl. mirrored NCLT/NCLAT/SC IBC orders)",
-  "sebi-orders": "SEBI orders (incl. SAT orders)", "sat-orders": "SAT", "cci-orders": "CCI orders", "ngt-orders": "NGT orders", egazette: "e-Gazette",
+  "sebi-orders": "SEBI regulations, circulars and orders", "sat-orders": "SAT", "cci-orders": "CCI orders", "ngt-orders": "NGT orders", egazette: "e-Gazette",
   cbic: "CBIC notifications and circulars", "gst-council": "GST Council", cbdt: "CBDT circulars and notifications", "mca-master": "MCA company records", sansad: "Parliament papers",
   rbi: "RBI notifications, master directions and master circulars", "itat-orders": "ITAT Special Bench orders", "cestat-orders": "CESTAT orders",
   aptel: "APTEL judgments", ncdrc: "NCDRC judgments", "cic-decisions": "CIC decisions", "rera-appellate": "Real Estate Appellate Tribunal orders",

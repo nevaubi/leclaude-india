@@ -5,6 +5,7 @@ import type { DiscoverResult, SourceAdapter } from "@/modules/official/adapter";
 import type { OfficialHttp } from "@/modules/official/http";
 import { documentIdFor } from "@/modules/official/pipeline";
 import { allowHostsFor, setOfficialAdaptersForTests } from "@/modules/official/registry";
+import {failUnit,enqueueUnits} from "@/modules/official/units";
 import { runOfficialIngest } from "@/modules/official/run";
 import type { DiscoveredDoc, SourceDef } from "@/modules/official/types";
 import { OfficialFakeStore } from "./official-fakes";
@@ -57,3 +58,5 @@ describe("model provider without credit", () => {
     expect(unit.attempts).toBe(0);
   });
 });
+
+it('Voyage rate limits defer work without exhausting attempts or reporting a credit failure',async()=>{const store=new OfficialFakeStore();await enqueueUnits(store,[{id:'index:rate',source:'sci-orders',stage:'index',key:'rate',documentId:'od_rate',priority:40}]);const unit=store.units.get('index:rate')!;unit.status='running';unit.attempts=3;const r=await failUnit(store,{id:'index:rate',attempts:3},'voyage: rate_limited; retry after 90 seconds');expect(r).toBe('retry');expect(store.units.get('index:rate')).toMatchObject({status:'pending',attempts:2});expect(store.units.get('index:rate')?.note).not.toContain('no credit');});

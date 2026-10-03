@@ -719,3 +719,8 @@ describe("citations and status", () => {
     expect(eg.recentErrors).toEqual([expect.objectContaining({ stage: "discover", error: "official:egazette: access denied (403)" })]);
   });
 });
+
+// Migration must replace incompatible non-null vectors, preserving citation text and identifiers.
+describe('public corpus model replacement',()=>{
+ it('requeues and re-embeds an old model, then becomes idempotent',async()=>{const store=new OfficialFakeStore();newDoc(store,{id:'od_migrate',source:'ibbi',url:'https://ibbi.gov.in/one.pdf',chunks:1,embedded:1});const c=newChunk(store,{document_id:'od_migrate',idx:0,text:'A citable legal passage.',embedding:'old',embedding_model:'old-model',embedding_dims:1024});expect(await queueMissingEmbeddings(store,['ibbi'],100,40,'voyage-context-4')).toBe(1);const r=await embedPendingChunks(store,{documentId:'od_migrate',maxChunks:10,embed:fakeEmbed,model:'voyage-context-4'});expect(r).toMatchObject({embedded:1,error:null,remaining:false});expect(c.text).toBe('A citable legal passage.');expect(c.embedding_model).toBe('voyage-context-4');expect((await embedPendingChunks(store,{documentId:'od_migrate',maxChunks:10,embed:fakeEmbed,model:'voyage-context-4'})).embedded).toBe(0);});
+});

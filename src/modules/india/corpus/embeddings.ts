@@ -130,7 +130,7 @@ export async function requestJudgmentEmbedding(store: RemoteStore, textKey: stri
   if (!textKey || !courtId || textKey.length > 120) return false;
   try {
     const s = await ensureJudgmentEmbedSchema(store);
-    if (!s.ready || !embeddingModel()) return false;
+    if (!s.ready || !(await embeddingModel())) return false;
     await store.query({
       query: `INSERT INTO corpus_embed_queue (text_key, court_id, tier) VALUES ($1, $2, 0)
         ON CONFLICT (text_key) DO UPDATE SET tier = 0, updated_at = now(),
@@ -192,7 +192,7 @@ export interface JudgmentEmbedRun {
  * the outcome per judgment. An embedding error stops the pass (rows go back to pending, or failed after 3 attempts).
  */
 export async function runJudgmentEmbedding(store: RemoteStore, o: { deadline: number; maxChunks?: number; embed?: EmbedFn; model?: string | null; seed?: number; now?: () => number; signal?: AbortSignal }): Promise<JudgmentEmbedRun> {
-  const model = o.model === undefined ? embeddingModel() : o.model;
+  const model = o.model === undefined ? (await embeddingModel()) : o.model;
   const now = o.now ?? Date.now;
   const out: JudgmentEmbedRun = { model, vector: null, claimed: 0, judgments: 0, embedded: 0, failed: 0, queued: 0, remaining: false, error: null };
   if (!model) return { ...out, error: "embeddings are not configured (no embedding provider)" };
@@ -227,7 +227,7 @@ export async function runJudgmentEmbedding(store: RemoteStore, o: { deadline: nu
       let rows: Row[];
       try {
         rows = await store.query({
-          query: `SELECT t.id, t.chunk_index, ${courtExpr} AS court_id, ${yearExpr} AS y, left(t.text, ${EMBED_CHUNK_CHARS}) AS text, ${TEXT_SHA_SQL("t")} AS sha
+          query: `SELECT t.id, t.chunk_index, ${courtExpr} AS court_id, ${yearExpr} AS y, t.text AS text, ${TEXT_SHA_SQL("t")} AS sha
             FROM corpus_texts t
             WHERE ${keyExpr} = $1
               AND NOT EXISTS (SELECT 1 FROM corpus_text_embeddings e WHERE e.chunk_id = t.id AND e.embedding_model = $2 AND e.text_sha256 = ${TEXT_SHA_SQL("t")})
@@ -293,7 +293,7 @@ async function release(store: RemoteStore, key: string, attempts: unknown, error
 /** Queue and vector counts for status pages (bounded queries). */
 export async function judgmentEmbedStatus(store: RemoteStore): Promise<{ ready: boolean; vector: EmbedSupport["vector"]; model: string | null; byStatus: Record<string, number>; embeddedJudgments: number; error?: string }> {
   const s = await ensureJudgmentEmbedSchema(store);
-  const model = embeddingModel();
+  const model = (await embeddingModel());
   if (!s.ready) return { ready: false, vector: null, model, byStatus: {}, embeddedJudgments: 0, error: s.error };
   const q = await store.query({ query: `SELECT status, count(*)::int AS n FROM corpus_embed_queue GROUP BY status` });
   const e = await store.query({ query: `SELECT count(DISTINCT text_key)::int AS n FROM corpus_text_embeddings WHERE embedding_model = $1`, params: [model ?? ""] });

@@ -34,6 +34,7 @@ export function NewsThumb({ item, className, ratio = "3/2", eager, monogramSize 
           width={img.width ?? undefined}
           height={img.height ?? undefined}
           loading={eager ? "eager" : "lazy"}
+          fetchPriority={eager ? "high" : "auto"}
           decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setFailed(true)}

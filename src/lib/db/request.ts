@@ -1,5 +1,6 @@
 import "server-only";
 import { after } from "next/server";
+import { cache } from "react";
 import { flushDb, remoteEnabled, syncDb } from "./sync";
 
 /**
@@ -81,8 +82,9 @@ export function withDb<A extends unknown[]>(handler: (...args: A) => Response | 
 }
 
 /** Call at the top of every server page and layout: brings the mirror up to date and persists any writes made while rendering. */
-export async function pageDb(): Promise<void> {
+// Request-local memoization: layout, metadata and page share one sync; never caches across users.
+export const pageDb = cache(async (): Promise<void> => {
   if (!remoteEnabled()) return;
   await syncDb();
   scheduleFlush();
-}
+});

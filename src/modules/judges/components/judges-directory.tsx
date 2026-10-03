@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Database, ExternalLink, LayoutGrid, List, Lock, RotateCcw, Search, SearchX, TriangleAlert, UserRound, X } from "lucide-react";
 import { LawHubMeta } from "@/components/corpus/law-hub";
 import { PhotoBackdrop } from "@/components/corpus/visual-image";
@@ -28,7 +28,6 @@ function readView(): View {
 
 /** /judges?court=&q=&status= — judges from official court rosters (filters live in the URL). */
 export function JudgesDirectory() {
-  const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
   const court = sp.get("court") ?? "";
@@ -45,8 +44,8 @@ export function JudgesDirectory() {
     for (const [k, v] of Object.entries(patch)) { if (v) next.set(k, v); else next.delete(k); }
     if (next.get("status") === "sitting") next.delete("status");
     const qs = next.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [pathname, router, sp]);
+    window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
+  }, [pathname, sp]);
 
   // Debounced search.
   React.useEffect(() => {
@@ -130,7 +129,7 @@ export function JudgesDirectory() {
             : totalLoaded === 0 ? <NotLoaded sources={data.sources} />
             : !data.judges.length ? (
               <EmptyState icon={SearchX} title="No judges match these filters" description={filtered ? "Only judges listed on an official court roster are shown." : undefined}
-                action={filtered ? <Button size="xs" variant="outline" onClick={() => { setQDraft(""); router.replace(pathname, { scroll: false }); }}>Clear filters</Button> : null} />
+                action={filtered ? <Button size="xs" variant="outline" onClick={() => { setQDraft(""); window.history.replaceState(null, "", pathname); }}>Clear filters</Button> : null} />
             ) : (
               <div className={cn("space-y-8", loading && "opacity-60 transition-opacity")} aria-busy={loading || undefined}>
                 {groups.map(([courtId, judges]) => <CourtGroup key={courtId} courtId={courtId} judges={judges} view={view} source={data.sources.find((s) => s.courtId === courtId) ?? null} />)}

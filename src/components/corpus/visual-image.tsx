@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { displayImageUrl, displayImageSrcSet } from "@/modules/media/display";
 import type { Visual } from "@/modules/media/visuals-types";
 import { cn } from "@/lib/utils";
 import { creditLabel, placeholderColor, safeLink } from "./visual-credit";
@@ -54,7 +55,10 @@ export function VisualImage({ visual, pending = false, fallback, className, imgC
         // eslint-disable-next-line @next/next/no-img-element -- served from our media store (validated, content-addressed)
         <img
           ref={ref}
-          src={visual.url}
+          src={displayImageUrl(visual.url, eager ? 1280 : 640)}
+          srcSet={displayImageSrcSet(visual.url)}
+          sizes={contain ? "128px" : eager ? "(max-width: 768px) 100vw, 1180px" : "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 320px"}
+          fetchPriority={eager ? "high" : "auto"}
           alt={visual.alt}
           width={visual.width ?? undefined}
           height={visual.height ?? undefined}
@@ -62,7 +66,7 @@ export function VisualImage({ visual, pending = false, fallback, className, imgC
           decoding="async"
           onLoad={onLoad}
           onError={onError}
-          className={cn("absolute inset-0 size-full transition-opacity duration-500 motion-reduce:transition-none", contain ? "object-contain p-[12%]" : "object-cover", loaded ? "opacity-100" : "opacity-0", imgClassName)}
+          className={cn("absolute inset-0 size-full transition-opacity duration-150 motion-reduce:transition-none", contain ? "object-contain p-[12%]" : "object-cover", loaded ? "opacity-100" : "opacity-0", imgClassName)}
         />
       ) : pending ? null : <div className="absolute inset-0">{fallback}</div>}
       {children}
@@ -108,8 +112,8 @@ export function PhotoBackdrop({ visual, className }: { visual: Visual | null; cl
     <>
       <div aria-hidden className={cn("pointer-events-none absolute inset-0 -z-10 overflow-hidden", className)} style={{ backgroundColor: placeholderColor(visual) }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- served from our media store (validated, content-addressed) */}
-        <img ref={ref} src={visual.url} alt="" decoding="async" onLoad={onLoad} onError={onError}
-          className={cn("absolute inset-0 size-full object-cover saturate-[0.8] transition-opacity duration-700 motion-reduce:transition-none", loaded ? "opacity-100" : "opacity-0")} />
+        <img ref={ref} src={displayImageUrl(visual.url, 1280)} srcSet={displayImageSrcSet(visual.url)} sizes="(max-width: 1180px) 100vw, 1180px" fetchPriority="high" alt="" decoding="async" onLoad={onLoad} onError={onError}
+          className={cn("absolute inset-0 size-full object-cover saturate-[0.8] transition-opacity duration-150 motion-reduce:transition-none", loaded ? "opacity-100" : "opacity-0")} />
         {/* Legibility wash: the page background over the photograph, strongest where the text sits. */}
         <div className="absolute inset-0 bg-gradient-to-r from-background from-30% via-background/88 to-background/45" />
         <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-background/70 to-transparent" />

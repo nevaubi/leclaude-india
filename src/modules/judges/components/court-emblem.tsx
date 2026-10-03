@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { displayImageUrl, displayImageSrcSet } from "@/modules/media/display";
 import { cn } from "@/lib/utils";
 import { courtById } from "@/lib/india/courts";
 import type { CourtEmblemInfo, CourtEmblemsResponse } from "../shared";
@@ -52,7 +53,7 @@ export function CourtEmblem({ courtId, name, size = 28, className }: { courtId: 
     return (
       <span className={cn("inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-background", className)} style={style} title={`${label} — ${info.kind} from ${hostOf(info.pageUrl ?? info.sourceUrl)}`}>
         {/* eslint-disable-next-line @next/next/no-img-element -- served from our media store (content-addressed, cached) */}
-        <img src={info.url} alt={`${label} ${info.kind}`} className="size-full object-contain" loading="lazy" decoding="async" onError={() => setFailed(true)} />
+        <img src={displayImageUrl(info.url, 96)} srcSet={displayImageSrcSet(info.url)} sizes={`${size}px`} alt={`${label} ${info.kind}`} className="size-full object-contain" loading="lazy" decoding="async" onError={() => setFailed(true)} />
       </span>
     );
   }

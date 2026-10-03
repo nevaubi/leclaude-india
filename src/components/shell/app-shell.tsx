@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
+import { NavigationLink as Link } from "./navigation-link";
 import { usePathname, useRouter } from "next/navigation";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Moon, Search, Sun, Monitor, Menu, X, LogOut, Keyboard } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,8 @@ import { Tip } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { ShortcutHelpProvider, useShortcutHelp } from "@/components/ui/shortcut-help";
-import { CommandPalette } from "./command-palette";
+import dynamic from "next/dynamic";
+const CommandPalette = dynamic(() => import("./command-palette").then(m => m.CommandPalette), { ssr: false });
 import { BrandMark, BrandLockup } from "@/components/brand/logo";
 import { DEFAULT_USER } from "@/lib/current-user";
 import { useT } from "@/lib/i18n/client";
@@ -51,7 +52,7 @@ async function signOut(): Promise<void> {
 function ShellFrame({ children, appName, firmName, user, signInEnabled }: { children: React.ReactNode; appName: string; firmName: string; user: ShellUser; signInEnabled: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { sidebarCollapsed, toggleSidebar, setPaletteOpen } = useShellStore();
+  const { sidebarCollapsed, toggleSidebar, setPaletteOpen, paletteOpen } = useShellStore();
   const help = useShortcutHelp(undefined);
   const t = useT();
   const [hydrated, setHydrated] = React.useState(false);
@@ -208,7 +209,7 @@ function ShellFrame({ children, appName, firmName, user, signInEnabled }: { chil
         )}
         <main className="min-h-0 flex-1 overflow-hidden"><InTabbedSectionProvider value={sectionTabs != null}>{children}</InTabbedSectionProvider></main>
       </div>
-      <CommandPalette />
+      {paletteOpen && <CommandPalette />}
     </div>
   );
 }

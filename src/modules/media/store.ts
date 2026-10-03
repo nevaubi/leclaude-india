@@ -47,11 +47,16 @@ export class MediaNotConfiguredError extends Error {
 }
 
 const ready = new WeakSet<RemoteStore>();
+const initializing = new WeakMap<RemoteStore, Promise<void>>();
 
 export async function ensureMediaSchema(store: RemoteStore): Promise<void> {
   if (ready.has(store)) return;
-  for (const q of MEDIA_SCHEMA) await store.query(q);
-  ready.add(store);
+  let pending = initializing.get(store);
+  if (!pending) {
+    pending = store.transaction(MEDIA_SCHEMA).then(() => { ready.add(store); });
+    initializing.set(store, pending);
+  }
+  try { await pending; } finally { if (initializing.get(store) === pending) initializing.delete(store); }
 }
 
 function requireStore(store?: RemoteStore | null): RemoteStore {

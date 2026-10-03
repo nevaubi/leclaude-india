@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import Link from "next/link";
+import { NavigationLink as Link } from "./navigation-link";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/client";
 import { isHrefActive, isTabActive, type NavChild, type NavItem, type NavTab } from "./nav";

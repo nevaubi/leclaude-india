@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { AlertTriangle, Newspaper, RefreshCw, Rss, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PageTopbar } from "@/components/shell/page-topbar";
@@ -37,7 +37,6 @@ function groupByDay(items: NewsListItem[]): Array<{ key: string; items: NewsList
  * row) then every other headline grouped by day (IST); publisher chips, court and text filters; the feed sources panel.
  */
 export function NewsBrowser({ initial, initialSources, initialFilters }: { initial: NewsListResponse; initialSources: NewsSourcesResponse; initialFilters: NewsFilters }) {
-  const router = useRouter();
   const pathname = usePathname();
   const now = useNow();
   const [filters, setFilters] = React.useState<NewsFilters>(initialFilters);
@@ -81,9 +80,9 @@ export function NewsBrowser({ initial, initialSources, initialFilters }: { initi
   React.useEffect(() => {
     if (first.current) { first.current = false; return; }
     const qs = newsQueryString({ source: filters.source, court: filters.court, q: filters.q });
-    router.replace(`${pathname}${qs}`, { scroll: false });
+    window.history.replaceState(null, "", `${pathname}${qs}`);
     void load(filters);
-  }, [filters, load, pathname, router]);
+  }, [filters, load, pathname]);
 
 
   const refresh = async () => {

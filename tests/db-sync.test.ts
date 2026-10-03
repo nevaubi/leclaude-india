@@ -184,3 +184,17 @@ describe("bounded database recovery", () => {
     } finally { setRemoteStoreForTests(remote); }
   });
 });
+
+describe("adaptive hydration throughput", () => {
+  it("uses fewer round trips for thousands of small records without dropping them", async () => {
+    await flushDb();
+    const now = new Date().toISOString();
+    const stmt = remote.db.prepare("INSERT INTO lc_docs VALUES (?, ?, ?, ?, ?)");
+    for (let i = 0; i < 4096; i++) { const id = String(i).padStart(5,"0"); stmt.run("speed_probe",id,JSON.stringify({id,title:"tiny"}),now,now); }
+    let pages = 0;
+    const counted: RemoteStore = { query: async (q) => { if (/FROM lc_docs(?: WHERE| ORDER BY)/.test(q.query)) pages++; return remote.query(q); }, transaction: qs => remote.transaction(qs) };
+    setRemoteStoreForTests(counted); coldInstance();
+    try { await syncDb(); expect(db().collection("speed_probe").count()).toBe(4096); expect(pages).toBeLessThan(20); console.log("DOC_PAGE_REQUESTS",pages); }
+    finally { setRemoteStoreForTests(remote); }
+  });
+});

@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { displayImageUrl, displayImageSrcSet } from "@/modules/media/display";
 import { cn } from "@/lib/utils";
 import { judgeInitials } from "../names";
 import type { JudgePhoto } from "../shared";
@@ -33,7 +34,9 @@ export function JudgeAvatar({ name, photo, size = 32, fill = false, className, r
         // eslint-disable-next-line @next/next/no-img-element -- served from our media store (content-addressed, cached)
         <img
           ref={imgRef}
-          src={photo.url}
+          src={displayImageUrl(photo.url, fill ? 384 : 128)}
+          srcSet={displayImageSrcSet(photo.url)}
+          sizes={fill ? "(max-width: 640px) 50vw, 220px" : `${size}px`}
           alt={photo.alt ?? `Official photograph of ${name}`}
           className={cn("absolute inset-0 size-full object-cover object-top transition-opacity duration-300 motion-reduce:transition-none", loaded ? "opacity-100" : "opacity-0")}
           loading="lazy"

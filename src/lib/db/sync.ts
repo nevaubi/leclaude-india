@@ -152,6 +152,8 @@ function oversizedResponse(error: unknown): boolean {
 async function scanRemote(store: RemoteStore, select: string, keys: string[], apply: (rows: Row[]) => void, initialLimit = 128): Promise<void> {
   let cursor: SqlValue[] = [];
   let limit = initialLimit;
+  let ceiling = 2048;
+  const targetBytes = 4 * 1024 * 1024;
   for (;;) {
     const where = cursor.length ? " WHERE (" + keys.join(", ") + ") > (" + keys.map((_, i) => "$" + (i + 1)).join(", ") + ")" : "";
     const query = select + where + " ORDER BY " + keys.join(", ") + " LIMIT $" + (cursor.length + 1);
@@ -160,6 +162,7 @@ async function scanRemote(store: RemoteStore, select: string, keys: string[], ap
     catch (e) {
       if (!oversizedResponse(e) || limit === 1) throw e;
       limit = Math.max(1, Math.floor(limit / 2));
+      ceiling = Math.min(ceiling, limit); // Do not repeat an already-rejected response size.
       continue;
     }
     if (!rows.length) return;
@@ -170,6 +173,9 @@ async function scanRemote(store: RemoteStore, select: string, keys: string[], ap
       const column = key.split(".").pop()!;
       return column === "chunk_index" ? Number(last[column]) : last[column]!;
     });
+    // Small records can travel in larger pages; cap both growth and rows to bound memory.
+    const bytes = Math.max(1, Buffer.byteLength(JSON.stringify(rows)));
+    limit = Math.max(1, Math.min(ceiling, limit * 2, Math.floor(limit * targetBytes / bytes)));
   }
 }
 
